@@ -17,15 +17,12 @@ repositories = [
     { alias = "mpn", url = "https://mpn.metworx.com/snapshots/stable/2020-09-20"},
 ]
 
+dependencies = [
+    "dplyr",
+    { name = "some-package", repository = "mpn", install_suggestions = true },
+    { name = "some-package", url = "mpn"},
+]
+
 [project.urls]
 homepage = ""
 issues = ""
-
-
-[dependencies]
-# Users _have_ to select a repository and can decide whether to install suggestions (maybe let them pick which ones they want?)
-some-package = { repository = "mpn", install_suggestions = true }
-# install_suggestions defaults to false, https://www.r-bloggers.com/2017/03/suggests-depends/
-other-package = { url = "some-gh-url we can clone" }
-cran-package = {}
-

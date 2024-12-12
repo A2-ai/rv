@@ -19,16 +19,19 @@ struct Repository {
     url: String,
 }
 
-// TODO: use enum for dependencies? do it when the config schema is more defined probably
 #[derive(Debug, PartialEq, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Dependency {
-    repository: Option<String>,
-    url: Option<String>,
-    #[serde(default)]
-    install_suggestions: bool,
-    #[serde(default)]
-    force_source: bool,
+#[serde(untagged)]
+enum Dependency {
+    Simple(String),
+    Detailed {
+        name: String,
+        repository: Option<String>,
+        url: Option<String>,
+        #[serde(default)]
+        install_suggestions: bool,
+        #[serde(default)]
+        force_source: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -49,14 +52,14 @@ struct Project {
     r_version: Option<String>,
     #[serde(default)]
     urls: HashMap<String, String>,
+    #[serde(default)]
+    dependencies: Vec<Dependency>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct Config {
     project: Project,
-    #[serde(default)]
-    dependencies: HashMap<String, Dependency>,
 }
 
 impl Config {
