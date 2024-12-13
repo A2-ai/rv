@@ -1,5 +1,5 @@
 use std::{env, fs::{self, File}, io::Write, process::{self, Command}};
-use reqwest::{blocking::Client, header::{HeaderMap, HeaderValue, USER_AGENT}};
+use reqwest::{blocking::{Response, Client}, header::{HeaderMap, HeaderValue, USER_AGENT}};
 
 pub struct Package {
     name: String,
@@ -17,7 +17,6 @@ impl Package {
     }
 
     pub fn download(&self, r_version: &str) -> String {
-        //let user_agent = r_command(r#"cat(getOption("HTTPUserAgent")"#);
         let home_path = env::var("HOME").or_else(|_| env::var("USERPROFILE")).expect("TODO: handle cannot find home directory error");
         let file_path = format!("{}/.cache/rv/R/{}-library/{}", 
             home_path, 
@@ -35,12 +34,9 @@ impl Package {
         headers.insert(USER_AGENT, HeaderValue::try_from(user_agent).unwrap());
             
         let client = Client::builder().default_headers(headers).build().expect("TODO: handle header build error");
-        let response = client.get(self.get_file_url()).send().expect("TODO: handle get file error");
+        
+        let response = self.get_url_response(client);
 
-        if !response.status().is_success() {
-            eprintln!("TODO: handle response failed: {}", response.status());
-            process::exit(1);
-        }
         let content = response.bytes()
             .expect("TODO: handle convert to bytes error");
 
@@ -54,13 +50,29 @@ impl Package {
     }
 
     #[cfg(target_os = "linux")]
-    fn get_file_url(&self) -> String {
-        format!("{}/src/contrib/{}", self.url, self.package_version())
+    fn get_url_response(&self, client: Client) -> Response {
+        //moved url response to separate function to handle linux binaries
+
+        let url = format!("{}/src/contrib/{}", self.url, self.package_version());
+        let response = client.get(url).send().expect("TODO: handle get file error");
+
+        if !response.status().is_success() {
+            eprintln!("TODO: handle response failed: {}", response.status());
+            process::exit(1);
+        }
+        response
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn get_file_url(&self) -> String {
-        "TODO: get different urls for each OS".to_string();
+    fn get_file_url(&self, client: Client) -> Response {
+        let url = "TODO: get different urls for each OS".to_string();
+        let response = client.get(url).send().expect("TODO: handle get file error");
+
+        if !response.status().is_success() {
+            eprintln!("TODO: handle response failed: {}", response.status());
+            process::exit(1);
+        }
+        response
     }
 
     fn package_version(&self) -> String {
