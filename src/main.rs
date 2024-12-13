@@ -1,3 +1,5 @@
+use rv::http::*;
+
 fn main() {
-    println!("Hello, world!");
+    Package::test_package().download("4.4.1");
 }
