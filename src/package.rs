@@ -12,13 +12,12 @@ enum Dependency {
     },
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
-pub struct PackageDependency {
-    // TODO: parse the version requirements as well
-    name: String,
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum OsType {
+    Windows,
+    Unix,
 }
 
-// TODO: what do we actually need
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Package {
     version: Version,
@@ -31,6 +30,8 @@ pub struct Package {
     license: String,
     md5_sum: String,
     path: Option<String>,
+    os_type: Option<OsType>,
+    recommended: bool,
     needs_compilation: bool,
 }
 
@@ -56,8 +57,13 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
 }
 
 // TODO: benchmark the whole thing
-pub fn parse_package_file(content: &str) -> HashMap<String, Package> {
-    let mut packages: HashMap<String, Package> = HashMap::new();
+/// Parse a PACKAGE file into something usable to resolve dependencies.
+/// A package may be present multiple times in the file. If that's the case
+/// we do the following:
+/// 1. Filter packages by R version
+/// 2. Get the first that match in the vector (the vector is in reversed order of appearance in PACKAGE file)
+pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
+    let mut packages: HashMap<String, Vec<Package>> = HashMap::new();
 
     for package_data in content
         .replace("\r\n", "\n")
@@ -83,21 +89,28 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Package> {
                 "MD5sum" => package.md5_sum = parts[1].to_string(),
                 "NeedsCompilation" => package.needs_compilation = parts[1] == "yes",
                 "Path" => package.path = Some(parts[1].to_string()),
-                // TODO: check with Devin for those, especially OS_type and Archs
-                "License_restricts_use" | "License_is_FOSS" | "OS_type" | "Priority" | "Archs" => {
-                    continue
+                "OS_type" => {
+                    package.os_type = Some(match parts[1] {
+                        "windows" => OsType::Windows,
+                        "unix" => OsType::Unix,
+                        _ => panic!("Unknown OS type: {}", parts[1]),
+                    });
                 }
+                "Priority" => {
+                    if parts[1] == "recommended" {
+                        package.recommended = true;
+                    }
+                }
+                "License_restricts_use" | "License_is_FOSS" | "Archs" => continue,
                 _ => panic!("Unexpected field: {} in PACKAGE file", parts[0]),
             }
         }
 
         if let Some(p) = packages.get_mut(&name) {
-            // TODO: is that correct??
-            if p.path.is_none() && p.version == package.version {
-                p.path = package.path;
-            }
+            // Insert it in front since later entries in the file have priority
+            p.insert(0, package);
         } else {
-            packages.insert(name, package);
+            packages.insert(name, vec![package]);
         }
     }
 
@@ -135,7 +148,11 @@ mod tests {
         let content = std::fs::read_to_string("src/tests/PACKAGE").unwrap();
 
         let packages = parse_package_file(&content);
-        // TODO: figure out how to represent the duplicates
         assert_eq!(packages.len(), 21806);
+        let cluster_packages = &packages["cluster"];
+        assert_eq!(cluster_packages.len(), 2);
+        // The second entry is before the first one
+        assert_eq!(cluster_packages[0].version.to_string(), "2.1.7");
+        assert_eq!(cluster_packages[1].version.to_string(), "2.1.8");
     }
 }
