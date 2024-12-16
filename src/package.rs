@@ -55,28 +55,19 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     res
 }
 
-#[cfg(windows)]
-const PACKAGE_SPLIT_PATTERN: &'static str = "\r\n\r\n";
-#[cfg(not(windows))]
-const PACKAGE_SPLIT_PATTERN: &'static str = "\n\n";
-
-#[cfg(windows)]
-const LINEBREAK_SPLIT_PATTERN: &'static str = "\r\n        ";
-#[cfg(not(windows))]
-const LINEBREAK_SPLIT_PATTERN: &'static str = "\n        ";
-
-
 // TODO: benchmark the whole thing
 pub fn parse_package_file(content: &str) -> HashMap<String, Package> {
     let mut packages: HashMap<String, Package> = HashMap::new();
 
-
-    for package_data in content.split(PACKAGE_SPLIT_PATTERN) {
+    for package_data in content
+        .replace("\r\n", "\n")
+        .replace("\n        ", " ")
+        .split("\n\n")
+    {
         let mut package = Package::default();
         let mut name = String::new();
         // Then we fix the line wrapping for deps
-        // TODO: avoid allocating the whole thing? Or do it first once
-        for line in package_data.replace(LINEBREAK_SPLIT_PATTERN, " ").lines() {
+        for line in package_data.lines() {
             let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
             match parts[0] {
                 "Package" => name = parts[1].to_string(),
