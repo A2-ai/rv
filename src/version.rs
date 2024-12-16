@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::fmt;
-use std::fmt::Formatter;
 use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -13,7 +12,7 @@ pub enum Operator {
 }
 
 impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let c = match self {
             Self::Equal => "==",
             Self::Greater => ">",
@@ -44,8 +43,8 @@ impl FromStr for Operator {
 #[derive(Debug, Default, Clone)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
-    semantic: Vec<u32>,
-    patches: Vec<u32>,
+    // I don't think a package has more than 10 values in their version
+    parts: [u32; 10],
     original: String,
 }
 
@@ -53,26 +52,16 @@ impl FromStr for Version {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // First we split on dash to try to find semver parts
-        let parts: Vec<&str> = s.trim().splitn(2, "-").collect();
-
-        let mut semantic: Vec<u32> = parts[0].split(".").map(|x| x.parse().unwrap()).collect();
-        let patches = if parts.len() > 1 {
-            parts[1]
-                .replace("-", ".")
-                .split(".")
-                .map(|x| x.parse().unwrap())
-                .collect()
-        } else {
-            Vec::new()
-        };
-        // HACK: to make comparison easier, we specifically make that vec bigger so every package
-        // has the same number of elements
-        semantic.resize(5, 0);
+        let mut parts: Vec<u32> = s
+            .trim()
+            .replace('-', ".")
+            .split('.')
+            .map(|x| x.parse().unwrap())
+            .collect();
+        parts.resize(10, 0);
 
         Ok(Self {
-            semantic,
-            patches,
+            parts: parts.try_into().unwrap(),
             original: s.to_string(),
         })
     }
@@ -86,11 +75,7 @@ impl fmt::Display for Version {
 
 impl PartialEq for Version {
     fn eq(&self, other: &Self) -> bool {
-        if self.semantic != other.semantic {
-            false
-        } else {
-            self.patches == other.patches
-        }
+        self.parts == other.parts
     }
 }
 
@@ -98,9 +83,7 @@ impl Eq for Version {}
 
 impl Ord for Version {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.semantic
-            .cmp(&other.semantic)
-            .then_with(|| self.patches.cmp(&other.patches))
+        self.parts.cmp(&other.parts)
     }
 }
 
@@ -153,7 +136,7 @@ impl FromStr for PinnedVersion {
 }
 
 impl fmt::Display for PinnedVersion {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({} {})", self.op, self.version)
     }
 }
