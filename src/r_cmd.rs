@@ -1,4 +1,4 @@
-use std::{env::set_var, process::Command};
+use std::{env::{set_current_dir, set_var}, fs, process::Command};
 
 #[allow(non_camel_case_types)]
 trait R_CMD {
@@ -37,13 +37,14 @@ trait R_CMD {
     fn build(&self) {
         set_var("R_LIBS_USER", self.r_libs_user());
         set_var("R_LIBS_SITE", self.r_libs_site());
+        let pkg_path = fs::canonicalize(self.pkg_path()).unwrap();
+        let output_path = fs::canonicalize(self.output_path().unwrap()).unwrap();
+        set_current_dir(self.output_path().unwrap()).unwrap();
         let output = Command::new("R")
             .arg("CMD")
             .arg("INSTALL")
             .arg("--build")
-            .arg(self.pkg_path())
-            .arg("-l")
-            .arg(self.output_path().unwrap())
+            .arg(pkg_path)
             .arg("-c")
             .output()
             .expect("TODO: R CMD INSTALL --build failed");
@@ -55,14 +56,14 @@ trait R_CMD {
 mod test {
     use super::*;
 
-    struct test_struct {
+    struct TestStruct {
         r_libs_user: String,
         r_libs_site: String,
         path: String,
         output_path: Option<String>,
     }
     
-    impl R_CMD for test_struct { 
+    impl R_CMD for TestStruct { 
         fn r_libs_site(&self) -> &str { &self.r_libs_site }
         fn r_libs_user(&self) -> &str { &self.r_libs_user }
         fn pkg_path(&self) -> &str { &self.path }
@@ -71,7 +72,7 @@ mod test {
 
     #[test]
     fn can_install() {
-        test_struct{
+        TestStruct{
             r_libs_user: "/cluster-data/user-homes/wes/R/persieve".to_string(),
             r_libs_site: "/opt/R/4.4.1/lib/R/library".to_string(),
             path: "./src/tests/RCMD/R6_2.5.1.tar.gz".to_string(),
@@ -81,7 +82,7 @@ mod test {
 
     #[test]
     fn can_check() {
-        test_struct{
+        TestStruct{
             r_libs_user: "/cluster-data/user-homes/wes/R/persieve".to_string(),
             r_libs_site: "/opt/R/4.4.1/lib/R/library".to_string(),
             path: "./src/tests/RCMD/R6_2.5.1.tar.gz".to_string(),
@@ -91,7 +92,7 @@ mod test {
 
     #[test]
     fn can_build() {
-        test_struct{
+        TestStruct{
             r_libs_user: "/cluster-data/user-homes/wes/R/persieve".to_string(),
             r_libs_site: "/opt/R/4.4.1/lib/R/library".to_string(),
             path: "./src/tests/RCMD/R6_2.5.1.tar.gz".to_string(),

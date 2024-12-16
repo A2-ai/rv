@@ -1,2 +1,4 @@
 /target
 .idea
+src/tests/RCMD/*
+!src/tests/RCMD/R6_2.5.1.tar.gz
