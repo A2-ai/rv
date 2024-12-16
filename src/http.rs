@@ -1,5 +1,8 @@
-use std::{env, fs::{self, File}, io::Write, process::{self, Command}};
+use std::{fs::{self, File}, io::Write, process};
 use reqwest::{blocking::{Response, Client}, header::{HeaderMap, HeaderValue, USER_AGENT}};
+
+mod binaries;
+mod user_agent;
 
 pub struct Package {
     name: String,
@@ -17,19 +20,24 @@ impl Package {
     }
 
     pub fn download(&self, r_version: &str) -> String {
-        let home_path = env::var("HOME").or_else(|_| env::var("USERPROFILE")).expect("TODO: handle cannot find home directory error");
+        let xdg_dirs = xdg::BaseDirectories::with_prefix("rv").expect("TODO: handle error");
+        let cache_base_dir = xdg_dirs.get_cache_home();
+        let os = os_info::get();
+        let platform = format!("{}-{}-{}", 
+            os.architecture().unwrap(), 
+            os.os_type(),
+            os.version());
         let file_path = format!("{}/.cache/rv/R/{}-library/{}", 
-            home_path, 
-            r_command(r#"cat(R.version$platform)"#),
+            cache_base_dir.display(), 
+            platform,
             r_version
         );
         fs::create_dir_all(&file_path).expect("TODO: handle cache dir can't be created");
-
         self.download_file(file_path)
     }
 
     fn download_file(&self, file_path: String) -> String {
-        let user_agent: String = r_command(r#"cat(getOption('HTTPUserAgent'))"#);
+        let user_agent = user_agent::new();
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::try_from(user_agent).unwrap());
             
@@ -80,24 +88,12 @@ impl Package {
     }
 }
 
-fn r_command(command: &str) -> String {
-    println!("{command}");
-    let output = Command::new("Rscript")
-        .arg("-e")
-        .arg(command)
-        .output()
-        .expect("TODO: 1. handle command not run error");
-
-    if !output.status.success() { eprintln!("TODO: 2. handle command failed error") };
-    String::from_utf8_lossy(&output.stdout).to_string()
-}
-
 mod tests {
     use super::*;
 
     #[test]
     fn can_download_tarball() {
-        let download_path = Package::test_package().download(&r_command(r#"cat(paste(R.version$major, R.version$minor, sep = "."))"#));
+        let download_path = Package::test_package().download("4.4.1");
         if let Ok(exists) = fs::exists(download_path) {
             assert!(exists)
         } else {
