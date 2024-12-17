@@ -1,10 +1,9 @@
 use std::{io::Write, time::Duration};
-use reqwest::{blocking::{get, Client}, header::{HeaderMap, HeaderValue, USER_AGENT}};
+use reqwest::{blocking::Client, header::{HeaderMap, HeaderName, HeaderValue}};
 
 // potentially generalize to use header arg instead of "user_agent" only
-pub fn download<W: Write> (url: &str, mut writer: W, user_agent: Option<&str>) {
-
-    let response = get_response(url, user_agent)
+pub fn download<W: Write> (url: &str, writer: &mut W, header: Option<(&str, String)>) -> Result<(), Box<dyn std::error::Error>> {
+    let response = get_response(url, header)
         .expect("TODO: handle response error");
 
     if !response.status().is_success() {
@@ -17,23 +16,66 @@ pub fn download<W: Write> (url: &str, mut writer: W, user_agent: Option<&str>) {
     writer.write_all(&content)
         .expect("TODO: writer can't accept content");
 
-    writer.flush().expect("TODO: writer can't be flushed");
+    Ok(())
 }
 
-fn get_response(url: &str, user_agent: Option<&str>) -> Result<reqwest::blocking::Response, reqwest::Error> {
-    if let Some(ua) = user_agent {
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, 
-            HeaderValue::try_from(ua).expect("TODO: handle header insert error"));
-    
-        let client = Client::builder()
-            .default_headers(headers)
-            .timeout(Duration::from_secs(20))
-            .build()
-            .expect("TODO: handle client build error");
-    
-        return client.get(url).send();
+fn get_response(url: &str, header: Option<(&str, String)>) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    let mut headers = HeaderMap::new();
+    if let Some((key, val)) = header {
+        let key = HeaderName::try_from(key).expect("TODO: header key coercion");
+        let val = HeaderValue::try_from(val).expect("TODO: header val coercion");
+        headers.insert(key, val);
     }
-        
-    get(url)
+    let client = Client::builder()
+        .default_headers(headers)
+        .timeout(Duration::from_secs(20))
+        .build()
+        .expect("TODO: handle client build error");
+
+    client.get(url).send()
+}
+
+mod tests {
+    use super::*;
+    use mockito::Server;
+    use std::io::Cursor;
+
+    #[test]
+    fn mock_download_with_no_header() {
+        let mut server = Server::new();
+        let mock_url = server.url();
+        let mock_endpoint = server.mock("GET", "/file.txt")
+            .with_status(200)
+            .with_header("Content-Type", "text/plain")
+            .with_body("Mock file content")
+            .create();
+
+        let url = format!("{mock_url}/file.txt");
+        let mut writer = Cursor::new(Vec::new());
+
+        let result = download(&url, &mut writer, None);
+        assert!(result.is_ok());
+        mock_endpoint.assert();
+        assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
+    }
+
+    #[test]
+    fn mock_download_with_header() {
+        let mut server = Server::new();
+        let mock_url = server.url();
+        let mock_endpoint = server.mock("GET", "/file.txt")
+            .with_status(200)
+            .with_header("Content-Type", "text/plain")
+            .with_body("Mock file content")
+            .create();
+
+        let url = format!("{mock_url}/file.txt");
+        let mut writer = Cursor::new(Vec::new());
+        let header = Some(("custom-header", "custom-value".to_string()));
+
+        let result = download(&url, &mut writer, header);
+        assert!(result.is_ok());
+        mock_endpoint.assert();
+        assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
+    }
 }
