@@ -1,6 +1,7 @@
 use std::{io::Write, time::Duration};
 use reqwest::{blocking::Client, header::{HeaderMap, HeaderName, HeaderValue}};
 
+
 // potentially generalize to use header arg instead of "user_agent" only
 pub fn download<W: Write> (url: &str, writer: &mut W, header: Option<(&str, String)>) -> Result<(), Box<dyn std::error::Error>> {
     let response = get_response(url, header)
@@ -36,13 +37,9 @@ fn get_response(url: &str, header: Option<(&str, String)>) -> Result<reqwest::bl
 }
 
 mod tests {
-    use super::*;
-    use mockito::Server;
-    use std::io::Cursor;
-
     #[test]
     fn mock_download_with_no_header() {
-        let mut server = Server::new();
+        let mut server = mockito::Server::new();
         let mock_url = server.url();
         let mock_endpoint = server.mock("GET", "/file.txt")
             .with_status(200)
@@ -51,9 +48,9 @@ mod tests {
             .create();
 
         let url = format!("{mock_url}/file.txt");
-        let mut writer = Cursor::new(Vec::new());
+        let mut writer = std::io::Cursor::new(Vec::new());
 
-        let result = download(&url, &mut writer, None);
+        let result = super::download(&url, &mut writer, None);
         assert!(result.is_ok());
         mock_endpoint.assert();
         assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
@@ -61,7 +58,7 @@ mod tests {
 
     #[test]
     fn mock_download_with_header() {
-        let mut server = Server::new();
+        let mut server = mockito::Server::new();
         let mock_url = server.url();
         let mock_endpoint = server.mock("GET", "/file.txt")
             .with_status(200)
@@ -70,10 +67,10 @@ mod tests {
             .create();
 
         let url = format!("{mock_url}/file.txt");
-        let mut writer = Cursor::new(Vec::new());
+        let mut writer = std::io::Cursor::new(Vec::new());
         let header = Some(("custom-header", "custom-value".to_string()));
 
-        let result = download(&url, &mut writer, header);
+        let result = super::download(&url, &mut writer, header);
         assert!(result.is_ok());
         mock_endpoint.assert();
         assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
