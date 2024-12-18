@@ -6,3 +6,4 @@ mod package;
 mod repository;
 mod resolver;
 mod version;
+mod repo_path;
