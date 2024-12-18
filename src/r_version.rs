@@ -34,7 +34,7 @@ impl FromStr for RVersion {
 }
 
 impl RVersion {
-    fn parse(dir: &DirEntry) -> Option<(String, Self)> {
+    fn read_entry(dir: &DirEntry) -> Option<(String, Self)> {
         let file_name = dir.file_name().to_string_lossy().into_owned();
         let pattern = Regex::new(r"(\d+)\.(\d+)\.(\d+)").unwrap();
         if let Some(ver) = pattern.captures(&file_name) {
@@ -59,7 +59,7 @@ impl RMetadata {
         let content = fs::read_dir(root_dir).expect("TODO: handle error");
         for c in content {
             let c = c.expect("TODO: handle error");
-            if let Some((str, version)) = RVersion::parse(&c) {
+            if let Some((str, version)) = RVersion::read_entry(&c) {
                 r_version.push(RMetadata {
                     version,
                     str, 
