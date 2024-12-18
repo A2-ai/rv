@@ -45,7 +45,7 @@ pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
     parts: [u32; 10],
-    original: String,
+    pub(crate) original: String,
 }
 
 impl FromStr for Version {
@@ -98,8 +98,20 @@ impl PartialOrd for Version {
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, PartialEq, Clone)]
 pub struct PinnedVersion {
-    version: Version,
+    pub(crate) version: Version,
     op: Operator,
+}
+
+impl PinnedVersion {
+    pub fn satisfy_requirement(&self, version: &Version) -> bool {
+        match self.op {
+            Operator::Equal => &self.version == version,
+            Operator::Greater => version > &self.version,
+            Operator::Lower => version < &self.version,
+            Operator::GreaterOrEqual => version >= &self.version,
+            Operator::LowerOrEqual => version <= &self.version,
+        }
+    }
 }
 
 impl FromStr for PinnedVersion {
