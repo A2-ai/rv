@@ -113,8 +113,7 @@ impl RMetadata {
     }
 }
 
-fn get_r_version(r_version: Option<&str>) -> RMetadata {
-    let avail_r = RMetadata::available_r_vers();
+fn get_r_version(r_version: Option<&str>, avail_r: Vec<RMetadata>) -> RMetadata {
     if let Some(ver) = r_version {
         let ver = ver.parse::<RVersion>().expect("TODO: handle specified ver cannot be parsed");
         return RMetadata::find_closest_match(ver, avail_r);
@@ -125,35 +124,55 @@ fn get_r_version(r_version: Option<&str>) -> RMetadata {
 mod tests {
     use super::*;
 
+    fn r_metadata() -> Vec<RMetadata> {
+        vec![
+            RMetadata {
+                version: RVersion{major: 4, minor: 4, patch: 1},
+                str: String::from("4.4.1"),
+                path: String::from("/opt/R/4.4.1")
+            },
+            RMetadata {
+                version: RVersion{major: 4, minor: 3, patch: 2},
+                str: String::from("4.3.1"),
+                path: String::from("/opt/R/4.3.2")
+            },
+            RMetadata {
+                version: RVersion{major: 4, minor: 2, patch: 2},
+                str: String::from("4.4.1"),
+                path: String::from("/opt/R/4.2.2")
+            },
+        ]
+    }
+
     #[test]
     fn can_match_ver() {
-        get_r_version(Some("4.4.1"));
+        get_r_version(Some("4.4.1"), r_metadata());
     }
 
     #[test]
     fn can_match_major_minor() {
-        get_r_version(Some("4.2"));
+        get_r_version(Some("4.2"), r_metadata());
     }
 
     #[test]
     fn can_hazy_match_ver() {
-        get_r_version(Some("4.3.8"));
+        get_r_version(Some("4.3.8"), r_metadata());
     }
 
     #[test]
     #[should_panic(expected = "TODO: handle no R version matches")]
     fn can_not_find_ver() {
-        get_r_version(Some("3.5.0"));
+        get_r_version(Some("3.5.0"), r_metadata());
     }
 
     #[test]
     #[should_panic(expected = "TODO: handle no R version matches")]
     fn can_not_find_major_minor() {
-        get_r_version(Some("3.5"));
+        get_r_version(Some("3.5"), r_metadata());
     }
 
     #[test]
     fn can_find_latest_ver() {
-        get_r_version(None);
+        get_r_version(None, r_metadata());
     }
 }
