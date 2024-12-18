@@ -21,6 +21,12 @@ const BASE_PACKAGES: [&str; 14] = [
     "utils",
 ];
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub(crate) enum PackageType {
+    Source,
+    Binary,
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum Dependency {
     Simple(String),
@@ -221,7 +227,7 @@ mod tests {
         );
     }
 
-    // Taken from https://packagemanager.posit.co/cran/2024-12-16/src/contrib/PACKAGES
+    // PACKAGE file taken from https://packagemanager.posit.co/cran/2024-12-16/src/contrib/PACKAGES
     #[test]
     fn can_parse_cran_like_package_file() {
         let content = std::fs::read_to_string("src/tests/package_files/posit-src.PACKAGE").unwrap();
@@ -241,5 +247,15 @@ mod tests {
                 .to_string(),
             "(>= 3.5.0)"
         );
+    }
+
+    // PACKAGE file taken from https://cran.r-project.org/bin/macosx/big-sur-arm64/contrib/4.4/PACKAGES
+    // Same format with fewer fields
+    #[test]
+    fn can_parse_cran_binary_package_file() {
+        let content =
+            std::fs::read_to_string("src/tests/package_files/cran-binary.PACKAGE").unwrap();
+        let packages = parse_package_file(&content);
+        assert_eq!(packages.len(), 22361);
     }
 }

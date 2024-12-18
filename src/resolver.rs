@@ -49,10 +49,17 @@ impl<'d> Resolver<'d> {
 
         let mut queue: VecDeque<_> = dependencies
             .iter()
-            .map(|d| (d.name(), d.repository(), d.install_suggestions()))
+            .map(|d| {
+                (
+                    d.name(),
+                    d.repository(),
+                    d.install_suggestions(),
+                    d.force_source(),
+                )
+            })
             .collect();
 
-        while let Some((name, repository, install_suggestions)) = queue.pop_front() {
+        while let Some((name, repository, install_suggestions, force_source)) = queue.pop_front() {
             // If we have already found that dependency, skip it
             // TODO: maybe different version req? we can cross that bridge later
             if found.contains(name) {
@@ -66,13 +73,8 @@ impl<'d> Resolver<'d> {
                     }
                 }
 
-                // If we find that package in the database we grab the first version that matches
-                // the R version.
-                // The package vec is already in the right order in the database.
-                if let Some(package) = repo
-                    .packages
-                    .get(&name.to_lowercase())
-                    .and_then(|p| p.iter().find(|p2| p2.works_with_r_version(&r_version)))
+                if let Some((package, package_type)) =
+                    repo.find_package(name, &r_version, force_source)
                 {
                     found.insert(name);
                     let all_dependencies = package.dependencies_to_install(install_suggestions);
@@ -86,7 +88,7 @@ impl<'d> Resolver<'d> {
 
                     for d in all_dependencies {
                         if !found.contains(d.name()) {
-                            queue.push_back((d.name(), None, false));
+                            queue.push_back((d.name(), None, false, false));
                         }
                     }
                     break;
@@ -120,10 +122,11 @@ mod tests {
         ] {
             let content =
                 std::fs::read_to_string(format!("src/tests/package_files/{filename}")).unwrap();
-            let packages = parse_package_file(&content);
+            let source_packages = parse_package_file(&content);
             let repository = RepositoryDatabase {
                 name: name.to_string(),
-                packages,
+                source_packages,
+                ..Default::default()
             };
             repositories.push(repository);
         }

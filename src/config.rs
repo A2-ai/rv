@@ -49,6 +49,13 @@ impl Dependency {
         }
     }
 
+    pub fn force_source(&self) -> bool {
+        match self {
+            Dependency::Simple(_) => false,
+            Dependency::Detailed { force_source, .. } => *force_source,
+        }
+    }
+
     pub fn install_suggestions(&self) -> bool {
         match self {
             Dependency::Simple(_) => false,
