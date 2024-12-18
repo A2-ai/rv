@@ -1,10 +1,11 @@
-
+use std::{process::{Command, Output}, path::Path, fs};
+use crate::r_cmd::RCmd;
 struct Package {
     tarball_path: String
 }
 
 impl RCmd for Package {
-    fn install(&self, library: &Path, args: Option<Vec<&str>>, env_var: Option<Vec<(&str, &str)>>) -> Result<Output, std::io::Error> {
+    fn install(&self, library: &Path, args: Option<Vec<&str>>, env_var: Option<Vec<(&str, &str)>>) -> Result<(), std::io::Error> {
         let mut command = Command::new("R");
         command
             .arg("CMD")
@@ -25,12 +26,11 @@ impl RCmd for Package {
             //TODO: canonicalize val if its a path
         }
 
-        println!("{:#?}", command);
-
-        command.output()
+        command.status()?;
+        Ok(())
     }
 
-    fn check(&self, result_path: &Path, args: Option<Vec<&str>>, env_var: Option<Vec<(&str, &str)>>) -> Result<Output, std::io::Error> {
+    fn check(&self, result_path: &Path, args: Option<Vec<&str>>, env_var: Option<Vec<(&str, &str)>>) -> Result<(), std::io::Error> {
         let result_path = fs::canonicalize(result_path).unwrap();
         let tarball_path = fs::canonicalize(&self.tarball_path).unwrap();
         let mut command = Command::new("R");
@@ -53,10 +53,11 @@ impl RCmd for Package {
             //TODO: canonicalize val if its a path
         }
 
-        command.output()
+        command.status()?;
+        Ok(())
     }
 
-    fn build(&self, library: &Path, output_path: &Path, args: Option<Vec<&str>>, env_var: Option<Vec<(&str, &str)>>) -> Result<Output, std::io::Error> {
+    fn build(&self, library: &Path, output_path: &Path, args: Option<Vec<&str>>, env_var: Option<Vec<(&str, &str)>>) -> Result<(), std::io::Error> {
         let mut command = Command::new("R");
         command
             .arg("CMD")
@@ -81,7 +82,8 @@ impl RCmd for Package {
 
         println!("{:#?}", command);
 
-        command.output()
+        command.status()?;
+        Ok(())
     }
 }
 
@@ -96,7 +98,7 @@ mod tests {
     #[test]
     fn can_install_no_config() {
         package()
-            .install(&Path::new("./src/tests/RCMD/"), None, None).unwrap();
+            .install(&Path::new("./src/tests/RCMD/"), None, None);
     }
 
     #[test]
