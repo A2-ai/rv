@@ -3,13 +3,47 @@ use std::str::FromStr;
 
 use crate::version::{PinnedVersion, Version};
 
+// List obtained from the REPL: `rownames(installed.packages(priority="base"))`
+const BASE_PACKAGES: [&str; 14] = [
+    "base",
+    "compiler",
+    "datasets",
+    "grDevices",
+    "graphics",
+    "grid",
+    "methods",
+    "parallel",
+    "splines",
+    "stats",
+    "stats4",
+    "tcltk",
+    "tools",
+    "utils",
+];
+
 #[derive(Debug, PartialEq, Clone)]
-enum Dependency {
+pub(crate) enum Dependency {
     Simple(String),
     Pinned {
         name: String,
         requirement: PinnedVersion,
     },
+}
+
+impl Dependency {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Dependency::Simple(s) => s,
+            Dependency::Pinned { name, .. } => name,
+        }
+    }
+
+    pub(crate) fn into_pinned_version(self) -> Option<PinnedVersion> {
+        match self {
+            Dependency::Simple(_) => None,
+            Dependency::Pinned { requirement, .. } => Some(requirement),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -20,8 +54,9 @@ enum OsType {
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Package {
-    version: Version,
-    // TODO: special case the R version?
+    pub(crate) name: String,
+    pub(crate) version: Version,
+    r_requirement: Option<PinnedVersion>,
     depends: Vec<Dependency>,
     imports: Vec<Dependency>,
     suggests: Vec<Dependency>,
@@ -29,10 +64,37 @@ pub struct Package {
     linking_to: Vec<Dependency>,
     license: String,
     md5_sum: String,
+    // TODO: we will need that when downloading afaik?
     path: Option<String>,
     os_type: Option<OsType>,
     recommended: bool,
-    needs_compilation: bool,
+    pub(crate) needs_compilation: bool,
+}
+
+impl Package {
+    #[inline]
+    pub fn works_with_r_version(&self, r_version: &Version) -> bool {
+        if let Some(r_req) = &self.r_requirement {
+            r_req.satisfy_requirement(r_version)
+        } else {
+            true
+        }
+    }
+
+    pub fn dependencies_to_install(&self, install_suggestions: bool) -> Vec<&Dependency> {
+        let mut out = Vec::with_capacity(30);
+        out.extend(self.depends.iter());
+        out.extend(self.imports.iter());
+        out.extend(self.linking_to.iter());
+
+        if install_suggestions {
+            out.extend(self.suggests.iter());
+        }
+
+        out.into_iter()
+            .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+            .collect()
+    }
 }
 
 fn parse_dependencies(content: &str) -> Vec<Dependency> {
@@ -41,11 +103,11 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     for dep in content.split(",") {
         let dep = dep.trim();
         if let Some(start_req) = dep.find('(') {
-            let name = &dep[..start_req];
-            let req = &dep[start_req..];
+            let name = dep[..start_req].trim();
+            let req = dep[start_req..].trim();
             let requirement = PinnedVersion::from_str(req).expect("TODO");
             res.push(Dependency::Pinned {
-                name: name.trim().to_string(),
+                name: name.to_string(),
                 requirement,
             });
         } else {
@@ -80,7 +142,15 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Version" => {
                     package.version = Version::from_str(parts[1]).unwrap();
                 }
-                "Depends" => package.depends = parse_dependencies(parts[1]),
+                "Depends" => {
+                    for p in parse_dependencies(parts[1]) {
+                        if p.name() == "R" {
+                            package.r_requirement = p.into_pinned_version();
+                        } else {
+                            package.depends.push(p);
+                        }
+                    }
+                }
                 "Imports" => package.imports = parse_dependencies(parts[1]),
                 "LinkingTo" => package.linking_to = parse_dependencies(parts[1]),
                 "Suggests" => package.suggests = parse_dependencies(parts[1]),
@@ -101,16 +171,25 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                         package.recommended = true;
                     }
                 }
+                // Posit uses that, maybe we can parse it?
+                "SystemRequirements" => continue,
                 "License_restricts_use" | "License_is_FOSS" | "Archs" => continue,
-                _ => panic!("Unexpected field: {} in PACKAGE file", parts[0]),
+                _ => println!("Unexpected field: {} in PACKAGE file", parts[0]),
             }
         }
 
-        if let Some(p) = packages.get_mut(&name) {
-            // Insert it in front since later entries in the file have priority
-            p.insert(0, package);
+        package.name = name.clone();
+        if let Some(p) = packages.get_mut(&name.to_lowercase()) {
+            p.push(package);
+            p.sort_by(|a, b| {
+                b.r_requirement
+                    .as_ref()
+                    .unwrap()
+                    .version
+                    .cmp(&a.r_requirement.as_ref().unwrap().version)
+            });
         } else {
-            packages.insert(name, vec![package]);
+            packages.insert(name.to_lowercase(), vec![package]);
         }
     }
 
@@ -120,7 +199,6 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::version::Operator;
 
     #[test]
     fn can_parse_dependencies() {
@@ -143,16 +221,25 @@ mod tests {
         );
     }
 
+    // Taken from https://packagemanager.posit.co/cran/2024-12-16/src/contrib/PACKAGES
     #[test]
-    fn can_parse_cran_package_file() {
-        let content = std::fs::read_to_string("src/tests/PACKAGE").unwrap();
+    fn can_parse_cran_like_package_file() {
+        let content = std::fs::read_to_string("src/tests/package_files/posit-src.PACKAGE").unwrap();
 
         let packages = parse_package_file(&content);
-        assert_eq!(packages.len(), 21806);
+        assert_eq!(packages.len(), 21811);
         let cluster_packages = &packages["cluster"];
         assert_eq!(cluster_packages.len(), 2);
-        // The second entry is before the first one
+        // The unreleased yet entry is before the first one because it requires a higher R version
         assert_eq!(cluster_packages[0].version.to_string(), "2.1.7");
         assert_eq!(cluster_packages[1].version.to_string(), "2.1.8");
+        assert_eq!(
+            cluster_packages[1]
+                .r_requirement
+                .clone()
+                .unwrap()
+                .to_string(),
+            "(>= 3.5.0)"
+        );
     }
 }
