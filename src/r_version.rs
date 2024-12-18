@@ -1,12 +1,11 @@
-use std::{fs::{self, DirEntry}, path::Path, str::FromStr};
+use std::{fs::{self, DirEntry}, str::FromStr};
 use regex::Regex;
-use toml::from_str;
 
 #[derive(Debug, Clone)]
 struct RVersion {
-    major: i32,
-    minor: i32,
-    patch: i32,
+    major: u32,
+    minor: u32,
+    patch: u32,
 }
 
 impl FromStr for RVersion {
@@ -14,12 +13,23 @@ impl FromStr for RVersion {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(".").collect();
-        if parts.len() != 3 {return Err(format!("Invalid version string: {}", s));}
-        Ok(Self {
-            major: parts[0].parse::<i32>().unwrap(),
-            minor: parts[1].parse::<i32>().unwrap(),
-            patch: parts[2].parse::<i32>().unwrap(),
-        })
+        match parts.len() {
+            3 => {
+                Ok(Self {
+                    major: parts[0].parse::<u32>().unwrap(),
+                    minor: parts[1].parse::<u32>().unwrap(),
+                    patch: parts[2].parse::<u32>().unwrap(),
+                })
+            },
+            2 => {
+                Ok(Self {
+                    major: parts[0].parse::<u32>().unwrap(),
+                    minor: parts[1].parse::<u32>().unwrap(),
+                    patch: u32::MAX, // if only two args, set to max so no patch version matches
+                })
+            },
+            _ => { Err(format!("Invalid version string: {}", s)) }
+        }
     }
 }
 
@@ -66,16 +76,17 @@ impl RMetadata {
         for v in avail_ver {
             if v.version.major == ver.major && v.version.minor == ver.minor {
                 if v.version.patch == v.version.patch { return v; }
+                candidates.push(v);
             }
-            candidates.push(v);
         }
-        if candidates.len() == 0 {panic!("TODO: handle no R version found"); }
+
+        if candidates.len() == 0 { panic!("TODO: handle no R version matches"); }
 
         candidates.sort_by(|a, b| a.version.patch.cmp(&b.version.patch));
         if let Some(latest_patch) = candidates.last() {
             return latest_patch.clone();
         } else {
-            panic!("TODO: handle no R version found");
+            panic!("TODO: handle no R version matches");
         }
 
     }
@@ -120,13 +131,25 @@ mod tests {
     }
 
     #[test]
-    fn can_hazy_match_ver() {
-        get_r_version(Some("4.4.8"));
+    fn can_match_major_minor() {
+        get_r_version(Some("4.2"));
     }
 
     #[test]
+    fn can_hazy_match_ver() {
+        get_r_version(Some("4.3.8"));
+    }
+
+    #[test]
+    #[should_panic(expected = "TODO: handle no R version matches")]
     fn can_not_find_ver() {
-        get_r_version(Some("5.0.0"));
+        get_r_version(Some("3.5.0"));
+    }
+
+    #[test]
+    #[should_panic(expected = "TODO: handle no R version matches")]
+    fn can_not_find_major_minor() {
+        get_r_version(Some("3.5"));
     }
 
     #[test]
