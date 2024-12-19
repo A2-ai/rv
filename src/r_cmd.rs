@@ -1,5 +1,4 @@
 use std::path::Path;
-use crate::version::Version;
 pub trait RCmd {
     fn install(
         &self, 
