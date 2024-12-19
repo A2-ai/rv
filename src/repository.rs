@@ -6,12 +6,12 @@ use std::str::FromStr;
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct RepositoryDatabase {
     pub(crate) name: String,
-    pub(crate) source_packages: HashMap<String, Vec<Package>>,
+    source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
     // for both binary and source
     // But each R version will get different package database
-    pub(crate) binary_packages: HashMap<Version, HashMap<String, Vec<Package>>>,
+    binary_packages: HashMap<Version, HashMap<String, Vec<Package>>>,
 }
 
 impl RepositoryDatabase {

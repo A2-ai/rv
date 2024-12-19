@@ -5,22 +5,24 @@ use core::fmt;
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Formatter;
 use std::str::FromStr;
+use crate::package::PackageType;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct ResolvedDependency<'d> {
     name: &'d str,
     version: &'d str,
     repository: &'d str,
     dependencies: Vec<&'d str>,
     needs_compilation: bool,
+    kind: PackageType,
 }
 
 impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} (from {})",
-            self.name, self.version, self.repository
+            "{}={} (from {}, type={})",
+            self.name, self.version, self.repository, self.kind
         )
     }
 }
@@ -84,6 +86,7 @@ impl<'d> Resolver<'d> {
                         repository: &repo.name,
                         dependencies: all_dependencies.iter().map(|d| d.name()).collect(),
                         needs_compilation: package.needs_compilation,
+                        kind: package_type,
                     });
 
                     for d in all_dependencies {
@@ -116,18 +119,20 @@ mod tests {
         let paths = std::fs::read_dir("src/tests/resolution/").unwrap();
         let mut repositories = Vec::new();
 
-        for (name, filename) in vec![
-            ("test", "posit-src.PACKAGE"),
-            ("gh-mirror", "gh-pkg-mirror.PACKAGE"),
+        for (name, (src_filename, binary_filename)) in vec![
+            ("test", ("posit-src.PACKAGE", Some("cran-binary.PACKAGE"))),
+            ("gh-mirror", ("gh-pkg-mirror.PACKAGE", None)),
         ] {
             let content =
-                std::fs::read_to_string(format!("src/tests/package_files/{filename}")).unwrap();
+                std::fs::read_to_string(format!("src/tests/package_files/{src_filename}")).unwrap();
             let source_packages = parse_package_file(&content);
-            let repository = RepositoryDatabase {
-                name: name.to_string(),
-                source_packages,
-                ..Default::default()
-            };
+            let mut repository = RepositoryDatabase::new(name);
+            repository.parse_source(&content);
+            if let Some(bin) = binary_filename {
+                let content =
+                    std::fs::read_to_string(format!("src/tests/package_files/{bin}")).unwrap();
+                repository.parse_binary(&content, "4.4.2");
+            }
             repositories.push(repository);
         }
 
@@ -135,7 +140,7 @@ mod tests {
         for path in paths {
             let p = path.unwrap().path();
             let config = Config::from_file(&p);
-            let res = resolver.resolve("4.2.0", &config.project.dependencies);
+            let res = resolver.resolve("4.4.2", &config.project.dependencies);
             let mut out = String::new();
             for d in res {
                 out.push_str(&d.to_string());

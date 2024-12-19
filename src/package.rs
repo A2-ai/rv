@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Formatter;
 use std::str::FromStr;
 
 use crate::version::{PinnedVersion, Version};
@@ -25,6 +27,15 @@ const BASE_PACKAGES: [&str; 14] = [
 pub(crate) enum PackageType {
     Source,
     Binary,
+}
+
+impl fmt::Display for PackageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Source => write!(f, "source"),
+            Self::Binary => write!(f, "binary"),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
