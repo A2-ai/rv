@@ -10,8 +10,8 @@ pub struct RepositoryDatabase {
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
     // for both binary and source
-    // But each R version will get different package database
-    binary_packages: HashMap<Version, HashMap<String, Vec<Package>>>,
+    // But each R version will get different binary package database
+    binary_packages: HashMap<[u32; 2], HashMap<String, Vec<Package>>>,
 }
 
 impl RepositoryDatabase {
@@ -28,7 +28,7 @@ impl RepositoryDatabase {
 
     // TODO: depending on how we pass things, we might already have a Version here
     pub fn parse_binary(&mut self, content: &str, r_version: &str) {
-        let r_version = Version::from_str(r_version).expect("TODO");
+        let r_version = Version::from_str(r_version).expect("TODO").major_minor();
         let packages = parse_package_file(content);
         self.binary_packages.insert(r_version, packages);
     }
@@ -50,12 +50,13 @@ impl RepositoryDatabase {
         };
 
         if !force_source {
-            if let Some(packages) = self.binary_packages.get(r_version) {
+            if let Some(packages) = self.binary_packages.get(&r_version.major_minor()) {
                 if let Some(package) = find_package(packages) {
                     return Some((package, PackageType::Binary));
                 }
             }
         }
+        println!("{:?}", self.binary_packages);
 
         find_package(&self.source_packages).and_then(|p| Some((p, PackageType::Source)))
     }

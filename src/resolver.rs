@@ -1,11 +1,11 @@
 use crate::config::Dependency;
+use crate::package::PackageType;
 use crate::repository::RepositoryDatabase;
 use crate::version::Version;
 use core::fmt;
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Formatter;
 use std::str::FromStr;
-use crate::package::PackageType;
 
 #[derive(Debug, PartialEq, Clone)]
 struct ResolvedDependency<'d> {

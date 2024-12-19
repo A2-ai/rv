@@ -48,6 +48,17 @@ pub struct Version {
     pub(crate) original: String,
 }
 
+impl Version {
+    /// Returns the major/minor part of a version.
+    /// Only meant to be used for R itself.
+    // unlikely to be a problem but if hashing on the list is too slow but we can return a u64 instead
+    // realistically R is going to be at 4.5 so we would be safe with a u8 or u16 even
+    #[inline]
+    pub fn major_minor(&self) -> [u32; 2] {
+        [self.parts[0].clone(), self.parts[1].clone()]
+    }
+}
+
 impl FromStr for Version {
     type Err = ();
 
@@ -209,5 +220,12 @@ mod tests {
     fn can_compare_versions() {
         assert!(Version::from_str("1.0").unwrap() == Version::from_str("1.0.0").unwrap());
         assert!(Version::from_str("1.1").unwrap() > Version::from_str("1.0.0").unwrap());
+    }
+
+    #[test]
+    fn can_get_minor_major() {
+        assert_eq!(Version::from_str("1.0").unwrap().major_minor(), [1, 0]);
+        assert_eq!(Version::from_str("1.0.0").unwrap().major_minor(), [1, 0]);
+        assert_eq!(Version::from_str("4.5").unwrap().major_minor(), [4, 5]);
     }
 }
