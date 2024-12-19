@@ -83,7 +83,7 @@ mod tests {
     fn test_repo_macos_r43() {
         let r_version = RVersion { major: 4, minor: 3, patch: 1};
         assert_eq!(repo_path(url(), r_version),
-        format!("{}/bin/macosx/contrib/{}.{}", url(), r_version.major, r_version.minor))
+        format!("{}/bin/macosx/contrib/{}.{}", url(), 4, 3))
     }
 
 }
