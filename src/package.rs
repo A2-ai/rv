@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use crate::version::{PinnedVersion, Version};
+use crate::version::{Version, VersionRequirement};
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 const BASE_PACKAGES: [&str; 14] = [
@@ -43,7 +43,7 @@ pub(crate) enum Dependency {
     Simple(String),
     Pinned {
         name: String,
-        requirement: PinnedVersion,
+        requirement: VersionRequirement,
     },
 }
 
@@ -55,10 +55,12 @@ impl Dependency {
         }
     }
 
-    pub(crate) fn into_pinned_version(self) -> Option<PinnedVersion> {
+    pub(crate) fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
-            Dependency::Pinned { requirement, .. } => Some(requirement),
+            Dependency::Pinned {
+                ref requirement, ..
+            } => Some(requirement),
         }
     }
 }
@@ -73,7 +75,7 @@ enum OsType {
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,
-    r_requirement: Option<PinnedVersion>,
+    r_requirement: Option<VersionRequirement>,
     depends: Vec<Dependency>,
     imports: Vec<Dependency>,
     suggests: Vec<Dependency>,
@@ -92,7 +94,7 @@ impl Package {
     #[inline]
     pub fn works_with_r_version(&self, r_version: &Version) -> bool {
         if let Some(r_req) = &self.r_requirement {
-            r_req.satisfy_requirement(r_version)
+            r_req.is_satisfied(r_version)
         } else {
             true
         }
@@ -122,7 +124,7 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
         if let Some(start_req) = dep.find('(') {
             let name = dep[..start_req].trim();
             let req = dep[start_req..].trim();
-            let requirement = PinnedVersion::from_str(req).expect("TODO");
+            let requirement = VersionRequirement::from_str(req).expect("TODO");
             res.push(Dependency::Pinned {
                 name: name.to_string(),
                 requirement,
@@ -162,7 +164,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Depends" => {
                     for p in parse_dependencies(parts[1]) {
                         if p.name() == "R" {
-                            package.r_requirement = p.into_pinned_version();
+                            package.r_requirement = p.version_requirement().cloned();
                         } else {
                             package.depends.push(p);
                         }
@@ -227,11 +229,11 @@ mod tests {
                 Dependency::Simple("stringr".to_string()),
                 Dependency::Pinned {
                     name: "testthat".to_string(),
-                    requirement: PinnedVersion::from_str("(>= 1.0.2)").unwrap()
+                    requirement: VersionRequirement::from_str("(>= 1.0.2)").unwrap()
                 },
                 Dependency::Pinned {
                     name: "httr".to_string(),
-                    requirement: PinnedVersion::from_str("(>= 1.1.0)").unwrap()
+                    requirement: VersionRequirement::from_str("(>= 1.1.0)").unwrap()
                 },
                 Dependency::Simple("yaml".to_string()),
             ]
