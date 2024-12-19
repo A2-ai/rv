@@ -64,7 +64,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn test_repo_path_macos_r4() {
         assert_eq!(repo_path(url(), r_version()), 
-            format!("{}/bin/macosx/big-sur-{}/contrib/{}.{}", url(), std::env::consts::ARCH, r_version.major, r_version.minor))
+            format!("{}/bin/macosx/big-sur-{}/contrib/{}.{}", url(), std::env::consts::ARCH, r_version().major, r_version().minor))
     }
 
     #[test]
@@ -81,7 +81,8 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_repo_macos_r43() {
-        assert_eq!(repo_path(url(), RVersion { major: 4, minor: 3, patch: 1}),
+        let r_version = RVersion { major: 4, minor: 3, patch: 1};
+        assert_eq!(repo_path(url(), r_version),
         format!("{}/bin/macosx/contrib/{}.{}", url(), r_version.major, r_version.minor))
     }
 
