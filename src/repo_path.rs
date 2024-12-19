@@ -80,10 +80,10 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "macos")]
-    fn test_repo_macos_r43() {
-        let r_version = RVersion { major: 4, minor: 3, patch: 1};
+    fn test_repo_macos_r41() {
+        let r_version = RVersion { major: 4, minor: 1, patch: 1};
         assert_eq!(repo_path(url(), r_version),
-        format!("{}/bin/macosx/contrib/{}.{}", url(), 4, 3))
+        format!("{}/bin/macosx/contrib/{}.{}", url(), 4, 1))
     }
 
 }
