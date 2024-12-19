@@ -1,26 +1,36 @@
+use reqwest::{
+    blocking::Client,
+    header::{HeaderMap, HeaderName, HeaderValue},
+};
 use std::{io::Write, time::Duration};
-use reqwest::{blocking::Client, header::{HeaderMap, HeaderName, HeaderValue}};
-
 
 // potentially generalize to use header arg instead of "user_agent" only
-pub fn download<W: Write> (url: &str, writer: &mut W, header: Option<(&str, String)>) -> Result<(), Box<dyn std::error::Error>> {
-    let response = get_response(url, header)
-        .expect("TODO: handle response error");
+pub fn download<W: Write>(
+    url: &str,
+    writer: &mut W,
+    header: Option<(&str, String)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let response = get_response(url, header).expect("TODO: handle response error");
 
     if !response.status().is_success() {
         panic!("TODO: handle url response is not success error")
     }
 
-    let content = response.bytes()
+    let content = response
+        .bytes()
         .expect("TODO: url response can't be converted to bytes");
 
-    writer.write_all(&content)
+    writer
+        .write_all(&content)
         .expect("TODO: writer can't accept content");
 
     Ok(())
 }
 
-fn get_response(url: &str, header: Option<(&str, String)>) -> Result<reqwest::blocking::Response, reqwest::Error> {
+fn get_response(
+    url: &str,
+    header: Option<(&str, String)>,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
     let mut headers = HeaderMap::new();
     if let Some((key, val)) = header {
         let key = HeaderName::try_from(key).expect("TODO: header key coercion");
@@ -41,7 +51,8 @@ mod tests {
     fn mock_download_with_no_header() {
         let mut server = mockito::Server::new();
         let mock_url = server.url();
-        let mock_endpoint = server.mock("GET", "/file.txt")
+        let mock_endpoint = server
+            .mock("GET", "/file.txt")
             .with_status(200)
             .with_header("Content-Type", "text/plain")
             .with_body("Mock file content")
@@ -60,7 +71,8 @@ mod tests {
     fn mock_download_with_header() {
         let mut server = mockito::Server::new();
         let mock_url = server.url();
-        let mock_endpoint = server.mock("GET", "/file.txt")
+        let mock_endpoint = server
+            .mock("GET", "/file.txt")
             .with_status(200)
             .with_header("Content-Type", "text/plain")
             .with_body("Mock file content")
