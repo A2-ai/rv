@@ -1,0 +1,20 @@
+---
+source: src/resolver.rs
+expression: out
+---
+dplyr=1.1.4 (from test, type=binary)
+cli=3.6.3 (from test, type=binary)
+generics=0.1.3 (from test, type=binary)
+glue=1.8.0 (from test, type=binary)
+lifecycle=1.0.4 (from test, type=binary)
+magrittr=2.0.3 (from test, type=binary)
+pillar=1.10.0 (from test, type=binary)
+R6=2.5.1 (from test, type=binary)
+rlang=1.1.4 (from test, type=binary)
+tibble=3.2.1 (from test, type=binary)
+tidyselect=1.2.1 (from test, type=binary)
+vctrs=0.6.5 (from test, type=binary)
+utf8=1.2.4 (from test, type=binary)
+fansi=1.0.6 (from test, type=binary)
+pkgconfig=2.0.3 (from test, type=binary)
+withr=3.0.2 (from test, type=binary)

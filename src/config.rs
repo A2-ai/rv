@@ -14,14 +14,14 @@ struct Author {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Repository {
+pub(crate) struct Repository {
     alias: String,
     url: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
-enum Dependency {
+pub(crate) enum Dependency {
     Simple(String),
     Detailed {
         name: String,
@@ -34,9 +34,42 @@ enum Dependency {
     },
 }
 
+impl Dependency {
+    pub fn name(&self) -> &str {
+        match self {
+            Dependency::Simple(s) => s,
+            Dependency::Detailed { name, .. } => name,
+        }
+    }
+
+    pub fn repository(&self) -> Option<&str> {
+        match self {
+            Dependency::Simple(_) => None,
+            Dependency::Detailed { repository, .. } => repository.as_deref(),
+        }
+    }
+
+    pub fn force_source(&self) -> bool {
+        match self {
+            Dependency::Simple(_) => false,
+            Dependency::Detailed { force_source, .. } => *force_source,
+        }
+    }
+
+    pub fn install_suggestions(&self) -> bool {
+        match self {
+            Dependency::Simple(_) => false,
+            Dependency::Detailed {
+                install_suggestions,
+                ..
+            } => *install_suggestions,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct Project {
+pub(crate) struct Project {
     name: String,
     #[serde(default)]
     description: String,
@@ -49,17 +82,17 @@ struct Project {
     repositories: Vec<Repository>,
     #[serde(default)]
     suggests: Vec<Dependency>,
-    r_version: Option<String>,
+    pub r_version: Option<String>,
     #[serde(default)]
     urls: HashMap<String, String>,
     #[serde(default)]
-    dependencies: Vec<Dependency>,
+    pub dependencies: Vec<Dependency>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct Config {
-    project: Project,
+pub(crate) struct Config {
+    pub project: Project,
 }
 
 impl Config {
@@ -80,7 +113,7 @@ mod tests {
         let paths = std::fs::read_dir("src/tests/valid_config/").unwrap();
         for path in paths {
             // TODO: later it will return a res.
-            let res = Config::from_file(path.unwrap().path());
+            let _ = Config::from_file(path.unwrap().path());
         }
     }
 }

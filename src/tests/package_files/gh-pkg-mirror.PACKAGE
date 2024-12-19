@@ -1,0 +1,197 @@
+Package: bbr
+Version: 1.12.0
+Depends: R (>= 3.5)
+Imports: callr, checkmate, cli (>= 3.1.0), data.table, digest, diffobj,
+        dplyr (>= 1.0.0), fs (>= 1.4.2), glue, jsonlite, lifecycle,
+        magrittr, mrgmisc, nmrec (>= 0.3.0), processx, purrr (>=
+        1.0.0), readr, rlang, stringfish, stringr, tibble, tidyr,
+        tidyselect (>= 1.0.0), xfun, yaml
+Suggests: collapsibleTree (>= 0.1.7), covr, devtools, forcats, ggplot2,
+        grid, htmlwidgets, knitr, png, rmarkdown, rprojroot, scales,
+        testthat (>= 2.1.0), webshot, withr (>= 2.4.0)
+License: MIT + file LICENSE
+MD5sum: a8a08876e250ef7a43f321c0de7ddab2
+NeedsCompilation: no
+
+Package: bbr.bayes
+Version: 0.2.1
+Depends: R (>= 3.5)
+Imports: bbr (>= 1.10.0), checkmate, cli, cmdstanr, data.table,
+        diffobj, dplyr (>= 1.0.0), ellipsis, fs, glue, jsonlite,
+        magrittr, methods, posterior, purrr, readr, rlang, stringi,
+        stringr, styler, tidyr, tidyselect, tibble, yaml
+Suggests: covr, devtools, future, future.apply, knitr, mrgsolve (>=
+        1.2.0), nmrec, npde, progressr, rmarkdown, testthat (>= 2.1.0),
+        withr
+License: MIT + file LICENSE
+MD5sum: 99098438bacd9e2fccd81323700b5818
+NeedsCompilation: no
+
+Package: cmdstanr
+Version: 0.8.0
+Depends: R (>= 3.5.0)
+Imports: checkmate, data.table, jsonlite (>= 1.2.0), posterior (>=
+        1.4.1), processx (>= 3.5.0), R6 (>= 2.4.0), withr (>= 2.5.0),
+        rlang (>= 0.4.7)
+Suggests: bayesplot, ggplot2, knitr (>= 1.37), loo (>= 2.0.0),
+        rmarkdown, testthat (>= 2.1.0), Rcpp
+License: BSD_3_clause + file LICENSE
+MD5sum: 6c546be729fc8edabd394e708d9f1972
+NeedsCompilation: no
+
+Package: ghpm
+Version: 0.5.1
+Imports: purrr, magrittr, dplyr, readr, gh (>= 1.2.0), tibble, stringr,
+        glue, checkmate
+Suggests: jsonlite, knitr, mockery, rmarkdown, sessioninfo, testthat
+        (>= 2.1.0), withr, pingr
+License: file LICENSE
+MD5sum: d31aad6f8b57d059bb932a18dc41c436
+NeedsCompilation: no
+
+Package: lastdose
+Version: 0.4.3
+Imports: Rcpp
+LinkingTo: Rcpp
+Suggests: testthat, withr
+License: GPL (>= 2)
+MD5sum: 32e3a82f01af97712a6efe3bcfdd22b2
+NeedsCompilation: yes
+
+Package: mrgda
+Version: 0.12.1
+Imports: cli (>= 3.3.0), dplyr, glue (>= 1.6.2), lifecycle (>= 1.0.1),
+        magrittr (>= 2.0.3), purrr, rlang (>= 1.0.2), tidyr,
+        tidyselect, yspec, tibble, diffdf, haven, data.table, yaml,
+        rprojroot, crayon, forcats, assertthat, stringr, knitr, readr
+Suggests: testthat (>= 3.1.10), withr (>= 2.5.0), callr, devtools, DT,
+        httpuv, htmltools, pillar, pingr, rstudioapi, rvest, shiny (>=
+        1.6.0), shinydashboard, shinydashboardPlus (>= 2.0.0),
+        shinyWidgets, rmarkdown
+License: GPL (>= 3)
+MD5sum: 709572b12338e3d8cdf3eebc399aa379
+NeedsCompilation: no
+
+Package: mrggsave
+Version: 0.4.5
+Imports: ggplot2 (>= 2.2.1), grid, gridExtra, grDevices, gridGraphics,
+        assertthat, rlang (>= 0.3.4), glue, fs, rprojroot, withr
+Suggests: GGally, gtable, testthat, lattice, survminer, patchwork,
+        survival
+License: GPL (>= 2)
+MD5sum: df87899a624ed7c8bedd92bfc3a7f235
+NeedsCompilation: no
+
+Package: mrgmisc
+Version: 0.2.1
+Depends: R (>= 3.2.2)
+Imports: dplyr (>= 0.5.0), data.table, glue, magrittr, Rcpp (>=
+        0.12.10), rlang, stringr, tibble, hms, lubridate, tidyr, purrr
+LinkingTo: Rcpp, BH
+Suggests: sessioninfo, knitr, rmarkdown, readr, testthat, ggplot2
+License: GPL (>= 2)
+MD5sum: 10158ef53d1adf0d7a3edfc4cf83049b
+NeedsCompilation: yes
+
+Package: nmrec
+Version: 0.4.0
+Imports: purrr, R6, rlang
+Suggests: knitr, rmarkdown, testthat (>= 3.0.0), withr
+License: MIT + file LICENSE
+MD5sum: 5512227b41538b3f95ac753bfd84da2d
+NeedsCompilation: no
+
+Package: paquet
+Version: 0.1.0
+Depends: R (>= 3.6)
+Imports: fst
+Suggests: testthat, arrow, qs, knitr, rmarkdown, dplyr, mrgsolve
+License: GPL (>= 2)
+MD5sum: 5181d0f6d4a611571fb36c2796e46b1c
+NeedsCompilation: no
+
+Package: pkgpub
+Version: 0.3.0
+Imports: magrittr, desc, drat, pkgbuild, withr, gert, glue
+Suggests: testthat (>= 2.1.0)
+License: MIT + file LICENSE
+MD5sum: 675dfa973709e82a7c5d5f39eb7404ea
+NeedsCompilation: yes
+
+Package: pmforest
+Version: 0.2.0
+Depends: R (>= 3.5.0)
+Imports: assertthat, dplyr, glue, ggplot2, gridExtra, here, magrittr,
+        patchwork, pmtables, purrr, RColorBrewer, readr, rlang,
+        stringr, tibble
+Suggests: devtools, knitr, svglite, testthat (>= 3.0.0), vdiffr, yaml,
+        yspec
+License: MIT + file LICENSE
+MD5sum: 7c4184370849c962b43bd02070a78f74
+NeedsCompilation: no
+
+Package: pmparams
+Version: 0.2.1
+Depends: R (>= 3.5)
+Imports: checkmate, dplyr (>= 1.0.0), magrittr, pmtables, rlang,
+        stringr, glue (< 1.8.0), logitnorm, purrr, tibble, tidyr,
+        tidyselect (>= 1.0.0), readr, yaml
+Suggests: bbr (>= 1.11.0), devtools, knitr, magick, pdftools, testthat
+        (>= 3.0.0), withr
+License: GPL (>= 3)
+MD5sum: b2da9a2bbf0c0f371727d95fb56b8039
+NeedsCompilation: no
+
+Package: pmplots
+Version: 0.5.1
+Depends: ggplot2 (>= 3.5.0)
+Imports: dplyr (>= 1.0.7), rlang (>= 0.4.12), glue (>= 1.5.0),
+        assertthat, tidyr (>= 1.1.4), forcats (>= 0.5.1), lifecycle,
+        tidyselect (>= 1.1.1), purrr(>= 1.0.0)
+Suggests: testthat, GGally, latex2exp, patchwork (>= 1.2.0), knitr,
+        yaml, miniUI, shiny, rmarkdown
+License: GPL (>= 2)
+MD5sum: 570a06350494921783cf0213fb0d58c1
+NeedsCompilation: no
+
+Package: pmtables
+Version: 0.8.1
+Depends: R (>= 3.5.0)
+Imports: purrr (>= 1.0.0), dplyr (>= 1.0.0), forcats, tidyr, rlang,
+        glue, tibble, assertthat, tidyselect, stringr, knitr,
+        rmarkdown, lifecycle, rprojroot, fs
+Suggests: testthat, yaml, texPreview, magick, pdftools, withr
+License: GPL (>= 2)
+MD5sum: 852c56e9f67f12dbcbee8aaaf4ed718d
+NeedsCompilation: no
+
+Package: simpar
+Version: 0.1.1
+Imports: MASS
+Suggests: testthat, metrumrg
+License: GPL (>= 2)
+MD5sum: a51ee6271e9974f13c75b16865b06b3c
+NeedsCompilation: no
+
+Package: texPreview
+Version: 2.1.0
+Depends: R (>= 4.0.0)
+Imports: base64enc, details, fs, htmltools, knitr, magick, rematch2,
+        rstudioapi, svgPanZoom, utils, whisker, xml2, tinytex
+Suggests: covr, kableExtra, nlme, pdftools, rmarkdown, shiny, testthat,
+        texreg, xtable
+License: MIT + file LICENSE
+MD5sum: 5ec16fadfd8d33d70b3069f05eb0b588
+NeedsCompilation: no
+
+Package: yspec
+Version: 0.6.2
+Depends: R (>= 3.5.0)
+Imports: yaml (>= 2.2), dplyr (>= 1.0.8), rmarkdown (>= 1.12), knitr
+        (>= 1.22), xtable (>= 1.8), rlang (>= 1.0.1), assertthat, purrr
+        (>= 0.3.4), glue (>= 1.6.1), rstudioapi, crayon (>= 1.3.4),
+        tibble, tidyselect, fs, stringr
+Suggests: pander, testthat
+License: GPL (>= 2)
+MD5sum: 445392be05a2aaa3cc6bb088d07d54e6
+NeedsCompilation: no
