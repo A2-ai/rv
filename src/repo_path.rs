@@ -19,7 +19,7 @@ fn repo_path(url: String, r_version: RVersion) -> String {
 #[cfg(target_os = "macos")]
 fn repo_path(url: String, r_version: RVersion) -> String {
     if r_version.major < 4 { panic!("TODO: handle r_version not macos supported") }
-    if r_version.minor < 3 {
+    if r_version.minor > 2 {
         format!("{url}/bin/macosx/big-sur-{}/contrib/{}.{}", std::env::consts::ARCH, r_version.major, r_version.minor)
     } else {
         format!("{url}/bin/macosx/contrib/{}.{}", r_version.major, r_version.minor)
@@ -80,10 +80,10 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "macos")]
-    fn test_repo_macos_r41() {
-        let r_version = RVersion { major: 4, minor: 1, patch: 1};
+    fn test_repo_macos_r42() {
+        let r_version = RVersion { major: 4, minor: 2, patch: 1};
         assert_eq!(repo_path(url(), r_version),
-        format!("{}/bin/macosx/contrib/{}.{}", url(), 4, 1))
+        format!("{}/bin/macosx/contrib/{}.{}", url(), 4, 2))
     }
 
 }
