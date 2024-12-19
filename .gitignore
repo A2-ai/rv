@@ -1,4 +1,6 @@
 /target
 .idea
-src/tests/RCMD/
 out
+/target
+.idea
+src/tests/RCMD/
