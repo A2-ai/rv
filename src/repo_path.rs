@@ -1,19 +1,24 @@
 use crate::version::Version;
 
-#[cfg(target_os = "linux")]
-fn repo_path(url: String, r_version: Version) -> String {
-    drop(r_version);
+fn repo_path(url: String, r_version: Version, os_type: String) -> String{
+    match os_type.to_lowercase().as_str() {
+        "linux" => { linux_url(url) }
+        "windows" => { windows_url(url, r_version) }
+        "macos" => { mac_url(url, r_version) }
+        _ => { panic!("TODO: OS not supported") }
+    }
+}
+
+fn linux_url(url: String) -> String {
     format!("{}/src/contrib", url)
 }
 
-#[cfg(target_os = "windows")]
-fn repo_path(url: String, r_version: Version) -> String {
+fn windows_url(url: String, r_version: Version) -> String {
     let [major, minor] = r_version.major_minor();
     format!("{url}/bin/windows/contrib/{}.{}", major, minor)
 }
 
-#[cfg(target_os = "macos")]
-fn repo_path(url: String, r_version: Version) -> String {
+fn mac_url(url: String, r_version: Version) -> String {
     let [major, minor] = r_version.major_minor();
     if major < 4 { panic!("TODO: handle r_version not macos supported") }
     if minor > 2 {
@@ -21,12 +26,6 @@ fn repo_path(url: String, r_version: Version) -> String {
     } else {
         format!("{url}/bin/macosx/contrib/{}.{}", major, minor)
     }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-fn repo_path(url: String, r_version: Version) -> String {
-    panic!("TODO: Running on an unsupported os");
-    String::new()
 }
 
 mod tests {
@@ -40,41 +39,42 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
     fn test_repo_path_linux() {
-        assert_eq!(repo_path(url(), r_version()), 
+        assert_eq!(repo_path(url(), r_version(), String::from("linux")), 
             format!("{}/src/contrib", url()))
     }
 
     #[test]
-    #[cfg(target_os = "windows")]
     fn test_repo_path_windows() {
         let [major, minor] = r_version().major_minor();
-        assert_eq!(repo_path(url(), r_version()), 
+        assert_eq!(repo_path(url(), r_version(), String::from("windows")), 
             format!("{}/bin/windows/contrib/{}.{}", url(), major, minor))
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn test_repo_path_macos_r4() {
         let [major, minor] = r_version().major_minor();
-        assert_eq!(repo_path(url(), r_version()), 
+        assert_eq!(repo_path(url(), r_version(), String::from("macos")), 
             format!("{}/bin/macosx/big-sur-{}/contrib/{}.{}", url(), std::env::consts::ARCH, major, minor))
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     #[should_panic(expected = "TODO: handle r_version not macos supported")]
     fn test_repo_macos_r3() {
-        repo_path(url(), "3.3.3".parse::<Version>().unwrap());
+        repo_path(url(), "3.3.3".parse::<Version>().unwrap(), String::from("macos"));
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn test_repo_macos_r42() {
         let r_version = "4.2.1".parse::<Version>().unwrap();
         let [major, minor] = r_version.major_minor();
-        assert_eq!(repo_path(url(), r_version),
-        format!("{}/bin/macosx/contrib/{}.{}", url(), major, minor))
+        assert_eq!(repo_path(url(), r_version, String::from("macos")),
+            format!("{}/bin/macosx/contrib/{}.{}", url(), major, minor))
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_repo_not_valid_os() {
+        repo_path(url(), r_version(), String::from("not valid os"));
     }
 }
