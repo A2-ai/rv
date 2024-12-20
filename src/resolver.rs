@@ -93,7 +93,7 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            for repo in self.repositories.iter().rev() {
+            for repo in self.repositories {
                 if let Some(r) = repository {
                     if repo.name != r {
                         continue;
@@ -155,8 +155,8 @@ mod tests {
         let r_version = Version::from_str("4.4.2").unwrap();
 
         for (name, (src_filename, binary_filename)) in vec![
-            ("test", ("posit-src.PACKAGE", Some("cran-binary.PACKAGE"))),
             ("gh-mirror", ("gh-pkg-mirror.PACKAGE", None)),
+            ("test", ("posit-src.PACKAGE", Some("cran-binary.PACKAGE"))),
         ] {
             let content =
                 std::fs::read_to_string(format!("src/tests/package_files/{src_filename}")).unwrap();
