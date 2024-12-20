@@ -8,6 +8,7 @@ mod repository;
 mod resolver;
 mod version;
 mod repo_path;
+mod cache;
 
 #[cfg(feature = "cli")]
 pub mod cli;
