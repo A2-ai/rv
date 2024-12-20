@@ -170,10 +170,15 @@ mod tests {
             repositories.push(repository);
         }
 
-        let resolver = Resolver::new(&repositories, &r_version);
         for path in paths {
             let p = path.unwrap().path();
             let config = Config::from_file(&p);
+            let v = if p.file_name().unwrap() == "higher_r_version.toml" {
+                Version::from_str("4.5").unwrap()
+            } else {
+                r_version.clone()
+            };
+            let resolver = Resolver::new(&repositories, &v);
             let (resolved, unresolved) = resolver.resolve(&config.dependencies());
             let mut out = String::new();
             for d in resolved {

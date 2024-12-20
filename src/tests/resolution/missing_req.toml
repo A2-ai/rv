@@ -3,5 +3,5 @@ name = "test"
 repositories = []
 dependencies = [
     # this package expects a version greater than what exists in the db
-    "testing-only",
+    "testing-inexisting-deps",
 ]

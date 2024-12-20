@@ -40,33 +40,57 @@ impl RepositoryDatabase {
         r_version: &Version,
         force_source: bool,
     ) -> Option<(&'a Package, PackageType)> {
-        let find_package = |packages: &'a HashMap<String, Vec<Package>>| -> Option<&'a Package> {
-            // If we find that package in the database we grab the first version that matches
-            // the R version and then whatever version_requirement is defined
-            // The package vec is already in the right order in the database.
-            packages.get(&name.to_lowercase()).and_then(|p| {
-                p.iter().find(|p2| {
-                    if !p2.works_with_r_version(r_version) {
-                        false
-                    } else {
-                        if let Some(req) = version_requirement {
-                            req.is_satisfied(&p2.version)
-                        } else {
-                            true
+        let find_package = |db: &'a HashMap<String, Vec<Package>>| -> Option<&'a Package> {
+            // If we find multiple packages matching the requirement, we grab the one with the
+            // highest R requirement matching the provided R version.
+            // The list of packages is in the same order as in the PACKAGE file so we start
+            // from the end since latter entries have priority
+            db.get(&name.to_lowercase()).and_then(|packages| {
+                let mut max_r_version = None;
+                let mut found = None;
+
+                for p in packages.iter().rev() {
+                    if !p.works_with_r_version(r_version) {
+                        continue;
+                    }
+
+                    if let Some(req) = version_requirement {
+                        if !req.is_satisfied(&p.version) {
+                            continue;
                         }
                     }
-                })
+
+                    match (max_r_version, p.r_version_requirement()) {
+                        (Some(_), None) => (),
+                        (None, Some(v)) => {
+                            max_r_version = Some(&v.version);
+                            found = Some(p);
+                        }
+                        (Some(v1), Some(v2)) => {
+                            if &v2.version > v1 {
+                                max_r_version = Some(&v2.version);
+                                found = Some(p);
+                            }
+                        }
+                        (None, None) => found = Some(p),
+                    }
+                }
+
+                found
             })
         };
 
         if !force_source {
-            if let Some(packages) = self.binary_packages.get(&r_version.major_minor()) {
-                if let Some(package) = find_package(packages) {
+            if let Some(db) = self.binary_packages.get(&r_version.major_minor()) {
+                if let Some(package) = find_package(db) {
                     return Some((package, PackageType::Binary));
                 }
             }
         }
 
+        if name == "zyp" {
+            println!("looking for the source");
+        }
         find_package(&self.source_packages).map(|p| (p, PackageType::Source))
     }
 }

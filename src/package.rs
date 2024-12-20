@@ -100,6 +100,10 @@ impl Package {
         }
     }
 
+    pub fn r_version_requirement(&self) -> Option<&VersionRequirement> {
+        self.r_requirement.as_ref()
+    }
+
     pub fn dependencies_to_install(&self, install_suggestions: bool) -> Vec<&Dependency> {
         let mut out = Vec::with_capacity(30);
         out.extend(self.depends.iter());
@@ -200,13 +204,6 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
         package.name = name.clone();
         if let Some(p) = packages.get_mut(&name.to_lowercase()) {
             p.push(package);
-            p.sort_by(|a, b| {
-                b.r_requirement
-                    .as_ref()
-                    .unwrap()
-                    .version
-                    .cmp(&a.r_requirement.as_ref().unwrap().version)
-            });
         } else {
             packages.insert(name.to_lowercase(), vec![package]);
         }
@@ -249,7 +246,7 @@ mod tests {
         assert_eq!(packages.len(), 21811);
         let cluster_packages = &packages["cluster"];
         assert_eq!(cluster_packages.len(), 2);
-        // The unreleased yet entry is before the first one because it requires a higher R version
+        // Order from the file is kept
         assert_eq!(cluster_packages[0].version.to_string(), "2.1.7");
         assert_eq!(cluster_packages[1].version.to_string(), "2.1.8");
         assert_eq!(
@@ -260,6 +257,7 @@ mod tests {
                 .to_string(),
             "(>= 3.5.0)"
         );
+        assert_eq!(packages["zyp"].len(), 2);
     }
 
     // PACKAGE file taken from https://cran.r-project.org/bin/macosx/big-sur-arm64/contrib/4.4/PACKAGES
