@@ -243,6 +243,22 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn can_parse_dependencies_with_trailing_comma() {
+        // This is a real case from the CRAN db that caused an early bug where an additional empty simple
+        // dependency was created
+        let res = parse_dependencies("R (>= 2.1.5),");
+
+        assert_eq!(
+            res,
+            vec![
+                Dependency::Pinned {
+                    name: "R".to_string(),
+                    requirement: VersionRequirement::from_str("(>= 2.1.5)").unwrap()
+                },
+            ]
+        );
+    }
 
     // PACKAGE file taken from https://packagemanager.posit.co/cran/2024-12-16/src/contrib/PACKAGES
     #[test]
