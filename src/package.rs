@@ -124,6 +124,13 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
 
     for dep in content.split(",") {
+        // there are cases where dep array is constructed with a trailing comma that would give
+        // an empty string
+        // for example, one Depends fielf for the binr in the posit db looked like:
+        // Depends: R (>= 2.15),
+        if dep.is_empty() {
+            continue;
+        }
         let dep = dep.trim();
         if let Some(start_req) = dep.find('(') {
             let name = dep[..start_req].trim();
