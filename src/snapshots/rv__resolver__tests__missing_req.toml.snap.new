@@ -1,0 +1,9 @@
+---
+source: src/resolver.rs
+assertion_line: 220
+expression: out
+snapshot_kind: text
+---
+testing-inexisting-deps=0.0.1 (from test, type=source)
+--- unresolved --- 
+zzlite (>= 1.0)  [indirect] from: testing-inexisting-deps
