@@ -29,18 +29,32 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
 pub struct UnresolvedDependency<'d> {
     name: &'d str,
     version_requirement: Option<&'d VersionRequirement>,
+    origin: &'d str,
 }
 
 impl<'a> fmt::Display for UnresolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} {}",
+            "{}{}{}",
             self.name,
             if let Some(l) = self.version_requirement {
-                format!("{l}")
+                format!(" {l} ")
             } else {
                 String::new()
+            },
+            // TODO: consider refactor
+            // i don't love this implementation, as it doesn't align outputs
+            // when there is a mix of packages being printed
+            // for example:
+            //    Biobase [indirect] from: NMF
+            //    rms (>= 4.2-0)  [indirect] from: pec
+            //    rms (>= 5.1.3)  [indirect] from: riskRegression
+            // ideally we could align them more in a tabular style
+            if self.origin == "[direct]" {
+                " [direct]".into() 
+            } else {
+                format!(" [indirect] from: {}", self.origin)
             }
         )
     }
@@ -80,12 +94,19 @@ impl<'d> Resolver<'d> {
                     None,
                     d.install_suggestions(),
                     d.force_source(),
+                    "[direct]", // track where the dependency originated from
                 )
             })
             .collect();
 
-        while let Some((name, repository, version_requirement, install_suggestions, force_source)) =
-            queue.pop_front()
+        while let Some((
+            name,
+            repository,
+            version_requirement,
+            install_suggestions,
+            force_source,
+            origin,
+        )) = queue.pop_front()
         {
             // If we have already found that dependency, skip it
             // TODO: maybe different version req? we can cross that bridge later
@@ -122,6 +143,7 @@ impl<'d> Resolver<'d> {
                                 d.version_requirement(),
                                 false,
                                 false,
+                                package.name.as_str(),
                             ));
                         }
                     }
@@ -133,6 +155,7 @@ impl<'d> Resolver<'d> {
                 unresolved.push(UnresolvedDependency {
                     name,
                     version_requirement,
+                    origin,
                 });
             }
         }

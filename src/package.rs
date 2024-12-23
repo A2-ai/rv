@@ -124,6 +124,13 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
 
     for dep in content.split(",") {
+        // there are cases where dep array is constructed with a trailing comma that would give
+        // an empty string
+        // for example, one Depends fielf for the binr in the posit db looked like:
+        // Depends: R (>= 2.15),
+        if dep.is_empty() {
+            continue;
+        }
         let dep = dep.trim();
         if let Some(start_req) = dep.find('(') {
             let name = dep[..start_req].trim();
@@ -233,6 +240,22 @@ mod tests {
                     requirement: VersionRequirement::from_str("(>= 1.1.0)").unwrap()
                 },
                 Dependency::Simple("yaml".to_string()),
+            ]
+        );
+    }
+    #[test]
+    fn can_parse_dependencies_with_trailing_comma() {
+        // This is a real case from the CRAN db that caused an early bug where an additional empty simple
+        // dependency was created
+        let res = parse_dependencies("R (>= 2.1.5),");
+
+        assert_eq!(
+            res,
+            vec![
+                Dependency::Pinned {
+                    name: "R".to_string(),
+                    requirement: VersionRequirement::from_str("(>= 2.1.5)").unwrap()
+                },
             ]
         );
     }
