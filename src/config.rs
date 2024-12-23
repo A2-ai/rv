@@ -3,6 +3,9 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::r_cmd::RCmd;
+use crate::version::Version;
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Author {
@@ -14,14 +17,14 @@ struct Author {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Repository {
-    alias: String,
-    url: String,
+pub struct Repository {
+    pub alias: String,
+    pub url: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum Dependency {
+pub enum DependencyKind {
     Simple(String),
     Detailed {
         name: String,
@@ -34,32 +37,32 @@ pub(crate) enum Dependency {
     },
 }
 
-impl Dependency {
+impl DependencyKind {
     pub fn name(&self) -> &str {
         match self {
-            Dependency::Simple(s) => s,
-            Dependency::Detailed { name, .. } => name,
+            DependencyKind::Simple(s) => s,
+            DependencyKind::Detailed { name, .. } => name,
         }
     }
 
     pub fn repository(&self) -> Option<&str> {
         match self {
-            Dependency::Simple(_) => None,
-            Dependency::Detailed { repository, .. } => repository.as_deref(),
+            DependencyKind::Simple(_) => None,
+            DependencyKind::Detailed { repository, .. } => repository.as_deref(),
         }
     }
 
     pub fn force_source(&self) -> bool {
         match self {
-            Dependency::Simple(_) => false,
-            Dependency::Detailed { force_source, .. } => *force_source,
+            DependencyKind::Simple(_) => false,
+            DependencyKind::Detailed { force_source, .. } => *force_source,
         }
     }
 
     pub fn install_suggestions(&self) -> bool {
         match self {
-            Dependency::Simple(_) => false,
-            Dependency::Detailed {
+            DependencyKind::Simple(_) => false,
+            DependencyKind::Detailed {
                 install_suggestions,
                 ..
             } => *install_suggestions,
@@ -73,7 +76,7 @@ pub(crate) struct Project {
     name: String,
     #[serde(default)]
     description: String,
-    version: Option<String>,
+    version: Option<Version>,
     license: Option<String>,
     #[serde(default)]
     authors: Vec<Author>,
@@ -81,18 +84,18 @@ pub(crate) struct Project {
     keywords: Vec<String>,
     repositories: Vec<Repository>,
     #[serde(default)]
-    suggests: Vec<Dependency>,
-    pub r_version: Option<String>,
+    suggests: Vec<DependencyKind>,
+    r_version: Option<Version>,
     #[serde(default)]
     urls: HashMap<String, String>,
     #[serde(default)]
-    pub dependencies: Vec<Dependency>,
+    dependencies: Vec<DependencyKind>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(crate) struct Config {
-    pub project: Project,
+pub struct Config {
+    pub(crate) project: Project,
 }
 
 impl Config {
@@ -101,6 +104,25 @@ impl Config {
         // TODO: use a custom read file method that reports the filepath if it fails
         let content = std::fs::read_to_string(path).expect("TODO: handle error");
         toml::from_str(content.as_str()).expect("TODO: handle error")
+    }
+
+    /// Gets the R version we want to use in this project.
+    /// This will default to whatever is set in the config if set, otherwise pick the output
+    /// from the trait call
+    pub fn get_r_version(&self, r_cli: impl RCmd) -> Version {
+        if let Some(v) = &self.project.r_version {
+            v.clone()
+        } else {
+            r_cli.version()
+        }
+    }
+
+    pub fn repositories(&self) -> &[Repository] {
+        &self.project.repositories
+    }
+
+    pub fn dependencies(&self) -> &[DependencyKind] {
+        &self.project.dependencies
     }
 }
 

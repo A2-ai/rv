@@ -5,7 +5,7 @@ use reqwest::{
 use std::{io::Write, time::Duration};
 
 // potentially generalize to use header arg instead of "user_agent" only
-pub fn download<W: Write>(
+pub(crate) fn download<W: Write>(
     url: &str,
     writer: &mut W,
     header: Option<(&str, String)>,

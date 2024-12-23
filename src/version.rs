@@ -1,3 +1,5 @@
+use serde::de::{self, Deserializer, Visitor};
+use serde::Deserialize;
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
@@ -40,7 +42,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone, Hash)]
+#[derive(Debug, Default, Clone)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
@@ -55,7 +57,7 @@ impl Version {
     // realistically R is going to be at 4.5 so we would be safe with a u8 or u16 even
     #[inline]
     pub fn major_minor(&self) -> [u32; 2] {
-        [self.parts[0].clone(), self.parts[1].clone()]
+        [self.parts[0], self.parts[1]]
     }
 }
 
@@ -104,17 +106,46 @@ impl PartialOrd for Version {
     }
 }
 
-/// A package can be pinned for some versions.
+impl<'de> Deserialize<'de> for Version {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VersionVisitor;
+
+        impl<'de> Visitor<'de> for VersionVisitor {
+            type Value = Version;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string representing a version number, with no letters")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match Version::from_str(value) {
+                    Ok(v) => Ok(v),
+                    Err(_) => Err(de::Error::custom("invalid version number")),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(VersionVisitor)
+    }
+}
+
+/// A package can require specific version for some versions.
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, PartialEq, Clone)]
-pub struct PinnedVersion {
+pub struct VersionRequirement {
     pub(crate) version: Version,
     op: Operator,
 }
 
-impl PinnedVersion {
-    pub fn satisfy_requirement(&self, version: &Version) -> bool {
+impl VersionRequirement {
+    pub fn is_satisfied(&self, version: &Version) -> bool {
         match self.op {
             Operator::Equal => &self.version == version,
             Operator::Greater => version > &self.version,
@@ -125,7 +156,7 @@ impl PinnedVersion {
     }
 }
 
-impl FromStr for PinnedVersion {
+impl FromStr for VersionRequirement {
     type Err = ();
 
     // s is for format `(>= 4.5)`
@@ -158,7 +189,7 @@ impl FromStr for PinnedVersion {
     }
 }
 
-impl fmt::Display for PinnedVersion {
+impl fmt::Display for VersionRequirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({} {})", self.op, self.version)
     }
@@ -180,7 +211,7 @@ mod tests {
         ];
         // Just making sure we don't panic on weird but existing versions
         for input in inputs {
-            println!("{:?}", PinnedVersion::from_str(input));
+            println!("{:?}", VersionRequirement::from_str(input));
         }
     }
 
@@ -211,7 +242,9 @@ mod tests {
     #[test]
     fn can_parse_version_requirements() {
         assert_eq!(
-            PinnedVersion::from_str("(== 1.0.0)").unwrap().to_string(),
+            VersionRequirement::from_str("(== 1.0.0)")
+                .unwrap()
+                .to_string(),
             "(== 1.0.0)"
         );
     }
