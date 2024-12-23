@@ -7,6 +7,7 @@ mod r_cmd;
 mod repository;
 mod resolver;
 mod version;
+mod repo_path;
 
 #[cfg(feature = "cli")]
 pub mod cli;
