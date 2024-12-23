@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use crate::version::{PinnedVersion, Version};
+use crate::version::{Version, VersionRequirement};
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 const BASE_PACKAGES: [&str; 14] = [
@@ -43,7 +43,7 @@ pub(crate) enum Dependency {
     Simple(String),
     Pinned {
         name: String,
-        requirement: PinnedVersion,
+        requirement: VersionRequirement,
     },
 }
 
@@ -55,10 +55,12 @@ impl Dependency {
         }
     }
 
-    pub(crate) fn into_pinned_version(self) -> Option<PinnedVersion> {
+    pub(crate) fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
-            Dependency::Pinned { requirement, .. } => Some(requirement),
+            Dependency::Pinned {
+                ref requirement, ..
+            } => Some(requirement),
         }
     }
 }
@@ -73,7 +75,7 @@ enum OsType {
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,
-    r_requirement: Option<PinnedVersion>,
+    r_requirement: Option<VersionRequirement>,
     depends: Vec<Dependency>,
     imports: Vec<Dependency>,
     suggests: Vec<Dependency>,
@@ -92,10 +94,14 @@ impl Package {
     #[inline]
     pub fn works_with_r_version(&self, r_version: &Version) -> bool {
         if let Some(r_req) = &self.r_requirement {
-            r_req.satisfy_requirement(r_version)
+            r_req.is_satisfied(r_version)
         } else {
             true
         }
+    }
+
+    pub fn r_version_requirement(&self) -> Option<&VersionRequirement> {
+        self.r_requirement.as_ref()
     }
 
     pub fn dependencies_to_install(&self, install_suggestions: bool) -> Vec<&Dependency> {
@@ -118,11 +124,18 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
 
     for dep in content.split(",") {
+        // there are cases where dep array is constructed with a trailing comma that would give
+        // an empty string
+        // for example, one Depends fielf for the binr in the posit db looked like:
+        // Depends: R (>= 2.15),
+        if dep.is_empty() {
+            continue;
+        }
         let dep = dep.trim();
         if let Some(start_req) = dep.find('(') {
             let name = dep[..start_req].trim();
             let req = dep[start_req..].trim();
-            let requirement = PinnedVersion::from_str(req).expect("TODO");
+            let requirement = VersionRequirement::from_str(req).expect("TODO");
             res.push(Dependency::Pinned {
                 name: name.to_string(),
                 requirement,
@@ -162,7 +175,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Depends" => {
                     for p in parse_dependencies(parts[1]) {
                         if p.name() == "R" {
-                            package.r_requirement = p.into_pinned_version();
+                            package.r_requirement = p.version_requirement().cloned();
                         } else {
                             package.depends.push(p);
                         }
@@ -198,13 +211,6 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
         package.name = name.clone();
         if let Some(p) = packages.get_mut(&name.to_lowercase()) {
             p.push(package);
-            p.sort_by(|a, b| {
-                b.r_requirement
-                    .as_ref()
-                    .unwrap()
-                    .version
-                    .cmp(&a.r_requirement.as_ref().unwrap().version)
-            });
         } else {
             packages.insert(name.to_lowercase(), vec![package]);
         }
@@ -227,13 +233,29 @@ mod tests {
                 Dependency::Simple("stringr".to_string()),
                 Dependency::Pinned {
                     name: "testthat".to_string(),
-                    requirement: PinnedVersion::from_str("(>= 1.0.2)").unwrap()
+                    requirement: VersionRequirement::from_str("(>= 1.0.2)").unwrap()
                 },
                 Dependency::Pinned {
                     name: "httr".to_string(),
-                    requirement: PinnedVersion::from_str("(>= 1.1.0)").unwrap()
+                    requirement: VersionRequirement::from_str("(>= 1.1.0)").unwrap()
                 },
                 Dependency::Simple("yaml".to_string()),
+            ]
+        );
+    }
+    #[test]
+    fn can_parse_dependencies_with_trailing_comma() {
+        // This is a real case from the CRAN db that caused an early bug where an additional empty simple
+        // dependency was created
+        let res = parse_dependencies("R (>= 2.1.5),");
+
+        assert_eq!(
+            res,
+            vec![
+                Dependency::Pinned {
+                    name: "R".to_string(),
+                    requirement: VersionRequirement::from_str("(>= 2.1.5)").unwrap()
+                },
             ]
         );
     }
@@ -247,7 +269,7 @@ mod tests {
         assert_eq!(packages.len(), 21811);
         let cluster_packages = &packages["cluster"];
         assert_eq!(cluster_packages.len(), 2);
-        // The unreleased yet entry is before the first one because it requires a higher R version
+        // Order from the file is kept
         assert_eq!(cluster_packages[0].version.to_string(), "2.1.7");
         assert_eq!(cluster_packages[1].version.to_string(), "2.1.8");
         assert_eq!(
@@ -258,6 +280,7 @@ mod tests {
                 .to_string(),
             "(>= 3.5.0)"
         );
+        assert_eq!(packages["zyp"].len(), 2);
     }
 
     // PACKAGE file taken from https://cran.r-project.org/bin/macosx/big-sur-arm64/contrib/4.4/PACKAGES

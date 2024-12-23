@@ -15,7 +15,7 @@ jobs:
         include:
           - build: msrv
             os: ubuntu-latest
-            rust: 1.74.0
+            rust: 1.81.0
           - build: stable
             os: ubuntu-latest
             rust: stable
@@ -36,4 +36,4 @@ jobs:
       - name: check with all features enabled
         run: cargo check --all-features
       - name: run tests
-        run: cargo test
+        run: cargo test --all-features
