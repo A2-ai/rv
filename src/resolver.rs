@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::config::DependencyKind;
@@ -26,14 +26,33 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+enum UnresolvedDependencyKind<'d> {
+    /// The user provided a dependency that doesn't exist
+    Direct,
+    /// A package has a dependency not found. It could be nested several times,
+    /// we only show the immediate parent which could be an indirect dep as well.
+    Indirect(&'d str),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct UnresolvedDependency<'d> {
     name: &'d str,
     version_requirement: Option<&'d VersionRequirement>,
-    origin: &'d str,
+    origins: Vec<UnresolvedDependencyKind<'d>>,
 }
 
 impl<'a> fmt::Display for UnresolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut origins = Vec::with_capacity(self.origins.len());
+        for origin in &self.origins {
+            let v = match origin {
+                UnresolvedDependencyKind::Direct => "user provided".to_string(),
+                UnresolvedDependencyKind::Indirect(parent) => format!("dependency of `{parent}`"),
+            };
+            origins.push(v);
+        }
+
         write!(
             f,
             "{}{}{}",
@@ -43,19 +62,7 @@ impl<'a> fmt::Display for UnresolvedDependency<'a> {
             } else {
                 String::new()
             },
-            // TODO: consider refactor
-            // i don't love this implementation, as it doesn't align outputs
-            // when there is a mix of packages being printed
-            // for example:
-            //    Biobase [indirect] from: NMF
-            //    rms (>= 4.2-0)  [indirect] from: pec
-            //    rms (>= 5.1.3)  [indirect] from: riskRegression
-            // ideally we could align them more in a tabular style
-            if self.origin == "[direct]" {
-                " [direct]".into() 
-            } else {
-                format!(" [indirect] from: {}", self.origin)
-            }
+            format!("from: {}", origins.join(", "))
         )
     }
 }
@@ -81,7 +88,8 @@ impl<'d> Resolver<'d> {
         dependencies: &'d [DependencyKind],
     ) -> (Vec<ResolvedDependency<'d>>, Vec<UnresolvedDependency<'d>>) {
         let mut resolved = Vec::new();
-        let mut unresolved = Vec::new();
+        // We might have the same unresolved dep multiple times.
+        let mut unresolved = HashMap::<&str, UnresolvedDependency>::new();
         let mut found = HashSet::with_capacity(dependencies.len() * 10);
 
         let mut queue: VecDeque<_> = dependencies
@@ -94,7 +102,7 @@ impl<'d> Resolver<'d> {
                     None,
                     d.install_suggestions(),
                     d.force_source(),
-                    "[direct]", // track where the dependency originated from
+                    None,
                 )
             })
             .collect();
@@ -105,7 +113,7 @@ impl<'d> Resolver<'d> {
             version_requirement,
             install_suggestions,
             force_source,
-            origin,
+            parent,
         )) = queue.pop_front()
         {
             // If we have already found that dependency, skip it
@@ -143,7 +151,7 @@ impl<'d> Resolver<'d> {
                                 d.version_requirement(),
                                 false,
                                 false,
-                                package.name.as_str(),
+                                Some(name),
                             ));
                         }
                     }
@@ -152,15 +160,24 @@ impl<'d> Resolver<'d> {
             }
 
             if !found.contains(name) {
-                unresolved.push(UnresolvedDependency {
-                    name,
-                    version_requirement,
-                    origin,
-                });
+                let ud_kind = if let Some(p) = parent {
+                    UnresolvedDependencyKind::Indirect(p)
+                } else {
+                    UnresolvedDependencyKind::Direct
+                };
+                if let Some(ud) = unresolved.get_mut(name) {
+                    ud.origins.push(ud_kind);
+                } else {
+                    unresolved.insert(name, UnresolvedDependency {
+                        name,
+                        version_requirement,
+                        origins: vec![ud_kind],
+                    });
+                }
             }
         }
 
-        (resolved, unresolved)
+        (resolved, unresolved.into_values().collect())
     }
 }
 

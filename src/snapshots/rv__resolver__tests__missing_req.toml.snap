@@ -4,4 +4,4 @@ expression: out
 ---
 testing-inexisting-deps=0.0.1 (from test, type=source)
 --- unresolved --- 
-zzlite (>= 1.0)
+zzlite (>= 1.0) from: dependency of `testing-inexisting-deps`
