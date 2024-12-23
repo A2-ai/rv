@@ -168,11 +168,14 @@ impl<'d> Resolver<'d> {
                 if let Some(ud) = unresolved.get_mut(name) {
                     ud.origins.push(ud_kind);
                 } else {
-                    unresolved.insert(name, UnresolvedDependency {
+                    unresolved.insert(
                         name,
-                        version_requirement,
-                        origins: vec![ud_kind],
-                    });
+                        UnresolvedDependency {
+                            name,
+                            version_requirement,
+                            origins: vec![ud_kind],
+                        },
+                    );
                 }
             }
         }
@@ -205,7 +208,7 @@ mod tests {
             if let Some(bin) = binary_filename {
                 let content =
                     std::fs::read_to_string(format!("src/tests/package_files/{bin}")).unwrap();
-                repository.parse_binary(&content, &r_version);
+                repository.parse_binary(&content, r_version.major_minor());
             }
             repositories.push(repository);
         }

@@ -1,7 +1,15 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use rv::{Config, RCommandLine, RepositoryDatabase, Resolver};
+use rayon::prelude::*;
+
+use rv::{
+    cli::http,
+    cli::DiskCache,
+    consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
+    get_binary_path, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
+    Resolver, SystemInfo,
+};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -28,6 +36,60 @@ pub enum Command {
     Sync,
 }
 
+fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<RepositoryDatabase> {
+    let dbs = repositories
+        .par_iter()
+        .map(|r| {
+            // 1. Generate path to add to URL to get the src PACKAGE and binary PACKAGE for current OS
+            let entry = cache.get_package_db_entry(&r.url());
+            // 2. Check in cache whether we have the database and is not expired
+            match entry {
+                CacheEntry::Existing(p) => {
+                    // load the archive
+                    let db = RepositoryDatabase::load(&p);
+                    db
+                }
+                CacheEntry::NotFound(p) => {
+                    let mut db = RepositoryDatabase::new(&r.alias);
+                    // download files, parse them and persist to disk
+                    let mut source_package = Vec::new();
+                    http::download(
+                        &format!("{}{SOURCE_PACKAGES_PATH}", r.url()),
+                        &mut source_package,
+                        None,
+                    )
+                    .expect("TODO");
+                    // UNSAFE: we trust the PACKAGES data to be valid UTF-8
+                    db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
+
+                    // TODO later
+                    let mut binary_package = Vec::new();
+                    let binary_path = get_binary_path(&cache.r_version, &cache.system_info);
+                    // TODO: check if the downloads 404
+                    http::download(
+                        &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
+                        &mut binary_package,
+                        None,
+                    )
+                    .expect("TODO");
+                    // UNSAFE: we trust the PACKAGES data to be valid UTF-8
+                    db.parse_binary(
+                        unsafe { std::str::from_utf8_unchecked(&source_package) },
+                        cache.r_version.clone(),
+                    );
+
+                    db.persist(&p);
+                    println!("Saving db at {p:?}");
+                    db
+                }
+            }
+            // 3. Fetch the PACKAGE files if needed and build the database + persist to disk
+        })
+        .collect::<Vec<_>>();
+
+    dbs
+}
+
 fn try_main() {
     let cli = Cli::parse();
 
@@ -41,31 +103,8 @@ fn try_main() {
             let config = Config::from_file(&cli.config_file);
             let r_cli = RCommandLine {};
             let r_version = config.get_r_version(r_cli);
-
-            let databases: Vec<_> = config
-                .repositories()
-                .iter()
-                .map(|r| {
-                    // 1. Generate path to add to URL to get the src PACKAGE and binary PACKAGE for current OS
-                    // 2. Check in cache whether we have the database and is not expired
-                    // 3. Fetch the PACKAGE files if needed and build the database + persist to disk
-
-                    // For now mocking the repositories database generation/loading until we get
-                    // the paths PR merged + some basic caching
-                    let mut db = RepositoryDatabase::new(&r.alias);
-                    let content = std::fs::read_to_string(format!(
-                        "src/tests/package_files/posit-src.PACKAGE"
-                    ))
-                    .unwrap();
-                    db.parse_source(&content);
-                    let content = std::fs::read_to_string(format!(
-                        "src/tests/package_files/cran-binary.PACKAGE"
-                    ))
-                    .unwrap();
-                    db.parse_binary(&content, &r_version);
-                    db
-                })
-                .collect();
+            let cache = DiskCache::new(&r_version, SystemInfo::from_os_info());
+            let databases = load_databases(config.repositories(), &cache);
 
             let resolver = Resolver::new(&databases, &r_version);
             let (resolved, unresolved) = resolver.resolve(config.dependencies());

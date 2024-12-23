@@ -1,10 +1,27 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 
 use serde::Deserialize;
 
 use crate::r_cmd::RCmd;
 use crate::version::Version;
+
+fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<String> = Deserialize::deserialize(deserializer)?;
+
+    if let Some(v) = v {
+        match Version::from_str(&v) {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Err(serde::de::Error::custom("Invalid version number")),
+        }
+    } else {
+        Ok(None)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,7 +36,14 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    pub url: String,
+    url: String,
+}
+
+impl Repository {
+    /// Returns the URL, always without a trailing URL
+    pub fn url(&self) -> &str {
+        self.url.trim_end_matches("/")
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -76,6 +100,8 @@ pub(crate) struct Project {
     name: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_version")]
     version: Option<Version>,
     license: Option<String>,
     #[serde(default)]
@@ -85,6 +111,8 @@ pub(crate) struct Project {
     repositories: Vec<Repository>,
     #[serde(default)]
     suggests: Vec<DependencyKind>,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_version")]
     r_version: Option<Version>,
     #[serde(default)]
     urls: HashMap<String, String>,

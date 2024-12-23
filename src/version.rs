@@ -1,10 +1,10 @@
-use serde::de::{self, Deserializer, Visitor};
-use serde::Deserialize;
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
 pub enum Operator {
     Equal,
     Greater,
@@ -42,7 +42,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
@@ -106,39 +106,10 @@ impl PartialOrd for Version {
     }
 }
 
-impl<'de> Deserialize<'de> for Version {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct VersionVisitor;
-
-        impl<'de> Visitor<'de> for VersionVisitor {
-            type Value = Version;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string representing a version number, with no letters")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match Version::from_str(value) {
-                    Ok(v) => Ok(v),
-                    Err(_) => Err(de::Error::custom("invalid version number")),
-                }
-            }
-        }
-
-        deserializer.deserialize_str(VersionVisitor)
-    }
-}
-
 /// A package can require specific version for some versions.
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct VersionRequirement {
     pub(crate) version: Version,
     op: Operator,

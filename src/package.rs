@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use std::str::FromStr;
 
 use crate::version::{Version, VersionRequirement};
+use serde::{Deserialize, Serialize};
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 const BASE_PACKAGES: [&str; 14] = [
@@ -23,7 +24,7 @@ const BASE_PACKAGES: [&str; 14] = [
     "utils",
 ];
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub(crate) enum PackageType {
     Source,
     Binary,
@@ -38,7 +39,7 @@ impl fmt::Display for PackageType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub(crate) enum Dependency {
     Simple(String),
     Pinned {
@@ -65,13 +66,13 @@ impl Dependency {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 enum OsType {
     Windows,
     Unix,
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,
@@ -251,12 +252,10 @@ mod tests {
 
         assert_eq!(
             res,
-            vec![
-                Dependency::Pinned {
-                    name: "R".to_string(),
-                    requirement: VersionRequirement::from_str("(>= 2.1.5)").unwrap()
-                },
-            ]
+            vec![Dependency::Pinned {
+                name: "R".to_string(),
+                requirement: VersionRequirement::from_str("(>= 2.1.5)").unwrap()
+            },]
         );
     }
 
