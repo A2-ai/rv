@@ -7,8 +7,8 @@ use rv::{
     cli::http,
     cli::DiskCache,
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    get_binary_path, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
-    Resolver, SystemInfo,
+    get_binary_path, untar_package, Cache, CacheEntry, Config, RCommandLine, Repository,
+    RepositoryDatabase, Resolver, SystemInfo,
 };
 
 #[derive(Parser)]
@@ -34,6 +34,14 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Install a package
+    Install {
+        /// Path to the .tar.gz archive
+        archive_path: PathBuf,
+
+        /// Destination directory where the archive will be extracted
+        destination: PathBuf,
+    },
 }
 
 fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<RepositoryDatabase> {
@@ -46,7 +54,10 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<Reposit
             match entry {
                 CacheEntry::Existing(p) => {
                     // load the archive
+                    println!("Loading db at {p:?}");
+                    let start_time = std::time::Instant::now();
                     let db = RepositoryDatabase::load(&p);
+                    println!("Loading db took: {:?}", start_time.elapsed());
                     db
                 }
                 CacheEntry::NotFound(p) => {
@@ -98,17 +109,33 @@ fn try_main() {
     // let config = Config::from_file(&cli.config_file);
 
     match cli.command {
+        Command::Install {
+            archive_path,
+            destination,
+        } => {
+            let start_time = std::time::Instant::now();
+            if let Err(e) = untar_package(&archive_path, &destination) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            println!("Package installed in {:?}", start_time.elapsed());
+        }
         Command::Init => todo!("implement init"),
         Command::Plan => {
+            let total_start_time = std::time::Instant::now();
+            let mut start_time = std::time::Instant::now();
             let config = Config::from_file(&cli.config_file);
             let r_cli = RCommandLine {};
             let r_version = config.get_r_version(r_cli);
             let cache = DiskCache::new(&r_version, SystemInfo::from_os_info());
+            start_time = std::time::Instant::now();
             let databases = load_databases(config.repositories(), &cache);
-
+            println!("Loading databases took: {:?}", start_time.elapsed());
+            start_time = std::time::Instant::now();
             let resolver = Resolver::new(&databases, &r_version);
             let (resolved, unresolved) = resolver.resolve(config.dependencies());
-
+            println!("Resolving took: {:?}", start_time.elapsed());
+            start_time = std::time::Instant::now();
             // TODO: later differentiate packages that need to be downloaded from packages
             // already cached
             if unresolved.is_empty() {
@@ -122,6 +149,7 @@ fn try_main() {
                     println!("    {d}");
                 }
             }
+            println!("Plan took: {:?}", total_start_time.elapsed());
         }
         Command::Sync => todo!("implement sync"),
     }
