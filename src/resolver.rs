@@ -69,14 +69,15 @@ impl<'a> fmt::Display for UnresolvedDependency<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct Resolver<'d> {
-    // The repositories are stored in the order defined in the config
-    // The last should get priority over previous repositories
-    repositories: &'d [RepositoryDatabase],
+    /// The repositories are stored in the order defined in the config
+    /// The last should get priority over previous repositories
+    /// If the bool is `true`, this means this repository should only look at sources
+    repositories: &'d [(RepositoryDatabase, bool)],
     r_version: &'d Version,
 }
 
 impl<'d> Resolver<'d> {
-    pub fn new(repositories: &'d [RepositoryDatabase], r_version: &'d Version) -> Self {
+    pub fn new(repositories: &'d [(RepositoryDatabase, bool)], r_version: &'d Version) -> Self {
         Self {
             repositories,
             r_version,
@@ -112,7 +113,7 @@ impl<'d> Resolver<'d> {
             repository,
             version_requirement,
             install_suggestions,
-            force_source,
+            pkg_force_source,
             parent,
         )) = queue.pop_front()
         {
@@ -122,16 +123,19 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            for repo in self.repositories {
+            for (repo, repo_source_only) in self.repositories {
                 if let Some(r) = repository {
                     if repo.name != r {
                         continue;
                     }
                 }
 
-                if let Some((package, package_type)) =
-                    repo.find_package(name, version_requirement, self.r_version, force_source)
-                {
+                if let Some((package, package_type)) = repo.find_package(
+                    name,
+                    version_requirement,
+                    self.r_version,
+                    pkg_force_source || *repo_source_only,
+                ) {
                     found.insert(name);
                     let all_dependencies = package.dependencies_to_install(install_suggestions);
                     resolved.push(ResolvedDependency {
@@ -210,7 +214,7 @@ mod tests {
                     std::fs::read_to_string(format!("src/tests/package_files/{bin}")).unwrap();
                 repository.parse_binary(&content, r_version.major_minor());
             }
-            repositories.push(repository);
+            repositories.push((repository, false));
         }
 
         for path in paths {

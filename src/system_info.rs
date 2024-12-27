@@ -64,6 +64,10 @@ impl SystemInfo {
             Type::Debian => OsType::Linux("debian"),
             Type::Pop => OsType::Linux("pop"),
             Type::CentOS => OsType::Linux("centos"),
+            Type::openSUSE => OsType::Linux("opensuse"),
+            Type::Redhat => OsType::Linux("redhat"),
+            Type::RockyLinux => OsType::Linux("rocky"),
+            Type::SUSE => OsType::Linux("suse"),
             Type::Macos => OsType::MacOs,
             _ => OsType::Other(info.os_type()),
         };

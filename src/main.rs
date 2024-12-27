@@ -36,7 +36,10 @@ pub enum Command {
     Sync,
 }
 
-fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<RepositoryDatabase> {
+fn load_databases(
+    repositories: &[Repository],
+    cache: &DiskCache,
+) -> Vec<(RepositoryDatabase, bool)> {
     let dbs = repositories
         .par_iter()
         .map(|r| {
@@ -47,7 +50,7 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<Reposit
                 CacheEntry::Existing(p) => {
                     // load the archive
                     let db = RepositoryDatabase::load(&p);
-                    db
+                    (db, r.force_source)
                 }
                 CacheEntry::NotFound(p) => {
                     let mut db = RepositoryDatabase::new(&r.alias);
@@ -62,7 +65,6 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<Reposit
                     // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
-                    // TODO later
                     let mut binary_package = Vec::new();
                     let binary_path = get_binary_path(&cache.r_version, &cache.system_info);
                     // TODO: check if the downloads 404
@@ -80,7 +82,7 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache) -> Vec<Reposit
 
                     db.persist(&p);
                     println!("Saving db at {p:?}");
-                    db
+                    (db, r.force_source)
                 }
             }
             // 3. Fetch the PACKAGE files if needed and build the database + persist to disk

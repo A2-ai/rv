@@ -37,6 +37,8 @@ struct Author {
 pub struct Repository {
     pub alias: String,
     url: String,
+    #[serde(default)]
+    pub force_source: bool,
 }
 
 impl Repository {
