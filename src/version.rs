@@ -142,8 +142,13 @@ impl FromStr for VersionRequirement {
             }
             if c == ' ' {
                 // we should have the op in current
-                op = Some(Operator::from_str(&current).expect("TODO"));
-                current = String::new();
+                // however formatting across lines can sometimes cause multiple whitespaces
+                // after the op like "(>=   1.2.0)"
+                // so if we hit more whitespace after setting the op we can just continue
+                if op.is_none() {
+                    op = Some(Operator::from_str(&current).expect("TODO"));
+                    current = String::new();
+                }
                 continue;
             }
             if c == ')' {
@@ -175,6 +180,7 @@ mod tests {
         let inputs = vec![
             "(> 1.0.0)",
             "(>= 1.0)",
+            "(>=    1.0)", // extra whitespace
             "(== 1.7-7-1)",
             "(<= 2023.8.2.1)",
             "(< 1.0-10)",
