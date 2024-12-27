@@ -1,9 +1,13 @@
 use std::collections::HashMap;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 use crate::package::{parse_package_file, Package, PackageType};
 use crate::version::{Version, VersionRequirement};
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {
     pub(crate) name: String,
     source_packages: HashMap<String, Vec<Package>>,
@@ -22,14 +26,24 @@ impl RepositoryDatabase {
         }
     }
 
+    pub fn load<P: AsRef<Path>>(path: P) -> Self {
+        let reader = BufReader::new(std::fs::File::open(path.as_ref()).expect("TODO"));
+        bincode::deserialize_from(reader).unwrap()
+    }
+
+    pub fn persist<P: AsRef<Path>>(&self, path: P) {
+        let file = std::fs::File::create(path.as_ref()).expect("TODO");
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self).expect("failed to serialize");
+    }
+
     pub fn parse_source(&mut self, content: &str) {
         self.source_packages = parse_package_file(content);
     }
 
-    pub fn parse_binary(&mut self, content: &str, r_version: &Version) {
+    pub fn parse_binary(&mut self, content: &str, r_version: [u32; 2]) {
         let packages = parse_package_file(content);
-        self.binary_packages
-            .insert(r_version.major_minor(), packages);
+        self.binary_packages.insert(r_version, packages);
     }
 
     // We always prefer binary unless `force_source` is set to true
@@ -88,9 +102,6 @@ impl RepositoryDatabase {
             }
         }
 
-        if name == "zyp" {
-            println!("looking for the source");
-        }
         find_package(&self.source_packages).map(|p| (p, PackageType::Source))
     }
 }

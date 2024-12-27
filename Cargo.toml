@@ -8,11 +8,18 @@ toml = "0.8"
 serde = {version = "1", features = ["derive"]}
 reqwest = {version = "0.11", features = ["blocking"]}
 regex = "1"
+base64 = "0.22"
+cachedir = "0.3"
+fs-err = "3"
+etcetera = "0.8.0"
+os_info = "3.9.1"
 
 clap = {version = "4" , features = ["derive"], optional = true}
+rayon = {version = "1" , optional = true}
+bincode = "1"
 
 [features]
-cli = ["dep:clap"]
+cli = ["dep:clap", "dep:rayon"]
 
 [dev-dependencies]
 insta = "1"
