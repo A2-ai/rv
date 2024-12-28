@@ -1,7 +1,8 @@
 [project]
 name = "simple"
 repositories = [
-    { alias = "RSPM", url = "https://packagemanager.posit.co/cran/2024-12-16/" },
+    #{ alias = "a2-ai", url = "https://a2-ai.github.io/rv-test-snapshot/2024-12-22/" },
+    { alias = "a2-ai", url = "http://localhost:3000/repos/2024-12-22" },
 ]
 dependencies = [
     "dplyr",

@@ -2,3 +2,4 @@
 .idea
 out
 src/tests/RCMD/
+.DS_Store
