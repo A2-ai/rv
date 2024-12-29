@@ -162,13 +162,15 @@ fn try_main() {
             let total_start_time = std::time::Instant::now();
             let config = Config::from_file(&cli.config_file);
             let r_cli = RCommandLine {};
-
+            let no_user_override = r_version.is_none() && distribution.is_none();
             // Determine the R version
+            let mut start_time = std::time::Instant::now();
             let r_version = match r_version {
                 Some(ver_str) => Version::from_str(&ver_str).expect("Invalid R version format"),
                 None => config.get_r_version(r_cli),
             };
-
+            println!("time to get r version: {:?}", start_time.elapsed());
+            start_time = std::time::Instant::now();
             // Determine the distribution and set up SystemInfo
             let sysinfo = match distribution {
                 Some(Distribution::Mac) => SystemInfo::new(
@@ -200,14 +202,14 @@ fn try_main() {
                 }
                 None => SystemInfo::from_os_info(), // Fallback to system detection
             };
-
+            println!("time to get sysinfo: {:?}", start_time.elapsed());
+            start_time = std::time::Instant::now();
             let cache = DiskCache::new(&r_version, sysinfo.clone());
-            let start_time = std::time::Instant::now();
             let databases = load_databases(
                 config.repositories(),
                 &cache,
                 &r_version,
-                false,
+                no_user_override, // only persist if no override
             );
             println!("Loading databases took: {:?}", start_time.elapsed());
 
