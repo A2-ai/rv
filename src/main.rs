@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use rayon::prelude::*;
 
@@ -31,7 +31,15 @@ pub enum Command {
     /// Creates a new rv project
     Init,
     /// Dry run of what sync would do
-    Plan,
+    Plan {
+        /// Specify the R version (e.g., 4.3, 4.4.1)
+        #[clap(long, value_parser)]
+        r_version: Option<String>,
+        
+        /// Specify the system distribution (e.g., jammy, mac)
+        #[clap(long, value_enum)]
+        distribution: Option<Distribution>,
+    },
     /// Replaces the library with exactly what is in the lock file
     Sync,
     /// Install a package
@@ -43,7 +51,9 @@ pub enum Command {
         destination: PathBuf,
     },
 }
+use clap::ValueEnum;
 
+#[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
 pub enum Distribution {
     Mac,
     Windows,
@@ -51,8 +61,7 @@ pub enum Distribution {
     Jammy,
     Noble,
 }
-
-fn load_databases(repositories: &[Repository], cache: &DiskCache, r_version: &Version, distribution: Distribution, persist: bool) -> Vec<RepositoryDatabase> {
+fn load_databases(repositories: &[Repository], cache: &DiskCache, r_version: &Version, persist: bool) -> Vec<RepositoryDatabase> {
     let dbs = repositories
         .par_iter()
         .map(|r| {
@@ -149,25 +158,63 @@ fn try_main() {
             println!("Package installed in {:?}", start_time.elapsed());
         }
         Command::Init => todo!("implement init"),
-        Command::Plan => {
+        Command::Plan { r_version, distribution } => {
             let total_start_time = std::time::Instant::now();
-            let mut start_time = std::time::Instant::now();
             let config = Config::from_file(&cli.config_file);
             let r_cli = RCommandLine {};
-            let r_version = config.get_r_version(r_cli);
-            let sysinfo = SystemInfo::new(rv::OsType::Linux("ubuntu"), Some("x86_64".into()), Some("jammy".into()), "22.04");
-            //let cache = DiskCache::new(&r_version, SystemInfo::from_os_info());
-            let cache = DiskCache::new(&r_version, sysinfo);
-            start_time = std::time::Instant::now();
-            let databases = load_databases(config.repositories(), &cache, &r_version, Distribution::Jammy, false);
+
+            // Determine the R version
+            let r_version = match r_version {
+                Some(ver_str) => Version::from_str(&ver_str).expect("Invalid R version format"),
+                None => config.get_r_version(r_cli),
+            };
+
+            // Determine the distribution and set up SystemInfo
+            let sysinfo = match distribution {
+                Some(Distribution::Mac) => SystemInfo::new(
+                    rv::OsType::MacOs,
+                    Some("aarch64".into()),
+                    None,
+                    "12.0",
+                ),
+                Some(Distribution::Windows) => SystemInfo::new(
+                    rv::OsType::Windows,
+                    Some("x86_64".into()),
+                    None,
+                    "12.0",
+                ),
+                Some(dist) => {
+                    // Handle Linux distributions
+                    let (os_type, codename, release) = match dist {
+                        Distribution::Focal => ("ubuntu", "focal", "20.04"),
+                        Distribution::Jammy => ("ubuntu", "jammy", "22.04"),
+                        Distribution::Noble => ("ubuntu", "noble", "24.04"),
+                        _ => unreachable!(), // Already handled Mac and Windows
+                    };
+                    SystemInfo::new(
+                        rv::OsType::Linux(os_type),
+                        Some("x86_64".into()),
+                        Some(codename.to_string()),
+                        release,
+                    )
+                }
+                None => SystemInfo::from_os_info(), // Fallback to system detection
+            };
+
+            let cache = DiskCache::new(&r_version, sysinfo.clone());
+            let start_time = std::time::Instant::now();
+            let databases = load_databases(
+                config.repositories(),
+                &cache,
+                &r_version,
+                false,
+            );
             println!("Loading databases took: {:?}", start_time.elapsed());
-            start_time = std::time::Instant::now();
+
             let resolver = Resolver::new(&databases, &r_version);
             let (resolved, unresolved) = resolver.resolve(config.dependencies());
             println!("Resolving took: {:?}", start_time.elapsed());
-            start_time = std::time::Instant::now();
-            // TODO: later differentiate packages that need to be downloaded from packages
-            // already cached
+
             if unresolved.is_empty() {
                 println!("Plan successful! The following packages will be installed:");
                 for d in resolved {
@@ -180,7 +227,7 @@ fn try_main() {
                 }
             }
             println!("Plan took: {:?}", total_start_time.elapsed());
-        }
+        }, 
         Command::Sync => todo!("implement sync"),
     }
 }
