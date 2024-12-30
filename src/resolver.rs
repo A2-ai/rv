@@ -6,14 +6,14 @@ use crate::package::PackageType;
 use crate::repository::RepositoryDatabase;
 use crate::version::{Version, VersionRequirement};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct ResolvedDependency<'d> {
-    name: &'d str,
-    version: &'d str,
-    repository: &'d str,
-    dependencies: Vec<&'d str>,
-    needs_compilation: bool,
-    kind: PackageType,
+    pub(crate) name: &'d str,
+    pub(crate) version: &'d str,
+    pub(crate) repository: &'d str,
+    pub(crate) dependencies: Vec<&'d str>,
+    pub(crate) needs_compilation: bool,
+    pub(crate) kind: PackageType,
 }
 
 impl<'a> fmt::Display for ResolvedDependency<'a> {
