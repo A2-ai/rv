@@ -9,6 +9,7 @@ use rv::{
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
     get_binary_path, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
     Resolver, SystemInfo,
+    Version
 };
 
 #[derive(Parser)]
@@ -66,7 +67,7 @@ fn load_databases(
     cache: &DiskCache,
     r_version: &Version,
     persist: bool,
-) -> Vec<RepositoryDatabase> {
+) -> Vec<(RepositoryDatabase, bool)> {
     let dbs = repositories
         .par_iter()
         .map(|r| {
@@ -80,7 +81,7 @@ fn load_databases(
                     let start_time = std::time::Instant::now();
                     let db = RepositoryDatabase::load(&p);
                     println!("Loading db from cache took: {:?}", start_time.elapsed());
-                    db
+                    (db, r.force_source)
                 }
                 CacheEntry::NotFound(p) => {
                     let mut db = RepositoryDatabase::new(&r.alias);
@@ -146,62 +147,6 @@ fn load_databases(
                     }
                     println!("Persisting db took: {:?}", start_time.elapsed());
                     println!("Saving db at {p:?}");
-                    db
-                }
-            }
-            // 3. Fetch the PACKAGE files if needed and build the database + persist to disk
-        })
-        .collect::<Vec<_>>();
-
-    dbs
-}
-
-fn load_databases(
-    repositories: &[Repository],
-    cache: &DiskCache,
-) -> Vec<(RepositoryDatabase, bool)> {
-    let dbs = repositories
-        .par_iter()
-        .map(|r| {
-            // 1. Generate path to add to URL to get the src PACKAGE and binary PACKAGE for current OS
-            let entry = cache.get_package_db_entry(&r.url());
-            // 2. Check in cache whether we have the database and is not expired
-            match entry {
-                CacheEntry::Existing(p) => {
-                    // load the archive
-                    let db = RepositoryDatabase::load(&p);
-                    (db, r.force_source)
-                }
-                CacheEntry::NotFound(p) => {
-                    let mut db = RepositoryDatabase::new(&r.alias);
-                    // download files, parse them and persist to disk
-                    let mut source_package = Vec::new();
-                    http::download(
-                        &format!("{}{SOURCE_PACKAGES_PATH}", r.url()),
-                        &mut source_package,
-                        None,
-                    )
-                    .expect("TODO");
-                    // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                    db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
-
-                    let mut binary_package = Vec::new();
-                    let binary_path = get_binary_path(&cache.r_version, &cache.system_info, cache.system_info.codename());
-                    // TODO: check if the downloads 404
-                    http::download(
-                        &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
-                        &mut binary_package,
-                        None,
-                    )
-                    .expect("TODO");
-                    // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                    db.parse_binary(
-                        unsafe { std::str::from_utf8_unchecked(&source_package) },
-                        cache.r_version.clone(),
-                    );
-
-                    db.persist(&p);
-                    println!("Saving db at {p:?}");
                     (db, r.force_source)
                 }
             }
@@ -263,6 +208,8 @@ fn try_main() {
                 }
             }
             dbg!(&resolved);
+            // let mut plan = BuildPlan::new(&resolved);
+            // plan.get();
             println!("Plan took: {:?}", total_start_time.elapsed());
         }
         Command::Init => todo!("implement init"),
