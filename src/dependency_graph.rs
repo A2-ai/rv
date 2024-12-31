@@ -50,17 +50,17 @@ fn topological_sort<'a>(deps: &'a [ResolvedDependency<'a>]) -> Vec<&'a str> {
 }
 
 #[derive(Debug, PartialEq)]
-enum BuildStep<'a> {
+pub enum BuildStep<'a> {
     Install(&'a ResolvedDependency<'a>),
     Wait,
     Done,
 }
 
 #[derive(Debug)]
-struct BuildPlan<'a> {
+pub struct BuildPlan<'a> {
     deps: &'a [ResolvedDependency<'a>],
     sorted: Vec<&'a str>,
-    installed: HashSet<&'a str>,
+    installed: HashSet<String>,
     installing: HashSet<&'a str>,
     /// Full list of dependencies for each dependencies.
     /// The value will be updated as packages are installed to remove them from that list
@@ -98,8 +98,8 @@ impl<'a> BuildPlan<'a> {
         }
     }
 
-    pub fn mark_installed(&mut self, name: &'a str) {
-        self.installed.insert(name);
+    pub fn mark_installed(&mut self, name: &str) {
+        self.installed.insert(name.to_string());
         self.installing.remove(name);
 
         for (_, deps) in self.full_deps.iter_mut() {
@@ -135,11 +135,6 @@ impl<'a> BuildPlan<'a> {
         }
 
         BuildStep::Wait
-    }
-
-    /// Same as get but you get up to `n` dependencies to install
-    pub fn get_n(&mut self, n: usize) -> Vec<BuildStep> {
-
     }
 }
 

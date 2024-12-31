@@ -8,7 +8,7 @@ use crate::version::{Version, VersionRequirement};
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct ResolvedDependency<'d> {
-    pub(crate) name: &'d str,
+    pub name: &'d str,
     pub(crate) version: &'d str,
     pub(crate) repository: &'d str,
     pub(crate) dependencies: Vec<&'d str>,

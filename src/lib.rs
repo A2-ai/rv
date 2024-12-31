@@ -11,7 +11,6 @@ mod resolver;
 mod system_info;
 mod version;
 
-#[cfg(feature = "cli")]
 pub mod cli;
 pub mod install;
 pub mod consts;
@@ -25,3 +24,4 @@ pub use repository::RepositoryDatabase;
 pub use resolver::{ResolvedDependency, Resolver};
 pub use system_info::{OsType, SystemInfo};
 pub use version::Version;
+pub use dependency_graph::{BuildPlan, BuildStep};

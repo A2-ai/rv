@@ -14,15 +14,14 @@ fs-err = "3"
 etcetera = "0.8.0"
 os_info = "3.9.1"
 
-clap = {version = "4" , features = ["derive"], optional = true}
-rayon = {version = "1" , optional = true}
+clap = { version = "4", features = ["derive"]}
+rayon = { version = "1" }
 bincode = "1"
 flate2 = "1.0.35"
 tar = "0.4.43"
 shellexpand = "3.1.0"
-
-[features]
-cli = ["dep:clap", "dep:rayon"]
+crossbeam-channel = "0.5.14"
+rand = "0.8.5"
 
 [dev-dependencies]
 insta = "1"
@@ -30,4 +29,3 @@ mockito = "1.0"
 
 [[bin]]
 name = "rv"
-required-features = ["cli"]

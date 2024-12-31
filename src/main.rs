@@ -1,17 +1,17 @@
 use clap::{Parser, Subcommand};
-use std::{path::PathBuf, str::FromStr};
-
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use rayon::prelude::*;
-
+use std::{path::PathBuf, str::FromStr};
+use std::thread;
+use std::time::Duration;
 use rv::{
     cli::http,
     cli::DiskCache,
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    get_binary_path, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
-    Resolver, SystemInfo,
-    Version
+    get_binary_path, BuildPlan, BuildStep, Cache, CacheEntry, Config, RCommandLine, Repository,
+    RepositoryDatabase, Resolver, SystemInfo, Version,
 };
-
+use rand::Rng;
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
@@ -157,6 +157,35 @@ fn load_databases(
     dbs
 }
 
+// Mock result returned by install_pkg
+#[derive(Debug)]
+pub struct InstallResult {
+    pub name: String,
+    pub status: InstallStatus,
+}
+
+#[derive(Debug)]
+pub enum InstallStatus {
+    Success,
+    Error(String),
+}
+
+// Mock implementation of the install_pkg function
+pub fn install_pkg(pkg: &str, destination: &str) -> InstallResult {
+    // Simulate installation logic
+    // simulate a random sleep between 0 and 2 seconds
+    let mut rng = rand::thread_rng();
+    // Generate a random number between 50 and 1000 (inclusive)
+    let sleep_duration_ms = rng.gen_range(50..=1000);
+    // Create a Duration from the random number of milliseconds
+    let sleep_duration = Duration::from_millis(sleep_duration_ms);
+    std::thread::sleep(sleep_duration);
+    InstallResult {
+        name: pkg.to_string(),
+        status: InstallStatus::Success,
+    }
+}
+
 fn try_main() {
     let cli = Cli::parse();
 
@@ -207,10 +236,94 @@ fn try_main() {
                     println!("    {d}");
                 }
             }
-            dbg!(&resolved);
-            // let mut plan = BuildPlan::new(&resolved);
-            // plan.get();
-            println!("Plan took: {:?}", total_start_time.elapsed());
+            // Create channels for distributing URLs and collecting results
+            let (install_sender, install_receiver): (Sender<String>, Receiver<String>) =
+                unbounded();
+            let (result_sender, result_receiver): (Sender<InstallResult>, Receiver<InstallResult>) =
+                unbounded();
+            let mut handles = Vec::new();
+            let max_threads = 4;
+            for i in 0..max_threads {
+                let thread_install_receiver = install_receiver.clone();
+                let thread_result_sender = result_sender.clone();
+                let handle = thread::spawn(move || {
+                    println!("Thread {}: Starting", i);
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    for pkg in thread_install_receiver.iter() {
+                        println!("Thread {}: Starting install: {}", i, pkg);
+                        let res = install_pkg(&pkg, "some dest");
+                        println!("Thread {}: finished install: {}", i, pkg);
+                        thread_result_sender.send(res).expect("Failed to send result");
+                    }
+                });
+
+                handles.push(handle);
+            }
+
+            // Drop the extra senders in the main thread
+            drop(result_sender);
+
+            let mut plan = BuildPlan::new(&resolved);
+            loop {
+                match plan.get() {
+                    BuildStep::Install(p) => {
+                        // install the package
+                        // untar_package(&archive_path, &destination).expect("Failed to install package");
+                        println!(
+                            "sending instruction for install {:?} to {:?}",
+                            &p, &destination
+                        );
+                        install_sender
+                            .send(p.name.to_string())
+                            .expect("Failed to send install instruction");
+                    }
+                    BuildStep::Done => {
+                        // wait for the package to be installed
+                        println!("nothing to do, all done");
+                        break;
+                    }
+                    BuildStep::Wait => {
+                        // wait for the package to be installed
+                        println!("waiting... though shouldn't need to get here ever?");
+                        break;
+                    }
+                }
+            }
+
+            for result in result_receiver.iter() {
+                match result.status {
+                    InstallStatus::Success => {
+                        plan.mark_installed(&result.name);
+                        loop {
+                            match plan.get() {
+                                BuildStep::Install(p) => {
+                                    // install the package
+                                    // untar_package(&archive_path, &destination).expect("Failed to install package");
+                                    println!(
+                                        "sending instruction for install {:?} to {:?}",
+                                        &p, &destination
+                                    );
+                                    install_sender
+                                        .send(p.name.to_string())
+                                        .expect("Failed to send install instruction");
+                                }
+                                BuildStep::Done => {
+                                    // no more packages to install!
+                                    break;
+                                }
+                                BuildStep::Wait => {
+                                    // wait for the package to be installed
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    InstallStatus::Error(e) => {
+                        eprintln!("Failed to install {}: {}", result.name, e);
+                    }
+                }
+            }
+            println!("should be done!");
         }
         Command::Init => todo!("implement init"),
         Command::Plan {
