@@ -37,6 +37,11 @@ struct Author {
 pub struct Repository {
     pub alias: String,
     url: String,
+<<<<<<< HEAD
+=======
+    #[serde(default)]
+    pub force_source: bool,
+>>>>>>> efece0eed19ecaf1d518883e90a434f3b6182a6d
 }
 
 impl Repository {
