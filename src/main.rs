@@ -280,7 +280,6 @@ fn try_main() {
                     BuildStep::Done => {
                         // wait for the package to be installed
                         println!("nothing to do, all done");
-                        break;
                     }
                     BuildStep::Wait => {
                         // wait for the package to be installed
@@ -290,7 +289,7 @@ fn try_main() {
                 }
             }
 
-            for result in result_receiver.iter() {
+            'outer: for result in result_receiver.iter() {
                 match result.status {
                     InstallStatus::Success => {
                         plan.mark_installed(&result.name);
@@ -309,7 +308,7 @@ fn try_main() {
                                 }
                                 BuildStep::Done => {
                                     // no more packages to install!
-                                    break;
+                                    break 'outer;
                                 }
                                 BuildStep::Wait => {
                                     // wait for the package to be installed
