@@ -17,12 +17,9 @@ os_info = "3.9.1"
 clap = {version = "4" , features = ["derive"], optional = true}
 rayon = {version = "1" , optional = true}
 bincode = "1"
-<<<<<<< HEAD
 flate2 = "1.0.35"
 tar = "0.4.43"
 shellexpand = "3.1.0"
-=======
->>>>>>> efece0eed19ecaf1d518883e90a434f3b6182a6d
 
 [features]
 cli = ["dep:clap", "dep:rayon"]

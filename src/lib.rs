@@ -2,11 +2,7 @@ extern crate core;
 
 mod cache;
 mod config;
-<<<<<<< HEAD
-mod install;
-=======
 mod dependency_graph;
->>>>>>> efece0eed19ecaf1d518883e90a434f3b6182a6d
 mod package;
 mod r_cmd;
 mod repo_path;
@@ -17,7 +13,7 @@ mod version;
 
 #[cfg(feature = "cli")]
 pub mod cli;
-
+pub mod install;
 pub mod consts;
 
 pub use cache::{Cache, CacheEntry};
