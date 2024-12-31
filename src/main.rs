@@ -8,7 +8,7 @@ use rv::{
     cli::DiskCache,
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
     get_binary_path, untar_package, Cache, CacheEntry, Config, RCommandLine, Repository,
-    RepositoryDatabase, Resolver, SystemInfo, Version
+    RepositoryDatabase, Resolver, SystemInfo, Version,
 };
 
 #[derive(Parser)]
@@ -35,7 +35,7 @@ pub enum Command {
         /// Specify the R version (e.g., 4.3, 4.4.1)
         #[clap(long, value_parser)]
         r_version: Option<String>,
-        
+
         /// Specify the system distribution (e.g., jammy, mac)
         #[clap(long, value_enum)]
         distribution: Option<Distribution>,
@@ -61,7 +61,12 @@ pub enum Distribution {
     Jammy,
     Noble,
 }
-fn load_databases(repositories: &[Repository], cache: &DiskCache, r_version: &Version, persist: bool) -> Vec<RepositoryDatabase> {
+fn load_databases(
+    repositories: &[Repository],
+    cache: &DiskCache,
+    r_version: &Version,
+    persist: bool,
+) -> Vec<RepositoryDatabase> {
     let dbs = repositories
         .par_iter()
         .map(|r| {
@@ -88,7 +93,10 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache, r_version: &Ve
                         None,
                     )
                     .expect("TODO");
-                    println!("Downloading source package took: {:?}", start_time.elapsed());
+                    println!(
+                        "Downloading source package took: {:?}",
+                        start_time.elapsed()
+                    );
                     start_time = std::time::Instant::now();
                     // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
@@ -96,8 +104,12 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache, r_version: &Ve
 
                     // TODO later
                     let mut binary_package = Vec::new();
-                    let binary_path = get_binary_path(&cache.r_version, &cache.system_info.os_type, cache.system_info.codename());
-                    let dl_url =  format!("{}{binary_path}{PACKAGE_FILENAME}", r.url());
+                    let binary_path = get_binary_path(
+                        &cache.r_version,
+                        &cache.system_info.os_type,
+                        cache.system_info.codename(),
+                    );
+                    let dl_url = format!("{}{binary_path}{PACKAGE_FILENAME}", r.url());
                     println!("Downloading binary package from {dl_url}");
                     start_time = std::time::Instant::now();
                     // TODO: check if the downloads 404
@@ -106,10 +118,16 @@ fn load_databases(repositories: &[Repository], cache: &DiskCache, r_version: &Ve
                     http::download(
                         &dl_url,
                         &mut binary_package,
-                        Some(("user-agent", format!("R/{}.{}", rvparts[0], rvparts[1]).into())),
+                        Some((
+                            "user-agent",
+                            format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
+                        )),
                     )
                     .expect("TODO");
-                    println!("Downloading binary package took: {:?}", start_time.elapsed());
+                    println!(
+                        "Downloading binary package took: {:?}",
+                        start_time.elapsed()
+                    );
                     // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                     start_time = std::time::Instant::now();
                     db.parse_binary(
@@ -150,15 +168,52 @@ fn try_main() {
             archive_path,
             destination,
         } => {
-            let start_time = std::time::Instant::now();
-            if let Err(e) = untar_package(&archive_path, &destination) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
+            let total_start_time = std::time::Instant::now();
+            let config = Config::from_file(&cli.config_file);
+            let r_cli = RCommandLine {};
+            // only for planning simulation, so for install we can't install other platforms
+            let no_user_override = true;
+            // Determine the R version
+            let mut start_time = std::time::Instant::now();
+            let r_version = config.get_r_version(r_cli);
+            println!("time to get r version: {:?}", start_time.elapsed());
+            start_time = std::time::Instant::now();
+            // Determine the distribution and set up SystemInfo
+            let sysinfo = SystemInfo::from_os_info(); // Fallback to system detection
+            println!("time to get sysinfo: {:?}", start_time.elapsed());
+            start_time = std::time::Instant::now();
+            let cache = DiskCache::new(&r_version, sysinfo.clone());
+            let databases = load_databases(
+                config.repositories(),
+                &cache,
+                &r_version,
+                no_user_override, // only persist if no override
+            );
+            println!("Loading databases took: {:?}", start_time.elapsed());
+
+            let resolver = Resolver::new(&databases, &r_version);
+            let (resolved, unresolved) = resolver.resolve(config.dependencies());
+            println!("Resolving took: {:?}", start_time.elapsed());
+
+            if unresolved.is_empty() {
+                println!("Plan successful! The following packages will be installed:");
+                for d in &resolved {
+                    println!("    {d}");
+                }
+            } else {
+                eprintln!("Failed to find all dependencies");
+                for d in &unresolved {
+                    println!("    {d}");
+                }
             }
-            println!("Package installed in {:?}", start_time.elapsed());
+            dbg!(&resolved);
+            println!("Plan took: {:?}", total_start_time.elapsed());
         }
         Command::Init => todo!("implement init"),
-        Command::Plan { r_version, distribution } => {
+        Command::Plan {
+            r_version,
+            distribution,
+        } => {
             let total_start_time = std::time::Instant::now();
             let config = Config::from_file(&cli.config_file);
             let r_cli = RCommandLine {};
@@ -175,14 +230,19 @@ fn try_main() {
             let sysinfo = match distribution {
                 Some(Distribution::Mac) => SystemInfo::new(
                     rv::OsType::MacOs,
+                    // should allow this to be specified at some point, but for now we only use arm macs
+                    // so will expect that be the core need for now
                     Some("aarch64".into()),
                     None,
+                    // this isn't really used right now
                     "12.0",
                 ),
                 Some(Distribution::Windows) => SystemInfo::new(
                     rv::OsType::Windows,
+                    // no arm windows support yet so no point
                     Some("x86_64".into()),
                     None,
+                    // this isn't really used right now
                     "12.0",
                 ),
                 Some(dist) => {
@@ -195,6 +255,7 @@ fn try_main() {
                     };
                     SystemInfo::new(
                         rv::OsType::Linux(os_type),
+                        // no arm linux support yet so no point
                         Some("x86_64".into()),
                         Some(codename.to_string()),
                         release,
@@ -229,7 +290,7 @@ fn try_main() {
                 }
             }
             println!("Plan took: {:?}", total_start_time.elapsed());
-        }, 
+        }
         Command::Sync => todo!("implement sync"),
     }
 }
