@@ -6,4 +6,6 @@ repositories = [
 ]
 dependencies = [
     "dplyr",
+    "mrgsolve",
+    "slurmtools"
 ]

@@ -94,6 +94,7 @@ fn load_databases(
                         None,
                     )
                     .expect("TODO");
+                    db.source_url = format!("{}{}", r.url(), std::path::Path::new(SOURCE_PACKAGES_PATH).parent().unwrap().to_string_lossy());
                     println!(
                         "Downloading source package took: {:?}",
                         start_time.elapsed()
@@ -102,7 +103,6 @@ fn load_databases(
                     // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
                     println!("Parsing source package took: {:?}", start_time.elapsed());
-
                     // TODO later
                     let mut binary_package = Vec::new();
                     let binary_path = get_binary_path(
@@ -110,11 +110,11 @@ fn load_databases(
                         &cache.system_info.os_type,
                         cache.system_info.codename(),
                     );
-                    let dl_url = format!("{}{binary_path}{PACKAGE_FILENAME}", r.url());
+                    let binary_path = format!("{}{binary_path}", r.url());
+                    let dl_url = format!("{}{PACKAGE_FILENAME}", binary_path);
                     println!("Downloading binary package from {dl_url}");
                     start_time = std::time::Instant::now();
                     // TODO: check if the downloads 404
-
                     let rvparts = r_version.major_minor();
                     http::download(
                         &dl_url,
@@ -125,6 +125,8 @@ fn load_databases(
                         )),
                     )
                     .expect("TODO");
+                // TODO: set binary URL only if successfully able to dl packages to represent binaries should be available
+                    db.binary_url = Some(binary_path);
                     println!(
                         "Downloading binary package took: {:?}",
                         start_time.elapsed()
@@ -219,6 +221,7 @@ fn try_main() {
                 &r_version,
                 no_user_override, // only persist if no override
             );
+            dbg!(config.repositories());
             println!("Loading databases took: {:?}", start_time.elapsed());
 
             let resolver = Resolver::new(&databases, &r_version);
