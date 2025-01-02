@@ -1,17 +1,17 @@
 use clap::{Parser, Subcommand};
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use rayon::prelude::*;
-use std::{path::PathBuf, str::FromStr};
-use std::thread;
-use std::time::Duration;
 use rv::{
     cli::http,
     cli::DiskCache,
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    get_binary_path, BuildPlan, BuildStep, Cache, CacheEntry, Config, RCommandLine, Repository,
-    RepositoryDatabase, Resolver, SystemInfo, Version,
+    dl_and_install_pkg, get_binary_path, BuildPlan, BuildStep, Cache, CacheEntry, Config,
+    RCommandLine, Repository, RepositoryDatabase, Resolver, SystemInfo, Version,
 };
-use rand::Rng;
+use std::time::Duration;
+use std::{path::Path, thread};
+use std::{path::PathBuf, str::FromStr};
+// use rand::Rng;
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
@@ -45,9 +45,6 @@ pub enum Command {
     Sync,
     /// Install a package
     Install {
-        /// Path to the .tar.gz archive
-        archive_path: PathBuf,
-
         /// Destination directory where the archive will be extracted
         destination: PathBuf,
     },
@@ -84,8 +81,10 @@ fn load_databases(
                     (db, r.force_source)
                 }
                 CacheEntry::NotFound(p) => {
+                    // TODO: get the repository db responsibilities refactored to not track binary/source packages
                     let mut db = RepositoryDatabase::new(&r.alias);
                     // download files, parse them and persist to disk
+                    db.url = r.url().to_string();
                     let mut source_package = Vec::new();
                     let mut start_time = std::time::Instant::now();
                     http::download(
@@ -94,7 +93,14 @@ fn load_databases(
                         None,
                     )
                     .expect("TODO");
-                    db.source_url = format!("{}{}", r.url(), std::path::Path::new(SOURCE_PACKAGES_PATH).parent().unwrap().to_string_lossy());
+                    db.source_url = format!(
+                        "{}{}",
+                        r.url(),
+                        std::path::Path::new(SOURCE_PACKAGES_PATH)
+                            .parent()
+                            .unwrap()
+                            .to_string_lossy()
+                    );
                     println!(
                         "Downloading source package took: {:?}",
                         start_time.elapsed()
@@ -125,7 +131,7 @@ fn load_databases(
                         )),
                     )
                     .expect("TODO");
-                // TODO: set binary URL only if successfully able to dl packages to represent binaries should be available
+                    // TODO: set binary URL only if successfully able to dl packages to represent binaries should be available
                     db.binary_url = Some(binary_path);
                     println!(
                         "Downloading binary package took: {:?}",
@@ -167,24 +173,44 @@ pub struct InstallResult {
 }
 
 #[derive(Debug)]
+pub struct InstallMetadata {
+    pub name: String,
+    pub url: String,
+    // the directory where the package should be installed
+    pub install_dir: String,
+    // the destination directory where the package should be available to the user
+    // via a symlink from the install_dir
+    pub dest_dir: String,
+}
+
+#[derive(Debug)]
 pub enum InstallStatus {
     Success,
     Error(String),
 }
 
 // Mock implementation of the install_pkg function
-pub fn install_pkg(pkg: &str, destination: &str) -> InstallResult {
+pub fn install_pkg(pkg: &str, url: &str, install_dir: &str, rvparts: &[u32; 2]) -> InstallResult {
     // Simulate installation logic
     // simulate a random sleep between 0 and 2 seconds
-    let mut rng = rand::thread_rng();
-    // Generate a random number between 50 and 1000 (inclusive)
-    let sleep_duration_ms = rng.gen_range(50..=1000);
-    // Create a Duration from the random number of milliseconds
-    let sleep_duration = Duration::from_millis(sleep_duration_ms);
-    std::thread::sleep(sleep_duration);
-    InstallResult {
-        name: pkg.to_string(),
-        status: InstallStatus::Success,
+    // don't forget to use rand::Rng
+    // let mut rng = rand::thread_rng();
+    // // Generate a random number between 50 and 1000 (inclusive)
+    // let sleep_duration_ms = rng.gen_range(50..=1000);
+    // // Create a Duration from the random number of milliseconds
+    // let sleep_duration = Duration::from_millis(sleep_duration_ms);
+    // std::thread::sleep(sleep_duration);
+
+    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts);
+    match outcome {
+        Ok(_) => InstallResult {
+            name: pkg.to_string(),
+            status: InstallStatus::Success,
+        },
+        Err(e) => InstallResult {
+            name: pkg.to_string(),
+            status: InstallStatus::Error(e.to_string()),
+        },
     }
 }
 
@@ -196,10 +222,7 @@ fn try_main() {
     // let config = Config::from_file(&cli.config_file);
 
     match cli.command {
-        Command::Install {
-            archive_path,
-            destination,
-        } => {
+        Command::Install { destination } => {
             let total_start_time = std::time::Instant::now();
             let config = Config::from_file(&cli.config_file);
             let r_cli = RCommandLine {};
@@ -240,8 +263,10 @@ fn try_main() {
                 }
             }
             // Create channels for distributing URLs and collecting results
-            let (install_sender, install_receiver): (Sender<String>, Receiver<String>) =
-                unbounded();
+            let (install_sender, install_receiver): (
+                Sender<InstallMetadata>,
+                Receiver<InstallMetadata>,
+            ) = unbounded();
             let (result_sender, result_receiver): (Sender<InstallResult>, Receiver<InstallResult>) =
                 unbounded();
             let mut handles = Vec::new();
@@ -249,14 +274,20 @@ fn try_main() {
             for i in 0..max_threads {
                 let thread_install_receiver = install_receiver.clone();
                 let thread_result_sender = result_sender.clone();
+                let r_version = r_version.clone();
                 let handle = thread::spawn(move || {
                     println!("Thread {}: Starting", i);
-                    std::thread::sleep(std::time::Duration::from_secs(1));
                     for pkg in thread_install_receiver.iter() {
-                        println!("Thread {}: Starting install: {}", i, pkg);
-                        let res = install_pkg(&pkg, "some dest");
-                        println!("Thread {}: finished install: {}", i, pkg);
-                        thread_result_sender.send(res).expect("Failed to send result");
+                        println!("Thread {}: Starting install: {}", i, pkg.name);
+                        let res = install_pkg(
+                            &pkg.name,
+                            &pkg.url,
+                            &pkg.install_dir,
+                            &r_version.major_minor(),
+                        );
+                        thread_result_sender
+                            .send(res)
+                            .expect("Failed to send result");
                     }
                 });
 
@@ -276,8 +307,27 @@ fn try_main() {
                             "sending instruction for install {:?} to {:?}",
                             &p, &destination
                         );
+                        let repo = databases
+                            .iter()
+                            .find(|r| r.0.name == p.repository.to_string())
+                            .map(|r| &r.0)
+                            .expect("Failed to find repository for package");
+
                         install_sender
-                            .send(p.name.to_string())
+                            .send(InstallMetadata {
+                                name: p.name.to_string(),
+                                url: format!(
+                                    "{}{}_{}.tgz",
+                                    repo.binary_url.as_ref().unwrap(),
+                                    &p.name,
+                                    &p.version
+                                ),
+                                install_dir: cache
+                                    .get_pkg_installation_root(&repo.url)
+                                    .to_string_lossy()
+                                    .to_string(),
+                                dest_dir: destination.to_string_lossy().to_string(),
+                            })
                             .expect("Failed to send install instruction");
                     }
                     BuildStep::Done => {
@@ -291,10 +341,13 @@ fn try_main() {
                     }
                 }
             }
-
+            println!("initial packages sent to installers in {:?}", total_start_time.elapsed());
+            let iter_start_time = std::time::Instant::now();
             'outer: for result in result_receiver.iter() {
+                println!("Received result for {}", result.name);
                 match result.status {
                     InstallStatus::Success => {
+                        let success_time = std::time::Instant::now();
                         plan.mark_installed(&result.name);
                         loop {
                             match plan.get() {
@@ -305,11 +358,34 @@ fn try_main() {
                                         "sending instruction for install {:?} to {:?}",
                                         &p, &destination
                                     );
+                                    let repo = databases
+                                        .iter()
+                                        .find(|r| r.0.name == p.repository.to_string())
+                                        .map(|r| &r.0)
+                                        .expect("Failed to find repository for package");
+
                                     install_sender
-                                        .send(p.name.to_string())
+                                        .send(InstallMetadata {
+                                            name: p.name.to_string(),
+                                            url: format!(
+                                                "{}{}_{}.tgz",
+                                                repo.binary_url.as_ref().unwrap(),
+                                                &p.name,
+                                                &p.version
+                                            ),
+                                            install_dir: cache
+                                                .get_pkg_installation_root(&repo.url)
+                                                .to_string_lossy()
+                                                .to_string(),
+                                            dest_dir: destination.to_string_lossy().to_string(),
+                                        })
                                         .expect("Failed to send install instruction");
                                 }
                                 BuildStep::Done => {
+                                    println!(
+                                        "Total iteration time took: {:?}",
+                                        iter_start_time.elapsed()
+                                    );
                                     // no more packages to install!
                                     break 'outer;
                                 }
@@ -319,13 +395,17 @@ fn try_main() {
                                 }
                             }
                         }
+                        println!("Next step resolution took: {:?}", success_time.elapsed());
                     }
                     InstallStatus::Error(e) => {
                         eprintln!("Failed to install {}: {}", result.name, e);
                     }
                 }
             }
-            println!("should be done!");
+            println!(
+                "Total installation time took: {:?}",
+                total_start_time.elapsed()
+            );
         }
         Command::Init => todo!("implement init"),
         Command::Plan {

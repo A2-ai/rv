@@ -17,7 +17,7 @@ pub mod consts;
 
 pub use cache::{Cache, CacheEntry};
 pub use config::{Config, DependencyKind, Repository};
-pub use install::untar_package;
+pub use install::{untar_package, dl_and_install_pkg};
 pub use r_cmd::{RCmd, RCommandLine};
 pub use repo_path::get_binary_path;
 pub use repository::RepositoryDatabase;

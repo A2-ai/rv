@@ -2,10 +2,12 @@
 name = "simple"
 repositories = [
     #{ alias = "a2-ai", url = "https://a2-ai.github.io/rv-test-snapshot/2024-12-22/" },
-    { alias = "a2-ai", url = "http://localhost:3000/repos/2024-12-22" },
+    { alias = "CRAN", url = "https://cran.rstudio.org" },
+    #{ alias = "a2-ai", url = "http://localhost:3000/repos/2024-12-22" },
 ]
 dependencies = [
     "dplyr",
-    "mrgsolve",
-    "slurmtools"
+    # "mrgsolve",
+    # "slurmtools"
+    "tidyverse"
 ]

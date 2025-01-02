@@ -78,11 +78,12 @@ impl DiskCache {
             packages_timeout: get_packages_timeout(),
         }
     }
+    pub fn get_pkg_installation_root(&self, repo_url: &str) -> PathBuf {
+        let base_path = self.get_encoded_versioned_path(repo_url);
+        base_path.join("installed")
+    }
 
-    /// A database contains both source and binary PACKAGE data
-    /// Therefore the path to the db file is dependent on the system info and R version
-    /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
-    fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
+    fn get_encoded_versioned_path(&self, repo_url: &str) -> PathBuf {
         let encoded = encode_repository_url(repo_url);
         let mut path = self.root.join(encoded).join(self.system_info.os_family());
         if let Some(codename) = self.system_info.codename() {
@@ -94,9 +95,14 @@ impl DiskCache {
         path = path.join(format!("{}.{}", self.r_version[0], self.r_version[1]));
 
         create_dir_all(&path).expect("todo");
-        path = path.join(PACKAGE_DB_FILENAME);
-
         path
+    }
+    /// A database contains both source and binary PACKAGE data
+    /// Therefore the path to the db file is dependent on the system info and R version
+    /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
+    fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
+        let base_path = self.get_encoded_versioned_path(repo_url);
+        base_path.join(PACKAGE_DB_FILENAME)
     }
 
     // pub fn get_source_tarball_path(&self, repo_url: &str, package_name: &str) -> Option<PathBuf> {

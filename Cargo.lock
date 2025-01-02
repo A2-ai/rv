@@ -1383,7 +1383,9 @@ dependencies = [
  "serde",
  "shellexpand",
  "tar",
+ "tempfile",
  "toml",
+ "url",
 ]
 
 [[package]]

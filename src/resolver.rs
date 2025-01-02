@@ -9,11 +9,11 @@ use crate::version::{Version, VersionRequirement};
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct ResolvedDependency<'d> {
     pub name: &'d str,
-    pub(crate) version: &'d str,
-    pub(crate) repository: &'d str,
+    pub version: &'d str,
+    pub repository: &'d str,
     pub(crate) dependencies: Vec<&'d str>,
     pub(crate) needs_compilation: bool,
-    pub(crate) kind: PackageType,
+    pub kind: PackageType,
 }
 
 impl<'a> fmt::Display for ResolvedDependency<'a> {
