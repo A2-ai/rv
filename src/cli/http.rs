@@ -1,49 +1,28 @@
-use reqwest::{
-    blocking::Client,
-    header::{HeaderMap, HeaderName, HeaderValue},
-};
 use std::{io::Write, time::Duration};
 
-// potentially generalize to use header arg instead of "user_agent" only
-pub fn download<W: Write>(
-    url: &str,
-    writer: &mut W,
-    header: Option<(&str, String)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let response = get_response(url, header).expect("TODO: handle response error");
+use anyhow::{bail, Context, Result};
 
-    if !response.status().is_success() {
-        panic!("TODO: handle url response is not success error")
+/// Downloads a remote content to the given writer.
+/// Returns the number of bytes written to the writer, 0 for a 404 or an empty 200
+pub fn download<W: Write>(url: &str, writer: &mut W, headers: Vec<(&str, String)>) -> Result<u64> {
+    let mut request = ureq::get(url).timeout(Duration::from_secs(20));
+    for (key, val) in headers {
+        request = request.set(key, &val);
     }
-
-    let content = response
-        .bytes()
-        .expect("TODO: url response can't be converted to bytes");
-
-    writer
-        .write_all(&content)
-        .expect("TODO: writer can't accept content");
-
-    Ok(())
-}
-
-fn get_response(
-    url: &str,
-    header: Option<(&str, String)>,
-) -> Result<reqwest::blocking::Response, reqwest::Error> {
-    let mut headers = HeaderMap::new();
-    if let Some((key, val)) = header {
-        let key = HeaderName::try_from(key).expect("TODO: header key coercion");
-        let val = HeaderValue::try_from(val).expect("TODO: header val coercion");
-        headers.insert(key, val);
+    let resp = request
+        .call()
+        .with_context(|| format!("Failed to download file {url}"))?;
+    // in practice an empty 200 and a 404 will be treated the same
+    match resp.status() {
+        200 => std::io::copy(&mut resp.into_reader(), writer)
+            .with_context(|| format!("File at {url} was found but could not be downloaded.")),
+        404 => Ok(0),
+        _ => bail!(
+            "Unexpected HTTP error when downloading file {url} [{}]: {}",
+            resp.status(),
+            resp.into_string()?
+        ),
     }
-    let client = Client::builder()
-        .default_headers(headers)
-        .timeout(Duration::from_secs(20))
-        .build()
-        .expect("TODO: handle client build error");
-
-    client.get(url).send()
 }
 
 mod tests {
@@ -61,7 +40,7 @@ mod tests {
         let url = format!("{mock_url}/file.txt");
         let mut writer = std::io::Cursor::new(Vec::new());
 
-        let result = super::download(&url, &mut writer, None);
+        let result = super::download(&url, &mut writer, Vec::new());
         assert!(result.is_ok());
         mock_endpoint.assert();
         assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
@@ -80,9 +59,9 @@ mod tests {
 
         let url = format!("{mock_url}/file.txt");
         let mut writer = std::io::Cursor::new(Vec::new());
-        let header = Some(("custom-header", "custom-value".to_string()));
+        let headers = vec![("custom-header", "custom-value".to_string())];
 
-        let result = super::download(&url, &mut writer, header);
+        let result = super::download(&url, &mut writer, headers);
         assert!(result.is_ok());
         mock_endpoint.assert();
         assert_eq!(writer.into_inner(), b"Mock file content".to_vec());

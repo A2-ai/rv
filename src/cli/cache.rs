@@ -1,12 +1,14 @@
+use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::time::SystemTime;
+
+use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
+use etcetera::BaseStrategy;
 
 use crate::system_info::SystemInfo;
 use crate::version::Version;
 use crate::{Cache, CacheEntry};
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
-use etcetera::BaseStrategy;
-use fs_err::create_dir_all;
 
 /// How long are the package databases cached for
 /// Same default value as PKGCACHE_TIMEOUT:
@@ -15,8 +17,6 @@ const PACKAGE_TIMEOUT: u64 = 60 * 60;
 const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
 const PACKAGE_DB_FILENAME: &str = "packages.bin";
 
-// TODO: handle cases where we can't get the base strategy
-// Return the error directly?
 fn get_user_cache_dir() -> Option<PathBuf> {
     etcetera::base_strategy::choose_base_strategy()
         .ok()
@@ -29,7 +29,8 @@ fn get_packages_timeout() -> u64 {
         if let Ok(v2) = v.parse() {
             v2
         } else {
-            todo!("Handle error")
+            // If the variable doesn't parse into a valid number, return the default one
+            PACKAGE_TIMEOUT
         }
     } else {
         PACKAGE_TIMEOUT
@@ -62,21 +63,22 @@ pub struct DiskCache {
 }
 
 impl DiskCache {
-    // TODO: maybe allow users to pass a cache folder path?
     /// Instantiate our cache abstraction.
-    pub fn new(r_version: &Version, system_info: SystemInfo) -> Self {
-        let root = get_user_cache_dir().unwrap();
+    pub fn new(r_version: &Version, system_info: SystemInfo) -> Result<Self> {
+        let root =
+            get_user_cache_dir().ok_or_else(|| anyhow!("Could not get user cache directory"))?;
         if !root.exists() {
-            create_dir_all(&root).expect("HANDLE ERROR");
+            create_dir_all(&root)
+                .with_context(|| format!("Failed to created cache directory at {root:?}"))?;
         }
-        cachedir::ensure_tag(&root).expect("TODO");
+        cachedir::ensure_tag(&root).context("Failed to create CACHEDIR.TAG")?;
 
-        Self {
+        Ok(Self {
             root,
             system_info,
             r_version: r_version.major_minor(),
             packages_timeout: get_packages_timeout(),
-        }
+        })
     }
 
     /// A database contains both source and binary PACKAGE data
@@ -92,8 +94,6 @@ impl DiskCache {
             path = path.join(arch);
         }
         path = path.join(format!("{}.{}", self.r_version[0], self.r_version[1]));
-
-        create_dir_all(&path).expect("todo");
         path = path.join(PACKAGE_DB_FILENAME);
 
         path
@@ -118,11 +118,14 @@ impl Cache for DiskCache {
                 .created()
                 .expect("to have a creation time");
             let now = SystemTime::now();
-            if now.duration_since(created).unwrap().as_secs() > self.packages_timeout {
-                fs_err::remove_file(&path).unwrap();
+
+            return if now.duration_since(created).unwrap_or_default().as_secs()
+                > self.packages_timeout
+            {
+                CacheEntry::Expired(path)
             } else {
-                return CacheEntry::Existing(path);
-            }
+                CacheEntry::Existing(path)
+            };
         }
 
         CacheEntry::NotFound(path)
