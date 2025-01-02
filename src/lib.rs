@@ -1,8 +1,8 @@
 extern crate core;
 
+mod build_plan;
 mod cache;
 mod config;
-mod dependency_graph;
 mod package;
 mod r_cmd;
 mod repo_path;

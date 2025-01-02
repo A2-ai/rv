@@ -2,53 +2,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::ResolvedDependency;
 
-/// Returns the topological sort for the given set of dependencies (assuming it's a DAG)
-/// https://en.wikipedia.org/wiki/Topological_sorting
-/// Uses Kahn's algorithm
-fn topological_sort<'a>(deps: &'a [ResolvedDependency<'a>]) -> Vec<&'a str> {
-    // number of unmet dependency for each deps
-    let mut in_degree = HashMap::new();
-    let mut dependents = HashMap::new();
-    let mut sorted = Vec::new();
-
-    // Each time we see a dependency as one of other dependency, we increase its in_degree
-    for dep in deps {
-        *in_degree.entry(dep.name).or_insert(0) += dep.dependencies.len();
-
-        for subdep in &dep.dependencies {
-            dependents
-                .entry(*subdep)
-                .or_insert_with(Vec::new)
-                .push(dep.name);
-        }
-    }
-
-    // Find the first batch that can be installed immediately
-    let mut queue: VecDeque<_> = in_degree
-        .iter()
-        .filter(|(_, count)| **count == 0)
-        .map(|(d, _)| d)
-        .cloned()
-        .collect();
-
-    while let Some(dep_name) = queue.pop_front() {
-        sorted.push(dep_name);
-
-        if let Some(dependents) = dependents.get(dep_name) {
-            for dep in dependents {
-                if let Some(degree) = in_degree.get_mut(dep) {
-                    *degree -= 1;
-                    if *degree == 0 {
-                        queue.push_back(dep);
-                    }
-                }
-            }
-        }
-    }
-
-    sorted
-}
-
 #[derive(Debug, PartialEq)]
 enum BuildStep<'a> {
     Install(&'a ResolvedDependency<'a>),
@@ -59,7 +12,6 @@ enum BuildStep<'a> {
 #[derive(Debug)]
 struct BuildPlan<'a> {
     deps: &'a [ResolvedDependency<'a>],
-    sorted: Vec<&'a str>,
     installed: HashSet<&'a str>,
     installing: HashSet<&'a str>,
     /// Full list of dependencies for each dependencies.
@@ -69,7 +21,6 @@ struct BuildPlan<'a> {
 
 impl<'a> BuildPlan<'a> {
     pub fn new(deps: &'a [ResolvedDependency<'a>]) -> Self {
-        let sorted = topological_sort(deps);
         let by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
         let mut full_deps = HashMap::new();
 
@@ -91,7 +42,6 @@ impl<'a> BuildPlan<'a> {
 
         Self {
             deps,
-            sorted,
             full_deps,
             installed: HashSet::new(),
             installing: HashSet::new(),
@@ -117,29 +67,20 @@ impl<'a> BuildPlan<'a> {
 
     /// get a package to install, an enum {Package, Wait, Done}
     pub fn get(&mut self) -> BuildStep {
-        if self.installed.len() == self.deps.len() {
+        if self.is_done() {
             return BuildStep::Done;
         }
 
-        for dep in &self.sorted {
+        for (dep, _) in self.full_deps.iter().filter(|(_, v)| v.is_empty()) {
             // Skip the ones being installed or already installed
             if self.is_skippable(dep) {
                 continue;
             }
-
-            // Then we check whether all the deps are already installed
-            if self.full_deps[dep].is_empty() {
-                self.installing.insert(dep);
-                return BuildStep::Install(self.deps.iter().find(|d| d.name == *dep).unwrap());
-            }
+            self.installing.insert(dep);
+            return BuildStep::Install(self.deps.iter().find(|d| d.name == *dep).unwrap());
         }
 
         BuildStep::Wait
-    }
-
-    /// Same as get but you get up to `n` dependencies to install
-    pub fn get_n(&mut self, n: usize) -> Vec<BuildStep> {
-
     }
 }
 
@@ -207,6 +148,8 @@ mod tests {
         assert_eq!(plan.get(), BuildStep::Wait);
         // finally mark it as done and we should be done
         plan.mark_installed("J");
+        assert_eq!(plan.get(), BuildStep::Done);
+        // Calling it again doesn't change anything
         assert_eq!(plan.get(), BuildStep::Done);
     }
 }
