@@ -46,7 +46,7 @@ pub enum Command {
 
 fn try_main() {
     let cli = Cli::parse();
-
+    env_logger::init();
     // TODO: parse config file here and fetch R version if needed
     // except for init
     // let config = Config::from_file(&cli.config_file);

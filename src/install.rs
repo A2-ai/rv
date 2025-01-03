@@ -6,7 +6,7 @@ use std::path::Path;
 use tar::Archive;
 use tempfile::tempdir;
 use url::Url;
-
+use log::{trace, debug, info};
 /// Extracts a `.tar.gz` archive to the specified destination directory.
 /// If the destination directory does not exist, it is created.
 ///
@@ -31,7 +31,7 @@ pub fn untar_package<P: AsRef<Path>, D: AsRef<Path>>(
     // Create the destination directory if it doesn't exist
     if !dest.exists() {
         fs::create_dir_all(&dest)?;
-        println!("Created directory: {}", dest.display());
+        debug!("Created directory: {}", dest.display());
     }
 
     // Open the tar.gz file
@@ -42,7 +42,7 @@ pub fn untar_package<P: AsRef<Path>, D: AsRef<Path>>(
     // Extract the archive into the destination directory
     archive.unpack(&dest)?;
 
-    println!(
+    trace!(
         "Successfully extracted '{}' to '{}'",
         archive_path.as_ref().display(),
         dest.display()
@@ -61,11 +61,15 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Parse the URL to extract the filename
     let dest = install_dir.as_ref();
+    // TODO: return results back for whether this was already installed vs
+    // was installed then so can report back to user more clearly
+    // a likely better design will be to separate out determining whats already 
+    // present and only request to install what needs to be installed
     if dest.join(name).exists() {
-        println!("Package '{}' already installed", name);
+        debug!("Package '{}' already installed", name);
         return Ok(());
     }
-    println!("Installing package from {} to {:?}", &url, dest);
+    debug!("Installing package from {} to {:?}", &url, dest);
     let parsed_url = Url::parse(url)?;
     let file_name = parsed_url
         .path_segments()
@@ -86,7 +90,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
             format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
         )),
     )?;
-    println!(
+    debug!(
         "Downloaded '{}' in {:?}",
         file_name,
         start_time.elapsed()
@@ -95,7 +99,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     start_time = std::time::Instant::now();
     let result = untar_package(&temp_path, dest)
         .map(|_| {
-            println!(
+            info!(
                 "Installed '{}' in {:?}",
                 name,
                 start_time.elapsed()
