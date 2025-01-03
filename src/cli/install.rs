@@ -3,7 +3,7 @@ use crate::{
     RCommandLine, Resolver, SystemInfo,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use log::{error, trace, debug, info}; // <-- using the log crate macros
+use log::{debug, error, info, trace}; // <-- using the log crate macros
 use std::path::PathBuf;
 use std::thread;
 
@@ -28,6 +28,7 @@ pub struct InstallMetadata {
 #[derive(Debug)]
 pub enum InstallStatus {
     Success,
+    AlreadyPresent,
     Error(String),
 }
 
@@ -38,13 +39,41 @@ pub struct InstallArgs {
 }
 
 // Mock implementation of the install_pkg function
-pub fn install_pkg(pkg: &str, url: &str, install_dir: &str, rvparts: &[u32; 2]) -> InstallResult {
-    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts);
-    match outcome {
-        Ok(_) => InstallResult {
+pub fn install_pkg(
+    pkg: &str,
+    url: &str,
+    install_dir: &str,
+    dest_dir: &str,
+    rvparts: &[u32; 2],
+) -> InstallResult {
+    // if package already in dest_dir, its already installed
+    let dest_install = PathBuf::from(dest_dir).join(pkg);
+    if dest_install.exists() {
+        return InstallResult {
             name: pkg.to_string(),
-            status: InstallStatus::Success,
-        },
+            status: InstallStatus::AlreadyPresent,
+        };
+    }
+    let installed_dir = PathBuf::from(install_dir).join(pkg);
+    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts);
+    // create symlink to dest_dir
+    match outcome {
+        Ok(_) => {
+            trace!("Creating symlink from {:?} to {:?}", installed_dir, dest_install);
+            let link = std::os::unix::fs::symlink(&installed_dir, dest_install);
+            if link.is_ok() {
+                InstallResult {
+                    name: pkg.to_string(),
+                    status: InstallStatus::Success,
+                }
+            } else {
+                InstallResult {
+                    name: pkg.to_string(),
+                    // TODO: error should specify what the explicit error was and what the linkage was attempting
+                    status: InstallStatus::Error("Failed to create symlink".to_string()),
+                }
+            }
+        }
         Err(e) => InstallResult {
             name: pkg.to_string(),
             status: InstallStatus::Error(e.to_string()),
@@ -52,7 +81,7 @@ pub fn install_pkg(pkg: &str, url: &str, install_dir: &str, rvparts: &[u32; 2]) 
     }
 }
 
-pub fn execute_install(config: &Config, install_args: InstallArgs) {
+pub fn execute_install(config: &Config, destination: &PathBuf) {
     let total_start_time = std::time::Instant::now();
 
     // Parse config
@@ -120,6 +149,7 @@ pub fn execute_install(config: &Config, install_args: InstallArgs) {
                     &pkg.name,
                     &pkg.url,
                     &pkg.install_dir,
+                    &pkg.dest_dir,
                     &r_version.major_minor(),
                 );
                 thread_result_sender
@@ -142,7 +172,7 @@ pub fn execute_install(config: &Config, install_args: InstallArgs) {
                 trace!(
                     "Sending instruction to install {:?} to {:?}",
                     p,
-                    install_args.destination
+                    destination
                 );
                 let repo = databases
                     .iter()
@@ -164,7 +194,7 @@ pub fn execute_install(config: &Config, install_args: InstallArgs) {
                             .get_pkg_installation_root(&repo.url)
                             .to_string_lossy()
                             .to_string(),
-                        dest_dir: install_args.destination.to_string_lossy().to_string(),
+                        dest_dir: destination.to_string_lossy().to_string(),
                     })
                     .expect("Failed to send install instruction");
             }
@@ -184,7 +214,7 @@ pub fn execute_install(config: &Config, install_args: InstallArgs) {
     // Collect results and continue building plan as they come in
     'outer: for result in result_receiver.iter() {
         match result.status {
-            InstallStatus::Success => {
+            InstallStatus::Success | InstallStatus::AlreadyPresent => {
                 plan.mark_installed(&result.name);
                 loop {
                     match plan.get() {
@@ -192,7 +222,7 @@ pub fn execute_install(config: &Config, install_args: InstallArgs) {
                             trace!(
                                 "Sending instruction to install {:?} to {:?}",
                                 p,
-                                install_args.destination
+                                destination
                             );
                             let repo = databases
                                 .iter()
@@ -214,15 +244,17 @@ pub fn execute_install(config: &Config, install_args: InstallArgs) {
                                         .get_pkg_installation_root(&repo.url)
                                         .to_string_lossy()
                                         .to_string(),
-                                    dest_dir: install_args
-                                        .destination
+                                    dest_dir: destination
                                         .to_string_lossy()
                                         .to_string(),
                                 })
                                 .expect("Failed to send install instruction");
                         }
                         BuildStep::Done => {
-                            debug!("done with installation iteration in: {:?}", iter_start_time.elapsed());
+                            debug!(
+                                "done with installation iteration in: {:?}",
+                                iter_start_time.elapsed()
+                            );
                             // no more packages to install
                             break 'outer;
                         }

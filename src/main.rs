@@ -2,7 +2,8 @@ use clap::{Parser, Subcommand};
 use env_logger::Env;
 use rv::{
     cli::install::{execute_install, InstallArgs},
-    execute_plan, Config, Distribution, PlanArgs,
+    cli::plan::{execute_plan, PlanArgs, Distribution},
+    Config, 
 };
 use std::path::PathBuf;
 
@@ -55,7 +56,11 @@ fn try_main() {
     let config = Config::from_file(&cli.config_file);
     match cli.command {
         Command::Install { destination } => {
-            execute_install(&config, InstallArgs { destination });
+            // create the destination if it doesn't exist
+            if !destination.exists() {
+                std::fs::create_dir_all(&destination).expect("Failed to create destination");
+            }
+            execute_install(&config, &destination);
         }
         Command::Init => todo!("implement init"),
         Command::Plan {
