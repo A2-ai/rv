@@ -5,7 +5,7 @@ use crate::{
     Cache, CacheEntry, Repository, RepositoryDatabase, Version,
 };
 use rayon::prelude::*;
-
+use log::{trace, debug};
 /// Loads the package databases from a list of repositories,
 /// possibly persisting them if `persist == true`.
 ///
@@ -23,10 +23,10 @@ pub fn load_databases(
             let entry = cache.get_package_db_entry(&r.url());
             match entry {
                 CacheEntry::Existing(p) => {
-                    println!("Loading db from cache {p:?}");
+                    trace!("Loading db from cache {p:?}");
                     let start_time = std::time::Instant::now();
                     let db = RepositoryDatabase::load(&p);
-                    println!("Loading db from cache took: {:?}", start_time.elapsed());
+                    trace!("Loading db from cache took: {:?}", start_time.elapsed());
                     (db, r.force_source)
                 }
                 CacheEntry::NotFound(p) => {
@@ -50,8 +50,8 @@ pub fn load_databases(
                             .unwrap()
                             .to_string_lossy()
                     );
-                    println!(
-                        "Downloading source package took: {:?}",
+                    debug!(
+                        "Downloading source package db took: {:?}",
                         start_time.elapsed()
                     );
 
@@ -60,7 +60,7 @@ pub fn load_databases(
                     unsafe {
                         db.parse_source(std::str::from_utf8_unchecked(&source_package));
                     }
-                    println!("Parsing source package took: {:?}", start_time.elapsed());
+                    debug!("Parsing source package db took: {:?}", start_time.elapsed());
 
                     // Download binary PACKAGES
                     let mut binary_package = Vec::new();
@@ -71,7 +71,7 @@ pub fn load_databases(
                     );
                     let binary_path = format!("{}{binary_path}", r.url());
                     let dl_url = format!("{}{PACKAGE_FILENAME}", binary_path);
-                    println!("Downloading binary package from {dl_url}");
+                    debug!("Downloading binary package from {dl_url}");
                     start_time = std::time::Instant::now();
                     let rvparts = r_version.major_minor();
                     http::download(
@@ -84,8 +84,8 @@ pub fn load_databases(
                     )
                     .expect("TODO");
                     db.binary_url = Some(binary_path);
-                    println!(
-                        "Downloading binary package took: {:?}",
+                    debug!(
+                        "Downloading binary package db took: {:?}",
                         start_time.elapsed()
                     );
 
@@ -97,15 +97,15 @@ pub fn load_databases(
                             cache.r_version.clone(),
                         );
                     }
-                    println!("Parsing binary package took: {:?}", start_time.elapsed());
+                    debug!("Parsing binary package db took: {:?}", start_time.elapsed());
 
                     // Persist if requested
                     start_time = std::time::Instant::now();
                     if persist {
                         db.persist(&p);
                     }
-                    println!("Persisting db took: {:?}", start_time.elapsed());
-                    println!("Saving db at {p:?}");
+                    trace!("Persisting db took: {:?}", start_time.elapsed());
+                    trace!("Saving db at {p:?}");
                     (db, r.force_source)
                 }
             }

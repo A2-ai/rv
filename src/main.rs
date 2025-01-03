@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use env_logger::Env;
 use rv::{
     cli::install::{execute_install, InstallArgs},
     execute_plan, Config, Distribution, PlanArgs,
@@ -46,7 +47,7 @@ pub enum Command {
 
 fn try_main() {
     let cli = Cli::parse();
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     // TODO: parse config file here and fetch R version if needed
     // except for init
     // let config = Config::from_file(&cli.config_file);

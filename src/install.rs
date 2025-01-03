@@ -6,7 +6,7 @@ use std::path::Path;
 use tar::Archive;
 use tempfile::tempdir;
 use url::Url;
-use log::{trace, debug, info};
+use log::{trace, debug, info, error};
 /// Extracts a `.tar.gz` archive to the specified destination directory.
 /// If the destination directory does not exist, it is created.
 ///
@@ -106,7 +106,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
             )
         })
         .map_err(|e| {
-            eprintln!("Failed to install '{}': {}", name, e);
+            error!("Failed to install '{}': {}", name, e);
             e.into()
         });
 

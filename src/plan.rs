@@ -5,7 +5,7 @@ use crate::{
     cli::DiskCache, db::load_databases, Config, RCommandLine, Resolver, SystemInfo, Version
     // anything else needed...
 };
-
+use log::{trace, debug, info, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
 pub enum Distribution {
@@ -35,7 +35,7 @@ pub fn execute_plan(
         Some(ver_str) => Version::from_str(&ver_str).expect("Invalid R version format"),
         None => config.get_r_version(r_cli),
     };
-    println!("time to get r version: {:?}", start_time.elapsed());
+    trace!("time to get r version: {:?}", start_time.elapsed());
 
     // Determine the distribution and SystemInfo
     start_time = std::time::Instant::now();
@@ -75,7 +75,7 @@ pub fn execute_plan(
         },
         None => SystemInfo::from_os_info(),
     };
-    println!("time to get sysinfo: {:?}", start_time.elapsed());
+    trace!("time to get sysinfo: {:?}", start_time.elapsed());
 
     // Load databases
     start_time = std::time::Instant::now();
@@ -86,24 +86,24 @@ pub fn execute_plan(
         &r_version,
         no_user_override,
     );
-    println!("Loading databases took: {:?}", start_time.elapsed());
+    debug!("Loading databases took: {:?}", start_time.elapsed());
 
     // Resolve
     start_time = std::time::Instant::now();
     let resolver = Resolver::new(&databases, &r_version);
     let (resolved, unresolved) = resolver.resolve(config.dependencies());
-    println!("Resolving took: {:?}", start_time.elapsed());
+    trace!("Resolving took: {:?}", start_time.elapsed());
 
     if unresolved.is_empty() {
-        println!("Plan successful! The following packages will be installed:");
+        info!("Plan successful! The following packages will be installed:");
         for d in resolved {
-            println!("    {d}");
+            info!("    {d}");
         }
     } else {
-        eprintln!("Failed to find all dependencies");
+        error!("Failed to find all dependencies");
         for d in unresolved {
-            println!("    {d}");
+            info!("    {d}");
         }
     }
-    println!("Plan took: {:?}", total_start_time.elapsed());
+    info!("Plan took: {:?}", total_start_time.elapsed());
 }
