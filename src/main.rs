@@ -235,6 +235,12 @@ fn try_main() {
             start_time = std::time::Instant::now();
             // Determine the distribution and set up SystemInfo
             let sysinfo = SystemInfo::from_os_info(); // Fallback to system detection
+            let package_bundle_ext = match sysinfo.os_type {
+                rv::OsType::MacOs => "tgz",
+                rv::OsType::Windows => "zip",
+                rv::OsType::Linux(_) => "tar.gz",
+                rv::OsType::Other(_) => "tar.gz"
+            };
             println!("time to get sysinfo: {:?}", start_time.elapsed());
             start_time = std::time::Instant::now();
             let cache = DiskCache::new(&r_version, sysinfo.clone());
@@ -317,10 +323,11 @@ fn try_main() {
                             .send(InstallMetadata {
                                 name: p.name.to_string(),
                                 url: format!(
-                                    "{}{}_{}.tgz",
+                                    "{}{}_{}.{}",
                                     repo.binary_url.as_ref().unwrap(),
                                     &p.name,
-                                    &p.version
+                                    &p.version,
+                                    &package_bundle_ext
                                 ),
                                 install_dir: cache
                                     .get_pkg_installation_root(&repo.url)
@@ -368,10 +375,11 @@ fn try_main() {
                                         .send(InstallMetadata {
                                             name: p.name.to_string(),
                                             url: format!(
-                                                "{}{}_{}.tgz",
+                                                "{}{}_{}.{}",
                                                 repo.binary_url.as_ref().unwrap(),
                                                 &p.name,
-                                                &p.version
+                                                &p.version,
+                                                &package_bundle_ext
                                             ),
                                             install_dir: cache
                                                 .get_pkg_installation_root(&repo.url)
