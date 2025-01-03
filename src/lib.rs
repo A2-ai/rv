@@ -10,6 +10,8 @@ mod repository;
 mod resolver;
 mod system_info;
 mod version;
+mod db;
+mod plan; 
 
 pub mod cli;
 pub mod install;
@@ -25,3 +27,4 @@ pub use resolver::{ResolvedDependency, Resolver};
 pub use system_info::{OsType, SystemInfo};
 pub use version::Version;
 pub use dependency_graph::{BuildPlan, BuildStep};
+pub use plan::{execute_plan, Distribution, PlanArgs};
