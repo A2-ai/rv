@@ -4,8 +4,8 @@ use crate::{
     repo_path::get_binary_path,
     Cache, CacheEntry, Repository, RepositoryDatabase, Version,
 };
+use log::{debug, trace};
 use rayon::prelude::*;
-use log::{trace, debug};
 /// Loads the package databases from a list of repositories,
 /// possibly persisting them if `persist == true`.
 ///
@@ -74,32 +74,34 @@ pub fn load_databases(
                     debug!("Downloading binary package from {dl_url}");
                     start_time = std::time::Instant::now();
                     let rvparts = r_version.major_minor();
-                    http::download(
+                    let binarydl = http::download(
                         &dl_url,
                         &mut binary_package,
                         Some((
                             "user-agent",
                             format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
                         )),
-                    )
-                    .expect("TODO");
-                    db.binary_url = Some(binary_path);
-                    debug!(
-                        "Downloading binary package db took: {:?}",
-                        start_time.elapsed()
                     );
-
-                    // Parse binary
-                    start_time = std::time::Instant::now();
-                    unsafe {
-                        db.parse_binary(
-                            std::str::from_utf8_unchecked(&source_package),
-                            cache.r_version.clone(),
+                    // binary should be an optional
+                    if binarydl.is_ok() {
+                        db.binary_url = Some(binary_path);
+                        debug!(
+                            "Downloading binary package db took: {:?}",
+                            start_time.elapsed()
                         );
-                    }
-                    debug!("Parsing binary package db took: {:?}", start_time.elapsed());
 
-                    // Persist if requested
+                        // Parse binary
+                        start_time = std::time::Instant::now();
+                        unsafe {
+                            db.parse_binary(
+                                std::str::from_utf8_unchecked(&source_package),
+                                cache.r_version.clone(),
+                            );
+                        }
+                        debug!("Parsing binary package db took: {:?}", start_time.elapsed());
+
+                        // Persist if requested
+                    }
                     start_time = std::time::Instant::now();
                     if persist {
                         db.persist(&p);

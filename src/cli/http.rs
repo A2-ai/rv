@@ -13,7 +13,7 @@ pub fn download<W: Write>(
     let response = get_response(url, header).expect("TODO: handle response error");
 
     if !response.status().is_success() {
-        panic!("TODO: handle url response is not success error")
+        return Err(format!("Failed to download: {}", response.status()).into());
     }
 
     let content = response
