@@ -1,3 +1,4 @@
+use crate::package::PackageType;
 use crate::{
     cli::DiskCache, db::load_databases, dl_and_install_pkg, BuildPlan, BuildStep, Config,
     RCommandLine, Resolver, SystemInfo,
@@ -23,6 +24,7 @@ pub struct InstallMetadata {
     // the destination directory where the package should be available to the user
     // via a symlink from the install_dir
     pub dest_dir: String,
+    pub package_type: PackageType,
 }
 
 #[derive(Debug)]
@@ -45,7 +47,12 @@ pub fn install_pkg(
     install_dir: &str,
     dest_dir: &str,
     rvparts: &[u32; 2],
+    pkgtype: PackageType,
 ) -> InstallResult {
+    if pkgtype == PackageType::Source {
+        // if package already in dest_dir, its already installed
+        panic!("src compilation Not implemented for pkg {}", pkg);
+    }
     // if package already in dest_dir, its already installed
     let dest_install = PathBuf::from(dest_dir).join(pkg);
     if dest_install.exists() {
@@ -59,7 +66,11 @@ pub fn install_pkg(
     // create symlink to dest_dir
     match outcome {
         Ok(_) => {
-            trace!("Creating symlink from {:?} to {:?}", installed_dir, dest_install);
+            trace!(
+                "Creating symlink from {:?} to {:?}",
+                installed_dir,
+                dest_install
+            );
             let link = std::os::unix::fs::symlink(&installed_dir, dest_install);
             if link.is_ok() {
                 InstallResult {
@@ -151,6 +162,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                     &pkg.install_dir,
                     &pkg.dest_dir,
                     &r_version.major_minor(),
+                    pkg.package_type,
                 );
                 thread_result_sender
                     .send(res)
@@ -180,21 +192,25 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                     .map(|r| &r.0)
                     .expect("Failed to find repository for package");
 
+                // if the repo.binary_url is None, we should use the src url
+                let (dl_url_root, pkg_type) = match &repo.binary_url {
+                    Some(url) => (url, PackageType::Binary),
+                    None => (&repo.source_url.clone(), PackageType::Source),
+                };
+                let ext = match pkg_type {
+                    PackageType::Binary => package_bundle_ext,
+                    PackageType::Source => "tar.gz",
+                };
                 install_sender
                     .send(InstallMetadata {
                         name: p.name.to_string(),
-                        url: format!(
-                            "{}{}_{}.{}",
-                            repo.binary_url.as_ref().unwrap(),
-                            p.name,
-                            p.version,
-                            package_bundle_ext
-                        ),
+                        url: format!("{}{}_{}.{}", dl_url_root, p.name, p.version, ext,),
                         install_dir: cache
                             .get_pkg_installation_root(&repo.url)
                             .to_string_lossy()
                             .to_string(),
                         dest_dir: destination.to_string_lossy().to_string(),
+                        package_type: pkg_type,
                     })
                     .expect("Failed to send install instruction");
             }
@@ -230,23 +246,28 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                                 .map(|r| &r.0)
                                 .expect("Failed to find repository for package");
 
+                            // if the repo.binary_url is None, we should use the src url
+                            let (dl_url_root, pkg_type) = match &repo.binary_url {
+                                Some(url) => (url, PackageType::Binary),
+                                None => (&repo.source_url.clone(), PackageType::Source),
+                            };
+                            let ext = match pkg_type {
+                                PackageType::Binary => package_bundle_ext,
+                                PackageType::Source => "tar.gz",
+                            };
                             install_sender
                                 .send(InstallMetadata {
                                     name: p.name.to_string(),
                                     url: format!(
                                         "{}{}_{}.{}",
-                                        repo.binary_url.as_ref().unwrap(),
-                                        p.name,
-                                        p.version,
-                                        package_bundle_ext
+                                        dl_url_root, p.name, p.version, ext,
                                     ),
                                     install_dir: cache
                                         .get_pkg_installation_root(&repo.url)
                                         .to_string_lossy()
                                         .to_string(),
-                                    dest_dir: destination
-                                        .to_string_lossy()
-                                        .to_string(),
+                                    dest_dir: destination.to_string_lossy().to_string(),
+                                    package_type: pkg_type,
                                 })
                                 .expect("Failed to send install instruction");
                         }
