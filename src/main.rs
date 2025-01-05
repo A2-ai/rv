@@ -37,6 +37,12 @@ pub enum Command {
         /// Specify the system distribution (e.g., jammy, mac)
         #[clap(long, value_enum)]
         distribution: Option<Distribution>,
+
+        // a plan doesn't need a destination, however if a destination directory
+        // is provided, can compare what is already present on the system to plan
+        // what the delta would be.
+        // if no destination is provided, we can show what would happen in a fresh environment
+        destination: Option<PathBuf>,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
@@ -77,12 +83,14 @@ fn try_main() {
         Command::Plan {
             r_version,
             distribution,
+            destination,
         } => {
             execute_plan(
                 &config,
                 PlanArgs {
                     r_version_str: r_version,
                     distribution,
+                    destination,
                 },
             );
         }

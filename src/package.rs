@@ -233,7 +233,6 @@ pub fn parse_description_file(content: &str) -> Package {
     // Then we fix the line wrapping for deps
     for line in package_data.lines() {
         let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
-        dbg!(&parts);
         match parts[0] {
             "Package" => package.name = parts[1].to_string(),
             "Version" => {

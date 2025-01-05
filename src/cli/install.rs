@@ -2,10 +2,12 @@ use crate::package::PackageType;
 use crate::{
     cli::DiskCache, db::load_databases, dl_and_install_pkg, BuildPlan, BuildStep, Config,
     RCommandLine, Resolver, SystemInfo,
+    Version
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use log::{debug, error, info, trace}; // <-- using the log crate macros
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::thread;
 
 // Mock result returned by install_pkg
@@ -18,6 +20,7 @@ pub struct InstallResult {
 #[derive(Debug)]
 pub struct InstallMetadata {
     pub name: String,
+    pub version: String,
     pub url: String,
     // the directory where the package should be installed
     pub install_dir: String,
@@ -43,6 +46,7 @@ pub struct InstallArgs {
 // Mock implementation of the install_pkg function
 pub fn install_pkg(
     pkg: &str,
+    version: &Version,
     url: &str,
     install_dir: &str,
     dest_dir: &str,
@@ -52,10 +56,22 @@ pub fn install_pkg(
     // if package already in dest_dir, its already installed
     let dest_install = PathBuf::from(dest_dir).join(pkg);
     if dest_install.exists() {
-        return InstallResult {
-            name: pkg.to_string(),
-            status: InstallStatus::AlreadyPresent,
-        };
+        // read in the description file and compare if the version matches the target package version
+        // matches the expected version, if it doesn't we should delete the package
+        // and re-install it
+        // TODO: we need to consider about restoration - if we delete an existing package then installation
+        // fails the person is in a worse setup than before. in pkgr we first did a mv, but that
+        // caused issues when you can't always mv when you have things like a docker fs layer
+        // so then we copied to a backup dir named something like __backup__<pkgname> but that adds copy overhead
+        let package_content = std::fs::read_to_string(dest_install.join("DESCRIPTION")).expect(&format!("failed to read DESCRIPTION file at {}", dest_install.display()));
+        let package_desc = crate::package::parse_description_file(&package_content);
+        if package_desc.version == *version {
+            return InstallResult {
+                name: pkg.to_string(),
+                status: InstallStatus::AlreadyPresent,
+            };
+        }
+
     }
     let installed_dir = PathBuf::from(install_dir).join(pkg);
     let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts, pkgtype, &dest_dir);
@@ -154,6 +170,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                 trace!("Thread {}: Installing package: {}", i, pkg.name);
                 let res = install_pkg(
                     &pkg.name,
+                    &Version::from_str(&pkg.version).expect("Failed to parse version"),
                     &pkg.url,
                     &pkg.install_dir,
                     &pkg.dest_dir,
@@ -200,6 +217,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                 install_sender
                     .send(InstallMetadata {
                         name: p.name.to_string(),
+                        version: p.version.to_string(),
                         url: format!("{}{}_{}.{}", dl_url_root, p.name, p.version, ext,),
                         install_dir: cache
                             .get_pkg_installation_root(&repo.url)
@@ -254,6 +272,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                             install_sender
                                 .send(InstallMetadata {
                                     name: p.name.to_string(),
+                                    version: p.version.to_string(),
                                     url: format!(
                                         "{}{}_{}.{}",
                                         dl_url_root, p.name, p.version, ext,

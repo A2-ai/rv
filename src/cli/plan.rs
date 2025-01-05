@@ -1,11 +1,17 @@
-use std::str::FromStr;
 use clap::ValueEnum;
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::{
-    cli::DiskCache, db::load_databases, Config, RCommandLine, Resolver, SystemInfo, Version
-    // anything else needed...
+    cli::DiskCache,
+    db::load_databases,
+    install::get_installed_pkgs,
+    Config,
+    RCommandLine,
+    Resolver,
+    SystemInfo,
+    Version, // anything else needed...
 };
-use log::{trace, debug, info, error};
+use log::{debug, error, info, trace};
 
 #[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
 pub enum Distribution {
@@ -19,12 +25,10 @@ pub enum Distribution {
 pub struct PlanArgs {
     pub r_version_str: Option<String>,
     pub distribution: Option<Distribution>,
+    pub destination: Option<PathBuf>,
 }
 
-pub fn execute_plan(
-    config: &Config,
-    plan_args: PlanArgs,
-) {
+pub fn execute_plan(config: &Config, plan_args: PlanArgs) {
     let total_start_time = std::time::Instant::now();
     let r_cli = RCommandLine {};
     let no_user_override = plan_args.r_version_str.is_none() && plan_args.distribution.is_none();
@@ -42,22 +46,12 @@ pub fn execute_plan(
     let sysinfo = match plan_args.distribution {
         Some(Distribution::Mac) => {
             // Example for Mac
-            SystemInfo::new(
-                crate::OsType::MacOs,
-                Some("aarch64".into()),
-                None,
-                "12.0",
-            )
-        },
+            SystemInfo::new(crate::OsType::MacOs, Some("aarch64".into()), None, "12.0")
+        }
         Some(Distribution::Windows) => {
             // Example for Windows
-            SystemInfo::new(
-                crate::OsType::Windows,
-                Some("x86_64".into()),
-                None,
-                "12.0",
-            )
-        },
+            SystemInfo::new(crate::OsType::Windows, Some("x86_64".into()), None, "12.0")
+        }
         Some(dist) => {
             // Example for Ubuntu-based
             let (os_type, codename, release) = match dist {
@@ -72,7 +66,7 @@ pub fn execute_plan(
                 Some(codename.to_string()),
                 release,
             )
-        },
+        }
         None => SystemInfo::from_os_info(),
     };
     trace!("time to get sysinfo: {:?}", start_time.elapsed());
@@ -80,12 +74,7 @@ pub fn execute_plan(
     // Load databases
     start_time = std::time::Instant::now();
     let cache = DiskCache::new(&r_version, sysinfo.clone());
-    let databases = load_databases(
-        config.repositories(),
-        &cache,
-        &r_version,
-        no_user_override,
-    );
+    let databases = load_databases(config.repositories(), &cache, &r_version, no_user_override);
     debug!("Loading databases took: {:?}", start_time.elapsed());
 
     // Resolve
@@ -93,17 +82,28 @@ pub fn execute_plan(
     let resolver = Resolver::new(&databases, &r_version);
     let (resolved, unresolved) = resolver.resolve(config.dependencies());
     trace!("Resolving took: {:?}", start_time.elapsed());
-
-    if unresolved.is_empty() {
-        info!("Plan successful! The following packages will be installed:");
-        for d in resolved {
-            info!("    {d}");
-        }
-    } else {
+    if !unresolved.is_empty() {
         error!("Failed to find all dependencies");
         for d in unresolved {
             info!("    {d}");
         }
+        return;
+    }
+    info!("Plan successful! The following packages will be installed:");
+    let installed_pkgs = match plan_args.destination {
+        None => HashMap::new(),
+        Some(dest) => get_installed_pkgs(dest.as_path()).unwrap(),
+    };
+    let (installed, missing): (Vec<_>, Vec<_>) = resolved.iter()
+        .partition(|d| installed_pkgs.contains_key(&d.name.to_owned()));
+    info!("found {} installed packages, need to install {} packages", installed.len(), missing.len()); 
+    for d in &installed {
+        debug!("    {d} (already installed)");
+    }
+
+    for d in &missing {
+        info!("    {d}");
     }
     info!("Plan took: {:?}", total_start_time.elapsed());
 }
+

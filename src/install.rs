@@ -1,4 +1,5 @@
 use crate::package::PackageType;
+use crate::version::Version;
 use flate2::read::GzDecoder;
 use log::{debug, error, info, trace};
 use shellexpand;
@@ -11,6 +12,7 @@ use std::process::Command;
 use tar::Archive;
 use tempfile::tempdir;
 use url::Url;
+use rayon::prelude::*;
 
 /// Extracts a `.tar.gz` archive to the specified destination directory.
 /// If the destination directory does not exist, it is created.
@@ -151,4 +153,41 @@ fn install_src_package(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct InstalledPackage {
+    pub name: String,
+    pub version: Version,
+    pub path: String,
+}
+
+pub fn get_installed_pkgs(library: &Path) -> Result<HashMap<String, InstalledPackage>, Box<dyn std::error::Error>> {
+    let start_time = std::time::Instant::now();
+    // iterate over the library directory, for each directory, look to see if there is a description file
+    // if there is, read it in and parse it to get the package name and version
+    // can use the parse_description_file function from the package crate
+
+    let installed_pkgs = fs::read_dir(library)?
+        .par_bridge()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_dir() {
+                let desc_path = path.join("DESCRIPTION");
+                if desc_path.exists() {
+                    let package_content = std::fs::read_to_string(&desc_path).ok()?;
+                    let desc = crate::package::parse_description_file(&package_content);
+                    return Some((desc.name.clone(), InstalledPackage {
+                        name: desc.name,
+                        version: desc.version,
+                        path: path.to_string_lossy().to_string(),
+                    }));
+                }
+            }
+            None
+        })
+        .collect();
+    debug!("Getting installed packages took: {:?}", start_time.elapsed());
+    Ok(installed_pkgs)
 }
