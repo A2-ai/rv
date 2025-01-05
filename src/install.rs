@@ -1,12 +1,17 @@
+use crate::package::PackageType;
 use flate2::read::GzDecoder;
+use log::{debug, error, info, trace};
 use shellexpand;
+use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::fs::File;
 use std::path::Path;
+use std::process::Command;
 use tar::Archive;
 use tempfile::tempdir;
 use url::Url;
-use log::{trace, debug, info, error};
+
 /// Extracts a `.tar.gz` archive to the specified destination directory.
 /// If the destination directory does not exist, it is created.
 ///
@@ -51,19 +56,20 @@ pub fn untar_package<P: AsRef<Path>, D: AsRef<Path>>(
     Ok(())
 }
 
-
 // Overload this function for quick purposes - should be separate activities
 pub fn dl_and_install_pkg<D: AsRef<Path>>(
     name: &str,
     url: &str,
     install_dir: D,
     rvparts: &[u32; 2],
+    package_type: PackageType,
+    library: D,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Parse the URL to extract the filename
     let dest = install_dir.as_ref();
     // TODO: return results back for whether this was already installed vs
     // was installed then so can report back to user more clearly
-    // a likely better design will be to separate out determining whats already 
+    // a likely better design will be to separate out determining whats already
     // present and only request to install what needs to be installed
     if dest.join(name).exists() {
         debug!("Package '{}' already installed", name);
@@ -90,25 +96,59 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
             format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
         )),
     )?;
-    debug!(
-        "Downloaded '{}' in {:?}",
-        file_name,
-        start_time.elapsed()
-    );
+    debug!("Downloaded '{}' in {:?}", file_name, start_time.elapsed());
 
     start_time = std::time::Instant::now();
-    let result = untar_package(&temp_path, dest)
-        .map(|_| {
-            info!(
-                "Installed '{}' in {:?}",
-                name,
-                start_time.elapsed()
-            )
+    let install_result = match package_type {
+        PackageType::Binary => untar_package(&temp_path, dest),
+        PackageType::Source => install_src_package(&temp_path, dest, library.as_ref()),
+    };
+
+    install_result
+        .map(|s| {
+            info!("Installed '{}' in {:?}", name, start_time.elapsed());
+            s
         })
         .map_err(|e| {
             error!("Failed to install '{}': {}", name, e);
             e.into()
-        });
+        })
+}
 
-    result
+fn install_src_package(
+    src_path: &Path,
+    dest: &Path,
+    library: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Create the destination directory if it doesn't exist
+    if !dest.exists() {
+        fs::create_dir_all(&dest)?;
+        debug!("Created cache install directory: {:?}", dest);
+    }
+    let filtered_env: HashMap<String, String> = env::vars()
+        .filter(|(k, _)| !k.starts_with("R_LIBS"))
+        .collect();
+    let mut command = Command::new("R");
+    command
+        .arg("CMD")
+        .arg("INSTALL")
+        .arg(format!("--library={}", dest.as_os_str().to_str().unwrap()))
+        .arg("--use-vanilla")
+        .arg(src_path)
+        // the library itself should be where the packages are actually installed to,
+        // not the dest, which is the cache dir
+        .env("R_LIBS_SITE", library)
+        .env("R_LIBS_USER", library)
+        // Preserve other environment variables
+        .envs(&filtered_env);
+
+    let output = command.output()?;
+    debug!("R CMD INSTALL output: {:?}", output);
+    if !output.status.success() {
+        let error_message = String::from_utf8_lossy(&output.stderr);
+        error!("R package installation failed: {}", error_message);
+        return Err(format!("R package installation failed: {}", error_message).into());
+    }
+
+    Ok(())
 }

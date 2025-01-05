@@ -49,10 +49,6 @@ pub fn install_pkg(
     rvparts: &[u32; 2],
     pkgtype: PackageType,
 ) -> InstallResult {
-    if pkgtype == PackageType::Source {
-        // if package already in dest_dir, its already installed
-        panic!("src compilation Not implemented for pkg {}", pkg);
-    }
     // if package already in dest_dir, its already installed
     let dest_install = PathBuf::from(dest_dir).join(pkg);
     if dest_install.exists() {
@@ -62,7 +58,7 @@ pub fn install_pkg(
         };
     }
     let installed_dir = PathBuf::from(install_dir).join(pkg);
-    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts);
+    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts, pkgtype, &dest_dir);
     // create symlink to dest_dir
     match outcome {
         Ok(_) => {
