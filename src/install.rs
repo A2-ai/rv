@@ -22,11 +22,6 @@ use rayon::prelude::*;
 /// * `archive_path` - A string slice that holds the path to the `.tar.gz` file.
 /// * `destination` - A string slice that holds the path to the destination directory.
 ///
-/// # Example
-///
-/// ```
-/// untar_package("dplyr_1.1.4.tar.gz", "~/rpkgs").expect("Extraction failed");
-/// ```
 pub fn untar_package<P: AsRef<Path>, D: AsRef<Path>>(
     archive_path: P,
     destination: D,
