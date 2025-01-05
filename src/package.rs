@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
-
+use log::trace;
 use crate::version::{Version, VersionRequirement};
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +88,7 @@ pub struct Package {
     path: Option<String>,
     os_type: Option<OsType>,
     recommended: bool,
+    remotes: Option<Vec<String>>,
     pub(crate) needs_compilation: bool,
 }
 
@@ -220,6 +221,64 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     packages
 }
 
+// TODO: benchmark the whole thing
+/// Parse a PACKAGE file into something usable to resolve dependencies.
+/// A package may be present multiple times in the file. If that's the case
+/// we do the following:
+/// 1. Filter packages by R version
+/// 2. Get the first that match in the vector (the vector is in reversed order of appearance in PACKAGE file)
+pub fn parse_description_file(content: &str) -> Package {
+    let package_data = content.replace("\r\n", "\n").replace("\n    ", " ");
+    let mut package = Package::default();
+    // Then we fix the line wrapping for deps
+    for line in package_data.lines() {
+        let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
+        dbg!(&parts);
+        match parts[0] {
+            "Package" => package.name = parts[1].to_string(),
+            "Version" => {
+                package.version = Version::from_str(parts[1]).unwrap();
+            }
+            "Depends" => {
+                for p in parse_dependencies(parts[1]) {
+                    if p.name() == "R" {
+                        package.r_requirement = p.version_requirement().cloned();
+                    } else {
+                        package.depends.push(p);
+                    }
+                }
+            }
+            "Imports" => package.imports = parse_dependencies(parts[1]),
+            "LinkingTo" => package.linking_to = parse_dependencies(parts[1]),
+            "Suggests" => package.suggests = parse_dependencies(parts[1]),
+            "Enhances" => package.enhances = parse_dependencies(parts[1]),
+            "License" => package.license = parts[1].to_string(),
+            "MD5sum" => package.md5_sum = parts[1].to_string(),
+            "NeedsCompilation" => package.needs_compilation = parts[1] == "yes",
+            "Path" => package.path = Some(parts[1].to_string()),
+            "OS_type" => {
+                package.os_type = Some(match parts[1] {
+                    "windows" => OsType::Windows,
+                    "unix" => OsType::Unix,
+                    _ => panic!("Unknown OS type: {}", parts[1]),
+                });
+            }
+            "Priority" => {
+                if parts[1] == "recommended" {
+                    package.recommended = true;
+                }
+            }
+            // Posit uses that, maybe we can parse it?
+            "SystemRequirements" => continue,
+            "License_restricts_use" | "License_is_FOSS" | "Archs" => continue,
+            "Remotes" => package.remotes = Some(parts[1].split(",").map(|s| s.trim().to_string()).collect()),
+            _ => trace!("detected field: {} in PACKAGE file", parts[0]),
+        }
+    }
+
+    package
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,5 +349,15 @@ mod tests {
             std::fs::read_to_string("src/tests/package_files/cran-binary.PACKAGE").unwrap();
         let packages = parse_package_file(&content);
         assert_eq!(packages.len(), 22361);
+    }
+
+    #[test]
+    fn can_parse_description_file() {
+        let content = std::fs::read_to_string("src/tests/descriptions/gsm-2.2.0.9999.DESCRIPTION")
+            .expect("to read file");
+        let package = parse_description_file(&content);
+        assert_eq!(package.name, "gsm");
+        assert_eq!(package.version.to_string(), "2.2.0.9999");
+        assert_eq!(package.remotes, Some(vec!["clindata=Gilead-BioStats/clindata".into()]));
     }
 }
