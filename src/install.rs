@@ -72,7 +72,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     // a likely better design will be to separate out determining whats already
     // present and only request to install what needs to be installed
     if dest.join(name).exists() {
-        debug!("Package '{}' already installed", name);
+        debug!("Package '{}' already present in cache", name);
         return Ok(());
     }
     debug!("Installing package from {} to {:?}", &url, dest);

@@ -62,8 +62,8 @@ pub fn install_pkg(
     // create symlink to dest_dir
     match outcome {
         Ok(_) => {
-            trace!(
-                "Creating symlink from {:?} to {:?}",
+            info!(
+                "Setting symlink from {:?} to {:?}",
                 installed_dir,
                 dest_install
             );
