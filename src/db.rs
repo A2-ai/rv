@@ -43,7 +43,7 @@ pub fn load_databases(
                     )
                     .expect("TODO");
                     db.source_url = format!(
-                        "{}{}",
+                        "{}{}/",
                         r.url(),
                         std::path::Path::new(SOURCE_PACKAGES_PATH)
                             .parent()
