@@ -21,12 +21,15 @@ bincode = "1"
 thiserror = "2"
 
 clap = {version = "4" , features = ["derive"], optional = true}
+clap-verbosity-flag = {version = "3", optional = true}
 rayon = {version = "1" , optional = true}
 anyhow = {version = "1" , optional = true}
 ureq = {version = "2" , optional = true}
+env_logger = {version = "0.11" , optional = true}
+log = {version = "0.4" , optional = true}
 
 [features]
-cli = ["dep:clap", "dep:rayon", "dep:anyhow", "dep:ureq"]
+cli = ["dep:clap", "dep:rayon", "dep:anyhow", "dep:ureq", "dep:clap-verbosity-flag", "dep:env_logger", "dep:log"]
 
 [dev-dependencies]
 insta = "1"
