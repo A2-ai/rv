@@ -77,7 +77,12 @@ impl<'a> BuildPlan<'a> {
                 continue;
             }
             self.installing.insert(dep);
-            return BuildStep::Install(self.deps.iter().find(|d| d.name == *dep).unwrap());
+            return BuildStep::Install(
+                self.deps
+                    .iter()
+                    .find(|d| d.name == *dep)
+                    .expect("it should have a dep with that name"),
+            );
         }
 
         BuildStep::Wait

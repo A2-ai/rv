@@ -219,7 +219,7 @@ mod tests {
 
         for path in paths {
             let p = path.unwrap().path();
-            let config = Config::from_file(&p);
+            let config = Config::from_file(&p).unwrap();
             let v = if p.file_name().unwrap() == "higher_r_version.toml" {
                 Version::from_str("4.5").unwrap()
             } else {

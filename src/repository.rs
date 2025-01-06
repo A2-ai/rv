@@ -26,15 +26,21 @@ impl RepositoryDatabase {
         }
     }
 
-    pub fn load<P: AsRef<Path>>(path: P) -> Self {
-        let reader = BufReader::new(std::fs::File::open(path.as_ref()).expect("TODO"));
-        bincode::deserialize_from(reader).unwrap()
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, RepositoryDatabaseError> {
+        let reader = BufReader::new(
+            std::fs::File::open(path.as_ref()).map_err(|e| RepositoryDatabaseError::from_io(e))?,
+        );
+
+        bincode::deserialize_from(reader).map_err(|e| RepositoryDatabaseError::from_bincode(e))
     }
 
-    pub fn persist<P: AsRef<Path>>(&self, path: P) {
-        let file = std::fs::File::create(path.as_ref()).expect("TODO");
-        let writer = BufWriter::new(file);
-        bincode::serialize_into(writer, self).expect("failed to serialize");
+    pub fn persist<P: AsRef<Path>>(&self, path: P) -> Result<(), RepositoryDatabaseError> {
+        let writer = BufWriter::new(
+            std::fs::File::create(path.as_ref())
+                .map_err(|e| RepositoryDatabaseError::from_io(e))?,
+        );
+
+        bincode::serialize_into(writer, self).map_err(|e| RepositoryDatabaseError::from_bincode(e))
     }
 
     pub fn parse_source(&mut self, content: &str) {
@@ -104,4 +110,32 @@ impl RepositoryDatabase {
 
         find_package(&self.source_packages).map(|p| (p, PackageType::Source))
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to load package database")]
+#[non_exhaustive]
+pub struct RepositoryDatabaseError {
+    pub source: RepositoryDatabaseErrorKind,
+}
+
+impl RepositoryDatabaseError {
+    fn from_io(err: std::io::Error) -> Self {
+        Self {
+            source: RepositoryDatabaseErrorKind::Io(err),
+        }
+    }
+
+    fn from_bincode(err: bincode::Error) -> Self {
+        Self {
+            source: RepositoryDatabaseErrorKind::Bincode(err),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub enum RepositoryDatabaseErrorKind {
+    Io(#[from] std::io::Error),
+    Bincode(#[from] bincode::Error),
 }

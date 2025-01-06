@@ -149,12 +149,12 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     res
 }
 
-// TODO: benchmark the whole thing
 /// Parse a PACKAGE file into something usable to resolve dependencies.
 /// A package may be present multiple times in the file. If that's the case
 /// we do the following:
 /// 1. Filter packages by R version
 /// 2. Get the first that match in the vector (the vector is in reversed order of appearance in PACKAGE file)
+/// This assumes the content is valid and does not contain errors. It will crash otherwise.
 pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     let mut packages: HashMap<String, Vec<Package>> = HashMap::new();
 

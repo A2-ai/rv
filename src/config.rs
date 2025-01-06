@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 
-use crate::r_cmd::RCmd;
+use crate::r_cmd::{RCmd, VersionError};
 use crate::version::Version;
 
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
@@ -129,19 +129,28 @@ pub struct Config {
 }
 
 impl Config {
-    // TODO: handle errors later
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Self {
-        // TODO: use a custom read file method that reports the filepath if it fails
-        let content = std::fs::read_to_string(path).expect("TODO: handle error");
-        toml::from_str(content.as_str()).expect("TODO: handle error")
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, FromFileError> {
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(FromFileError {
+                    path: path.as_ref().into(),
+                    source: FromFileErrorKind::Io(e),
+                })
+            }
+        };
+        toml::from_str(content.as_str()).map_err(|e| FromFileError {
+            path: path.as_ref().into(),
+            source: FromFileErrorKind::Parse(e),
+        })
     }
 
     /// Gets the R version we want to use in this project.
     /// This will default to whatever is set in the config if set, otherwise pick the output
     /// from the trait call
-    pub fn get_r_version(&self, r_cli: impl RCmd) -> Version {
+    pub fn get_r_version(&self, r_cli: impl RCmd) -> Result<Version, VersionError> {
         if let Some(v) = &self.project.r_version {
-            v.clone()
+            Ok(v.clone())
         } else {
             r_cli.version()
         }
@@ -156,6 +165,21 @@ impl Config {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Error reading `{path}`")]
+#[non_exhaustive]
+pub struct FromFileError {
+    pub path: Box<Path>,
+    pub source: FromFileErrorKind,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub enum FromFileErrorKind {
+    Io(#[from] std::io::Error),
+    Parse(#[from] toml::de::Error),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,8 +188,7 @@ mod tests {
     fn can_parse_valid_config_files() {
         let paths = std::fs::read_dir("src/tests/valid_config/").unwrap();
         for path in paths {
-            // TODO: later it will return a res.
-            let _ = Config::from_file(path.unwrap().path());
+            assert!(Config::from_file(path.unwrap().path()).is_ok());
         }
     }
 }
