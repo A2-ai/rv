@@ -1,4 +1,3 @@
-use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -6,6 +5,8 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use etcetera::BaseStrategy;
 
+use crate::cache::InstallationStatus;
+use crate::cli::utils::create_dir_all;
 use crate::system_info::SystemInfo;
 use crate::version::Version;
 use crate::{Cache, CacheEntry};
@@ -67,10 +68,7 @@ impl DiskCache {
     pub fn new(r_version: &Version, system_info: SystemInfo) -> Result<Self> {
         let root =
             get_user_cache_dir().ok_or_else(|| anyhow!("Could not get user cache directory"))?;
-        if !root.exists() {
-            create_dir_all(&root)
-                .with_context(|| format!("Failed to created cache directory at {root:?}"))?;
-        }
+        create_dir_all(&root)?;
         cachedir::ensure_tag(&root).context("Failed to create CACHEDIR.TAG")?;
 
         Ok(Self {
@@ -81,10 +79,8 @@ impl DiskCache {
         })
     }
 
-    /// A database contains both source and binary PACKAGE data
-    /// Therefore the path to the db file is dependent on the system info and R version
-    /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
-    fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
+    /// PACKAGES databases as well as binary packages are dependent on the OS and R version
+    fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
         let encoded = encode_repository_url(repo_url);
         let mut path = self.root.join(encoded).join(self.system_info.os_family());
         if let Some(codename) = self.system_info.codename() {
@@ -93,19 +89,31 @@ impl DiskCache {
         if let Some(arch) = self.system_info.arch() {
             path = path.join(arch);
         }
-        path = path.join(format!("{}.{}", self.r_version[0], self.r_version[1]));
-        path = path.join(PACKAGE_DB_FILENAME);
-
-        path
+        path.join(format!("{}.{}", self.r_version[0], self.r_version[1]))
     }
 
-    // pub fn get_source_tarball_path(&self, repo_url: &str, package_name: &str) -> Option<PathBuf> {
-    //     let encoded = encode_repository_url(repo_url);
-    // }
-    //
-    // pub fn get_binary_tarball_path(&self, repo_url: &str) -> Option<PathBuf> {
-    //     let encoded = encode_repository_url(repo_url);
-    // }
+    /// A database contains both source and binary PACKAGE data
+    /// Therefore the path to the db file is dependent on the system info and R version
+    /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
+    fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
+        let base_path = self.get_repo_root_binary_dir(repo_url);
+        base_path.join(PACKAGE_DB_FILENAME)
+    }
+
+    /// Gets the folder where a binary package would be located.
+    /// The folder may or may not exist depending on whether it's in the cache
+    pub fn get_binary_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
+        self.get_repo_root_binary_dir(repo_url)
+            .join(name)
+            .join(version)
+    }
+
+    /// Gets the folder where a source tarball would be located
+    /// The folder may or may not exist depending on whether it's in the cache
+    pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
+        let encoded = encode_repository_url(repo_url);
+        self.root.join(encoded).join(name).join(version)
+    }
 }
 
 impl Cache for DiskCache {
@@ -129,5 +137,26 @@ impl Cache for DiskCache {
         }
 
         CacheEntry::NotFound(path)
+    }
+
+    fn get_package_installation_status(
+        &self,
+        repo_url: &str,
+        name: &str,
+        version: &str,
+    ) -> InstallationStatus {
+        let source_present = self
+            .get_source_package_path(repo_url, name, version)
+            .is_dir();
+        let binary_present = self
+            .get_binary_package_path(repo_url, name, version)
+            .is_dir();
+
+        match (source_present, binary_present) {
+            (true, true) => InstallationStatus::Both,
+            (true, false) => InstallationStatus::Source,
+            (false, true) => InstallationStatus::Binary,
+            (false, false) => InstallationStatus::Absent,
+        }
     }
 }

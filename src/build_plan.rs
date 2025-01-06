@@ -3,20 +3,20 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::ResolvedDependency;
 
 #[derive(Debug, PartialEq)]
-enum BuildStep<'a> {
+pub enum BuildStep<'a> {
     Install(&'a ResolvedDependency<'a>),
     Wait,
     Done,
 }
 
 #[derive(Debug)]
-struct BuildPlan<'a> {
+pub struct BuildPlan<'a> {
     deps: &'a [ResolvedDependency<'a>],
-    installed: HashSet<&'a str>,
-    installing: HashSet<&'a str>,
+    pub(crate) installed: HashSet<&'a str>,
+    pub(crate) installing: HashSet<&'a str>,
     /// Full list of dependencies for each dependencies.
     /// The value will be updated as packages are installed to remove them from that list
-    full_deps: HashMap<&'a str, HashSet<&'a str>>,
+    pub(crate) full_deps: HashMap<&'a str, HashSet<&'a str>>,
 }
 
 impl<'a> BuildPlan<'a> {
@@ -48,12 +48,18 @@ impl<'a> BuildPlan<'a> {
         }
     }
 
-    pub fn mark_installed(&mut self, name: &'a str) {
-        self.installed.insert(name);
-        self.installing.remove(name);
+    pub fn mark_installed(&mut self, name: &str) {
+        // The lifetime for the name might be different from that struct
+        let pkg = self
+            .deps
+            .iter()
+            .find(|d| d.name == name)
+            .expect("to find the dep");
+        self.installed.insert(pkg.name);
+        self.installing.remove(pkg.name);
 
         for (_, deps) in self.full_deps.iter_mut() {
-            deps.remove(name);
+            deps.remove(pkg.name);
         }
     }
 
@@ -63,6 +69,10 @@ impl<'a> BuildPlan<'a> {
 
     fn is_done(&self) -> bool {
         self.installed.len() == self.deps.len()
+    }
+
+    pub fn num_to_install(&self) -> usize {
+        self.deps.len() - self.installed.len()
     }
 
     /// get a package to install, an enum {Package, Wait, Done}
