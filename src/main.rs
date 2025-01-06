@@ -15,9 +15,8 @@ use rv::{
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
-    /// Do not print any output
-    #[clap(long, default_value_t = false)]
-    pub quiet: bool,
+    #[command(flatten)]
+    verbose: clap_verbosity_flag::Verbosity,
 
     /// Path to a config file other than rproject.toml in the current directory
     #[clap(short = 'c', long, default_value = "rproject.toml")]
@@ -63,6 +62,7 @@ fn load_databases(
                 CacheEntry::Existing(p) => {
                     // load the archive
                     let db = RepositoryDatabase::load(&p)?;
+                    log::debug!("Loaded packages db from {p:?}");
                     Ok((db, r.force_source))
                 }
                 CacheEntry::NotFound(p) | CacheEntry::Expired(p) => {
@@ -97,7 +97,7 @@ fn load_databases(
                     }
 
                     db.persist(&p)?;
-                    println!("Saving db at {p:?}");
+                    log::debug!("Saving packages db at {p:?}");
                     Ok((db, r.force_source))
                 }
             }
@@ -123,6 +123,12 @@ fn load_databases(
 
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
+    env_logger::Builder::new()
+        .filter_level(cli.verbose.log_level_filter())
+        .filter(Some("ureq"), log::LevelFilter::Off)
+        .filter(Some("rustls"), log::LevelFilter::Off)
+        .init();
+
 
     match cli.command {
         Command::Init => todo!("implement init"),
@@ -146,7 +152,7 @@ fn try_main() -> Result<()> {
             } else {
                 eprintln!("Failed to find all dependencies");
                 for d in unresolved {
-                    println!("    {d}");
+                    eprintln!("    {d}");
                 }
             }
         }
@@ -158,7 +164,7 @@ fn try_main() -> Result<()> {
 
 fn main() {
     if let Err(e) = try_main() {
-        println!("{}", write_err(&*e));
+        eprintln!("{}", write_err(&*e));
         ::std::process::exit(1)
     }
 }
