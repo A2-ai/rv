@@ -11,6 +11,7 @@ mod resolver;
 mod system_info;
 mod version;
 mod db;
+mod useragent;
 
 pub mod cli;
 pub mod install;
