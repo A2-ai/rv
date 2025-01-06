@@ -94,13 +94,31 @@ pub fn execute_plan(config: &Config, plan_args: PlanArgs) {
         None => HashMap::new(),
         Some(dest) => get_installed_pkgs(dest.as_path()).unwrap(),
     };
-    let (installed, missing): (Vec<_>, Vec<_>) = resolved.iter()
-        .partition(|d| installed_pkgs.contains_key(&d.name.to_owned()));
-    info!("found {} installed packages, need to install {} packages", installed.len(), missing.len()); 
+    // Categorize packages into installed (correct version), needs update, and missing
+    let (installed, needs_action): (Vec<_>, Vec<_>) = resolved.into_iter()
+        .partition(|dep| {
+            if let Some(installed_pkg) = installed_pkgs.get(dep.name) {
+                installed_pkg.version.original == dep.version
+            } else {
+                false
+            }
+        });
+
+    let (needs_update, missing): (Vec<_>, Vec<_>) = needs_action.into_iter()
+        .partition(|dep| installed_pkgs.contains_key(dep.name));
+
+    info!(
+        "Found {} packages installed with correct version, {} need updating, {} missing",
+        installed.len(),
+        needs_update.len(),
+        missing.len()
+    );
     for d in &installed {
         debug!("    {d} (already installed)");
     }
-
+    for d in &needs_update {
+        info!("    {d} (needs update from: {})", installed_pkgs[d.name].version.original);
+    }
     for d in &missing {
         info!("    {d}");
     }

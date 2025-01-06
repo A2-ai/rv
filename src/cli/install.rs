@@ -233,7 +233,6 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                 break;
             }
             BuildStep::Wait => {
-                trace!("Waiting... (shouldn't get here normally).");
                 break;
             }
         }
