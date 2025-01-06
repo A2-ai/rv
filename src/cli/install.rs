@@ -51,6 +51,7 @@ pub fn install_pkg(
     install_dir: &str,
     dest_dir: &str,
     rvparts: &[u32; 2],
+    sysinfo: &SystemInfo,
     pkgtype: PackageType,
 ) -> InstallResult {
     // if package already in dest_dir, its already installed
@@ -74,7 +75,7 @@ pub fn install_pkg(
 
     }
     let installed_dir = PathBuf::from(install_dir).join(pkg);
-    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts, pkgtype, &dest_dir);
+    let outcome = dl_and_install_pkg(pkg, url, install_dir, rvparts, sysinfo, pkgtype, &dest_dir);
     // create symlink to dest_dir
     match outcome {
         Ok(_) => {
@@ -164,6 +165,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
         let thread_install_receiver = install_receiver.clone();
         let thread_result_sender = result_sender.clone();
         let r_version = r_version.clone();
+        let sysinfo = sysinfo.clone();
         let handle = thread::spawn(move || {
             trace!("Thread {}: Starting", i);
             for pkg in thread_install_receiver.iter() {
@@ -175,6 +177,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
                     &pkg.install_dir,
                     &pkg.dest_dir,
                     &r_version.major_minor(),
+                    &sysinfo,
                     pkg.package_type,
                 );
                 thread_result_sender

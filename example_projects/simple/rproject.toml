@@ -2,12 +2,14 @@
 name = "simple"
 repositories = [
     #{ alias = "a2-ai", url = "https://a2-ai.github.io/rv-test-snapshot/2024-12-22/" },
-    { alias = "CRAN", url = "https://cran.rstudio.org" },
+    #{ alias = "CRAN", url = "https://cran.rstudio.org" },
     #{ alias = "a2-ai", url = "http://localhost:3000/repos/2024-12-22" },
+    { alias = "rspm", url = "https://packagemanager.posit.co/cran/__linux__/jammy/latest" }
 ]
 dependencies = [
-    "dplyr",
+    #"dplyr",
     # "mrgsolve",
     # "slurmtools"
-    "tidyverse"
+    #"tidyverse"
+    "R6"
 ]

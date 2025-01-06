@@ -40,7 +40,6 @@ pub fn load_databases(
                     http::download(
                         &format!("{}{SOURCE_PACKAGES_PATH}", r.url()),
                         &mut source_package,
-                        None,
                     )
                     .expect("TODO");
                     db.source_url = format!(
@@ -93,10 +92,6 @@ pub fn load_databases(
                         let binarydl = http::download(
                             &dl_url,
                             &mut binary_package,
-                            Some((
-                                "user-agent",
-                                format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
-                            )),
                         );
                         // binary should be an optional
                         if binarydl.is_ok() {

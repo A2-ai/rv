@@ -1,5 +1,6 @@
 use crate::package::PackageType;
 use crate::version::Version;
+use crate::SystemInfo;
 use flate2::read::GzDecoder;
 use log::{debug, error, info, trace};
 use shellexpand;
@@ -59,10 +60,11 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     url: &str,
     install_dir: D,
     rvparts: &[u32; 2],
+    sysinfo: &SystemInfo,
     package_type: PackageType,
     library: D,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Parse the URL to extract the filename
+    // 1. Parse the URL to extract the filename and set query
     let dest = install_dir.as_ref();
     // TODO: return results back for whether this was already installed vs
     // was installed then so can report back to user more clearly
@@ -73,7 +75,16 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
         return Ok(());
     }
     debug!("Installing package from {} to {:?}", &url, dest);
-    let parsed_url = Url::parse(url)?;
+    let mut parsed_url = Url::parse(url)?;
+    
+    let url = if sysinfo.os_family() == "linux" {
+        let query = sysinfo.arch().map(|arch| format!("r_version={}.{}&arch={}", rvparts[0], rvparts[1], arch));
+        parsed_url.set_query(query.as_deref());
+        parsed_url.as_str()
+    } else {
+        url
+    };
+
     let file_name = parsed_url
         .path_segments()
         .and_then(|segments| segments.last())
@@ -88,10 +99,6 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     crate::cli::http::download(
         url,
         &mut File::create(&temp_path)?,
-        Some((
-            "user-agent",
-            format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
-        )),
     )?;
     debug!("Downloaded '{}' in {:?}", file_name, start_time.elapsed());
 
