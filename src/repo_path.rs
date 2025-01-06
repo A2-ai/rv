@@ -5,7 +5,7 @@ use crate::OsType;
 // https://packagemanager.posit.co/cran/__linux__/focal/2024-12-15
 
 // TODO: this is only for CRAN right now. Need to add posit
-pub fn get_binary_path(r_version: &[u32; 2], os_type: &OsType, codename: Option<&str>) -> String {
+pub fn get_binary_path(name: &str, r_version: &[u32; 2], os_type: &OsType, codename: Option<&str>) -> String {
     match os_type {
         OsType::Windows => format!("/bin/windows/contrib/{}.{}/", r_version[0], r_version[1]),
         OsType::MacOs => {
@@ -24,7 +24,9 @@ pub fn get_binary_path(r_version: &[u32; 2], os_type: &OsType, codename: Option<
             todo!("Handle no binary");
         }
         // linux should be the only os we need for now that needs a code name
-        OsType::Linux(_) => format!("/__linux__/{}/src/contrib/", codename.unwrap()).to_string(),
+        // for linux we'll use a url join elsewhere so don't want the starting /
+        // per how url::Url().join() works
+        OsType::Linux(_) => format!("__linux__/{}/{}/src/contrib/", codename.unwrap(), name).to_string(),
         OsType::Other(t) => panic!("{} not supported right now", t),
     }
 }

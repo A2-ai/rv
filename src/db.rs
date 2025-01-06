@@ -1,3 +1,4 @@
+use url::Url;
 use crate::{
     cli::{http, DiskCache},
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
@@ -64,44 +65,61 @@ pub fn load_databases(
 
                     // Download binary PACKAGES
                     let mut binary_package = Vec::new();
-                    let binary_path = get_binary_path(
-                        &cache.r_version,
-                        &cache.system_info.os_type,
-                        cache.system_info.codename(),
-                    );
-                    let binary_path = format!("{}{binary_path}", r.url());
-                    let dl_url = format!("{}{PACKAGE_FILENAME}", binary_path);
-                    debug!("Downloading binary package from {dl_url}");
-                    start_time = std::time::Instant::now();
-                    let rvparts = r_version.major_minor();
-                    let binarydl = http::download(
-                        &dl_url,
-                        &mut binary_package,
-                        Some((
-                            "user-agent",
-                            format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
-                        )),
-                    );
-                    // binary should be an optional
-                    if binarydl.is_ok() {
-                        db.binary_url = Some(binary_path);
-                        debug!(
-                            "Downloading binary package db took: {:?}",
-                            start_time.elapsed()
+                    // if the repo is an RSPM style repo, then it will have a repo name + version, 
+                    // either `latest` or a specific date/hash, so we need to truncate that off
+                    // to insert the __linux__ part
+                    // TODO: update this to be standalone helper to be better unit tested
+                    let url_path = Url::parse(r.url()).unwrap();
+                    // for cran there are no path segments and know there will be no binaries
+                    // for a properly constructed url being parsed, there is still one segment that is an empty string
+                    let segments: Vec<_> = url_path.path_segments().unwrap().filter(|s| s.len() != 0).collect();
+                    if !segments.is_empty() {
+                        let base = segments.last().unwrap();
+                        // into iter otherwise it's a borrow and collect becomes &&str
+                        let binary_path = get_binary_path(
+                            base,
+                            &cache.r_version,
+                            &cache.system_info.os_type,
+                            cache.system_info.codename(),
                         );
 
-                        // Parse binary
+                        // since the originating path shouldn't have a trailing /, by joining, this will
+                        // replace
+                        let binary_path = url_path.join(&binary_path).unwrap().to_string(); 
+                        let dl_url = format!("{}{PACKAGE_FILENAME}", binary_path);
+                        debug!("Downloading binary package from {dl_url}");
                         start_time = std::time::Instant::now();
-                        unsafe {
-                            db.parse_binary(
-                                std::str::from_utf8_unchecked(&source_package),
-                                cache.r_version.clone(),
+                        let rvparts = r_version.major_minor();
+                        let binarydl = http::download(
+                            &dl_url,
+                            &mut binary_package,
+                            Some((
+                                "user-agent",
+                                format!("R/{}.{}", rvparts[0], rvparts[1]).into(),
+                            )),
+                        );
+                        // binary should be an optional
+                        if binarydl.is_ok() {
+                            db.binary_url = Some(binary_path);
+                            debug!(
+                                "Downloading binary package db took: {:?}",
+                                start_time.elapsed()
                             );
+    
+                            // Parse binary
+                            start_time = std::time::Instant::now();
+                            unsafe {
+                                db.parse_binary(
+                                    std::str::from_utf8_unchecked(&source_package),
+                                    cache.r_version.clone(),
+                                );
+                            }
+                            debug!("Parsing binary package db took: {:?}", start_time.elapsed());
+    
+                            // Persist if requested
                         }
-                        debug!("Parsing binary package db took: {:?}", start_time.elapsed());
-
-                        // Persist if requested
                     }
+                    
                     start_time = std::time::Instant::now();
                     if persist {
                         db.persist(&p);
