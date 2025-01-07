@@ -1,5 +1,6 @@
 use crate::package::PackageType;
 use crate::version::Version;
+use crate::OsType;
 use crate::SystemInfo;
 use flate2::read::GzDecoder;
 use log::{debug, error, info, trace};
@@ -77,7 +78,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     debug!("Installing package from {} to {:?}", &url, dest);
     let mut parsed_url = Url::parse(url)?;
     
-    let url = if sysinfo.os_family() == "linux" {
+    let url = if let OsType::Linux(_) = sysinfo.os_type {
         let query = sysinfo.arch().map(|arch| format!("r_version={}.{}&arch={}", rvparts[0], rvparts[1], arch));
         parsed_url.set_query(query.as_deref());
         parsed_url.as_str()
@@ -99,6 +100,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     crate::cli::http::download(
         url,
         &mut File::create(&temp_path)?,
+        None,
     )?;
     debug!("Downloaded '{}' in {:?}", file_name, start_time.elapsed());
 

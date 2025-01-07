@@ -1,9 +1,6 @@
 use url::Url;
 use crate::{
-    cli::{http, DiskCache},
-    consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    repo_path::get_binary_path,
-    Cache, CacheEntry, Repository, RepositoryDatabase, Version,
+    cli::{http, DiskCache}, consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH}, repo_path::get_binary_path, Cache, CacheEntry, Repository, RepositoryDatabase, SystemInfo, Version
 };
 use log::{debug, trace};
 use rayon::prelude::*;
@@ -15,6 +12,7 @@ pub fn load_databases(
     repositories: &[Repository],
     cache: &DiskCache,
     r_version: &Version,
+    sysinfo: &SystemInfo,
     persist: bool,
 ) -> Vec<(RepositoryDatabase, bool)> {
     repositories
@@ -40,6 +38,7 @@ pub fn load_databases(
                     http::download(
                         &format!("{}{SOURCE_PACKAGES_PATH}", r.url()),
                         &mut source_package,
+                        None,
                     )
                     .expect("TODO");
                     db.source_url = format!(
@@ -86,12 +85,17 @@ pub fn load_databases(
                         // replace
                         let binary_path = url_path.join(&binary_path).unwrap().to_string(); 
                         let dl_url = format!("{}{PACKAGE_FILENAME}", binary_path);
+                        let mut url_query = Url::parse(&dl_url).unwrap();
+                        let [major, minor] = r_version.major_minor();
+                        let query = sysinfo.arch().map(|arch|format!("r_version={}.{}&arch={}", major, minor, arch));
+                        url_query.set_query(query.as_deref());
+                        let url_query = url_query.as_str();
                         debug!("Downloading binary package from {dl_url}");
                         start_time = std::time::Instant::now();
-                        let rvparts = r_version.major_minor();
                         let binarydl = http::download(
-                            &dl_url,
+                            &url_query,
                             &mut binary_package,
+                            None,
                         );
                         // binary should be an optional
                         if binarydl.is_ok() {

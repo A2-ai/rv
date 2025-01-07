@@ -74,7 +74,7 @@ pub fn execute_plan(config: &Config, plan_args: PlanArgs) {
     // Load databases
     start_time = std::time::Instant::now();
     let cache = DiskCache::new(&r_version, sysinfo.clone());
-    let databases = load_databases(config.repositories(), &cache, &r_version, no_user_override);
+    let databases = load_databases(config.repositories(), &cache, &r_version, &sysinfo,no_user_override);
     debug!("Loading databases took: {:?}", start_time.elapsed());
 
     // Resolve

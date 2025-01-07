@@ -131,7 +131,7 @@ pub fn execute_install(config: &Config, destination: &PathBuf) {
     // Load databases
     start_time = std::time::Instant::now();
     let cache = DiskCache::new(&r_version, sysinfo.clone());
-    let databases = load_databases(config.repositories(), &cache, &r_version, no_user_override);
+    let databases = load_databases(config.repositories(), &cache, &r_version, &sysinfo, no_user_override);
     trace!("Repositories: {:?}", config.repositories());
     trace!("Loading databases took: {:?}", start_time.elapsed());
 
