@@ -7,7 +7,7 @@ use crate::OsType;
 // TODO: this is only for CRAN right now. Need to add posit
 pub fn get_binary_path(name: &str, r_version: &[u32; 2], os_type: &OsType, codename: Option<&str>) -> String {
     match os_type {
-        OsType::Windows => format!("/bin/windows/contrib/{}.{}/", r_version[0], r_version[1]),
+        OsType::Windows => format!("{}/bin/windows/contrib/{}.{}/", name, r_version[0], r_version[1]),
         OsType::MacOs => {
             // TODO: only cran right now
             if r_version[0] < 4 {
@@ -16,7 +16,7 @@ pub fn get_binary_path(name: &str, r_version: &[u32; 2], os_type: &OsType, coden
             // TODO: only arm right now (m1), need to use arch
             if r_version[0] > 2 {
                 return format!(
-                    "/bin/macosx/big-sur-arm64/contrib/{}.{}/",
+                    "{}/bin/macosx/big-sur-arm64/contrib/{}.{}/", name,
                     r_version[0], r_version[1]
                 );
             }
