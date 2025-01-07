@@ -11,5 +11,5 @@ dependencies = [
     # "mrgsolve",
     # "slurmtools"
     #"tidyverse"
-    "R6"
+    "dplyr"
 ]

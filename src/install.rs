@@ -75,7 +75,6 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
         debug!("Package '{}' already present in cache", name);
         return Ok(());
     }
-    debug!("Installing package from {} to {:?}", &url, dest);
     let mut parsed_url = Url::parse(url)?;
     
     let url = if let OsType::Linux(_) = sysinfo.os_type {
@@ -84,6 +83,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     } else {
         url
     };
+    debug!("Installing package from {} to {:?}", &url, dest);
 
     let file_name = parsed_url
         .path_segments()

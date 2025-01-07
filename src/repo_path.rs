@@ -33,6 +33,6 @@ pub fn get_binary_path(name: &str, r_version: &[u32; 2], os_type: &OsType, coden
 }
 
 pub fn set_rversion_arch_query(url: &mut Url, r_version: &[u32; 2], arch: Option<&str>) {
-    let query = arch.map(|a| format!("r-version={}.{}&arch={}", r_version[0], r_version[1], a));
+    let query = arch.map(|a| format!("r_version={}.{}&arch={}", r_version[0], r_version[1], a));
     url.set_query(query.as_deref());
 }
