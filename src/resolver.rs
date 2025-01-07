@@ -204,10 +204,24 @@ impl<'d> Resolver<'d> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use super::*;
     use crate::config::Config;
     use crate::repository::RepositoryDatabase;
     use std::str::FromStr;
+    use crate::CacheEntry;
+
+    struct FakeCache;
+
+    impl Cache for FakeCache {
+        fn get_package_db_entry(&self, _: &str) -> CacheEntry {
+            CacheEntry::NotFound(PathBuf::from_str("").unwrap())
+        }
+
+        fn get_package_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
+            InstallationStatus::Absent
+        }
+    }
 
     #[test]
     fn can_resolve_various_dependencies() {
@@ -240,7 +254,7 @@ mod tests {
                 r_version.clone()
             };
             let resolver = Resolver::new(&repositories, &v);
-            let (resolved, unresolved) = resolver.resolve(&config.dependencies());
+            let (resolved, unresolved) = resolver.resolve(&config.dependencies(), &FakeCache{});
             let mut out = String::new();
             for d in resolved {
                 out.push_str(&d.to_string());

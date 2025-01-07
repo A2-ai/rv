@@ -101,6 +101,7 @@ impl<'a> BuildPlan<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::cache::InstallationStatus;
     use super::*;
     use crate::package::PackageType;
 
@@ -110,8 +111,10 @@ mod tests {
             dependencies,
             version: "",
             repository: "",
+            repository_url: "",
             needs_compilation: false,
             kind: PackageType::Source,
+            installation_status: InstallationStatus::Binary,
         }
     }
 
