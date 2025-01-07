@@ -86,11 +86,11 @@ pub fn load_databases(
                         let binary_path = url_path.join(&binary_path).unwrap().to_string(); 
                         let dl_url = format!("{}{PACKAGE_FILENAME}", binary_path);
                         let mut url_query = Url::parse(&dl_url).unwrap();
-                        let [major, minor] = r_version.major_minor();
-                        let query = sysinfo.arch().map(|arch|format!("r_version={}.{}&arch={}", major, minor, arch));
-                        url_query.set_query(query.as_deref());
+                        crate::repo_path::set_rversion_arch_query(&mut url_query, 
+                            &r_version.major_minor(), 
+                            sysinfo.arch());
                         let url_query = url_query.as_str();
-                        debug!("Downloading binary package from {dl_url}");
+                        debug!("Downloading binary package from {url_query}");
                         start_time = std::time::Instant::now();
                         let binarydl = http::download(
                             &url_query,

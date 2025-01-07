@@ -1,6 +1,7 @@
 //! https://cran.r-project.org/doc/manuals/R-admin.html#Setting-up-a-package-repository-1
 
 use crate::OsType;
+use url::Url;
 
 // https://packagemanager.posit.co/cran/__linux__/focal/2024-12-15
 
@@ -29,4 +30,9 @@ pub fn get_binary_path(name: &str, r_version: &[u32; 2], os_type: &OsType, coden
         OsType::Linux(_) => format!("__linux__/{}/{}/src/contrib/", codename.unwrap(), name).to_string(),
         OsType::Other(t) => panic!("{} not supported right now", t),
     }
+}
+
+pub fn set_rversion_arch_query(url: &mut Url, r_version: &[u32; 2], arch: Option<&str>) {
+    let query = arch.map(|a| format!("r-version={}.{}&arch={}", r_version[0], r_version[1], a));
+    url.set_query(query.as_deref());
 }

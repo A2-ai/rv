@@ -79,8 +79,7 @@ pub fn dl_and_install_pkg<D: AsRef<Path>>(
     let mut parsed_url = Url::parse(url)?;
     
     let url = if let OsType::Linux(_) = sysinfo.os_type {
-        let query = sysinfo.arch().map(|arch| format!("r_version={}.{}&arch={}", rvparts[0], rvparts[1], arch));
-        parsed_url.set_query(query.as_deref());
+        crate::repo_path::set_rversion_arch_query(&mut parsed_url, rvparts, sysinfo.arch());
         parsed_url.as_str()
     } else {
         url
