@@ -36,17 +36,16 @@ impl RepoClass {
 
     pub fn get_repo_path(&self, 
         file_name: &str, 
-        r_version: &Version, 
+        r_version: &[u32; 2], 
         sysinfo: &SystemInfo,
         source: bool) -> String {
         
         if source { return self.get_source_path(file_name) }
-
-        let [major, minor] = r_version.major_minor();
+        let [major, minor] = *r_version;
         match sysinfo.os_type {
             OsType::Windows => format!("{}/bin/windows/contrib/{major}.{minor}/{file_name}", self.to_url()),
-            OsType::MacOs => self.get_mac_url(file_name, [major, minor], sysinfo),
-            OsType::Linux(_) => self.get_linux_url(file_name, [major, minor], sysinfo),
+            OsType::MacOs => self.get_mac_url(file_name, &[major, minor], sysinfo),
+            OsType::Linux(_) => self.get_linux_url(file_name, &[major, minor], sysinfo),
             OsType::Other(_) => self.get_source_path(file_name),
         }
     }
@@ -56,7 +55,7 @@ impl RepoClass {
         format!("{url}/src/contrib/{file_name}")
     }
 
-    fn get_mac_url(&self, file_name: &str, r_version: [u32; 2], sysinfo: &SystemInfo) -> String {
+    fn get_mac_url(&self, file_name: &str, r_version: &[u32; 2], sysinfo: &SystemInfo) -> String {
         if r_version[0] < 4 { todo!("Not supported on most repos") }
         let ext = if r_version[1] <= 2 {
             format!("bin/macosx/contrib/{}.{}", r_version[0], r_version[1])
@@ -81,7 +80,7 @@ impl RepoClass {
         format!("{}/{ext}/{file_name}", self.to_url())
     }
 
-    fn get_linux_url(&self, file_name: &str, r_version: [u32; 2], sysinfo: &SystemInfo) -> String {
+    fn get_linux_url(&self, file_name: &str, r_version: &[u32; 2], sysinfo: &SystemInfo) -> String {
         match self {
             Self::PPM(url) | Self::RV(url) => get_linux_binary_url(url, file_name, r_version, sysinfo),
             _ => self.get_source_path(file_name),
@@ -89,7 +88,7 @@ impl RepoClass {
     }
 }
 
-fn get_linux_binary_url(url: &str, file_name: &str, r_version: [u32; 2], sysinfo: &SystemInfo) -> String {
+fn get_linux_binary_url(url: &str, file_name: &str, r_version: &[u32; 2], sysinfo: &SystemInfo) -> String {
     let mut url = Url::parse(url).unwrap();
 
     //Insert __linux__/<distribution>
@@ -117,16 +116,15 @@ mod tests {
     fn test_source_url() {
         let sysinfo = SystemInfo::new(OsType::Linux("ubuntu"), Some("x86_64".to_string()), Some("jammy".to_string()), "24H2");
         let source_url = RepoClass::from_url(&ppm_url())
-            .get_repo_path("test-file", &"4.4.1".parse::<Version>().unwrap(), &sysinfo, true);
+            .get_repo_path("test-file", &[4, 4], &sysinfo, true);
         let ref_url = format!("{}/src/contrib/test-file", ppm_url());
         assert_eq!(source_url, ref_url);
     }
-
     #[test]
     fn test_windows_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
         let source_url = RepoClass::from_url(&ppm_url())
-            .get_repo_path("test-file", &"4.4.1".parse::<Version>().unwrap(), &sysinfo, false);
+            .get_repo_path("test-file", &[4, 4], &sysinfo, false);
         let ref_url = format!("{}/bin/windows/contrib/4.4/test-file", ppm_url());
         assert_eq!(source_url, ref_url)
     }
@@ -135,16 +133,16 @@ mod tests {
     fn test_mac_42_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
         let source_url = RepoClass::from_url(&ppm_url())
-            .get_repo_path("test-file", &"4.2.2".parse::<Version>().unwrap(), &sysinfo, false);
+            .get_repo_path("test-file", &[4, 2], &sysinfo, false);
         let ref_url = format!("{}/bin/macosx/contrib/4.2/test-file", ppm_url());
         assert_eq!(source_url, ref_url)
     }
 
     #[test]
     fn test_mac_44_url() {
-        let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arch64".to_string()), None, "");
         let source_url = RepoClass::from_url(&ppm_url())
-            .get_repo_path("test-file", &"4.4.1".parse::<Version>().unwrap(), &sysinfo, false);
+            .get_repo_path("test-file", &[4, 4], &sysinfo, false);
         let ref_url = format!("{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file", ppm_url());
         assert_eq!(source_url, ref_url)
     }
@@ -154,7 +152,7 @@ mod tests {
     fn test_mac_mpn_44_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
         let source_url = RepoClass::from_url(&mpn_url())
-            .get_repo_path("test-file", &"4.4.1".parse::<Version>().unwrap(), &sysinfo, false);
+            .get_repo_path("test-file", &[4, 4], &sysinfo, false);
         println!("{}", source_url)
     }
 
@@ -162,7 +160,7 @@ mod tests {
     fn test_linux_binaries_url() {
         let sysinfo = SystemInfo::new(OsType::Linux("ubuntu"), Some("x86_64".to_string()), Some("jammy".to_string()), "22.04");
         let source_url = RepoClass::from_url(&ppm_url())
-            .get_repo_path("test-file", &"4.2.2".parse::<Version>().unwrap(), &sysinfo, false);
+            .get_repo_path("test-file", &[4, 2], &sysinfo, false);
         let ref_url = "https://packagemanager.posit.co/cran/__linux__/jammy/latest/src/contrib/test-file?r_version=4.2&arch=x86_64".to_string();
         assert_eq!(source_url, ref_url)
     }
@@ -171,7 +169,7 @@ mod tests {
     fn test_linux_url() {
         let sysinfo = SystemInfo::new(OsType::Linux("ubuntu"), Some("x86_64".to_string()), Some("jammy".to_string()), "22.04");
         let source_url = RepoClass::from_url("https://cran.rstudio.com")
-            .get_repo_path("test-file", &"4.2.2".parse::<Version>().unwrap(), &sysinfo, false);
+            .get_repo_path("test-file", &[4, 4], &sysinfo, false);
         let ref_url = "https://cran.rstudio.com/src/contrib/test-file".to_string();
         assert_eq!(source_url, ref_url)
     }
