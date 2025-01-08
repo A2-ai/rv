@@ -5,11 +5,10 @@ use anyhow::{bail, Result};
 use rayon::prelude::*;
 
 use rv::{
-    cli::http,
-    cli::DiskCache,
+    cli::{http, DiskCache},
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    RepoClass, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
-    Resolver, SystemInfo,
+    Cache, CacheEntry, Config, RCommandLine, RepoServer, Repository, RepositoryDatabase, Resolver,
+    SystemInfo,
 };
 
 #[derive(Parser)]
@@ -69,8 +68,7 @@ fn load_databases(
                     let mut db = RepositoryDatabase::new(&r.alias);
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
-                    let source_url = RepoClass::from_url(r.url())
-                        .get_repo_path("PACKAGES", &cache.r_version, &cache.system_info, true);
+                    let source_url = RepoServer::from_url(r.url()).get_source_path("PACKAGES");
                     let bytes_read = http::download(&source_url, &mut source_package, Vec::new())?;
                     // We should ALWAYS has a PACKAGES file for source
                     if bytes_read == 0 {
@@ -80,8 +78,11 @@ fn load_databases(
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
                     let mut binary_package = Vec::new();
-                    let binary_path = RepoClass::from_url(r.url())
-                        .get_repo_path("PACKAGES", &cache.r_version, &cache.system_info, false);
+                    let binary_path = RepoServer::from_url(r.url()).get_binary_path(
+                        "PACKAGES",
+                        &cache.r_version,
+                        &cache.system_info,
+                    );
 
                     let bytes_read = http::download(
                         &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
@@ -130,7 +131,6 @@ fn try_main() -> Result<()> {
         .filter(Some("ureq"), log::LevelFilter::Off)
         .filter(Some("rustls"), log::LevelFilter::Off)
         .init();
-
 
     match cli.command {
         Command::Init => todo!("implement init"),
