@@ -143,7 +143,7 @@ mod tests {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("arch64".to_string()), None, "");
         let source_url = RepoClass::from_url(&ppm_url())
             .get_repo_path("test-file", &[4, 4], &sysinfo, false);
-        let ref_url = format!("{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file", ppm_url());
+        let ref_url = format!("{}/bin/macosx/big-sur-arch64/contrib/4.4/test-file", ppm_url());
         assert_eq!(source_url, ref_url)
     }
 
