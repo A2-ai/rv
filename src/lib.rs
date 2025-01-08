@@ -19,7 +19,7 @@ pub mod consts;
 pub use cache::{Cache, CacheEntry};
 pub use config::{Config, DependencyKind, Repository};
 pub use r_cmd::{RCmd, RCommandLine};
-pub use repo_path::get_binary_path;
+pub use repo_path::RepoClass;
 pub use repository::RepositoryDatabase;
 pub use resolver::{ResolvedDependency, Resolver};
 pub use system_info::{OsType, SystemInfo};

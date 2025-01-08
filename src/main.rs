@@ -8,7 +8,7 @@ use rv::{
     cli::http,
     cli::DiskCache,
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    get_binary_path, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
+    RepoClass, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
     Resolver, SystemInfo,
 };
 
@@ -69,7 +69,8 @@ fn load_databases(
                     let mut db = RepositoryDatabase::new(&r.alias);
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
-                    let source_url = format!("{}{SOURCE_PACKAGES_PATH}", r.url());
+                    let source_url = RepoClass::from_url(r.url())
+                        .get_repo_path("PACKAGES", &cache.r_version, &cache.system_info, true);
                     let bytes_read = http::download(&source_url, &mut source_package, Vec::new())?;
                     // We should ALWAYS has a PACKAGES file for source
                     if bytes_read == 0 {
@@ -79,7 +80,8 @@ fn load_databases(
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
                     let mut binary_package = Vec::new();
-                    let binary_path = get_binary_path(&cache.r_version, &cache.system_info);
+                    let binary_path = RepoClass::from_url(r.url())
+                        .get_repo_path("PACKAGES", &cache.r_version, &cache.system_info, false);
 
                     let bytes_read = http::download(
                         &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),

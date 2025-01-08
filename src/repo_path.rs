@@ -4,7 +4,7 @@ use crate::{OsType, SystemInfo, Version};
 use url::Url;
 
 #[derive(Debug)]
-enum RepoClass {
+pub enum RepoClass {
     PPM(String),
     MPN(String),
     RV(String),
@@ -12,7 +12,7 @@ enum RepoClass {
 }
 
 impl RepoClass {
-    fn from_url(url: &str) -> Self {
+    pub fn from_url(url: &str) -> Self {
         let url = url.to_string();
         if url.contains("packagemanager.posit.co/cran") {
             RepoClass::PPM(url)
@@ -34,7 +34,7 @@ impl RepoClass {
         }
     }
 
-    fn get_repo_path(&self, 
+    pub fn get_repo_path(&self, 
         file_name: &str, 
         r_version: Version, 
         sysinfo: SystemInfo,
@@ -45,8 +45,8 @@ impl RepoClass {
         let [major, minor] = r_version.major_minor();
         match sysinfo.os_type {
             OsType::Windows => format!("{}/bin/windows/contrib/{major}.{minor}/{file_name}", self.to_url()),
-            OsType::MacOs => self.get_mac_url(file_name, r_version, sysinfo),
-            OsType::Linux(_) => self.get_linux_url(file_name, r_version, sysinfo),
+            OsType::MacOs => self.get_mac_url(file_name, [major, minor], sysinfo),
+            OsType::Linux(_) => self.get_linux_url(file_name, [major, minor], sysinfo),
             OsType::Other(_) => self.get_source_path(file_name),
         }
     }
@@ -56,11 +56,10 @@ impl RepoClass {
         format!("{url}/src/contrib/{file_name}")
     }
 
-    fn get_mac_url(&self, file_name: &str, r_version: Version, sysinfo: SystemInfo) -> String {
-        let [major, minor] = r_version.major_minor();
-        if major < 4 { todo!("Not supported on most repos") }
-        let ext = if minor <= 2 {
-            format!("bin/macosx/contrib/{major}.{minor}")
+    fn get_mac_url(&self, file_name: &str, r_version: [u32; 2], sysinfo: SystemInfo) -> String {
+        if r_version[0] < 4 { todo!("Not supported on most repos") }
+        let ext = if r_version[1] <= 2 {
+            format!("bin/macosx/contrib/{}.{}", r_version[0], r_version[1])
         } else {
             if let RepoClass::MPN(_) = self {
                 todo!("MPN does not support > 4.2 mac binaries");
@@ -73,7 +72,7 @@ impl RepoClass {
                 */
             }
             if let Some(arch) = sysinfo.arch() {
-                format!("bin/macosx/big-sur-{arch}/contrib/{major}.{minor}")
+                format!("bin/macosx/big-sur-{arch}/contrib/{}.{}", r_version[0], r_version[1])
             } else {
                 todo!("arch not found!")
             }
@@ -82,7 +81,7 @@ impl RepoClass {
         format!("{}/{ext}/{file_name}", self.to_url())
     }
 
-    fn get_linux_url(&self, file_name: &str, r_version: Version, sysinfo: SystemInfo) -> String {
+    fn get_linux_url(&self, file_name: &str, r_version: [u32; 2], sysinfo: SystemInfo) -> String {
         match self {
             Self::PPM(url) | Self::RV(url) => get_linux_binary_url(url, file_name, r_version, sysinfo),
             _ => self.get_source_path(file_name),
@@ -90,7 +89,7 @@ impl RepoClass {
     }
 }
 
-fn get_linux_binary_url(url: &str, file_name: &str, r_version: Version, sysinfo: SystemInfo) -> String {
+fn get_linux_binary_url(url: &str, file_name: &str, r_version: [u32; 2], sysinfo: SystemInfo) -> String {
     let mut url = Url::parse(url).unwrap();
 
     //Insert __linux__/<distribution>
@@ -101,8 +100,7 @@ fn get_linux_binary_url(url: &str, file_name: &str, r_version: Version, sysinfo:
         .set_path(format!("{}/__linux__/{}/{snapshot}/src/contrib/{file_name}", segments.join("/"), sysinfo.codename().unwrap()).as_str());
 
     //Insert query
-    let [major, minor] = r_version.major_minor();
-    let query = sysinfo.arch().map(|arch| format!("r_version={major}.{minor}&arch={arch}"));
+    let query = sysinfo.arch().map(|arch| format!("r_version={}.{}&arch={arch}", r_version[0], r_version[1]));
     url.set_query(query.as_deref());
 
     url.to_string()
@@ -176,31 +174,5 @@ mod tests {
             .get_repo_path("test-file", "4.2.2".parse::<Version>().unwrap(), sysinfo, false);
         let ref_url = "https://cran.rstudio.com/src/contrib/test-file".to_string();
         assert_eq!(source_url, ref_url)
-    }
-}
-
-// https://packagemanager.posit.co/cran/__linux__/focal/2024-12-15
-
-// TODO: this is only for CRAN right now. Need to add posit
-pub fn get_binary_path(r_version: &[u32; 2], system_info: &SystemInfo) -> String {
-    match system_info.os_type {
-        OsType::Windows => format!("/bin/windows/contrib/{}.{}/", r_version[0], r_version[1]),
-        OsType::MacOs => {
-            // TODO: only cran right now
-            if r_version[0] < 4 {
-                todo!("TODO: not on cran")
-            }
-            // TODO: only arm right now (m1), need to use arch
-            if r_version[0] > 2 {
-                return format!(
-                    "/bin/macosx/big-sur-arm64/contrib/{}.{}/",
-                    r_version[0], r_version[1]
-                );
-            }
-
-            todo!("Handle no binary");
-        }
-        OsType::Linux(_distrib) => "/src/contrib/".to_string(),
-        OsType::Other(t) => panic!("{} not supported right now", t),
     }
 }
