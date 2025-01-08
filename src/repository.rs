@@ -28,7 +28,7 @@ impl RepositoryDatabase {
         }
     }
 
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, RepositoryDatabaseError> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
         let reader = BufReader::new(
             std::fs::File::open(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );
@@ -36,7 +36,10 @@ impl RepositoryDatabase {
         bincode::deserialize_from(reader).map_err(RepositoryDatabaseError::from_bincode)
     }
 
-    pub fn persist<P: AsRef<Path>>(&self, path: P) -> Result<(), RepositoryDatabaseError> {
+    pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent).map_err(RepositoryDatabaseError::from_io)?;
+        }
         let writer = BufWriter::new(
             std::fs::File::create(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );

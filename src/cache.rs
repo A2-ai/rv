@@ -17,6 +17,20 @@ pub enum InstallationStatus {
     Absent,
 }
 
+impl InstallationStatus {
+    pub fn available(&self) -> bool {
+        *self != InstallationStatus::Absent
+    }
+
+    pub fn binary_available(&self) -> bool {
+        matches!(self, InstallationStatus::Binary | InstallationStatus::Both)
+    }
+
+    pub fn source_available(&self) -> bool {
+        matches!(self, InstallationStatus::Source | InstallationStatus::Both)
+    }
+}
+
 impl fmt::Display for InstallationStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let v = match self {

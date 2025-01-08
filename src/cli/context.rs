@@ -4,11 +4,12 @@ use std::path::PathBuf;
 use crate::cli::{http, utils::write_err, DiskCache};
 use crate::{
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    get_binary_path, Cache, CacheEntry, Config, RCommandLine, Repository, RepositoryDatabase,
-    SystemInfo, Version,
+    get_binary_path, timeit, Cache, CacheEntry, Config, RCommandLine, Repository,
+    RepositoryDatabase, SystemInfo, Version,
 };
 
 use anyhow::{bail, Result};
+use fs_err as fs;
 use rayon::prelude::*;
 
 #[derive(Debug)]
@@ -24,8 +25,12 @@ impl CliContext {
         let config = Config::from_file(config_file)?;
         let r_cli = RCommandLine {};
         let r_version = config.get_r_version(r_cli)?;
+
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
-        let databases = load_databases(config.repositories(), &cache)?;
+        let databases = timeit!(
+            "Loaded package databases",
+            load_databases(config.repositories(), &cache)?
+        );
 
         Ok(Self {
             config,
@@ -54,11 +59,19 @@ fn load_databases(
                     Ok((db, r.force_source))
                 }
                 CacheEntry::NotFound(p) | CacheEntry::Expired(p) => {
+                    // Make sure to remove the file if it exists - it's expired
+                    if p.exists() {
+                        fs::remove_file(&p)?;
+                    }
+                    log::debug!("Need to download PACKAGES file for {}", r.url());
                     let mut db = RepositoryDatabase::new(&r.alias, &r.url());
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
                     let source_url = format!("{}{SOURCE_PACKAGES_PATH}", r.url());
-                    let bytes_read = http::download(&source_url, &mut source_package, Vec::new())?;
+                    let bytes_read = timeit!(
+                        "Downloaded source PACKAGES",
+                        http::download(&source_url, &mut source_package, Vec::new())?
+                    );
                     // We should ALWAYS has a PACKAGES file for source
                     if bytes_read == 0 {
                         bail!("File at {source_url} was not found");
@@ -69,17 +82,20 @@ fn load_databases(
                     let mut binary_package = Vec::new();
                     let binary_path = get_binary_path(&cache.r_version, &cache.system_info);
 
-                    let bytes_read = http::download(
-                        &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
-                        &mut binary_package,
-                        vec![],
-                    )?;
+                    let bytes_read = timeit!(
+                        "Downloaded binary PACKAGES",
+                        http::download(
+                            &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
+                            &mut binary_package,
+                            vec![],
+                        )?
+                    );
                     // but sometimes we might not have a binary PACKAGES file and that's fine.
                     // We only load binary if we found a file
                     if bytes_read > 0 {
                         // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                         db.parse_binary(
-                            unsafe { std::str::from_utf8_unchecked(&source_package) },
+                            unsafe { std::str::from_utf8_unchecked(&binary_package) },
                             cache.r_version.clone(),
                         );
                     }

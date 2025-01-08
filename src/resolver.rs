@@ -21,6 +21,17 @@ pub struct ResolvedDependency<'d> {
     pub(crate) installation_status: InstallationStatus,
 }
 
+impl<'d> ResolvedDependency<'d> {
+    pub fn is_installed(&self) -> bool {
+        // TODO: is that correct? What if you have a source that you already compiled before
+        // TODO: in the cache
+        match self.kind {
+            PackageType::Source => self.installation_status.source_available(),
+            PackageType::Binary => self.installation_status.binary_available(),
+        }
+    }
+}
+
 impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

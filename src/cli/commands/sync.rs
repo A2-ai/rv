@@ -1,43 +1,80 @@
-// TODO
-// 1. List packages installed in current library
-// 2. Make the plan, it should check whether the version we get is already available in the cache
-// 3. Make a list of packages to be removed that are not in the plan
-// 4. Create a temp dir and install all packages in there
-// 5. Replace the contents of the library path with that temp dir
-
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{bail, Result};
 use crossbeam::{channel, thread};
+use fs_err as fs;
 
-use crate::cache::InstallationStatus;
-use crate::cli::utils::{create_dir_all, untar_package};
-use crate::cli::{http, CliContext};
+use crate::cli::utils::untar_package;
+use crate::cli::{http, link::LinkMode, CliContext};
 use crate::package::PackageType;
-use crate::{get_binary_path, BuildPlan, BuildStep, ResolvedDependency};
+use crate::{get_binary_path, BuildPlan, BuildStep, RCmd, RCommandLine, ResolvedDependency};
 
-fn install_package(context: &CliContext, pkg: &ResolvedDependency) -> Result<()> {
-    bail!("Teting errors");
+fn install_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
+    // If the package is already in the cache, link it directly
+    // TODO: What do we do if user has force_source but we already have it compiled in the cache?
+    // TODO: Should we differentiate binaries from repos from binaries compiled locally in the cache?
+    if pkg.is_installed() {
+        log::debug!(
+            "Package {} already present in cache. Linking it in the library.",
+            pkg.name
+        );
+        if pkg.installation_status.binary_available() {
+            let binary_destination =
+                context
+                    .cache
+                    .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
+
+            LinkMode::default().link_files(&binary_destination, &library_dir)?;
+        }
+        return Ok(());
+    }
+
+    // TODO: very similar branches
     match pkg.kind {
         PackageType::Source => {
             let destination =
                 context
                     .cache
                     .get_source_package_path(pkg.repository_url, pkg.name, pkg.version);
-            create_dir_all(&destination)?;
+            fs::create_dir_all(&destination)?;
             // download the file
+            let mut tarball = Vec::new();
+            let url = format!(
+                "{}/src/contrib/{}_{}.tar.gz",
+                pkg.repository_url, pkg.name, pkg.version
+            );
+            println!("Source URL: {url}");
+            let bytes_read = http::download(&url, &mut tarball, vec![])?;
+            // TODO: handle 404
+            if bytes_read == 0 {
+                bail!("Archive not found at {url}");
+            }
+            untar_package(Cursor::new(tarball), &destination)?;
             // run R install
+            let r_cmd = RCommandLine {};
+            let binary_destination =
+                context
+                    .cache
+                    .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
+            r_cmd.install(destination.join(pkg.name), library_dir, &binary_destination)?;
+            println!("Need to symlink from {binary_destination:?}");
+            LinkMode::default().link_files(&binary_destination, &library_dir)?;
         }
         PackageType::Binary => {
             let destination =
                 context
                     .cache
                     .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
-            create_dir_all(&destination)?;
+            fs::create_dir_all(&destination)?;
 
             // TODO: abstract all that based on repository url and thing requested
             let mut tarball = Vec::new();
@@ -58,7 +95,8 @@ fn install_package(context: &CliContext, pkg: &ResolvedDependency) -> Result<()>
             }
 
             // TODO: this might not be a binary in practice, handle that later
-            untar_package(Cursor::new(tarball), destination)?;
+            untar_package(Cursor::new(tarball), &destination)?;
+            LinkMode::default().link_files(&destination, &library_dir)?;
         }
     }
 
@@ -66,26 +104,39 @@ fn install_package(context: &CliContext, pkg: &ResolvedDependency) -> Result<()>
 }
 
 // sync should only display the changes made, nothing about the deps that are not changing
+/// `sync` will ensure the project library contains only exactly the dependencies from rproject.toml
+/// (TODO: mention lockfile later)
+/// There's 2 different paths:
+/// 1. All deps are already installed, we might just need to remove some
+/// 2. Some deps are missing, we need to install stuff
+///
+/// For option 1, we can just remove the symlinks manually without a risk of breaking anything.
+/// For option 2, we want to install things but we don't want to mess the current library so
+/// we install everything in a temp directory and only replace the library if everything installed
+/// successfully.
+///
+///
+/// This works the following way:
+/// 1. TODO: look at the current library if it exists to get the deps/versions installed
+/// 2. Create a temp directory if things need to be installed
+/// 2. Send all dependencies to install to worker threads in order
+///     1. if the source/binary alre
 pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
-    // TODO: find the current library path
-
-    // We can't use references from the BuildPlan since we borrow mutably from it so we
-    // create a lookup table for resolved deps by name and use those references across channels.
-    let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
-
-    let mut plan = BuildPlan::new(&deps);
-    // for d in &deps {
-    //     if d.installation_status != InstallationStatus::Absent {
-    //         plan.mark_installed(&d.name);
-    //     }
-    // }
-
+    // TODO: get the current library path
+    // TODO: get the list of deps/versions installed in the current library path and
+    // TODO: compare if with the `deps` argument to see if we need to install something
+    // TODO: can we install things in a way that won't break the library without creating a tempdir? if it's binary only
+    let plan = BuildPlan::new(&deps);
     let num_deps_to_install = plan.num_to_install();
+    // TODO: too simplistic, we want to remove unneeded deps as well
     if num_deps_to_install == 0 {
         log::info!("Everything already installed");
         return Ok(());
     }
 
+    // We can't use references from the BuildPlan since we borrow mutably from it so we
+    // create a lookup table for resolved deps by name and use those references across channels.
+    let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
     let plan = Arc::new(Mutex::new(plan));
 
     let (ready_sender, ready_receiver) = channel::unbounded();
@@ -98,6 +149,9 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
             ready_sender.send(dep_by_name[d.name]).unwrap();
         }
     }
+
+    let library_dir = tempfile::tempdir().expect("to create a temp dir");
+    let library_dir_path = library_dir.path();
 
     let installed_count = Arc::new(AtomicUsize::new(0));
     let has_errors = Arc::new(AtomicBool::new(false));
@@ -128,6 +182,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
+            drop(ready_sender_clone);
         });
 
         // Our worker threads that will actually perform the installation
@@ -142,12 +197,10 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
                     if has_errors_clone.load(Ordering::Relaxed) {
-                        return;
+                        break;
                     }
-
-                    // Simulate installation
                     log::info!("Installing {}", dep.name);
-                    match install_package(&context, dep) {
+                    match install_package(&context, dep, library_dir_path) {
                         Ok(()) => {
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
@@ -157,19 +210,23 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                         }
                         Err(e) => {
                             log::error!("Failed to install {}: {e}", dep.name);
+                            std::thread::sleep(Duration::from_secs(1000));
                             has_errors_clone.store(true, Ordering::Relaxed);
+                            break;
                         }
                     }
                 }
+                drop(done_sender);
             });
         }
 
-        // let mut result = Vec::new();
         // Monitor progress in the main thread
-        while !has_errors.load(Ordering::Relaxed)
-            && installed_count.load(Ordering::Relaxed) < num_deps_to_install
-        {
-            if let Ok(installed_dep) = done_receiver.recv() {
+        loop {
+            if has_errors.load(Ordering::Relaxed) {
+                break;
+            }
+            // timeout is necessary to avoid deadlock
+            if let Ok(installed_dep) = done_receiver.recv_timeout(Duration::from_millis(1)) {
                 installed_count.fetch_add(1, Ordering::Relaxed);
                 log::info!(
                     "Completed installing {} ({}/{})",
@@ -177,6 +234,11 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                     installed_count.load(Ordering::Relaxed),
                     num_deps_to_install
                 );
+                if installed_count.load(Ordering::Relaxed) == num_deps_to_install
+                    || has_errors.load(Ordering::Relaxed)
+                {
+                    break;
+                }
             }
         }
 
@@ -187,7 +249,3 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
 
     Ok(())
 }
-
-// TODO:
-// 2. source install (create a library in a temp dir for the install)
-// 3. logging + timing

@@ -4,9 +4,9 @@ use std::time::SystemTime;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use etcetera::BaseStrategy;
+use fs_err as fs;
 
 use crate::cache::InstallationStatus;
-use crate::cli::utils::create_dir_all;
 use crate::system_info::SystemInfo;
 use crate::version::Version;
 use crate::{Cache, CacheEntry};
@@ -68,7 +68,7 @@ impl DiskCache {
     pub fn new(r_version: &Version, system_info: SystemInfo) -> Result<Self> {
         let root =
             get_user_cache_dir().ok_or_else(|| anyhow!("Could not get user cache directory"))?;
-        create_dir_all(&root)?;
+        fs::create_dir_all(&root)?;
         cachedir::ensure_tag(&root).context("Failed to create CACHEDIR.TAG")?;
 
         Ok(Self {

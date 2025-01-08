@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use rv::cli::utils::write_err;
+use rv::cli::utils::{timeit, write_err};
 use rv::cli::{sync, CliContext};
 use rv::{ResolvedDependency, Resolver};
 
@@ -71,9 +71,11 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Sync => {
-            let context = CliContext::new(&cli.config_file)?;
-            let resolved = resolve_dependencies(&context);
-            sync(&context, resolved)?;
+            timeit!("sync", {
+                let context = timeit!("Context loaded", CliContext::new(&cli.config_file)?);
+                let resolved = resolve_dependencies(&context);
+                timeit!("Synced dependencies", sync(&context, resolved)?);
+            });
         }
     }
 

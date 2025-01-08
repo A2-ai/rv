@@ -19,6 +19,8 @@ os_info = "3.9.1"
 # We use bincode to serialize package databases to disk
 bincode = "1"
 thiserror = "2"
+fs-err = "3"
+walkdir = "2"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }
@@ -32,6 +34,8 @@ num_cpus = { version = "1", optional = true }
 flate2 = { version = "1", optional = true }
 tar = { version = "0.4", optional = true }
 tempfile = { version = "3", optional = true }
+# Linking using clone
+reflink-copy = { version = "0.1", optional = true }
 
 [features]
 cli = [
@@ -47,6 +51,7 @@ cli = [
     "dep:flate2",
     "dep:tar",
     "dep:tempfile",
+    "dep:reflink-copy",
 ]
 
 [dev-dependencies]
