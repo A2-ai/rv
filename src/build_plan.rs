@@ -101,8 +101,8 @@ impl<'a> BuildPlan<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cache::InstallationStatus;
     use super::*;
+    use crate::cache::InstallationStatus;
     use crate::package::PackageType;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {

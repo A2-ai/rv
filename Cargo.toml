@@ -31,9 +31,23 @@ crossbeam = { version = "0.8", optional = true }
 num_cpus = { version = "1", optional = true }
 flate2 = { version = "1", optional = true }
 tar = { version = "0.4", optional = true }
+tempfile = { version = "3", optional = true }
 
 [features]
-cli = ["dep:clap", "dep:rayon", "dep:anyhow", "dep:ureq", "dep:clap-verbosity-flag", "dep:env_logger", "dep:log", "dep:crossbeam", "dep:num_cpus", "dep:flate2", "dep:tar"]
+cli = [
+    "dep:clap",
+    "dep:rayon",
+    "dep:anyhow",
+    "dep:ureq",
+    "dep:clap-verbosity-flag",
+    "dep:env_logger",
+    "dep:log",
+    "dep:crossbeam",
+    "dep:num_cpus",
+    "dep:flate2",
+    "dep:tar",
+    "dep:tempfile",
+]
 
 [dev-dependencies]
 insta = "1"

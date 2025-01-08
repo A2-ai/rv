@@ -1184,6 +1184,7 @@ dependencies = [
  "regex",
  "serde",
  "tar",
+ "tempfile",
  "thiserror",
  "toml",
  "ureq",

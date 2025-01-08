@@ -204,12 +204,12 @@ impl<'d> Resolver<'d> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use super::*;
     use crate::config::Config;
     use crate::repository::RepositoryDatabase;
-    use std::str::FromStr;
     use crate::CacheEntry;
+    use std::path::PathBuf;
+    use std::str::FromStr;
 
     struct FakeCache;
 
@@ -254,7 +254,7 @@ mod tests {
                 r_version.clone()
             };
             let resolver = Resolver::new(&repositories, &v);
-            let (resolved, unresolved) = resolver.resolve(&config.dependencies(), &FakeCache{});
+            let (resolved, unresolved) = resolver.resolve(&config.dependencies(), &FakeCache {});
             let mut out = String::new();
             for d in resolved {
                 out.push_str(&d.to_string());

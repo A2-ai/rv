@@ -38,8 +38,7 @@ impl RepositoryDatabase {
 
     pub fn persist<P: AsRef<Path>>(&self, path: P) -> Result<(), RepositoryDatabaseError> {
         let writer = BufWriter::new(
-            std::fs::File::create(path.as_ref())
-                .map_err(RepositoryDatabaseError::from_io)?,
+            std::fs::File::create(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );
 
         bincode::serialize_into(writer, self).map_err(RepositoryDatabaseError::from_bincode)

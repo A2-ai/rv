@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,6 +21,7 @@ use crate::package::PackageType;
 use crate::{get_binary_path, BuildPlan, BuildStep, ResolvedDependency};
 
 fn install_package(context: &CliContext, pkg: &ResolvedDependency) -> Result<()> {
+    bail!("Teting errors");
     match pkg.kind {
         PackageType::Source => {
             let destination =
@@ -73,11 +74,11 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
     let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
 
     let mut plan = BuildPlan::new(&deps);
-    for d in &deps {
-        if d.installation_status != InstallationStatus::Absent {
-            plan.mark_installed(&d.name);
-        }
-    }
+    // for d in &deps {
+    //     if d.installation_status != InstallationStatus::Absent {
+    //         plan.mark_installed(&d.name);
+    //     }
+    // }
 
     let num_deps_to_install = plan.num_to_install();
     if num_deps_to_install == 0 {
@@ -98,17 +99,20 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
         }
     }
 
-    // TODO: handle errors
     let installed_count = Arc::new(AtomicUsize::new(0));
+    let has_errors = Arc::new(AtomicBool::new(false));
     thread::scope(|s| {
         let plan_clone = Arc::clone(&plan);
         let ready_sender_clone = ready_sender.clone();
         let installed_count_clone = Arc::clone(&installed_count);
+        let has_errors_clone = Arc::clone(&has_errors);
 
         // Different thread to monitor what needs to be installed next
         s.spawn(move |_| {
             let mut seen = HashSet::new();
-            while installed_count_clone.load(Ordering::Relaxed) < num_deps_to_install {
+            while !has_errors_clone.load(Ordering::Relaxed)
+                && installed_count_clone.load(Ordering::Relaxed) < num_deps_to_install
+            {
                 let mut plan = plan_clone.lock().unwrap();
                 let mut ready = Vec::new();
                 while let BuildStep::Install(d) = plan.get() {
@@ -127,30 +131,44 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
         });
 
         // Our worker threads that will actually perform the installation
+        // TODO: make this overridable
         let num_workers = num_cpus::get();
         for _ in 0..num_workers {
             let ready_receiver = ready_receiver.clone();
             let done_sender = done_sender.clone();
             let plan = Arc::clone(&plan);
+            let has_errors_clone = Arc::clone(&has_errors);
 
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
+                    if has_errors_clone.load(Ordering::Relaxed) {
+                        return;
+                    }
+
                     // Simulate installation
                     log::info!("Installing {}", dep.name);
-                    // TODO: handle error
-                    let _ = install_package(&context, dep);
-
-                    let mut plan = plan.lock().unwrap();
-                    plan.mark_installed(&dep.name);
-                    drop(plan);
-                    // TODO: send timing + version
-                    done_sender.send(dep.name).unwrap();
+                    match install_package(&context, dep) {
+                        Ok(()) => {
+                            let mut plan = plan.lock().unwrap();
+                            plan.mark_installed(&dep.name);
+                            drop(plan);
+                            // TODO: send timing + version
+                            done_sender.send(dep.name).unwrap();
+                        }
+                        Err(e) => {
+                            log::error!("Failed to install {}: {e}", dep.name);
+                            has_errors_clone.store(true, Ordering::Relaxed);
+                        }
+                    }
                 }
             });
         }
 
+        // let mut result = Vec::new();
         // Monitor progress in the main thread
-        while installed_count.load(Ordering::Relaxed) < num_deps_to_install {
+        while !has_errors.load(Ordering::Relaxed)
+            && installed_count.load(Ordering::Relaxed) < num_deps_to_install
+        {
             if let Ok(installed_dep) = done_receiver.recv() {
                 installed_count.fetch_add(1, Ordering::Relaxed);
                 log::info!(
@@ -169,3 +187,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
 
     Ok(())
 }
+
+// TODO:
+// 2. source install (create a library in a temp dir for the install)
+// 3. logging + timing
