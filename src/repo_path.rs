@@ -4,12 +4,14 @@ use url::Url;
 
 #[derive(Debug)]
 /// CRAN-type repositories behave under a set of rules, but some known repositories have different nuanced behavior
+/// Unless otherwise noted, each repository is assumed to have MacOS and Windows binaries for at least R > 4.0
 pub enum RepoServer<'a> {
-    /// Posit Package Manager (PPM) has linux binaries for various distributions and has immutable snapshots
+    /// Posit Package Manager (PPM) has linux binaries for various distributions and has immutable snapshots.
+    /// It also supports Windows binaries down to R/3.4
     ///
     /// Base URL: <https://packagemanager.posit.co/cran>
     PositPackageManager(&'a str),
-    /// The Metrum Package Network (MPN) has immutable snapshots and more limited in the number of packages.
+    /// The Metrum Package Network (MPN) has immutable snapshots and a more limited number of packages.
     /// Only supports binaries for R/4.2 and 4.3
     ///
     /// Base URL: <https://mpn.metworx.com>
@@ -39,7 +41,7 @@ impl<'a> RepoServer<'a> {
         }
     }
 
-    fn to_url(&self) -> &str {
+    fn url(&self) -> &str {
         match self {
             Self::MetrumPackageNetwork(url)
             | Self::PositPackageManager(url)
@@ -84,6 +86,9 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
+        // rv does not support binaries for less than R/4.0
+        if r_version[0] < 4 { return None }
+
         match sysinfo.os_type {
             OsType::Windows => self.get_windows_url(file_name, r_version),
             OsType::MacOs => self.get_mac_url(file_name, r_version, sysinfo),
@@ -93,7 +98,7 @@ impl<'a> RepoServer<'a> {
     }
 
     pub fn get_source_path(&self, file_name: &str) -> String {
-        let url = self.to_url();
+        let url = self.url();
         format!("{url}/src/contrib/{file_name}")
     }
 
@@ -106,7 +111,7 @@ impl<'a> RepoServer<'a> {
         }
         Some(format!(
             "{}/bin/windows/contrib/{}.{}/{file_name}",
-            self.to_url(),
+            self.url(),
             r_version[0],
             r_version[1]
         ))
@@ -118,29 +123,26 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        if r_version[0] < 4 {
-            return None;
+        // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.2
+        if r_version[1] <= 2 {
+            return Some(format!("{}/bin/macosx/contrib/{}.{}/{file_name}", self.url(), r_version[0], r_version[1]))
         }
-        let path_segments = if r_version[1] <= 2 {
-            format!("bin/macosx/contrib/{}.{}", r_version[0], r_version[1])
-        } else if let Self::MetrumPackageNetwork(_) = self {
-            if r_version[1] == 3 {
-                format!("bin/macosx/contrib/{}.{}", r_version[0], r_version[1])
-            } else {
-                return None;
-            }
-        } else {
-            if let Some(arch) = sysinfo.arch() {
-                format!(
-                    "bin/macosx/big-sur-{arch}/contrib/{}.{}",
-                    r_version[0], r_version[1]
-                )
-            } else {
-                return None;
-            }
-        };
 
-        Some(format!("{}/{path_segments}/{file_name}", self.to_url()))
+        // MPN did not switch their convention and continues to host R/4.3 binaries under the old convention
+        // It also does not support R/4.4
+        if let Self::MetrumPackageNetwork(url) = self {
+            if r_version[1] != 3 { return None }
+
+            return Some(format!("{}/bin/macosx/contrib/{}.{}/{file_name}", url, r_version[0], r_version[1]))
+        }
+
+        // The new Mac binary path for R >= 4.3 includes the architecture as well as the MacOs version. 
+        // Currently, the MacOS version on CRAN-type repositories is hardcoded to be big-sur
+        if let Some(arch) = sysinfo.arch() {
+            return Some(format!("{}/bin/macosx/big-sur-{arch}/contrib/{}.{}/{file_name}", self.url(), r_version[0], r_version[1]))
+        }
+
+        None
     }
 
     fn get_linux_url(
@@ -149,13 +151,13 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        // split based on known repositories with linux binaries
-        match self {
-            Self::PositPackageManager(url) | Self::RV(url) => {
-                Self::get_linux_binary_url(url, file_name, r_version, sysinfo)
-            }
-            _ => None, //either get_source_path or None
+        // PPM and RV are known to have linux binaries
+        if let Self::PositPackageManager(url) | Self::RV(url) = self {
+            return Self::get_linux_binary_url(url, file_name, r_version, sysinfo)
         }
+
+        // Other repositories are assumed to not have linux binaries, and thus only source packages, which is not in scope of this function
+        None
     }
 
     fn get_linux_binary_url(
@@ -203,26 +205,22 @@ impl<'a> RepoServer<'a> {
 
 mod tests {
     use super::*;
-    fn ppm_url() -> String {
-        "https://packagemanager.posit.co/cran/latest".to_string()
-    }
-    fn mpn_url() -> String {
-        "https://mpn.metworx.com/snapshots/stable/2024-11-20".to_string()
-    }
+    static PPM_URL: &str = "https://packagemanager.posit.co/cran/latest";
+    static MPN_URL: &str = "https://mpn.metworx.com/snapshots/stable/2024-11-20";
 
     #[test]
     fn test_source_url() {
-        let source_url = RepoServer::from_url(&ppm_url()).get_source_path("test-file");
-        let ref_url = format!("{}/src/contrib/test-file", ppm_url());
+        let source_url = RepoServer::from_url(PPM_URL).get_source_path("test-file");
+        let ref_url = format!("{}/src/contrib/test-file", PPM_URL);
         assert_eq!(source_url, ref_url);
     }
     #[test]
     fn test_windows_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
-        let source_url = RepoServer::from_url(&ppm_url())
+        let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/windows/contrib/4.4/test-file", ppm_url());
+        let ref_url = format!("{}/bin/windows/contrib/4.4/test-file", PPM_URL);
         assert_eq!(source_url, ref_url)
     }
 
@@ -230,7 +228,7 @@ mod tests {
     fn test_windows_44_mpn_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
         if let None =
-            RepoServer::from_url(&mpn_url()).get_binary_path("test-file", &[4, 4], &sysinfo)
+            RepoServer::from_url(MPN_URL).get_binary_path("test-file", &[4, 4], &sysinfo)
         {
             assert!(true)
         }
@@ -239,32 +237,32 @@ mod tests {
     #[test]
     fn test_windows_42_mpn_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
-        let source_url = RepoServer::from_url(&mpn_url())
+        let source_url = RepoServer::from_url(MPN_URL)
             .get_binary_path("test-file", &[4, 2], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/windows/contrib/4.2/test-file", mpn_url());
+        let ref_url = format!("{}/bin/windows/contrib/4.2/test-file", MPN_URL);
         assert_eq!(source_url, ref_url)
     }
 
     #[test]
     fn test_mac_42_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
-        let source_url = RepoServer::from_url(&ppm_url())
+        let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 2], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/macosx/contrib/4.2/test-file", ppm_url());
+        let ref_url = format!("{}/bin/macosx/contrib/4.2/test-file", PPM_URL);
         assert_eq!(source_url, ref_url)
     }
 
     #[test]
     fn test_mac_44_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("arch64".to_string()), None, "");
-        let source_url = RepoServer::from_url(&ppm_url())
+        let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
         let ref_url = format!(
             "{}/bin/macosx/big-sur-arch64/contrib/4.4/test-file",
-            ppm_url()
+            PPM_URL
         );
         assert_eq!(source_url, ref_url)
     }
@@ -273,7 +271,7 @@ mod tests {
     fn test_mac_mpn_44_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
         if let None =
-            RepoServer::from_url(&mpn_url()).get_binary_path("test-file", &[4, 4], &sysinfo)
+            RepoServer::from_url(MPN_URL).get_binary_path("test-file", &[4, 4], &sysinfo)
         {
             assert!(true)
         }
@@ -282,10 +280,10 @@ mod tests {
     #[test]
     fn test_mac_mpn_43_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
-        let source_url = RepoServer::from_url(&mpn_url())
+        let source_url = RepoServer::from_url(MPN_URL)
             .get_binary_path("test-file", &[4, 3], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/macosx/contrib/4.3/test-file", mpn_url());
+        let ref_url = format!("{}/bin/macosx/contrib/4.3/test-file", MPN_URL);
         assert_eq!(source_url, ref_url)
     }
 
@@ -297,7 +295,7 @@ mod tests {
             Some("jammy".to_string()),
             "22.04",
         );
-        let source_url = RepoServer::from_url(&ppm_url())
+        let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 2], &sysinfo)
             .unwrap();
         let ref_url = "https://packagemanager.posit.co/cran/__linux__/jammy/latest/src/contrib/test-file?r_version=4.2&arch=x86_64".to_string();
