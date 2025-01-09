@@ -77,26 +77,29 @@ fn load_databases(
                     // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
-                    let mut binary_package = Vec::new();
-                    let binary_path = RepoServer::from_url(r.url()).get_binary_path(
+                    // Some urls, r_version, and systems are known to not have a binary path.
+                    // This does not guarantee one will exist, but can exclude with certainty some
+                    if let Some(binary_path) = RepoServer::from_url(r.url()).get_binary_path(
                         "PACKAGES",
                         &cache.r_version,
                         &cache.system_info,
-                    );
+                    ) {
+                        let mut binary_package = Vec::new();
 
-                    let bytes_read = http::download(
-                        &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
-                        &mut binary_package,
-                        vec![],
-                    )?;
-                    // but sometimes we might not have a binary PACKAGES file and that's fine.
-                    // We only load binary if we found a file
-                    if bytes_read > 0 {
-                        // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                        db.parse_binary(
-                            unsafe { std::str::from_utf8_unchecked(&source_package) },
-                            cache.r_version.clone(),
-                        );
+                        let bytes_read = http::download(
+                            &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
+                            &mut binary_package,
+                            vec![],
+                        )?;
+                        // but sometimes we might not have a binary PACKAGES file and that's fine.
+                        // We only load binary if we found a file
+                        if bytes_read > 0 {
+                            // UNSAFE: we trust the PACKAGES data to be valid UTF-8
+                            db.parse_binary(
+                                unsafe { std::str::from_utf8_unchecked(&binary_package) },
+                                cache.r_version.clone(),
+                            );
+                        }
                     }
 
                     db.persist(&p)?;
