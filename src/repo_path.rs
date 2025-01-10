@@ -1,12 +1,21 @@
 #[doc(inline)]
 use crate::{OsType, SystemInfo};
-use url::Url;
+use regex::Regex;
+use std::sync::LazyLock;
+
+static SNAPSHOT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(latest|\d{4}-\d{2}-\d{2})$").unwrap());
+static POSIT_PACKAGE_MANAGER_BASE_URL: &str = "https://packagemanager.posit.co/cran";
+static RV_BASE_URL: &str = "TODO: RV base url";
 
 #[derive(Debug)]
 /// CRAN-type repositories behave under a set of rules, but some known repositories have different nuanced behavior
 /// Unless otherwise noted, each repository is assumed to have MacOS and Windows binaries for at least R > 4.0
 pub enum RepoServer<'a> {
     /// Posit Package Manager (PPM) has linux binaries for various distributions and has immutable snapshots.
+    /// Of note, [PPM does NOT support binaries for Bioconductor]. Therefore we consider this variant the CRAN PPM Repo Server.
+    ///
+    /// [PPM does NOT support binaries for Bioconductor]: https://docs.posit.co/rspm/admin/serving-binaries/
     ///
     /// Base URL: <https://packagemanager.posit.co/cran>
     PositPackageManager(&'a str),
@@ -24,9 +33,9 @@ pub enum RepoServer<'a> {
 impl<'a> RepoServer<'a> {
     /// Convert a url to a variant of the enum
     pub fn from_url(url: &'a str) -> Self {
-        if url.contains("packagemanager.posit.co/cran") {
+        if url.contains(POSIT_PACKAGE_MANAGER_BASE_URL) {
             Self::PositPackageManager(url)
-        } else if url.contains("TODO: rv url to match on") {
+        } else if url.contains(RV_BASE_URL) {
             Self::RV(url)
         } else {
             Self::Other(url)
@@ -35,9 +44,7 @@ impl<'a> RepoServer<'a> {
 
     fn url(&self) -> &str {
         match self {
-            Self::PositPackageManager(url)
-            | Self::RV(url)
-            | Self::Other(url) => url,
+            Self::PositPackageManager(url) | Self::RV(url) | Self::Other(url) => url,
         }
     }
 
@@ -76,7 +83,9 @@ impl<'a> RepoServer<'a> {
         sysinfo: &SystemInfo,
     ) -> Option<String> {
         // rv does not support binaries for less than R/4.0
-        if r_version[0] < 4 { return None }
+        if r_version[0] < 4 {
+            return None;
+        }
 
         match sysinfo.os_type {
             OsType::Windows => Some(self.get_windows_url(file_name, r_version)),
@@ -108,13 +117,23 @@ impl<'a> RepoServer<'a> {
     ) -> Option<String> {
         // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.2
         if r_version[1] <= 2 {
-            return Some(format!("{}/bin/macosx/contrib/{}.{}/{file_name}", self.url(), r_version[0], r_version[1]))
+            return Some(format!(
+                "{}/bin/macosx/contrib/{}.{}/{file_name}",
+                self.url(),
+                r_version[0],
+                r_version[1]
+            ));
         }
 
-        // The new Mac binary path for R >= 4.3 includes the architecture as well as the MacOS version. 
+        // The new Mac binary path for R >= 4.3 includes the architecture as well as the MacOS version.
         // Currently, the MacOS version on CRAN-type repositories is hardcoded to be big-sur
         if let Some(arch) = sysinfo.arch() {
-            return Some(format!("{}/bin/macosx/big-sur-{arch}/contrib/{}.{}/{file_name}", self.url(), r_version[0], r_version[1]))
+            return Some(format!(
+                "{}/bin/macosx/big-sur-{arch}/contrib/{}.{}/{file_name}",
+                self.url(),
+                r_version[0],
+                r_version[1]
+            ));
         }
 
         None
@@ -126,61 +145,42 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        // PPM and RV are known to have linux binaries
-        if let Self::PositPackageManager(url) | Self::RV(url) = self {
-            return Self::get_linux_binary_url(url, file_name, r_version, sysinfo)
-        }
+        // PPM and RV have linux binaries, under the same format, but with different base URLs
+        // All other repositories are assumed to not have linux binaries
+        let dir_url = match self {
+            Self::PositPackageManager(url) => format!(
+                "{}/__linux__/{}/{}/src/contrib",
+                POSIT_PACKAGE_MANAGER_BASE_URL,
+                sysinfo.codename()?,
+                Self::extract_snapshot_date(url)?,
+            ),
+            Self::RV(url) => format!(
+                "{}/__linux__/{}/{}/src/contrib",
+                RV_BASE_URL,
+                sysinfo.codename()?,
+                Self::extract_snapshot_date(url)?
+            ),
+            _ => return None,
+        };
 
-        // Other repositories are assumed to not have linux binaries, and thus only source packages, which is not in scope of this function
-        None
+        // binaries are only returned when query strings are set for the r version
+        let mut linux_url = Some(format!(
+            "{}/{}?r_version={}.{}",
+            dir_url, file_name, r_version[0], r_version[1]
+        ));
+
+        //arch is not necessarily required, but appended when present
+        if let Some(arch) = sysinfo.arch() {
+            linux_url = Some(format!("{}&arch={arch}", linux_url?));
+        };
+        linux_url
     }
 
-    fn get_linux_binary_url(
-        url: &str,
-        file_name: &str,
-        r_version: &[u32; 2],
-        sysinfo: &SystemInfo,
-    ) -> Option<String> {
-        // if the url already contains __linux__, don't insert the distribution again
-        if url.contains("__linux__") { return Some(url.to_string()); }
-
-        // if distribution codename not found, cannot insert into url
-        let code_name = sysinfo.codename()?;
-
-        // if url not parsable, return None
-        let mut url = Url::parse(url).ok()?;
-
-        // the known CRAN-type repos that distribute linux binaries have path segments
-        let mut segments: Vec<_> = url
-            .path_segments()? // If segments don't exist, inserting the linux binary path segments will not result in linux binaries
-            .filter(|s| s.len() != 0)
-            .collect();
-
-        // Same here. If no non-empty elements, no linux binaries
-        if segments.is_empty() { return None }
-
-        let snapshot = segments.pop().unwrap();
-
-        // insert __linux__/<distro>
-        url.set_path(
-            format!(
-                "{}/__linux__/{}/{snapshot}/src/contrib/{file_name}",
-                segments.join("/"),
-                code_name
-            )
-            .as_str(),
-        );
-
-        // Insert query
-        url.query_pairs_mut()
-            .append_pair("r_version", &format!("{}.{}", r_version[0], r_version[1]));
-
-        // Binaries may be served when arch is not provided. Providing arch does not prohibit finding binaries
-        if let Some(arch) = sysinfo.arch() {
-            url.query_pairs_mut().append_pair("arch", arch);
-        }
-
-        Some(url.to_string())
+    fn extract_snapshot_date(url: &str) -> Option<&str> {
+        SNAPSHOT_RE
+            .captures(url)
+            .and_then(|c| c.get(0))
+            .and_then(|x| Some(x.as_str()))
     }
 }
 
