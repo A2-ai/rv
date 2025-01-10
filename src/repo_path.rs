@@ -1,7 +1,7 @@
 #[doc(inline)]
 use crate::{OsType, SystemInfo};
 use regex::Regex;
-use std::sync::LazyLock;
+use std::{path::MAIN_SEPARATOR, sync::LazyLock};
 
 static SNAPSHOT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(latest|\d{4}-\d{2}-\d{2})$").unwrap());
@@ -90,7 +90,7 @@ impl<'a> RepoServer<'a> {
         match sysinfo.os_type {
             OsType::Windows => Some(self.get_windows_url(file_name, r_version)),
             OsType::MacOs => self.get_mac_url(file_name, r_version, sysinfo),
-            OsType::Linux(_) => self.get_linux_url(file_name, r_version, sysinfo),
+            OsType::Linux(distro) => self.get_linux_url(file_name, r_version, sysinfo, distro),
             OsType::Other(_) => None,
         }
     }
@@ -144,20 +144,23 @@ impl<'a> RepoServer<'a> {
         file_name: &str,
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
+        distro: &str,
     ) -> Option<String> {
         // PPM and RV have linux binaries, under the same format, but with different base URLs
         // All other repositories are assumed to not have linux binaries
         let dir_url = match self {
-            Self::PositPackageManager(url) => format!(
-                "{}/__linux__/{}/{}/src/contrib",
-                POSIT_PACKAGE_MANAGER_BASE_URL,
-                sysinfo.codename()?,
-                Self::extract_snapshot_date(url)?,
-            ),
+            Self::PositPackageManager(url) => {
+                format!(
+                    "{}/__linux__/{}/{}/src/contrib",
+                    POSIT_PACKAGE_MANAGER_BASE_URL,
+                    Self::get_distro_name(sysinfo, distro)?,
+                    Self::extract_snapshot_date(url)?,
+                )
+            }
             Self::RV(url) => format!(
                 "{}/__linux__/{}/{}/src/contrib",
                 RV_BASE_URL,
-                sysinfo.codename()?,
+                Self::get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
                 Self::extract_snapshot_date(url)?
             ),
             _ => return None,
@@ -174,6 +177,53 @@ impl<'a> RepoServer<'a> {
             linux_url = Some(format!("{}&arch={arch}", linux_url?));
         };
         linux_url
+    }
+
+    fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
+        // This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>. 
+        match distro {
+            "centos" => {
+                if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
+                    if major >= 7 {
+                        return Some(format!("centos{major}"));
+                    }
+                }
+                None
+            }
+            "rocky" => {
+                // rocky linux is distributed under rhel, starting support at v9
+                if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
+                    if major >= 9 {
+                        return Some(format!("rhel{major}"));
+                    }
+                }
+                None
+            }
+            "opensuse" | "suse" => {
+                // both suse OsType's are distributed under opensuse
+                if let os_info::Version::Semantic(major, minor, _) = sysinfo.version {
+                    if (major >= 15) && (minor >= 5) {
+                        return Some(format!("opensuse{major}{minor}"));
+                    }
+                }
+                None
+            }
+            "redhat" => {
+                // Redhat linux v7&8 are under centos. distribution changed as of v9
+                if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
+                    if major >= 9 {
+                        return Some(format!("rhel{major}"));
+                    }
+                    if major >= 7 {
+                        return Some(format!("centos{major}"));
+                    }
+                }
+                None
+            }
+            // ubuntu and debian are distributed under their codenames
+            "ubuntu" | "debian" => sysinfo.codename().map(|x| x.to_string()),
+            _ => None,
+        }
     }
 
     fn extract_snapshot_date(url: &str) -> Option<&str> {
