@@ -12,9 +12,12 @@ use anyhow::{bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
 
+const LIBRARY_NAME: &str = "library";
+
 #[derive(Debug)]
 pub struct CliContext {
     pub config: Config,
+    pub project_library: PathBuf,
     pub r_version: Version,
     pub cache: DiskCache,
     pub databases: Vec<(RepositoryDatabase, bool)>,
@@ -37,6 +40,7 @@ impl CliContext {
             cache,
             databases,
             r_version,
+            project_library: config_file.parent().unwrap().join(LIBRARY_NAME),
         })
     }
 }
