@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 toml = "0.8"
-serde = {version = "1", features = ["derive"]}
+serde = { version = "1", features = ["derive"] }
 # There's a regex to grab the R version from a string
 regex = "1"
 # To find the cache directory for each OS
@@ -19,17 +19,40 @@ os_info = "3.9.1"
 # We use bincode to serialize package databases to disk
 bincode = "1"
 thiserror = "2"
+fs-err = "3"
+walkdir = "2"
 
-clap = {version = "4" , features = ["derive"], optional = true}
-clap-verbosity-flag = {version = "3", optional = true}
-rayon = {version = "1" , optional = true}
-anyhow = {version = "1" , optional = true}
-ureq = {version = "2" , optional = true}
-env_logger = {version = "0.11" , optional = true}
-log = {version = "0.4" , optional = true}
+clap = { version = "4", features = ["derive"], optional = true }
+clap-verbosity-flag = { version = "3", optional = true }
+rayon = { version = "1", optional = true }
+anyhow = { version = "1", optional = true }
+ureq = { version = "2", optional = true }
+env_logger = { version = "0.11", optional = true }
+log = { version = "0.4", optional = true }
+crossbeam = { version = "0.8", optional = true }
+num_cpus = { version = "1", optional = true }
+flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+tempfile = { version = "3", optional = true }
+# Linking using clone
+reflink-copy = { version = "0.1", optional = true }
 
 [features]
-cli = ["dep:clap", "dep:rayon", "dep:anyhow", "dep:ureq", "dep:clap-verbosity-flag", "dep:env_logger", "dep:log"]
+cli = [
+    "dep:clap",
+    "dep:rayon",
+    "dep:anyhow",
+    "dep:ureq",
+    "dep:clap-verbosity-flag",
+    "dep:env_logger",
+    "dep:log",
+    "dep:crossbeam",
+    "dep:num_cpus",
+    "dep:flate2",
+    "dep:tar",
+    "dep:tempfile",
+    "dep:reflink-copy",
+]
 
 [dev-dependencies]
 insta = "1"

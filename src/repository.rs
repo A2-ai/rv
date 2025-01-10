@@ -10,6 +10,7 @@ use crate::version::{Version, VersionRequirement};
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {
     pub(crate) name: String,
+    pub(crate) url: String,
     source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
@@ -19,28 +20,31 @@ pub struct RepositoryDatabase {
 }
 
 impl RepositoryDatabase {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, url: &str) -> Self {
         Self {
             name: name.to_string(),
+            url: url.to_string(),
             ..Default::default()
         }
     }
 
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, RepositoryDatabaseError> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
         let reader = BufReader::new(
-            std::fs::File::open(path.as_ref()).map_err(|e| RepositoryDatabaseError::from_io(e))?,
+            std::fs::File::open(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );
 
-        bincode::deserialize_from(reader).map_err(|e| RepositoryDatabaseError::from_bincode(e))
+        bincode::deserialize_from(reader).map_err(RepositoryDatabaseError::from_bincode)
     }
 
-    pub fn persist<P: AsRef<Path>>(&self, path: P) -> Result<(), RepositoryDatabaseError> {
+    pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent).map_err(RepositoryDatabaseError::from_io)?;
+        }
         let writer = BufWriter::new(
-            std::fs::File::create(path.as_ref())
-                .map_err(|e| RepositoryDatabaseError::from_io(e))?,
+            std::fs::File::create(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );
 
-        bincode::serialize_into(writer, self).map_err(|e| RepositoryDatabaseError::from_bincode(e))
+        bincode::serialize_into(writer, self).map_err(RepositoryDatabaseError::from_bincode)
     }
 
     pub fn parse_source(&mut self, content: &str) {

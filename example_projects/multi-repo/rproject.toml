@@ -1,0 +1,9 @@
+[project]
+name = "multi-repo"
+repositories = [
+    { alias = "scicalc", url = "https://a2-ai.github.io/gh-pkg-mirror/scicalc/" },
+    { alias = "a2-ai", url = "https://a2-ai.github.io/rv-test-snapshot/2024-12-22/" }
+]
+dependencies = [
+    "scicalc"
+]

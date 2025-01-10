@@ -2,4 +2,4 @@
 source: src/resolver.rs
 expression: out
 ---
-cluster=2.1.7 (from test, type=source)
+cluster=2.1.7 (from test, type=source, status=absent)

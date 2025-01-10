@@ -1,0 +1,13 @@
+
+[project]
+name = "rspm"
+
+repositories = [
+    { alias = "RSPM", url = "https://packagemanager.posit.co/cran/latest/" },
+    { alias = "CRAN", url = "https://cran.r-project.org" },
+]
+
+dependencies = [
+    "R6",
+    {name = "renv", repository = "CRAN"}
+]

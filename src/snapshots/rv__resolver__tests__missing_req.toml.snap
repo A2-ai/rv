@@ -2,6 +2,6 @@
 source: src/resolver.rs
 expression: out
 ---
-testing-inexisting-deps=0.0.1 (from test, type=source)
+testing-inexisting-deps=0.0.1 (from test, type=source, status=absent)
 --- unresolved --- 
 zzlite (>= 1.0) from: dependency of `testing-inexisting-deps`

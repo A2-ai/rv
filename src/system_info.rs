@@ -23,6 +23,14 @@ impl OsType {
             OsType::Other(_) => "other",
         }
     }
+
+    pub fn tarball_extension(&self) -> &'static str {
+        match self {
+            OsType::Windows => "zip",
+            OsType::MacOs => "tgz",
+            OsType::Linux(_) | OsType::Other(_) => "tar.gz",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
