@@ -19,9 +19,9 @@ fn install_package(
     pkg: &ResolvedDependency,
     library_dir: &Path,
 ) -> Result<()> {
+    let link_mode = LinkMode::new();
+
     // If the package is already in the cache, link it directly
-    // TODO: What do we do if user has force_source but we already have it compiled in the cache?
-    // TODO: Should we differentiate binaries from repos from binaries compiled locally in the cache?
     if pkg.is_installed() {
         log::debug!(
             "Package {} already present in cache. Linking it in the library.",
@@ -33,7 +33,7 @@ fn install_package(
                     .cache
                     .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
 
-            LinkMode::default().link_files(&binary_destination, &library_dir)?;
+            link_mode.link_files(&pkg.name, &binary_destination, &library_dir)?;
         }
         return Ok(());
     }
@@ -52,7 +52,7 @@ fn install_package(
                 "{}/src/contrib/{}_{}.tar.gz",
                 pkg.repository_url, pkg.name, pkg.version
             );
-            println!("Source URL: {url}");
+
             let bytes_read = http::download(&url, &mut tarball, vec![])?;
             // TODO: handle 404
             if bytes_read == 0 {
@@ -66,8 +66,7 @@ fn install_package(
                     .cache
                     .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
             r_cmd.install(destination.join(pkg.name), library_dir, &binary_destination)?;
-            println!("Need to symlink from {binary_destination:?}");
-            LinkMode::default().link_files(&binary_destination, &library_dir)?;
+            link_mode.link_files(&pkg.name, &binary_destination, &library_dir)?;
         }
         PackageType::Binary => {
             let destination =
@@ -96,7 +95,7 @@ fn install_package(
 
             // TODO: this might not be a binary in practice, handle that later
             untar_package(Cursor::new(tarball), &destination)?;
-            LinkMode::default().link_files(&destination, &library_dir)?;
+            link_mode.link_files(&pkg.name, &destination, &library_dir)?;
         }
     }
 
@@ -150,8 +149,8 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
         }
     }
 
-    let library_dir = tempfile::tempdir().expect("to create a temp dir");
-    let library_dir_path = library_dir.path();
+    let tmp_library_dir = tempfile::tempdir().expect("to create a temp dir");
+    let tmp_library_dir_path = tmp_library_dir.path();
 
     let installed_count = Arc::new(AtomicUsize::new(0));
     let has_errors = Arc::new(AtomicBool::new(false));
@@ -200,7 +199,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                         break;
                     }
                     log::info!("Installing {}", dep.name);
-                    match install_package(&context, dep, library_dir_path) {
+                    match install_package(&context, dep, tmp_library_dir_path) {
                         Ok(()) => {
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
@@ -246,6 +245,14 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
         drop(ready_sender);
     })
     .expect("threads to not panic");
+
+    // If we are there, it means we are successful. Replace the project lib by the tmp dir
+    if context.project_library.is_dir() {
+        fs::remove_dir_all(&context.project_library)?;
+    }
+    fs::rename(&tmp_library_dir_path, &context.project_library)?;
+
+    // And then output all the changes that happened
 
     Ok(())
 }

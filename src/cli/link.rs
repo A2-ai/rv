@@ -2,12 +2,15 @@
 //! Taken from uv: clone (CoW) on MacOS and hard links on Mac/Linux by default
 //! Maybe with optional symlink support for cross disk linking
 
+use std::env;
 use std::path::{Path, PathBuf};
 
 use fs_err as fs;
 use fs_err::DirEntry;
 use reflink_copy as reflink;
 use walkdir::WalkDir;
+
+const LINK_ENV_NAME: &str = "RV_LINK_MODE";
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -32,7 +35,8 @@ pub enum LinkMode {
     Clone,
     /// Use hardlinks for all elements
     Hardlink,
-    // Symlink,
+    /// Use symlinks for all elements
+    Symlink,
 }
 
 impl Default for LinkMode {
@@ -46,18 +50,67 @@ impl Default for LinkMode {
 }
 
 impl LinkMode {
+    pub fn new() -> Self {
+        // First try to find out if the mode is set in the env
+        let from_env = if let Some(val) = env::var(LINK_ENV_NAME).ok() {
+            match val.to_lowercase().as_str() {
+                "copy" => Some(Self::Copy),
+                "clone" => Some(Self::Clone),
+                "hardlink" => Some(Self::Hardlink),
+                "symlink" => Some(Self::Symlink),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        from_env.unwrap_or_default()
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Clone => "clone",
+            Self::Symlink => "symlink",
+            Self::Hardlink => "hardlink",
+        }
+    }
+
     pub fn link_files(
         &self,
+        package_name: &str,
         source: impl AsRef<Path>,
         library: impl AsRef<Path>,
     ) -> Result<(), Error> {
-        // TODO: make sure the output directory does not exist
-        // TODO: fallback to copy if clone/hardlink fails
-        match self {
+        // If it's already exists for some reasons (eg failed halfway before), delete it first
+        let pkg_in_lib = library.as_ref().join(package_name);
+        if pkg_in_lib.is_dir() {
+            fs::remove_dir_all(&pkg_in_lib)?
+        }
+
+        let res = match self {
             LinkMode::Copy => copy_package(source.as_ref(), library.as_ref()),
             LinkMode::Clone => clone_package(source.as_ref(), library.as_ref()),
             LinkMode::Hardlink => hardlink_package(source.as_ref(), library.as_ref()),
+            LinkMode::Symlink => symlink_package(source.as_ref(), library.as_ref()),
+        };
+
+        if let Err(e) = res {
+            if *self == LinkMode::Copy {
+                return Err(e);
+            }
+            // Cleanup a bit in case it failed halfway through
+            if pkg_in_lib.is_dir() {
+                fs::remove_dir_all(&pkg_in_lib)?
+            }
+            log::warn!(
+                "Failed to {} files: {e}. Falling back to copying files.",
+                self.name()
+            );
+            copy_package(source.as_ref(), library.as_ref())?;
         }
+
+        Ok(())
     }
 }
 
@@ -130,4 +183,39 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn symlink_package(source: &Path, library: &Path) -> Result<(), Error> {
+    for entry in WalkDir::new(source) {
+        let entry = entry?;
+        let path = entry.path();
+
+        let relative = path
+            .strip_prefix(&source)
+            .expect("walkdir starts with root");
+        let out_path = library.join(relative);
+
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&out_path)?;
+            continue;
+        }
+
+        create_symlink(path, out_path)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(original, link)
+}
+
+#[cfg(windows)]
+fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    if original.as_ref().is_dir() {
+        std::os::windows::fs::symlink_dir(original, link)
+    } else {
+        std::os::windows::fs::symlink_file(original, link)
+    }
 }
