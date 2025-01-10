@@ -81,11 +81,14 @@ impl RCmd for RCommandLine {
         })?;
 
         if !output.status.success() {
-            let stdout = std::str::from_utf8(&output.stderr).map_err(|e| InstallError {
+            let stdout = std::str::from_utf8(&output.stdout).map_err(|e| InstallError {
+                source: InstallErrorKind::Utf8(e),
+            })?;
+            let stderr = std::str::from_utf8(&output.stderr).map_err(|e| InstallError {
                 source: InstallErrorKind::Utf8(e),
             })?;
             return Err(InstallError {
-                source: InstallErrorKind::InstallationFailed(stdout.to_string()),
+                source: InstallErrorKind::InstallationFailed(stdout.to_string() + "\n" + stderr),
             });
         }
 

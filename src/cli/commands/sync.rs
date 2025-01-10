@@ -252,5 +252,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
     }
     fs::rename(&tmp_library_dir_path, &context.project_library)?;
 
+    // And then output all the changes that happened
+
     Ok(())
 }
