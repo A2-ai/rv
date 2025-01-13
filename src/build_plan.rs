@@ -75,6 +75,10 @@ impl<'a> BuildPlan<'a> {
         self.deps.len() - self.installed.len()
     }
 
+    pub fn all_dependencies_names(&self) -> HashSet<&str> {
+        self.deps.iter().map(|r| r.name).collect()
+    }
+
     /// get a package to install, an enum {Package, Wait, Done}
     pub fn get(&mut self) -> BuildStep {
         if self.is_done() {
