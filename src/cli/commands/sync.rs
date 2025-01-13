@@ -157,7 +157,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
     let num_deps_to_install = plan.num_to_install();
     let deps_to_install = plan.all_dependencies_names();
     let mut to_remove = HashSet::new();
-    let mut deps_seen = 0;
+    let mut deps_seen = 0 ;
 
     if project_library.is_dir() {
         for p in fs::read_dir(&project_library)? {
@@ -260,8 +260,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, tmp_library_dir_path) {
                         Ok(()) => {
-                            let sync_change =
-                                SyncChange::new_installed(dep.name, dep.version, start.elapsed());
+                            let sync_change = SyncChange::new_installed(dep.name, dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
