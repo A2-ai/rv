@@ -5,12 +5,11 @@ use anyhow::Result;
 
 use rv::cli::utils::{timeit, write_err};
 use rv::cli::{sync, CliContext};
-use rv::{ResolvedDependency, Resolver};
 use rv::{
     cli::{http, DiskCache},
     consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    Cache, CacheEntry, Config, RCommandLine, RepoServer, Repository, RepositoryDatabase, Resolver,
-    SystemInfo,
+    Cache, CacheEntry, Config, RCommandLine, RepoServer, Repository, RepositoryDatabase,
+    ResolvedDependency, Resolver, SystemInfo,
 };
 
 #[derive(Parser)]
@@ -78,7 +77,12 @@ fn try_main() -> Result<()> {
             let changes = timeit!("Synced dependencies", sync(&context, resolved)?);
             for c in changes {
                 if c.installed {
-                    println!("+ {} ({}) in {}ms", c.name, c.version.unwrap(), c.timing.unwrap().as_millis());
+                    println!(
+                        "+ {} ({}) in {}ms",
+                        c.name,
+                        c.version.unwrap(),
+                        c.timing.unwrap().as_millis()
+                    );
                 } else {
                     println!("- {}", c.name);
                 }

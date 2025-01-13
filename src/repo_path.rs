@@ -1,7 +1,7 @@
 #[doc(inline)]
 use crate::{OsType, SystemInfo};
 use regex::Regex;
-use std::{path::MAIN_SEPARATOR, sync::LazyLock};
+use std::sync::LazyLock;
 
 static SNAPSHOT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(latest|\d{4}-\d{2}-\d{2})$").unwrap());
@@ -180,7 +180,7 @@ impl<'a> RepoServer<'a> {
     }
 
     fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
-        // This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>. 
+        // This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
         match distro {
             "centos" => {
                 if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
@@ -234,6 +234,7 @@ impl<'a> RepoServer<'a> {
     }
 }
 
+#[allow(unused_imports, dead_code)] // both used, but suppressing rust-analyzer warnings
 mod tests {
     use super::*;
     static PPM_URL: &str = "https://packagemanager.posit.co/cran/latest";

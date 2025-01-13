@@ -12,7 +12,7 @@ use fs_err as fs;
 use crate::cli::utils::untar_package;
 use crate::cli::{http, link::LinkMode, CliContext};
 use crate::package::PackageType;
-use crate::{get_binary_path, BuildPlan, BuildStep, RCmd, RCommandLine, ResolvedDependency};
+use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
 
 fn install_package(
     context: &CliContext,
@@ -48,10 +48,8 @@ fn install_package(
             fs::create_dir_all(&destination)?;
             // download the file
             let mut tarball = Vec::new();
-            let url = format!(
-                "{}/src/contrib/{}_{}.tar.gz",
-                pkg.repository_url, pkg.name, pkg.version
-            );
+            let url = RepoServer::from_url(pkg.repository_url)
+                .get_source_path(&format!("{}_{}.tar.gz", pkg.name, pkg.version));
 
             let bytes_read = http::download(&url, &mut tarball, vec![])?;
             // TODO: handle 404
@@ -77,15 +75,20 @@ fn install_package(
 
             // TODO: abstract all that based on repository url and thing requested
             let mut tarball = Vec::new();
-            let tarball_path =
-                get_binary_path(&context.cache.r_version, &context.cache.system_info);
-            let tarball_url = format!(
-                "{}{tarball_path}{}_{}.{}",
-                pkg.repository_url,
-                pkg.name,
-                pkg.version,
-                context.cache.system_info.os_type.tarball_extension()
-            );
+            let tarball_url = RepoServer::from_url(pkg.repository_url)
+                .get_binary_path(
+                    &format!(
+                        "{}_{}.{}",
+                        pkg.name,
+                        pkg.version,
+                        context.cache.system_info.os_type.tarball_extension()
+                    ),
+                    &context.cache.r_version,
+                    &context.cache.system_info,
+                )
+                .unwrap();
+            // The return of RepoServer::get_binary_path is Some(String).
+            // Able to safely unwrap here because a package's PackageType will only be Binary if its confirmed to be in the binary PACKAGE file, which returned Some from the same function
 
             let bytes_read = http::download(&tarball_url, &mut tarball, vec![])?;
             // TODO: handle 404
@@ -154,7 +157,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
     let num_deps_to_install = plan.num_to_install();
     let deps_to_install = plan.all_dependencies_names();
     let mut to_remove = HashSet::new();
-    let mut deps_seen = 0 ;
+    let mut deps_seen = 0;
 
     if project_library.is_dir() {
         for p in fs::read_dir(&project_library)? {
@@ -257,7 +260,8 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, tmp_library_dir_path) {
                         Ok(()) => {
-                            let sync_change = SyncChange::new_installed(dep.name, dep.version, start.elapsed());
+                            let sync_change =
+                                SyncChange::new_installed(dep.name, dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
