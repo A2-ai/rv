@@ -5,12 +5,7 @@ use anyhow::Result;
 
 use rv::cli::utils::{timeit, write_err};
 use rv::cli::{sync, CliContext};
-use rv::{
-    cli::{http, DiskCache},
-    consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    Cache, CacheEntry, Config, RCommandLine, RepoServer, Repository, RepositoryDatabase,
-    ResolvedDependency, Resolver, SystemInfo,
-};
+use rv::{ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
