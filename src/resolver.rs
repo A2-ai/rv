@@ -1,27 +1,43 @@
+use crate::Cache;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
+use crate::cache::InstallationStatus;
 use crate::config::DependencyKind;
 use crate::package::PackageType;
 use crate::repository::RepositoryDatabase;
 use crate::version::{Version, VersionRequirement};
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub(crate) name: &'d str,
     pub(crate) version: &'d str,
+    /// Repository alias in the config
     pub(crate) repository: &'d str,
+    pub(crate) repository_url: &'d str,
     pub(crate) dependencies: Vec<&'d str>,
     pub(crate) needs_compilation: bool,
     pub(crate) kind: PackageType,
+    pub(crate) installation_status: InstallationStatus,
+}
+
+impl<'d> ResolvedDependency<'d> {
+    pub fn is_installed(&self) -> bool {
+        // TODO: is that correct? What if you have a source that you already compiled before
+        // TODO: in the cache
+        match self.kind {
+            PackageType::Source => self.installation_status.source_available(),
+            PackageType::Binary => self.installation_status.binary_available(),
+        }
+    }
 }
 
 impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} (from {}, type={})",
-            self.name, self.version, self.repository, self.kind
+            "{}={} (from {}, type={}, status={})",
+            self.name, self.version, self.repository, self.kind, self.installation_status,
         )
     }
 }
@@ -84,9 +100,11 @@ impl<'d> Resolver<'d> {
         }
     }
 
+    /// Tries to find all dependencies from the repos, as well as their install status
     pub fn resolve(
         &self,
         dependencies: &'d [DependencyKind],
+        cache: &'d impl Cache,
     ) -> (Vec<ResolvedDependency<'d>>, Vec<UnresolvedDependency<'d>>) {
         let mut resolved = Vec::new();
         // We might have the same unresolved dep multiple times.
@@ -138,13 +156,20 @@ impl<'d> Resolver<'d> {
                 ) {
                     found.insert(name);
                     let all_dependencies = package.dependencies_to_install(install_suggestions);
+
                     resolved.push(ResolvedDependency {
                         name: &package.name,
                         version: &package.version.original,
                         repository: &repo.name,
+                        repository_url: &repo.url,
                         dependencies: all_dependencies.iter().map(|d| d.name()).collect(),
                         needs_compilation: package.needs_compilation,
                         kind: package_type,
+                        installation_status: cache.get_package_installation_status(
+                            &repo.url,
+                            &package.name,
+                            &package.version.original,
+                        ),
                     });
 
                     for d in all_dependencies {
@@ -193,7 +218,21 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::repository::RepositoryDatabase;
+    use crate::CacheEntry;
+    use std::path::PathBuf;
     use std::str::FromStr;
+
+    struct FakeCache;
+
+    impl Cache for FakeCache {
+        fn get_package_db_entry(&self, _: &str) -> CacheEntry {
+            CacheEntry::NotFound(PathBuf::from_str("").unwrap())
+        }
+
+        fn get_package_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
+            InstallationStatus::Absent
+        }
+    }
 
     #[test]
     fn can_resolve_various_dependencies() {
@@ -207,7 +246,7 @@ mod tests {
         ] {
             let content =
                 std::fs::read_to_string(format!("src/tests/package_files/{src_filename}")).unwrap();
-            let mut repository = RepositoryDatabase::new(name);
+            let mut repository = RepositoryDatabase::new(name, "");
             repository.parse_source(&content);
             if let Some(bin) = binary_filename {
                 let content =
@@ -226,7 +265,7 @@ mod tests {
                 r_version.clone()
             };
             let resolver = Resolver::new(&repositories, &v);
-            let (resolved, unresolved) = resolver.resolve(&config.dependencies());
+            let (resolved, unresolved) = resolver.resolve(&config.dependencies(), &FakeCache {});
             let mut out = String::new();
             for d in resolved {
                 out.push_str(&d.to_string());

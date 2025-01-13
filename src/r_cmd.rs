@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -20,11 +21,10 @@ fn find_r_version(output: &str) -> Option<Version> {
 pub trait RCmd {
     fn install(
         &self,
-        file_path: &Path,
-        library: &Path,
-        args: Vec<&str>,
-        env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error>;
+        folder: impl AsRef<Path>,
+        library: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
+    ) -> Result<(), InstallError>;
 
     fn check(
         &self,
@@ -51,12 +51,48 @@ pub struct RCommandLine;
 impl RCmd for RCommandLine {
     fn install(
         &self,
-        _file_path: &Path,
-        _library: &Path,
-        _args: Vec<&str>,
-        _env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error> {
-        todo!()
+        source_folder: impl AsRef<Path>,
+        library: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
+    ) -> Result<(), InstallError> {
+        if destination.as_ref().is_dir() {
+            match fs::create_dir_all(destination.as_ref()) {
+                Ok(()) => (),
+                Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
+            }
+        }
+
+        let mut command = Command::new("R");
+        command
+            .arg("CMD")
+            .arg("INSTALL")
+            // This is where it will be installed
+            .arg(format!(
+                "--library={}",
+                destination.as_ref().to_string_lossy()
+            ))
+            .arg("--use-vanilla")
+            .arg(source_folder.as_ref())
+            // Override where R should look for deps
+            .env("R_LIBS_SITE", library.as_ref())
+            .env("R_LIBS_USER", library.as_ref());
+        let output = command.output().map_err(|e| InstallError {
+            source: InstallErrorKind::Command(e),
+        })?;
+
+        if !output.status.success() {
+            let stdout = std::str::from_utf8(&output.stdout).map_err(|e| InstallError {
+                source: InstallErrorKind::Utf8(e),
+            })?;
+            let stderr = std::str::from_utf8(&output.stderr).map_err(|e| InstallError {
+                source: InstallErrorKind::Utf8(e),
+            })?;
+            return Err(InstallError {
+                source: InstallErrorKind::InstallationFailed(stdout.to_string() + "\n" + stderr),
+            });
+        }
+
+        Ok(())
     }
 
     fn check(
@@ -98,6 +134,39 @@ impl RCmd for RCommandLine {
             })
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to install R package")]
+#[non_exhaustive]
+pub struct InstallError {
+    pub source: InstallErrorKind,
+}
+
+impl InstallError {
+    pub fn from_fs_io(error: std::io::Error, path: &Path) -> Self {
+        Self {
+            source: InstallErrorKind::File {
+                error,
+                path: path.to_path_buf(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum InstallErrorKind {
+    #[error("IO error: {error} ({path})")]
+    File {
+        error: std::io::Error,
+        path: PathBuf,
+    },
+    #[error(transparent)]
+    Command(#[from] std::io::Error),
+    #[error(transparent)]
+    Utf8(#[from] std::str::Utf8Error),
+    #[error("Installation failed: {0}")]
+    InstallationFailed(String),
 }
 
 #[derive(Debug, thiserror::Error)]

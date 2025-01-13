@@ -16,6 +16,7 @@ pub mod cli;
 
 pub mod consts;
 
+pub use build_plan::{BuildPlan, BuildStep};
 pub use cache::{Cache, CacheEntry};
 pub use config::{Config, DependencyKind, Repository};
 pub use r_cmd::{RCmd, RCommandLine};

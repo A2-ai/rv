@@ -154,7 +154,8 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
 /// we do the following:
 /// 1. Filter packages by R version
 /// 2. Get the first that match in the vector (the vector is in reversed order of appearance in PACKAGE file)
-/// This assumes the content is valid and does not contain errors. It will crash otherwise.
+///
+/// This assumes the content is valid and does not contain errors. It will panic otherwise.
 pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     let mut packages: HashMap<String, Vec<Package>> = HashMap::new();
 
@@ -204,7 +205,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 }
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
-                "License_restricts_use" | "License_is_FOSS" | "Archs" => continue,
+                "License_restricts_use" | "License_is_FOSS" | "Archs" | "Hash" => continue,
                 _ => println!("Unexpected field: {} in PACKAGE file", parts[0]),
             }
         }
