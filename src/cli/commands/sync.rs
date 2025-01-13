@@ -149,7 +149,9 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
         }
     }
 
-    let tmp_library_dir = tempfile::tempdir().expect("to create a temp dir");
+    // We create a temp dir in the project dir so when/if we move it at the end we will have the right
+    // link types since sometimes the tmp dir might be on another disk
+    let tmp_library_dir = tempfile::tempdir_in(&context.project_dir).expect("to create a temp dir");
     let tmp_library_dir_path = tmp_library_dir.path();
 
     let installed_count = Arc::new(AtomicUsize::new(0));
@@ -247,10 +249,11 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
     .expect("threads to not panic");
 
     // If we are there, it means we are successful. Replace the project lib by the tmp dir
-    if context.project_library.is_dir() {
-        fs::remove_dir_all(&context.project_library)?;
+    let project_library = context.project_library();
+    if project_library.is_dir() {
+        fs::remove_dir_all(&project_library)?;
     }
-    fs::rename(&tmp_library_dir_path, &context.project_library)?;
+    fs::rename(&tmp_library_dir_path, &project_library)?;
 
     // And then output all the changes that happened
 
