@@ -21,6 +21,7 @@ bincode = "1"
 thiserror = "2"
 fs-err = "3"
 walkdir = "2"
+os_pipe = "1"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }
