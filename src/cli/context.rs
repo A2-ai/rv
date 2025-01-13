@@ -30,10 +30,8 @@ impl CliContext {
         let r_version = config.get_r_version(r_cli)?;
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
-        let databases = timeit!(
-            "Loaded package databases",
-            load_databases(config.repositories(), &cache)?
-        );
+        // TODO: once we have a lockfile we won't need to always load them
+        let databases = load_databases(config.repositories(), &cache)?;
 
         Ok(Self {
             config,

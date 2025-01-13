@@ -102,6 +102,34 @@ fn install_package(
     Ok(())
 }
 
+#[derive(Debug)]
+pub struct SyncChange {
+    pub name: String,
+    pub installed: bool,
+    pub version: Option<String>,
+    pub timing: Option<Duration>,
+}
+
+impl SyncChange {
+    pub fn new_installed(name: &str, version: &str, timing: Duration) -> Self {
+        Self {
+            name: name.to_string(),
+            installed: true,
+            timing: Some(timing),
+            version: Some(version.to_string()),
+        }
+    }
+
+    pub fn new_removed(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            installed: false,
+            timing: None,
+            version: None,
+        }
+    }
+}
+
 // sync should only display the changes made, nothing about the deps that are not changing
 /// `sync` will ensure the project library contains only exactly the dependencies from rproject.toml
 /// (TODO: mention lockfile later)
@@ -116,21 +144,46 @@ fn install_package(
 ///
 ///
 /// This works the following way:
-/// 1. TODO: look at the current library if it exists to get the deps/versions installed
 /// 2. Create a temp directory if things need to be installed
 /// 2. Send all dependencies to install to worker threads in order
-///     1. if the source/binary alre
-pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
-    // TODO: get the current library path
-    // TODO: get the list of deps/versions installed in the current library path and
-    // TODO: compare if with the `deps` argument to see if we need to install something
-    // TODO: can we install things in a way that won't break the library without creating a tempdir? if it's binary only
+/// 3. Once a dep is installed, get the next step until it's over or need to wait on other deps
+pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<SyncChange>> {
+    let mut sync_changes = Vec::new();
+    let project_library = context.project_library();
     let plan = BuildPlan::new(&deps);
     let num_deps_to_install = plan.num_to_install();
-    // TODO: too simplistic, we want to remove unneeded deps as well
-    if num_deps_to_install == 0 {
-        log::info!("Everything already installed");
-        return Ok(());
+    let deps_to_install = plan.all_dependencies_names();
+    let mut to_remove = HashSet::new();
+    let mut deps_seen = 0 ;
+
+    if project_library.is_dir() {
+        for p in fs::read_dir(&project_library)? {
+            let p = p?.path().canonicalize()?;
+            if p.is_dir() {
+                let dir_name = p.file_name().unwrap().to_string_lossy();
+                if deps_to_install.contains(&*dir_name) {
+                    deps_seen += 1;
+                } else {
+                    to_remove.insert(dir_name.to_string());
+                }
+            }
+        }
+    }
+
+    for dir_name in to_remove {
+        // Only actually remove the deps if we are not going to rebuild the lib folder
+        if deps_seen == num_deps_to_install {
+            log::debug!("Removing {dir_name} from library");
+            fs::remove_dir(&dir_name)?;
+        }
+
+        sync_changes.push(SyncChange::new_removed(&dir_name));
+    }
+
+    // If we have all the deps we need, exit early
+    if deps_seen == num_deps_to_install {
+        log::debug!("No new dependencies to install");
+        return Ok(sync_changes);
     }
 
     // We can't use references from the BuildPlan since we borrow mutably from it so we
@@ -201,13 +254,14 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                         break;
                     }
                     log::info!("Installing {}", dep.name);
+                    let start = std::time::Instant::now();
                     match install_package(&context, dep, tmp_library_dir_path) {
                         Ok(()) => {
+                            let sync_change = SyncChange::new_installed(dep.name, dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
-                            // TODO: send timing + version
-                            done_sender.send(dep.name).unwrap();
+                            done_sender.send(sync_change).unwrap();
                         }
                         Err(e) => {
                             log::error!("Failed to install {}: {e}", dep.name);
@@ -227,14 +281,15 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                 break;
             }
             // timeout is necessary to avoid deadlock
-            if let Ok(installed_dep) = done_receiver.recv_timeout(Duration::from_millis(1)) {
+            if let Ok(change) = done_receiver.recv_timeout(Duration::from_millis(1)) {
                 installed_count.fetch_add(1, Ordering::Relaxed);
                 log::info!(
                     "Completed installing {} ({}/{})",
-                    installed_dep,
+                    change.name,
                     installed_count.load(Ordering::Relaxed),
                     num_deps_to_install
                 );
+                sync_changes.push(change);
                 if installed_count.load(Ordering::Relaxed) == num_deps_to_install
                     || has_errors.load(Ordering::Relaxed)
                 {
@@ -255,7 +310,5 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
     }
     fs::rename(&tmp_library_dir_path, &project_library)?;
 
-    // And then output all the changes that happened
-
-    Ok(())
+    Ok(sync_changes)
 }
