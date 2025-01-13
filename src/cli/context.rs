@@ -17,7 +17,7 @@ const LIBRARY_NAME: &str = "library";
 #[derive(Debug)]
 pub struct CliContext {
     pub config: Config,
-    pub project_library: PathBuf,
+    pub project_dir: PathBuf,
     pub r_version: Version,
     pub cache: DiskCache,
     pub databases: Vec<(RepositoryDatabase, bool)>,
@@ -30,18 +30,20 @@ impl CliContext {
         let r_version = config.get_r_version(r_cli)?;
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
-        let databases = timeit!(
-            "Loaded package databases",
-            load_databases(config.repositories(), &cache)?
-        );
+        // TODO: once we have a lockfile we won't need to always load them
+        let databases = load_databases(config.repositories(), &cache)?;
 
         Ok(Self {
             config,
             cache,
             databases,
             r_version,
-            project_library: config_file.parent().unwrap().join(LIBRARY_NAME),
+            project_dir: config_file.parent().unwrap().to_path_buf(),
         })
+    }
+
+    pub fn project_library(&self) -> PathBuf {
+        self.project_dir.join(LIBRARY_NAME)
     }
 }
 

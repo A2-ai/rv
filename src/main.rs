@@ -73,11 +73,16 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Sync => {
-            timeit!("sync", {
-                let context = timeit!("Context loaded", CliContext::new(&cli.config_file)?);
-                let resolved = resolve_dependencies(&context);
-                timeit!("Synced dependencies", sync(&context, resolved)?);
-            });
+            let context = CliContext::new(&cli.config_file)?;
+            let resolved = resolve_dependencies(&context);
+            let changes = timeit!("Synced dependencies", sync(&context, resolved)?);
+            for c in changes {
+                if c.installed {
+                    println!("+ {} ({}) in {}ms", c.name, c.version.unwrap(), c.timing.unwrap().as_millis());
+                } else {
+                    println!("- {}", c.name);
+                }
+            }
         }
     }
 
