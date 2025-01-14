@@ -57,15 +57,11 @@ fn download_and_install_source(
     pkg_name: &str,
 ) -> Result<()> {
     download_and_untar(&url, &paths.source)?;
-    log::trace!(
+    log::debug!(
         "Compiling binary from {}",
         &paths.source.display()
     );
     RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
-    log::debug!(
-        "Successfully compiled binary to {}",
-        &paths.binary.display()
-    );
     Ok(())
 }
 
@@ -95,10 +91,6 @@ fn download_and_install_binary(
 
         // And install it to the binary path
         install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary)?;
-        log::debug!(
-            "Successfully compiled binary to {}",
-            &paths.binary.display()
-        );
     }
 
     Ok(())
@@ -313,7 +305,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                     }
                     match dep.kind {
                         PackageType::Source => log::debug!("Installing {} (source)", dep.name),
-                        PackageType::Binary => log::debug!("Installing {}", dep.name),
+                        PackageType::Binary => log::debug!("Installing {} (binary)", dep.name),
                     }
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, s_path) {
