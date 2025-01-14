@@ -44,6 +44,12 @@ fn encode_repository_url(url: &str) -> String {
     STANDARD_NO_PAD.encode(url)
 }
 
+#[derive(Debug, Clone)]
+pub struct PackagePaths {
+    pub binary: PathBuf,
+    pub source: PathBuf,
+}
+
 /// This cache doesn't load anything, it just gets paths to cached objects.
 /// Cache freshness is checked when requesting a path and is only a concern for package databases.
 #[derive(Debug, Clone)]
@@ -114,6 +120,13 @@ impl DiskCache {
         let encoded = encode_repository_url(repo_url);
         self.root.join(encoded).join(name).join(version)
     }
+
+    pub fn get_package_paths(&self, repo_url: &str, name: &str, version: &str) -> PackagePaths {
+        PackagePaths {
+            binary: self.get_binary_package_path(repo_url, name, version),
+            source: self.get_source_package_path(repo_url, name, version),
+        }
+    }
 }
 
 impl Cache for DiskCache {
@@ -147,9 +160,11 @@ impl Cache for DiskCache {
     ) -> InstallationStatus {
         let source_present = self
             .get_source_package_path(repo_url, name, version)
+            .join(name)
             .is_dir();
         let binary_present = self
             .get_binary_package_path(repo_url, name, version)
+            .join(name)
             .is_dir();
 
         match (source_present, binary_present) {

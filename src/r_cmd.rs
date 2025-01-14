@@ -58,11 +58,15 @@ impl RCmd for RCommandLine {
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError> {
         if destination.as_ref().is_dir() {
-            match fs::create_dir_all(destination.as_ref()) {
+            match fs::remove_dir_all(destination.as_ref()) {
                 Ok(()) => (),
                 Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
-            }
+            };
         }
+        match fs::create_dir_all(destination.as_ref()) {
+            Ok(()) => (),
+            Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
+        };
 
         let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
@@ -71,6 +75,9 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
+        let library = library.as_ref().canonicalize().map_err(|e| InstallError {
+            source: InstallErrorKind::Command(e),
+        })?;
         let mut command = Command::new("R");
         command
             .arg("CMD")
@@ -83,8 +90,8 @@ impl RCmd for RCommandLine {
             .arg("--use-vanilla")
             .arg(source_folder.as_ref())
             // Override where R should look for deps
-            .env("R_LIBS_SITE", library.as_ref())
-            .env("R_LIBS_USER", library.as_ref())
+            .env("R_LIBS_SITE", &library)
+            .env("R_LIBS_USER", &library)
             .stdout(writer)
             .stderr(writer_clone);
 
