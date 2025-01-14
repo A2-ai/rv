@@ -83,8 +83,11 @@ impl RCmd for RCommandLine {
             .arg("--use-vanilla")
             .arg(source_folder.as_ref())
             // Override where R should look for deps
-            .env("R_LIBS_SITE", library.as_ref())
-            .env("R_LIBS_USER", library.as_ref())
+            // these need to be canonicalized to avoid issues where staged installations
+            // move the working directory around before R starts up, so a relative path
+            // will not work
+            .env("R_LIBS_SITE", library.as_ref().canonicalize().unwrap())
+            .env("R_LIBS_USER", library.as_ref().canonicalize().unwrap())
             .stdout(writer)
             .stderr(writer_clone);
 
