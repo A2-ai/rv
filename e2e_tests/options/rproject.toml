@@ -1,0 +1,11 @@
+[project]
+name = "force_options"
+repositories = [
+    { alias = "old", url = "https://packagemanager.posit.co/cran/2024-01-01/" },
+    { alias = "new", url = "https://packagemanager.posit.co/cran/2025-01-01/", force_source = true }
+]
+dependencies = [
+    "aberrance", # only in new, so should be source
+    {name = "ggplot2", install_suggestions = true},
+    {name = "glue", repository = "old", force_source = true}
+]
