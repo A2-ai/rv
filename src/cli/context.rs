@@ -3,21 +3,22 @@ use std::path::PathBuf;
 
 use crate::cli::{http, utils::write_err, DiskCache};
 use crate::{
-    consts::{PACKAGE_FILENAME, SOURCE_PACKAGES_PATH},
-    get_binary_path, timeit, Cache, CacheEntry, Config, RCommandLine, Repository,
-    RepositoryDatabase, SystemInfo, Version,
+    consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RCommandLine, RepoServer,
+    Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
 use anyhow::{bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
 
-const LIBRARY_NAME: &str = "library";
+const RV_DIR_NAME: &str = "rv";
+const LIBRARY_DIR_NAME: &str = "library";
+const STAGING_DIR_NAME: &str = "staging";
 
 #[derive(Debug)]
 pub struct CliContext {
     pub config: Config,
-    pub project_library: PathBuf,
+    pub project_dir: PathBuf,
     pub r_version: Version,
     pub cache: DiskCache,
     pub databases: Vec<(RepositoryDatabase, bool)>,
@@ -30,18 +31,27 @@ impl CliContext {
         let r_version = config.get_r_version(r_cli)?;
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
-        let databases = timeit!(
-            "Loaded package databases",
-            load_databases(config.repositories(), &cache)?
-        );
+        // TODO: once we have a lockfile we won't need to always load them
+        let databases = load_databases(config.repositories(), &cache)?;
+
+        let project_dir = config_file.parent().unwrap().to_path_buf();
+        fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
 
         Ok(Self {
             config,
             cache,
             databases,
             r_version,
-            project_library: config_file.parent().unwrap().join(LIBRARY_NAME),
+            project_dir,
         })
+    }
+
+    pub fn library_path(&self) -> PathBuf {
+        self.project_dir.join(RV_DIR_NAME).join(LIBRARY_DIR_NAME)
+    }
+
+    pub fn staging_path(&self) -> PathBuf {
+        self.project_dir.join(RV_DIR_NAME).join(STAGING_DIR_NAME)
     }
 }
 
@@ -71,7 +81,8 @@ fn load_databases(
                     let mut db = RepositoryDatabase::new(&r.alias, &r.url());
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
-                    let source_url = format!("{}{SOURCE_PACKAGES_PATH}", r.url());
+                    let source_url =
+                        RepoServer::from_url(r.url()).get_source_path(PACKAGE_FILENAME);
                     let bytes_read = timeit!(
                         "Downloaded source PACKAGES",
                         http::download(&source_url, &mut source_package, Vec::new())?
@@ -84,24 +95,28 @@ fn load_databases(
                     db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
                     let mut binary_package = Vec::new();
-                    let binary_path = get_binary_path(&cache.r_version, &cache.system_info);
-
-                    let bytes_read = timeit!(
-                        "Downloaded binary PACKAGES",
-                        http::download(
-                            &format!("{}{binary_path}{PACKAGE_FILENAME}", r.url()),
-                            &mut binary_package,
-                            vec![],
-                        )?
+                    let binary_url = RepoServer::from_url(r.url()).get_binary_path(
+                        PACKAGE_FILENAME,
+                        &cache.r_version,
+                        &cache.system_info,
                     );
-                    // but sometimes we might not have a binary PACKAGES file and that's fine.
-                    // We only load binary if we found a file
-                    if bytes_read > 0 {
-                        // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                        db.parse_binary(
-                            unsafe { std::str::from_utf8_unchecked(&binary_package) },
-                            cache.r_version.clone(),
+
+                    // we do not know for certain that the Some return of get_binary_path will be a valid url,
+                    // but we do know that if it returns None there is not a binary PACKAGES file
+                    if let Some(url) = binary_url {
+                        let bytes_read = timeit!(
+                            "Downloaded binary PACKAGES",
+                            http::download(&url, &mut binary_package, vec![],)?
                         );
+                        // but sometimes we might not have a binary PACKAGES file and that's fine.
+                        // We only load binary if we found a file
+                        if bytes_read > 0 {
+                            // UNSAFE: we trust the PACKAGES data to be valid UTF-8
+                            db.parse_binary(
+                                unsafe { std::str::from_utf8_unchecked(&binary_package) },
+                                cache.r_version.clone(),
+                            );
+                        }
                     }
 
                     db.persist(&p)?;

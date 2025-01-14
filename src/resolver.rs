@@ -23,8 +23,6 @@ pub struct ResolvedDependency<'d> {
 
 impl<'d> ResolvedDependency<'d> {
     pub fn is_installed(&self) -> bool {
-        // TODO: is that correct? What if you have a source that you already compiled before
-        // TODO: in the cache
         match self.kind {
             PackageType::Source => self.installation_status.source_available(),
             PackageType::Binary => self.installation_status.binary_available(),

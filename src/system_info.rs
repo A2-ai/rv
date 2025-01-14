@@ -39,7 +39,7 @@ pub struct SystemInfo {
     // AFAIK we need that for ubuntu distrib name for posit binaries
     codename: Option<String>,
     // AFAIK we need that for mac os version name (eg big sur etc) for CRAN urls
-    version: Version,
+    pub version: Version,
     arch: Option<String>,
 }
 

@@ -19,8 +19,11 @@ os_info = "3.9.1"
 # We use bincode to serialize package databases to disk
 bincode = "1"
 thiserror = "2"
+# We use url to parse the repository url for linux binaries and queries
+url = "2.5.4"
 fs-err = "3"
 walkdir = "2"
+os_pipe = "1"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }

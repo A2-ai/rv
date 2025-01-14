@@ -9,10 +9,84 @@ use anyhow::{bail, Result};
 use crossbeam::{channel, thread};
 use fs_err as fs;
 
+use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
 use crate::cli::{http, link::LinkMode, CliContext};
 use crate::package::PackageType;
-use crate::{get_binary_path, BuildPlan, BuildStep, RCmd, RCommandLine, ResolvedDependency};
+use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+
+fn is_binary_package(path: &Path, name: &str) -> bool {
+    path.join("R").join(format!("{name}.rdx")).exists()
+}
+
+fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
+    fs::create_dir_all(&destination)?;
+    let mut tarball = Vec::new();
+    let bytes_read = http::download(&url, &mut tarball, vec![])?;
+
+    // TODO: handle 404
+    if bytes_read == 0 {
+        bail!("Archive not found at {url}");
+    }
+
+    untar_package(Cursor::new(tarball), &destination)?;
+
+    Ok(())
+}
+
+fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result<()> {
+    let r_cmd = RCommandLine {};
+    if let Err(e) = r_cmd.install(source, library_dir, binary_dir) {
+        // Do not leave empty binary dir if some install failed otherwise later install
+        // would fail
+        if binary_dir.is_dir() {
+            fs::remove_dir_all(binary_dir)?;
+        }
+        bail!(e);
+    }
+    Ok(())
+}
+
+fn download_and_install_source(
+    url: &str,
+    paths: &PackagePaths,
+    library_dir: &Path,
+    pkg_name: &str,
+) -> Result<()> {
+    download_and_untar(&url, &paths.source)?;
+    RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
+    Ok(())
+}
+
+fn download_and_install_binary(
+    url: &str,
+    paths: &PackagePaths,
+    library_dir: &Path,
+    pkg_name: &str,
+) -> Result<()> {
+    // If we get an error doing the binary download, fall back to source
+    if let Err(e) = download_and_untar(&url, &paths.binary) {
+        log::warn!("Failed to download/untar binary package: {e}");
+        return download_and_install_source(url, paths, library_dir, pkg_name);
+    }
+
+    // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
+    // source files. We have to check first whether what we have is actually binary content.
+    if !is_binary_package(&paths.binary, pkg_name) {
+        // Move it to the source destination if we don't have it already
+        if paths.source.is_dir() {
+            fs::remove_dir_all(&paths.binary)?;
+        } else {
+            fs::create_dir_all(&paths.source)?;
+            fs::rename(&paths.binary, &paths.source)?;
+        }
+
+        // And install it to the binary path
+        install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary)?;
+    }
+
+    Ok(())
+}
 
 fn install_package(
     context: &CliContext,
@@ -20,86 +94,75 @@ fn install_package(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
+    let repo_server = RepoServer::from_url(pkg.repository_url);
+    let pkg_paths = context
+        .cache
+        .get_package_paths(pkg.repository_url, pkg.name, pkg.version);
+    let binary_url = repo_server.get_binary_tarball_path(
+        pkg.name,
+        pkg.version,
+        &context.cache.r_version,
+        &context.cache.system_info,
+    );
 
-    // If the package is already in the cache, link it directly
     if pkg.is_installed() {
-        log::debug!(
-            "Package {} already present in cache. Linking it in the library.",
-            pkg.name
-        );
-        if pkg.installation_status.binary_available() {
-            let binary_destination =
-                context
-                    .cache
-                    .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
-
-            link_mode.link_files(&pkg.name, &binary_destination, &library_dir)?;
-        }
-        return Ok(());
-    }
-
-    // TODO: very similar branches
-    match pkg.kind {
-        PackageType::Source => {
-            let destination =
-                context
-                    .cache
-                    .get_source_package_path(pkg.repository_url, pkg.name, pkg.version);
-            fs::create_dir_all(&destination)?;
-            // download the file
-            let mut tarball = Vec::new();
-            let url = format!(
-                "{}/src/contrib/{}_{}.tar.gz",
-                pkg.repository_url, pkg.name, pkg.version
+        // If we don't have the binary, compile it
+        if !pkg.installation_status.binary_available() {
+            log::debug!(
+                "Package {} already present in cache as source but not as binary.",
+                pkg.name
             );
-
-            let bytes_read = http::download(&url, &mut tarball, vec![])?;
-            // TODO: handle 404
-            if bytes_read == 0 {
-                bail!("Archive not found at {url}");
-            }
-            untar_package(Cursor::new(tarball), &destination)?;
-            // run R install
-            let r_cmd = RCommandLine {};
-            let binary_destination =
-                context
-                    .cache
-                    .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
-            r_cmd.install(destination.join(pkg.name), library_dir, &binary_destination)?;
-            link_mode.link_files(&pkg.name, &binary_destination, &library_dir)?;
+            install_via_r(
+                &pkg_paths.source.join(pkg.name),
+                library_dir,
+                &pkg_paths.binary,
+            )?;
         }
-        PackageType::Binary => {
-            let destination =
-                context
-                    .cache
-                    .get_binary_package_path(pkg.repository_url, pkg.name, pkg.version);
-            fs::create_dir_all(&destination)?;
-
-            // TODO: abstract all that based on repository url and thing requested
-            let mut tarball = Vec::new();
-            let tarball_path =
-                get_binary_path(&context.cache.r_version, &context.cache.system_info);
-            let tarball_url = format!(
-                "{}{tarball_path}{}_{}.{}",
-                pkg.repository_url,
+    } else {
+        if pkg.kind == PackageType::Source || binary_url.is_none() {
+            download_and_install_source(
+                &repo_server.get_source_tarball_path(pkg.name, pkg.version),
+                &pkg_paths,
+                library_dir,
                 pkg.name,
-                pkg.version,
-                context.cache.system_info.os_type.tarball_extension()
-            );
-
-            let bytes_read = http::download(&tarball_url, &mut tarball, vec![])?;
-            // TODO: handle 404
-            if bytes_read == 0 {
-                bail!("Archive not found at {tarball_url}");
-            }
-
-            // TODO: this might not be a binary in practice, handle that later
-            untar_package(Cursor::new(tarball), &destination)?;
-            link_mode.link_files(&pkg.name, &destination, &library_dir)?;
+            )?;
+        } else {
+            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, pkg.name)?;
         }
     }
+
+    // And then we always link the binary folder into the staging library
+    link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct SyncChange {
+    pub name: String,
+    pub installed: bool,
+    pub version: Option<String>,
+    pub timing: Option<Duration>,
+}
+
+impl SyncChange {
+    pub fn new_installed(name: &str, version: &str, timing: Duration) -> Self {
+        Self {
+            name: name.to_string(),
+            installed: true,
+            timing: Some(timing),
+            version: Some(version.to_string()),
+        }
+    }
+
+    pub fn new_removed(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            installed: false,
+            timing: None,
+            version: None,
+        }
+    }
 }
 
 // sync should only display the changes made, nothing about the deps that are not changing
@@ -116,22 +179,55 @@ fn install_package(
 ///
 ///
 /// This works the following way:
-/// 1. TODO: look at the current library if it exists to get the deps/versions installed
 /// 2. Create a temp directory if things need to be installed
 /// 2. Send all dependencies to install to worker threads in order
-///     1. if the source/binary alre
-pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
-    // TODO: get the current library path
-    // TODO: get the list of deps/versions installed in the current library path and
-    // TODO: compare if with the `deps` argument to see if we need to install something
-    // TODO: can we install things in a way that won't break the library without creating a tempdir? if it's binary only
+/// 3. Once a dep is installed, get the next step until it's over or need to wait on other deps
+pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<SyncChange>> {
+    let mut sync_changes = Vec::new();
+    let project_library = context.library_path();
+    let staging_path = context.staging_path();
     let plan = BuildPlan::new(&deps);
     let num_deps_to_install = plan.num_to_install();
-    // TODO: too simplistic, we want to remove unneeded deps as well
-    if num_deps_to_install == 0 {
-        log::info!("Everything already installed");
-        return Ok(());
+    let deps_to_install = plan.all_dependencies_names();
+    let mut to_remove = HashSet::new();
+    let mut deps_seen = 0;
+
+    fs::create_dir_all(&project_library)?;
+    for p in fs::read_dir(&project_library)? {
+        let p = p?.path().canonicalize()?;
+        if p.is_dir() {
+            let dir_name = p.file_name().unwrap().to_string_lossy();
+            if deps_to_install.contains(&*dir_name) {
+                deps_seen += 1;
+            } else {
+                to_remove.insert(dir_name.to_string());
+            }
+        }
     }
+
+    // Clean up at all times
+    if staging_path.is_dir() {
+        fs::remove_dir_all(&staging_path)?;
+    }
+
+    for dir_name in to_remove {
+        // Only actually remove the deps if we are not going to rebuild the lib folder
+        if deps_seen == num_deps_to_install {
+            log::debug!("Removing {dir_name} from library");
+            fs::remove_dir(&dir_name)?;
+        }
+
+        sync_changes.push(SyncChange::new_removed(&dir_name));
+    }
+
+    // If we have all the deps we need, exit early
+    if deps_seen == num_deps_to_install {
+        log::debug!("No new dependencies to install");
+        return Ok(sync_changes);
+    }
+
+    // Create staging only if we need to build stuff
+    fs::create_dir_all(&staging_path)?;
 
     // We can't use references from the BuildPlan since we borrow mutably from it so we
     // create a lookup table for resolved deps by name and use those references across channels.
@@ -149,11 +245,10 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
         }
     }
 
-    let tmp_library_dir = tempfile::tempdir().expect("to create a temp dir");
-    let tmp_library_dir_path = tmp_library_dir.path();
-
     let installed_count = Arc::new(AtomicUsize::new(0));
     let has_errors = Arc::new(AtomicBool::new(false));
+    let errors = Arc::new(Mutex::new(Vec::new()));
+
     thread::scope(|s| {
         let plan_clone = Arc::clone(&plan);
         let ready_sender_clone = ready_sender.clone();
@@ -192,25 +287,29 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
             let done_sender = done_sender.clone();
             let plan = Arc::clone(&plan);
             let has_errors_clone = Arc::clone(&has_errors);
+            let errors_clone = Arc::clone(&errors);
+            let s_path = staging_path.as_path();
 
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
                     if has_errors_clone.load(Ordering::Relaxed) {
                         break;
                     }
-                    log::info!("Installing {}", dep.name);
-                    match install_package(&context, dep, tmp_library_dir_path) {
+                    log::debug!("Installing {}", dep.name);
+                    let start = std::time::Instant::now();
+                    match install_package(&context, dep, s_path) {
                         Ok(()) => {
+                            let sync_change =
+                                SyncChange::new_installed(dep.name, dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
-                            // TODO: send timing + version
-                            done_sender.send(dep.name).unwrap();
+                            done_sender.send(sync_change).unwrap();
                         }
                         Err(e) => {
-                            log::error!("Failed to install {}: {e}", dep.name);
-                            std::thread::sleep(Duration::from_secs(1000));
                             has_errors_clone.store(true, Ordering::Relaxed);
+                            errors_clone.lock().unwrap().push((dep, e));
+                            std::thread::sleep(Duration::from_secs(1000));
                             break;
                         }
                     }
@@ -225,14 +324,15 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
                 break;
             }
             // timeout is necessary to avoid deadlock
-            if let Ok(installed_dep) = done_receiver.recv_timeout(Duration::from_millis(1)) {
+            if let Ok(change) = done_receiver.recv_timeout(Duration::from_millis(1)) {
                 installed_count.fetch_add(1, Ordering::Relaxed);
-                log::info!(
+                log::debug!(
                     "Completed installing {} ({}/{})",
-                    installed_dep,
+                    change.name,
                     installed_count.load(Ordering::Relaxed),
                     num_deps_to_install
                 );
+                sync_changes.push(change);
                 if installed_count.load(Ordering::Relaxed) == num_deps_to_install
                     || has_errors.load(Ordering::Relaxed)
                 {
@@ -246,13 +346,21 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<()> {
     })
     .expect("threads to not panic");
 
-    // If we are there, it means we are successful. Replace the project lib by the tmp dir
-    if context.project_library.is_dir() {
-        fs::remove_dir_all(&context.project_library)?;
+    if has_errors.load(Ordering::Relaxed) {
+        let err = errors.lock().unwrap();
+        let mut message = String::from("Failed to install dependencies.");
+        for (dep, e) in &*err {
+            message += &format!("\n    Failed to install {}:\n        {e}", dep.name);
+        }
+        bail!(message);
     }
-    fs::rename(&tmp_library_dir_path, &context.project_library)?;
 
-    // And then output all the changes that happened
+    // If we are there, it means we are successful. Replace the project lib by the tmp dir
+    if project_library.is_dir() {
+        fs::remove_dir_all(&project_library)?;
+    }
 
-    Ok(())
+    fs::rename(&staging_path, &project_library)?;
+
+    Ok(sync_changes)
 }

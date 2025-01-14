@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
@@ -19,12 +20,13 @@ fn find_r_version(output: &str) -> Option<Version> {
 }
 
 pub trait RCmd {
+    /// Installs a package and returns the combined output of stdout and stderr
     fn install(
         &self,
         folder: impl AsRef<Path>,
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
-    ) -> Result<(), InstallError>;
+    ) -> Result<String, InstallError>;
 
     fn check(
         &self,
@@ -54,14 +56,28 @@ impl RCmd for RCommandLine {
         source_folder: impl AsRef<Path>,
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
-    ) -> Result<(), InstallError> {
+    ) -> Result<String, InstallError> {
         if destination.as_ref().is_dir() {
-            match fs::create_dir_all(destination.as_ref()) {
+            match fs::remove_dir_all(destination.as_ref()) {
                 Ok(()) => (),
                 Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
-            }
+            };
         }
+        match fs::create_dir_all(destination.as_ref()) {
+            Ok(()) => (),
+            Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
+        };
 
+        let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
+            source: InstallErrorKind::Command(e),
+        })?;
+        let writer_clone = writer.try_clone().map_err(|e| InstallError {
+            source: InstallErrorKind::Command(e),
+        })?;
+
+        let library = library.as_ref().canonicalize().map_err(|e| InstallError {
+            source: InstallErrorKind::Command(e),
+        })?;
         let mut command = Command::new("R");
         command
             .arg("CMD")
@@ -74,25 +90,29 @@ impl RCmd for RCommandLine {
             .arg("--use-vanilla")
             .arg(source_folder.as_ref())
             // Override where R should look for deps
-            .env("R_LIBS_SITE", library.as_ref())
-            .env("R_LIBS_USER", library.as_ref());
-        let output = command.output().map_err(|e| InstallError {
+            .env("R_LIBS_SITE", &library)
+            .env("R_LIBS_USER", &library)
+            .stdout(writer)
+            .stderr(writer_clone);
+
+        let mut handle = command.spawn().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
 
-        if !output.status.success() {
-            let stdout = std::str::from_utf8(&output.stdout).map_err(|e| InstallError {
-                source: InstallErrorKind::Utf8(e),
-            })?;
-            let stderr = std::str::from_utf8(&output.stderr).map_err(|e| InstallError {
-                source: InstallErrorKind::Utf8(e),
-            })?;
+        // deadlock otherwise according to os_pipe docs
+        drop(command);
+
+        let mut output = String::new();
+        reader.read_to_string(&mut output).unwrap();
+        let status = handle.wait().unwrap();
+
+        if !status.success() {
             return Err(InstallError {
-                source: InstallErrorKind::InstallationFailed(stdout.to_string() + "\n" + stderr),
+                source: InstallErrorKind::InstallationFailed(output),
             });
         }
 
-        Ok(())
+        Ok(output)
     }
 
     fn check(
@@ -137,7 +157,7 @@ impl RCmd for RCommandLine {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to install R package")]
+#[error(transparent)]
 #[non_exhaustive]
 pub struct InstallError {
     pub source: InstallErrorKind,

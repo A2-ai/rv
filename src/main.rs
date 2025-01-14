@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::Result;
+use fs_err as fs;
 
 use rv::cli::utils::{timeit, write_err};
 use rv::cli::{sync, CliContext};
@@ -55,10 +56,6 @@ fn try_main() -> Result<()> {
         .filter(Some("rustls"), log::LevelFilter::Off)
         .init();
 
-    // let p = Path::new("/Users/vincentprouillet/.cache/rv/aHR0cHM6Ly9wYWNrYWdlbWFuYWdlci5wb3NpdC5jby9jcmFuLzIwMjQtMTItMTY/macos/arm64/4.4/dplyr/1.1.4");
-    // println!("{}", p.is_dir());
-    // return Ok(());
-
     match cli.command {
         Command::Init => todo!("implement init"),
         Command::Plan => {
@@ -71,11 +68,30 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Sync => {
-            timeit!("sync", {
-                let context = timeit!("Context loaded", CliContext::new(&cli.config_file)?);
-                let resolved = resolve_dependencies(&context);
-                timeit!("Synced dependencies", sync(&context, resolved)?);
-            });
+            let context = CliContext::new(&cli.config_file)?;
+            let resolved = resolve_dependencies(&context);
+            match timeit!("Synced dependencies", sync(&context, resolved)) {
+                Ok(changes) => {
+                    for c in changes {
+                        if c.installed {
+                            println!(
+                                "+ {} ({}) in {}ms",
+                                c.name,
+                                c.version.unwrap(),
+                                c.timing.unwrap().as_millis()
+                            );
+                        } else {
+                            println!("- {}", c.name);
+                        }
+                    }
+                }
+                Err(e) => {
+                    if context.staging_path().is_dir() {
+                        fs::remove_dir_all(context.staging_path())?;
+                    }
+                    return Err(e);
+                }
+            }
         }
     }
 
