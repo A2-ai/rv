@@ -150,7 +150,7 @@ impl RCmd for RCommandLine {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to install R package")]
+#[error(transparent)]
 #[non_exhaustive]
 pub struct InstallError {
     pub source: InstallErrorKind,

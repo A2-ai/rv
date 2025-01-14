@@ -152,7 +152,7 @@ impl SyncChange {
 /// 3. Once a dep is installed, get the next step until it's over or need to wait on other deps
 pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
-    let project_library = context.project_library();
+    let project_library = context.library_path();
     let plan = BuildPlan::new(&deps);
     let num_deps_to_install = plan.num_to_install();
     let deps_to_install = plan.all_dependencies_names();
@@ -205,13 +205,16 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
         }
     }
 
-    // We create a temp dir in the project dir so when/if we move it at the end we will have the right
-    // link types since sometimes the tmp dir might be on another disk
-    let tmp_library_dir = tempfile::tempdir_in(&context.project_dir).expect("to create a temp dir");
-    let tmp_library_dir_path = tmp_library_dir.path();
+    let staging_path = context.staging_path();
+    if staging_path.is_dir() {
+        fs::remove_dir_all(&staging_path)?;
+    }
+    fs::create_dir_all(&staging_path)?;
 
     let installed_count = Arc::new(AtomicUsize::new(0));
     let has_errors = Arc::new(AtomicBool::new(false));
+    let errors = Arc::new(Mutex::new(Vec::new()));
+
     thread::scope(|s| {
         let plan_clone = Arc::clone(&plan);
         let ready_sender_clone = ready_sender.clone();
@@ -250,15 +253,17 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
             let done_sender = done_sender.clone();
             let plan = Arc::clone(&plan);
             let has_errors_clone = Arc::clone(&has_errors);
+            let errors_clone = Arc::clone(&errors);
+            let s_path = staging_path.as_path();
 
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
                     if has_errors_clone.load(Ordering::Relaxed) {
                         break;
                     }
-                    log::info!("Installing {}", dep.name);
+                    log::debug!("Installing {}", dep.name);
                     let start = std::time::Instant::now();
-                    match install_package(&context, dep, tmp_library_dir_path) {
+                    match install_package(&context, dep, s_path) {
                         Ok(()) => {
                             let sync_change =
                                 SyncChange::new_installed(dep.name, dep.version, start.elapsed());
@@ -268,9 +273,8 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                             done_sender.send(sync_change).unwrap();
                         }
                         Err(e) => {
-                            log::error!("Failed to install {}: {e}", dep.name);
-                            std::thread::sleep(Duration::from_secs(1000));
                             has_errors_clone.store(true, Ordering::Relaxed);
+                            errors_clone.lock().unwrap().push((dep, e));
                             break;
                         }
                     }
@@ -287,7 +291,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
             // timeout is necessary to avoid deadlock
             if let Ok(change) = done_receiver.recv_timeout(Duration::from_millis(1)) {
                 installed_count.fetch_add(1, Ordering::Relaxed);
-                log::info!(
+                log::debug!(
                     "Completed installing {} ({}/{})",
                     change.name,
                     installed_count.load(Ordering::Relaxed),
@@ -307,12 +311,21 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
     })
     .expect("threads to not panic");
 
+    if has_errors.load(Ordering::Relaxed) {
+        let err = errors.lock().unwrap();
+        let mut message = String::from("Failed to install dependencies.");
+        for (dep, e) in &*err {
+            message += &format!("\n    Failed to install {}:\n        {e}", dep.name);
+        }
+        bail!(message);
+    }
+
     // If we are there, it means we are successful. Replace the project lib by the tmp dir
-    let project_library = context.project_library();
+    let project_library = context.library_path();
     if project_library.is_dir() {
         fs::remove_dir_all(&project_library)?;
     }
-    fs::rename(&tmp_library_dir_path, &project_library)?;
+    fs::rename(&staging_path, &project_library)?;
 
     Ok(sync_changes)
 }
