@@ -1,16 +1,64 @@
-#[doc(inline)]
-use crate::{OsType, SystemInfo};
-use regex::Regex;
 use std::sync::LazyLock;
+
+use regex::Regex;
+
+use crate::{OsType, SystemInfo};
 
 static SNAPSHOT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(latest|\d{4}-\d{2}-\d{2})$").unwrap());
 static POSIT_PACKAGE_MANAGER_BASE_URL: &str = "https://packagemanager.posit.co/cran";
 static RV_BASE_URL: &str = "TODO: RV base url";
 
-#[derive(Debug)]
+/// This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
+fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
+    match distro {
+        "centos" => {
+            if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
+                if major >= 7 {
+                    return Some(format!("centos{major}"));
+                }
+            }
+            None
+        }
+        "rocky" => {
+            // rocky linux is distributed under rhel, starting support at v9
+            if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
+                if major >= 9 {
+                    return Some(format!("rhel{major}"));
+                }
+            }
+            None
+        }
+        "opensuse" | "suse" => {
+            // both suse OsType's are distributed under opensuse
+            if let os_info::Version::Semantic(major, minor, _) = sysinfo.version {
+                if (major >= 15) && (minor >= 5) {
+                    return Some(format!("opensuse{major}{minor}"));
+                }
+            }
+            None
+        }
+        "redhat" => {
+            // Redhat linux v7&8 are under centos. distribution changed as of v9
+            if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
+                if major >= 9 {
+                    return Some(format!("rhel{major}"));
+                }
+                if major >= 7 {
+                    return Some(format!("centos{major}"));
+                }
+            }
+            None
+        }
+        // ubuntu and debian are distributed under their codenames
+        "ubuntu" | "debian" => sysinfo.codename().map(|x| x.to_string()),
+        _ => None,
+    }
+}
+
 /// CRAN-type repositories behave under a set of rules, but some known repositories have different nuanced behavior
 /// Unless otherwise noted, each repository is assumed to have MacOS and Windows binaries for at least R > 4.0
+#[derive(Debug)]
 pub enum RepoServer<'a> {
     /// Posit Package Manager (PPM) has linux binaries for various distributions and has immutable snapshots.
     /// Of note, [PPM does NOT support binaries for Bioconductor]. Therefore we consider this variant the CRAN PPM Repo Server.
@@ -95,9 +143,24 @@ impl<'a> RepoServer<'a> {
         }
     }
 
+    pub fn get_binary_tarball_path(
+        &self,
+        name: &str,
+        version: &str,
+        r_version: &[u32; 2],
+        sysinfo: &SystemInfo,
+    ) -> Option<String> {
+        let file_name = format!("{name}_{version}.{}", sysinfo.os_type.tarball_extension());
+        self.get_binary_path(&file_name, r_version, sysinfo)
+    }
+
     pub fn get_source_path(&self, file_name: &str) -> String {
         let url = self.url();
         format!("{url}/src/contrib/{file_name}")
+    }
+
+    pub fn get_source_tarball_path(&self, name: &str, version: &str) -> String {
+        self.get_source_path(&format!("{name}_{version}.tar.gz"))
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {
@@ -153,14 +216,14 @@ impl<'a> RepoServer<'a> {
                 format!(
                     "{}/__linux__/{}/{}/src/contrib",
                     POSIT_PACKAGE_MANAGER_BASE_URL,
-                    Self::get_distro_name(sysinfo, distro)?,
+                    get_distro_name(sysinfo, distro)?,
                     Self::extract_snapshot_date(url)?,
                 )
             }
             Self::RV(url) => format!(
                 "{}/__linux__/{}/{}/src/contrib",
                 RV_BASE_URL,
-                Self::get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
+                get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
                 Self::extract_snapshot_date(url)?
             ),
             _ => return None,
@@ -179,62 +242,15 @@ impl<'a> RepoServer<'a> {
         linux_url
     }
 
-    fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
-        // This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
-        match distro {
-            "centos" => {
-                if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
-                    if major >= 7 {
-                        return Some(format!("centos{major}"));
-                    }
-                }
-                None
-            }
-            "rocky" => {
-                // rocky linux is distributed under rhel, starting support at v9
-                if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
-                    if major >= 9 {
-                        return Some(format!("rhel{major}"));
-                    }
-                }
-                None
-            }
-            "opensuse" | "suse" => {
-                // both suse OsType's are distributed under opensuse
-                if let os_info::Version::Semantic(major, minor, _) = sysinfo.version {
-                    if (major >= 15) && (minor >= 5) {
-                        return Some(format!("opensuse{major}{minor}"));
-                    }
-                }
-                None
-            }
-            "redhat" => {
-                // Redhat linux v7&8 are under centos. distribution changed as of v9
-                if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
-                    if major >= 9 {
-                        return Some(format!("rhel{major}"));
-                    }
-                    if major >= 7 {
-                        return Some(format!("centos{major}"));
-                    }
-                }
-                None
-            }
-            // ubuntu and debian are distributed under their codenames
-            "ubuntu" | "debian" => sysinfo.codename().map(|x| x.to_string()),
-            _ => None,
-        }
-    }
-
     fn extract_snapshot_date(url: &str) -> Option<&str> {
         SNAPSHOT_RE
             .captures(url)
             .and_then(|c| c.get(0))
-            .and_then(|x| Some(x.as_str()))
+            .map(|x| x.as_str())
     }
 }
 
-#[allow(unused_imports, dead_code)] // both used, but suppressing rust-analyzer warnings
+#[cfg(test)]
 mod tests {
     use super::*;
     static PPM_URL: &str = "https://packagemanager.posit.co/cran/latest";

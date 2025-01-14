@@ -85,7 +85,7 @@ impl LinkMode {
         // If it's already exists for some reasons (eg failed halfway before), delete it first
         let pkg_in_lib = library.as_ref().join(package_name);
         if pkg_in_lib.is_dir() {
-            fs::remove_dir_all(&pkg_in_lib)?
+            fs::remove_dir_all(&pkg_in_lib)?;
         }
 
         let res = match self {
@@ -140,7 +140,6 @@ fn copy_package(source: &Path, library: &Path) -> Result<(), Error> {
 fn clone_recursive(source: &Path, library: &Path, entry: &DirEntry) -> Result<(), Error> {
     let from = entry.path();
     let to = library.join(from.strip_prefix(source).unwrap());
-    log::debug!("Cloning {from:?} to {to:?}");
 
     if (cfg!(windows) || cfg!(target_os = "linux")) && from.is_dir() {
         fs::create_dir_all(&to)?;
