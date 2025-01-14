@@ -3,3 +3,4 @@
 out
 src/tests/RCMD/
 example_projects/*/rv
+e2e_tests/*/rv

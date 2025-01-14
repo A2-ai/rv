@@ -1,0 +1,9 @@
+[project]
+name = "basic"
+repositories = [
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-04/" },
+    { alias = "scicalc", url = "https://a2-ai.github.io/gh-pkg-mirror/scicalc" }
+]
+dependencies = [
+    "scicalc",
+]
