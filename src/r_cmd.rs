@@ -57,7 +57,7 @@ impl RCmd for RCommandLine {
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError> {
-        if destination.as_ref().is_dir() {
+        if !destination.as_ref().is_dir() {
             match fs::create_dir_all(destination.as_ref()) {
                 Ok(()) => (),
                 Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
