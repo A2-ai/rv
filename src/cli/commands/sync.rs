@@ -16,7 +16,10 @@ use crate::package::PackageType;
 use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
 
 fn is_binary_package(path: &Path, name: &str) -> bool {
-    path.join("R").join(format!("{name}.rdx")).exists()
+    path.join(name)
+        .join("R")
+        .join(format!("{name}.rdx"))
+        .exists()
 }
 
 fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
@@ -54,7 +57,15 @@ fn download_and_install_source(
     pkg_name: &str,
 ) -> Result<()> {
     download_and_untar(&url, &paths.source)?;
+    log::trace!(
+        "Compiling binary from {}",
+        &paths.source.display()
+    );
     RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
+    log::debug!(
+        "Successfully compiled binary to {}",
+        &paths.binary.display()
+    );
     Ok(())
 }
 
@@ -73,6 +84,7 @@ fn download_and_install_binary(
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
     // source files. We have to check first whether what we have is actually binary content.
     if !is_binary_package(&paths.binary, pkg_name) {
+        log::debug!("{pkg_name} was expected as binary, found to be source. Compiling binary for {pkg_name}...");
         // Move it to the source destination if we don't have it already
         if paths.source.is_dir() {
             fs::remove_dir_all(&paths.binary)?;
@@ -83,6 +95,10 @@ fn download_and_install_binary(
 
         // And install it to the binary path
         install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary)?;
+        log::debug!(
+            "Successfully compiled binary to {}",
+            &paths.binary.display()
+        );
     }
 
     Ok(())
@@ -295,7 +311,10 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                     if has_errors_clone.load(Ordering::Relaxed) {
                         break;
                     }
-                    log::debug!("Installing {}", dep.name);
+                    match dep.kind {
+                        PackageType::Source => log::debug!("Installing {} (source)", dep.name),
+                        PackageType::Binary => log::debug!("Installing {}", dep.name),
+                    }
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, s_path) {
                         Ok(()) => {
