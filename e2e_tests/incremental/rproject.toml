@@ -5,5 +5,5 @@ repositories = [
 ]
 dependencies = [
     "dplyr",
-   # "ggplot2"  # to be added after first run
+   # "ggplot2"  # to be added after first run and removed after second run
 ]
