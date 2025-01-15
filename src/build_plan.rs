@@ -117,6 +117,7 @@ mod tests {
             repository: "",
             repository_url: "",
             needs_compilation: false,
+            force_source: false,
             kind: PackageType::Source,
             installation_status: InstallationStatus::Binary,
             path: None,

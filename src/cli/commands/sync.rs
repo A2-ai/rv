@@ -93,6 +93,7 @@ fn download_and_install_binary(
     Ok(())
 }
 
+/// Install a package and returns whether it was installed from cache or not
 fn install_package(
     context: &CliContext,
     pkg: &ResolvedDependency,
@@ -152,7 +153,7 @@ pub struct SyncChange {
 }
 
 impl SyncChange {
-    pub fn new_installed(name: &str, version: &str, timing: Duration) -> Self {
+    pub fn installed(name: &str, version: &str, timing: Duration) -> Self {
         Self {
             name: name.to_string(),
             installed: true,
@@ -161,7 +162,7 @@ impl SyncChange {
         }
     }
 
-    pub fn new_removed(name: &str) -> Self {
+    pub fn removed(name: &str) -> Self {
         Self {
             name: name.to_string(),
             installed: false,
@@ -224,7 +225,7 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
             fs::remove_dir_all(&p)?;
         }
 
-        sync_changes.push(SyncChange::new_removed(&dir_name));
+        sync_changes.push(SyncChange::removed(&dir_name));
     }
 
     // If we have all the deps we need, exit early
@@ -308,9 +309,9 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                     }
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, s_path) {
-                        Ok(()) => {
+                        Ok(_) => {
                             let sync_change =
-                                SyncChange::new_installed(dep.name, dep.version, start.elapsed());
+                                SyncChange::installed(dep.name, dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);

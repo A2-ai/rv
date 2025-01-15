@@ -84,7 +84,6 @@ pub struct Package {
     linking_to: Vec<Dependency>,
     license: String,
     md5_sum: String,
-    // TODO: we will need that when downloading afaik?
     pub(crate) path: Option<String>,
     os_type: Option<OsType>,
     recommended: bool,

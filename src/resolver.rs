@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::cache::InstallationStatus;
 use crate::config::DependencyKind;
+use crate::lockfile::Lockfile;
 use crate::package::PackageType;
 use crate::repository::RepositoryDatabase;
 use crate::version::{Version, VersionRequirement};
@@ -12,11 +13,9 @@ use crate::version::{Version, VersionRequirement};
 pub struct ResolvedDependency<'d> {
     pub(crate) name: &'d str,
     pub(crate) version: &'d str,
-    /// Repository alias in the config
-    pub(crate) repository: &'d str,
     pub(crate) repository_url: &'d str,
     pub(crate) dependencies: Vec<&'d str>,
-    pub(crate) needs_compilation: bool,
+    pub(crate) force_source: bool,
     pub(crate) kind: PackageType,
     pub(crate) installation_status: InstallationStatus,
     pub(crate) path: Option<&'d str>,
@@ -35,8 +34,8 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} (from {}, type={}, status={})",
-            self.name, self.version, self.repository, self.kind, self.installation_status,
+            "{}={} (from {}, type={})",
+            self.name, self.version, self.repository_url, self.kind,
         )
     }
 }
@@ -70,7 +69,7 @@ impl<'a> fmt::Display for UnresolvedDependency<'a> {
 
         write!(
             f,
-            "{}{}{}",
+            "{}{} {}",
             self.name,
             if let Some(l) = self.version_requirement {
                 format!(" {l} ")
@@ -89,13 +88,21 @@ pub struct Resolver<'d> {
     /// If the bool is `true`, this means this repository should only look at sources
     repositories: &'d [(RepositoryDatabase, bool)],
     r_version: &'d Version,
+    /// If we have a lockfile for the resolver, we will skip looking at the database for any package
+    /// listed in it
+    lockfile: Option<&'d Lockfile>,
 }
 
 impl<'d> Resolver<'d> {
-    pub fn new(repositories: &'d [(RepositoryDatabase, bool)], r_version: &'d Version) -> Self {
+    pub fn new(
+        repositories: &'d [(RepositoryDatabase, bool)],
+        r_version: &'d Version,
+        lockfile: Option<&'d Lockfile>,
+    ) -> Self {
         Self {
             repositories,
             r_version,
+            lockfile,
         }
     }
 
@@ -140,6 +147,40 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
+            // Look at lockfile before looking up any repositories
+            if let Some(lockfile) = self.lockfile {
+                // If we found the package in the lockfile, consider it found and do not look up
+                // the repo at all
+                if let Some(package) = lockfile.get_package(name, pkg_force_source) {
+                    found.insert(name);
+                    resolved.push(ResolvedDependency {
+                        name: &package.name,
+                        version: &package.version,
+                        repository_url: package.repo_url().unwrap(),
+                        dependencies: package.dependencies.iter().map(|d| d.as_str()).collect(),
+                        kind: if pkg_force_source {
+                            PackageType::Source
+                        } else {
+                            PackageType::Binary
+                        },
+                        force_source: pkg_force_source,
+                        installation_status: cache.get_package_installation_status(
+                            package.repo_url().unwrap(),
+                            &package.name,
+                            &package.version,
+                        ),
+                    });
+
+                    for d in &package.dependencies {
+                        if !found.contains(d.as_str()) {
+                            queue.push_back((d.as_str(), None, None, false, false, Some(name)));
+                        }
+                    }
+
+                    continue;
+                }
+            }
+
             for (repo, repo_source_only) in self.repositories {
                 if let Some(r) = repository {
                     if repo.name != r {
@@ -160,11 +201,10 @@ impl<'d> Resolver<'d> {
                     resolved.push(ResolvedDependency {
                         name: &package.name,
                         version: &package.version.original,
-                        repository: &repo.name,
                         repository_url: &repo.url,
                         dependencies: all_dependencies.iter().map(|d| d.name()).collect(),
-                        needs_compilation: package.needs_compilation,
                         kind: package_type,
+                        force_source: pkg_force_source || *repo_source_only,
                         installation_status: cache.get_package_installation_status(
                             &repo.url,
                             &package.name,
@@ -285,7 +325,7 @@ mod tests {
             } else {
                 r_version.clone()
             };
-            let resolver = Resolver::new(&repositories, &v);
+            let resolver = Resolver::new(&repositories, &v, None);
             let (resolved, unresolved) = resolver.resolve(&config.dependencies(), &FakeCache {});
             let mut out = String::new();
             for d in resolved {
