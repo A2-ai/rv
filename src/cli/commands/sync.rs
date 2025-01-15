@@ -310,7 +310,6 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
                         Err(e) => {
                             has_errors_clone.store(true, Ordering::Relaxed);
                             errors_clone.lock().unwrap().push((dep, e));
-                            std::thread::sleep(Duration::from_secs(1000));
                             break;
                         }
                     }
