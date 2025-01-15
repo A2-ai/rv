@@ -214,7 +214,8 @@ pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<S
         // Only actually remove the deps if we are not going to rebuild the lib folder
         if deps_seen == num_deps_to_install {
             log::debug!("Removing {dir_name} from library");
-            fs::remove_dir(&dir_name)?;
+            let p = project_library.join(&dir_name);
+            fs::remove_dir_all(&p)?;
         }
 
         sync_changes.push(SyncChange::new_removed(&dir_name));

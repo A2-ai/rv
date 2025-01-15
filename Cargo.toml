@@ -59,7 +59,7 @@ cli = [
 
 [dev-dependencies]
 insta = "1"
-mockito = "1.0"
+mockito = "1"
 
 [[bin]]
 name = "rv"
