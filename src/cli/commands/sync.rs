@@ -57,10 +57,7 @@ fn download_and_install_source(
     pkg_name: &str,
 ) -> Result<()> {
     download_and_untar(&url, &paths.source)?;
-    log::debug!(
-        "Compiling binary from {}",
-        &paths.source.display()
-    );
+    log::debug!("Compiling binary from {}", &paths.source.display());
     RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
 }
@@ -109,6 +106,7 @@ fn install_package(
     let binary_url = repo_server.get_binary_tarball_path(
         pkg.name,
         pkg.version,
+        pkg.path,
         &context.cache.r_version,
         &context.cache.system_info,
     );
@@ -129,7 +127,7 @@ fn install_package(
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
             download_and_install_source(
-                &repo_server.get_source_tarball_path(pkg.name, pkg.version),
+                &repo_server.get_source_tarball_path(pkg.name, pkg.version, pkg.path),
                 &pkg_paths,
                 library_dir,
                 pkg.name,

@@ -1,6 +1,5 @@
-use std::sync::LazyLock;
-
 use regex::Regex;
+use std::sync::LazyLock;
 
 use crate::{OsType, SystemInfo};
 
@@ -147,11 +146,24 @@ impl<'a> RepoServer<'a> {
         &self,
         name: &str,
         version: &str,
+        path: Option<&str>,
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        let file_name = format!("{name}_{version}.{}", sysinfo.os_type.tarball_extension());
-        self.get_binary_path(&file_name, r_version, sysinfo)
+        let file_name = path.map_or(
+            format!("{name}_{version}.{}", sysinfo.os_type.tarball_extension()),
+            |path| {
+                format!(
+                    "{path}/{name}_{version}.{}",
+                    sysinfo.os_type.tarball_extension()
+                )
+            },
+        );
+        let bp = self.get_binary_path(&file_name, r_version, sysinfo);
+        if let Some(b) = &bp {
+            println!("{b}");
+        }
+        bp
     }
 
     pub fn get_source_path(&self, file_name: &str) -> String {
@@ -159,8 +171,11 @@ impl<'a> RepoServer<'a> {
         format!("{url}/src/contrib/{file_name}")
     }
 
-    pub fn get_source_tarball_path(&self, name: &str, version: &str) -> String {
-        self.get_source_path(&format!("{name}_{version}.tar.gz"))
+    pub fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
+        let file_name = path.map_or(format!("{name}_{version}.tar.gz"), |path| {
+            format!("{path}/{name}_{version}.tar.gz")
+        });
+        self.get_source_path(&file_name)
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {

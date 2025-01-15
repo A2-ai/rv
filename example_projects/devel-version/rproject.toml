@@ -1,0 +1,8 @@
+[project]
+name = "development-version"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-01-01/"}
+]
+dependencies = [
+    "MASS",
+]
