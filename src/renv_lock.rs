@@ -2,6 +2,7 @@ use crate::cli::DiskCache;
 use crate::{version::Version, Repository};
 use anyhow::{bail, Result};
 use serde::Deserialize;
+use std::hash::Hash;
 use std::{collections::HashMap, path::Path, str::FromStr};
 
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
@@ -17,16 +18,16 @@ where
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
-struct RInfo {
+pub(crate) struct RInfo {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_version")]
     #[serde(rename = "Version")]
     version: Version,
     #[serde(rename = "Repositories")]
-    repositories: Vec<Repository>,
+    pub(crate) repositories: Vec<Repository>,
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) struct PackageInfo {
     #[serde(rename = "Package")]
@@ -50,7 +51,7 @@ pub(crate) struct PackageInfo {
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
 pub struct RenvLock {
     #[serde(rename = "R")]
-    r: RInfo,
+    pub(crate) r: RInfo,
     #[serde(rename = "Packages")]
     pub(crate) packages: HashMap<String, PackageInfo>,
 }
@@ -81,10 +82,6 @@ impl RenvLock {
 
     pub fn repositories(&self) -> &Vec<Repository> {
         &self.r.repositories
-    }
-
-    pub fn package_repos(&self) {
-        
     }
 }
 

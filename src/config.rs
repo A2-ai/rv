@@ -32,7 +32,7 @@ struct Author {
     maintainer: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Hash, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "lowercase")]
 pub struct Repository {
