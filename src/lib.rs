@@ -5,6 +5,7 @@ mod cache;
 mod config;
 mod package;
 mod r_cmd;
+mod renv_lock;
 mod repo_path;
 mod repository;
 mod resolver;

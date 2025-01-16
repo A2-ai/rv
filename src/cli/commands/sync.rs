@@ -57,10 +57,7 @@ fn download_and_install_source(
     pkg_name: &str,
 ) -> Result<()> {
     download_and_untar(&url, &paths.source)?;
-    log::debug!(
-        "Compiling binary from {}",
-        &paths.source.display()
-    );
+    log::debug!("Compiling binary from {}", &paths.source.display());
     RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
 }

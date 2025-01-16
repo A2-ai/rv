@@ -34,8 +34,11 @@ struct Author {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "lowercase")]
 pub struct Repository {
+    #[serde(alias = "alias", alias = "Name")]
     pub alias: String,
+    #[serde(alias = "URL")]
     url: String,
     #[serde(default)]
     pub force_source: bool,

@@ -112,7 +112,7 @@ impl PartialOrd for Version {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct VersionRequirement {
     pub(crate) version: Version,
-    op: Operator,
+    pub(crate) op: Operator,
 }
 
 impl VersionRequirement {

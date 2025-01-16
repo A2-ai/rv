@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err as fs;
 
 use rv::cli::utils::{timeit, write_err};
-use rv::cli::{sync, CliContext};
+use rv::cli::{migrate, sync, CliContext};
 use rv::{ResolvedDependency, Resolver};
 
 #[derive(Parser)]
@@ -30,6 +30,8 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Migrate other package management formats
+    Migrate,
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -92,6 +94,10 @@ fn try_main() -> Result<()> {
                     return Err(e);
                 }
             }
+        }
+        Command::Migrate => {
+            let context = CliContext::new(&cli.config_file)?;
+            migrate(context);
         }
     }
 

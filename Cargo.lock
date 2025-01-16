@@ -1216,6 +1216,7 @@ dependencies = [
  "reflink-copy",
  "regex",
  "serde",
+ "serde_json",
  "tar",
  "tempfile",
  "thiserror",
