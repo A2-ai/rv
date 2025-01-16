@@ -1,5 +1,6 @@
 [project]
 name = "development-version"
+r-version = "4.4"
 repositories = [
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-01-01/"}
 ]
