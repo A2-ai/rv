@@ -82,6 +82,10 @@ impl RenvLock {
     pub fn repositories(&self) -> &Vec<Repository> {
         &self.r.repositories
     }
+
+    pub fn package_repos(&self) {
+        
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

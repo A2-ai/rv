@@ -1,5 +1,3 @@
-extern crate core;
-
 mod build_plan;
 mod cache;
 mod config;
