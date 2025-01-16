@@ -10,6 +10,7 @@ use anyhow::{Ok, Result};
 
 use super::DiskCache;
 
+#[derive(Debug, Clone)]
 pub(crate) struct ResolvedRenv {
     package: Package,
     repository: Repository,
