@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn test_parse_renv_lock() {
         let _ =
-            RenvLock::parse_renv_lock("/cluster-data/user-homes/wes/projects/rv/src/tests/renv/")
+            RenvLock::parse_renv_lock("src/tests/renv/")
                 .unwrap();
     }
 }

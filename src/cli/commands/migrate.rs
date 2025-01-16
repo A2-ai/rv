@@ -14,7 +14,7 @@ mod tests {
     use super::migrate_renv;
 
     #[test]
-    fn tester() {
-        migrate_renv("/cluster-data/user-homes/wes/projects/rv/src/tests/renv/").unwrap();
+    fn test_renv_resolution() {
+        migrate_renv("src/tests/renv/").unwrap();
     }
 }

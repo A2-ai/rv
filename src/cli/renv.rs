@@ -24,10 +24,9 @@ impl ResolvedRenv {
         // look through all of the repos with `Some` repository database (in order) to try to find the package
         // if found in a different repo, we say its fine
         // if not found in any repo, warn the user
-        
+
         let r_version = renv_lock.r_version().clone();
 
-        
         let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info())?;
         let db = load_databases(renv_lock.repositories(), &cache)?;
         let mut hash_db = HashMap::new();
