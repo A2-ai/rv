@@ -179,6 +179,6 @@ mod tests {
 
     #[test]
     fn test_parse_renv_lock() {
-        let _ = RenvLock::parse_renv_lock("src/tests/renv/").unwrap();
+        let _ = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
     }
 }
