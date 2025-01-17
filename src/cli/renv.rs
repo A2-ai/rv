@@ -1,3 +1,4 @@
+use core::hash;
 use std::collections::HashMap;
 
 use crate::{
@@ -38,59 +39,43 @@ impl ResolvedRenv {
             hash_db.insert(repo, repo_db);
         }
 
-        let (found_repo, mut not_found_repo): (
-            HashMap<PackageInfo, Option<Repository>>,
-            HashMap<PackageInfo, Option<Repository>>,
-        ) = pkg_repo(renv_lock)
-            .into_iter()
-            .partition(|(_, repo)| repo.is_some());
 
         let mut found_pkg = Vec::new();
-        for (pkg_info, repo) in found_repo {
+        let mut not_found_pkg = Vec::new();
+        for (pkg_info, repo) in pkg_repo(renv_lock) {
+            let hash_db2 = hash_db.clone();
             if let Some(repository) = repo {
                 if let Some(Some((repo_db, force_source))) = hash_db.get(&repository) {
-                    if let Some((package, _)) =
-                        repo_db.find_package(&pkg_info.package, None, &r_version, *force_source)
-                    {
-                        log::debug!("{} found in specified repo", package.name);
-                        found_pkg.push(ResolvedRenv {
+                    if let Some((package, _)) = repo_db.find_package(&pkg_info.package, None, &r_version, *force_source) {
+                        found_pkg.push(Self {
                             package: package.clone(),
-                            repository: repository.clone(),
+                            repository: repository,
                         });
                         continue;
                     }
                 }
             }
-            not_found_repo.insert(pkg_info, None);
-        }
 
-        let mut not_found_pkg = Vec::new();
-        for (pkg_info, _) in not_found_repo {
             let mut flag = true;
-            for (repo, d) in hash_db.clone() {
-                if let Some((repo_db, force_source)) = d {
-                    if let Some((package, _)) =
-                        repo_db.find_package(&pkg_info.package, None, &r_version, force_source)
-                    {
-                        log::debug!(
-                            "{} not found in specified repo. Found in {}",
-                            package.name,
-                            repo.url()
-                        );
-                        found_pkg.push(ResolvedRenv {
+            for (repo, db) in hash_db2 {
+                if let Some((repo_db, force_source)) = db {
+                    if let Some((package, _)) = repo_db.find_package(&pkg_info.package, None, &r_version, force_source) {
+                        found_pkg.push(Self {
                             package: package.clone(),
-                            repository: repo,
+                            repository: repo
                         });
                         flag = false;
                         continue;
                     }
                 }
             }
+
             if flag {
-                log::warn!("{} not found in any specified repository", pkg_info.package);
                 not_found_pkg.push(pkg_info);
             }
         }
+
+
 
         Ok((found_pkg, not_found_pkg))
     }
