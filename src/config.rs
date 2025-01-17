@@ -5,6 +5,7 @@ use std::str::FromStr;
 use serde::Deserialize;
 
 use crate::r_cmd::{RCmd, VersionError};
+use crate::renv_lock::ResolvedLock;
 use crate::version::Version;
 
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
@@ -165,6 +166,39 @@ impl Config {
 
     pub fn dependencies(&self) -> &[DependencyKind] {
         &self.project.dependencies
+    }
+
+    pub(crate) fn resolved_lock_to_config(
+        resolved_lock: Vec<ResolvedLock>,
+        repositories: Vec<Repository>,
+        r_version: Version,
+        project_name: String,
+    ) -> Self {
+        // convert Package to detailed DependencyKind
+        let dependencies = resolved_lock
+            .into_iter()
+            .map(|rl| DependencyKind::Detailed { name: rl.package.name,
+                repository: Some(rl.repository.alias), 
+                url: None, 
+                install_suggestions: false, 
+                force_source: false 
+            })
+            .collect::<Vec<_>>();
+
+        // many of the project customizations are beyond what renv allows and are left empty
+        Self { project: Project {
+            name: project_name,
+            description: String::new(),
+            version: None, 
+            license: None, 
+            authors: Vec::new(),
+            keywords: Vec::new(),
+            repositories,
+            suggests: Vec::new(),
+            r_version: Some(r_version),
+            urls: HashMap::new(),
+            dependencies,
+        } }
     }
 }
 
