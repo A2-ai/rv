@@ -1,96 +1,67 @@
-use core::hash;
-use std::collections::HashMap;
-
-use crate::{
-    cli::context::load_databases,
-    package::Package,
-    renv_lock::{PackageInfo, RenvLock},
-    Repository, SystemInfo,
-};
+use crate::cli::{context::load_databases, DiskCache};
+use crate::package::Package;
+use crate::renv_lock::PackageInfo;
+use crate::Repository;
+use crate::{renv_lock::RenvLock, SystemInfo};
 use anyhow::{Ok, Result};
 
-use super::DiskCache;
+pub(crate) fn resolve(
+    renv_lock: RenvLock,
+) -> Result<(Vec<(Package, Repository)>, Vec<PackageInfo>)> {
+    let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info())?;
+    let db = load_databases(&renv_lock.repositories(), &cache)?;
 
-#[derive(Debug, Clone)]
-pub(crate) struct ResolvedRenv {
-    package: Package,
-    repository: Repository,
-}
-
-impl ResolvedRenv {
-    pub(crate) fn resolve_renv(renv_lock: RenvLock) -> Result<(Vec<Self>, Vec<PackageInfo>)> {
-        // logic used: HashMap of (Repository, Option<RepositoryDatabase>) and HashMap of (PackageInfo, Option<Repository>)
-        // look through the packages that have `Some` repository and try to find it in the RepositoryDatabase
-        // if not found in the specified repositories database, add it to the list of packages that had `None` repository
-        // look through all of the repos with `Some` repository database (in order) to try to find the package
-        // if found in a different repo, we say its fine
-        // if not found in any repo, warn the user
-
-        let r_version = renv_lock.r_version().clone();
-
-        let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info())?;
-        let db = load_databases(renv_lock.repositories(), &cache)?;
-        let mut hash_db = HashMap::new();
-        for repo in renv_lock.r.repositories.clone() {
-            let repo_db = db
-                .clone()
-                .into_iter()
-                .find((|(rdb, _)| rdb.name == repo.alias));
-            hash_db.insert(repo, repo_db);
-        }
-
-
-        let mut found_pkg = Vec::new();
-        let mut not_found_pkg = Vec::new();
-        for (pkg_info, repo) in pkg_repo(renv_lock) {
-            let hash_db2 = hash_db.clone();
-            if let Some(repository) = repo {
-                if let Some(Some((repo_db, force_source))) = hash_db.get(&repository) {
-                    if let Some((package, _)) = repo_db.find_package(&pkg_info.package, None, &r_version, *force_source) {
-                        found_pkg.push(Self {
-                            package: package.clone(),
-                            repository: repository,
-                        });
-                        continue;
-                    }
-                }
-            }
-
-            let mut flag = true;
-            for (repo, db) in hash_db2 {
-                if let Some((repo_db, force_source)) = db {
-                    if let Some((package, _)) = repo_db.find_package(&pkg_info.package, None, &r_version, force_source) {
-                        found_pkg.push(Self {
-                            package: package.clone(),
-                            repository: repo
-                        });
-                        flag = false;
-                        continue;
-                    }
-                }
-            }
-
-            if flag {
-                not_found_pkg.push(pkg_info);
+    let mut found_pkg = Vec::new();
+    let mut not_found_pkg = Vec::new();
+    // loop through all packages from renv.lock file
+    for (pkg_name, pkg_info) in &renv_lock.packages {
+        // search for the package in all RepositoryDatabases and create a HashMap keyed on the repo name
+        let mut pkgs = Vec::new();
+        for (repo_db, force_source) in &db {
+            if let Some((pkg, _)) =
+                repo_db.find_package(&pkg_name, None, renv_lock.r_version(), *force_source)
+            {
+                pkgs.push((&repo_db.name, pkg.clone()));
             }
         }
 
+        // check if we found an entry in the repository database specified by the package
+        if let Some((_, pkg)) = pkgs
+            .iter()
+            .find(|(repo_name, _)| repo_name == &&pkg_info.repository)
+        {
+            if let Some(repo) = renv_lock
+                .repositories()
+                .iter()
+                .find(|r| r.alias == pkg_info.repository)
+            {
+                log::debug!("{} resolved successfully", pkg.name);
+                found_pkg.push((pkg.clone(), repo.clone()));
+                continue;
+            }
+        }
 
+        // take the first package found if not
+        if let Some((repo_name, pkg)) = pkgs.first() {
+            if let Some(repo) = renv_lock
+                .repositories()
+                .iter()
+                .find(|r| &&r.alias == repo_name)
+            {
+                log::debug!(
+                    "{} not found in specified repository, but found elsewhere",
+                    pkg.name
+                );
+                found_pkg.push((pkg.clone(), repo.clone()));
+            }
+        }
 
-        Ok((found_pkg, not_found_pkg))
+        // if no entry we can't resolve
+        log::warn!(
+            "{} not resolved. Manual adjustment needed",
+            pkg_info.package
+        );
+        not_found_pkg.push(pkg_info.clone());
     }
-}
-
-fn pkg_repo(renv_lock: RenvLock) -> HashMap<PackageInfo, Option<Repository>> {
-    let mut results = HashMap::new();
-    for (_, pkg_info) in renv_lock.packages {
-        let repo = renv_lock
-            .r
-            .repositories
-            .clone()
-            .into_iter()
-            .find(|r| r.alias == pkg_info.repository);
-        results.insert(pkg_info.clone(), repo.clone());
-    }
-    results
+    Ok((found_pkg, not_found_pkg))
 }
