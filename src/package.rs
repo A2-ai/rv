@@ -124,7 +124,9 @@ impl Package {
             out.into_iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
                 .collect(),
-            suggests,
+            suggests.into_iter()
+            .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+            .collect(),
         )
     }
 }
