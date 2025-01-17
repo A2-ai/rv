@@ -105,19 +105,27 @@ impl Package {
         self.r_requirement.as_ref()
     }
 
-    pub fn dependencies_to_install(&self, install_suggestions: bool) -> Vec<&Dependency> {
+    pub fn dependencies_to_install(
+        &self,
+        install_suggestions: bool,
+    ) -> (Vec<&Dependency>, Vec<&Dependency>) {
         let mut out = Vec::with_capacity(30);
+        // TODO: consider if this should be an option or just take it as an empty vector otherwise
+        let mut suggests = Vec::new();
         out.extend(self.depends.iter());
         out.extend(self.imports.iter());
         out.extend(self.linking_to.iter());
 
         if install_suggestions {
-            out.extend(self.suggests.iter());
+            suggests.extend(self.suggests.iter());
         }
 
-        out.into_iter()
-            .filter(|p| !BASE_PACKAGES.contains(&p.name()))
-            .collect()
+        (
+            out.into_iter()
+                .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .collect(),
+            suggests,
+        )
     }
 }
 
