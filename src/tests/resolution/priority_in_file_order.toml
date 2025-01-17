@@ -1,7 +1,0 @@
-[project]
-name = "test"
-repositories = []
-dependencies = [
-    # We added a new version of this at the bottom of the src PACKAGE so it should pick up 0.12-3
-    { name = "zyp", force_source = true }
-]

@@ -1,6 +1,0 @@
-[project]
-name = "test"
-repositories = []
-dependencies = [
-    { name = "R6", force_source = true },
-]

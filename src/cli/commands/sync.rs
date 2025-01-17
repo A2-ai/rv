@@ -174,7 +174,7 @@ impl SyncChange {
 
 // sync should only display the changes made, nothing about the deps that are not changing
 /// `sync` will ensure the project library contains only exactly the dependencies from rproject.toml
-/// (TODO: mention lockfile later)
+/// or from the lockfile if present
 /// There's 2 different paths:
 /// 1. All deps are already installed, we might just need to remove some
 /// 2. Some deps are missing, we need to install stuff

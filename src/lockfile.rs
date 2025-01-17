@@ -39,9 +39,11 @@ impl Source {
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LockedPackage {
+    // Lowercased
     pub name: String,
     pub version: String,
     source: Option<Source>,
+    pub path: Option<String>,
     pub force_source: bool,
     pub dependencies: Vec<String>,
 }
@@ -54,6 +56,7 @@ impl LockedPackage {
             source: Some(Source::Repository {
                 repository: dep.repository_url.to_string(),
             }),
+            path: dep.path.cloned(),
             force_source: dep.force_source,
             dependencies: dep.dependencies.iter().map(|d| d.to_string()).collect(),
         }
@@ -65,6 +68,9 @@ impl LockedPackage {
         table.insert("version", Item::Value(Value::from(&self.version)));
         if let Some(s) = &self.source {
             table.insert("source", Item::Value(Value::InlineTable(s.as_toml_table())));
+        }
+        if let Some(p) = &self.path {
+            table.insert("path", Item::Value(Value::from(self.force_source)));
         }
         table.insert("force_source", Item::Value(Value::from(self.force_source)));
         let mut deps = self
@@ -104,6 +110,14 @@ pub struct Lockfile {
 }
 
 impl Lockfile {
+    pub fn new(r_version: &str) -> Self {
+        Self {
+            version: CURRENT_LOCKFILE_VERSION,
+            r_version: r_version.to_string(),
+            packages: vec![],
+        }
+    }
+
     /// Ensures we have the full dependency graph as data. If we are missing even one thing then the
     /// lockfile is considered invalid.
     fn validate(&self) -> Result<(), LockfileError> {
@@ -141,9 +155,7 @@ impl Lockfile {
         }
     }
 
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), LockfileError> {
-        self.validate()?;
-
+    pub(crate) fn as_toml_string(&self) -> String {
         let mut doc = toml_edit::DocumentMut::new();
         doc.insert("version", Item::Value(Value::from(self.version)));
         doc.insert("r_version", Item::Value(Value::from(&self.r_version)));
@@ -157,6 +169,14 @@ impl Lockfile {
         let mut out = String::new();
         out.push_str(INITIAL_COMMENT);
         out.push_str(&doc.to_string());
+
+        out
+    }
+
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), LockfileError> {
+        self.validate()?;
+
+        let out = self.as_toml_string();
 
         let mut file = File::create(path.as_ref()).map_err(|e| LockfileError {
             source: LockfileErrorKind::Io(e),
@@ -250,6 +270,19 @@ impl Lockfile {
     /// Returns the parsed Version of the R version listed in the lockfile
     pub fn r_version(&self) -> Version {
         Version::from_str(&self.r_version.to_string()).unwrap()
+    }
+}
+
+impl FromStr for Lockfile {
+    type Err = LockfileError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let data: Self = toml::from_str(s).map_err(|e| LockfileError {
+            source: LockfileErrorKind::Toml(e),
+        })?;
+
+        data.validate()?;
+        Ok(data)
     }
 }
 

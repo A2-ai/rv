@@ -1,0 +1,7 @@
+---
+source: src/resolver.rs
+expression: out
+---
+unmet-version-req=0.0.1 (from , type=source, from_lockfile=false)
+--- unresolved --- 
+zzlite (>= 1.0)  from: dependency of `unmet-version-req`

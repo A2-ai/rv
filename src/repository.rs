@@ -69,7 +69,7 @@ impl RepositoryDatabase {
             // highest R requirement matching the provided R version.
             // The list of packages is in the same order as in the PACKAGE file so we start
             // from the end since latter entries have priority
-            db.get(&name.to_lowercase()).and_then(|packages| {
+            db.get(name).and_then(|packages| {
                 let mut max_r_version = None;
                 let mut found = None;
 

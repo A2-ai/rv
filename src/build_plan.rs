@@ -114,13 +114,12 @@ mod tests {
             name,
             dependencies,
             version: "",
-            repository: "",
             repository_url: "",
-            needs_compilation: false,
             force_source: false,
             kind: PackageType::Source,
             installation_status: InstallationStatus::Binary,
             path: None,
+            found_in_lockfile: false,
         }
     }
 

@@ -1,0 +1,15 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "r6",
+]
+---
+Package: R6
+Version: 2.5.1
+Depends: R (>= 3.0)
+Suggests: testthat, pryr
+NeedsCompilation: no
+License: MIT + file LICENSE
+---

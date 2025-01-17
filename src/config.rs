@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 
-use serde::Deserialize;
-
 use crate::r_cmd::{RCmd, VersionError};
 use crate::version::Version;
+use serde::Deserialize;
 
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
 where
@@ -97,7 +96,7 @@ impl DependencyKind {
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
     #[serde(default)]
@@ -123,14 +122,14 @@ pub(crate) struct Project {
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub(crate) project: Project,
 }
 
 impl Config {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, FromFileError> {
-        let content = match std::fs::read_to_string(&path) {
+        let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,
             Err(e) => {
                 return Err(FromFileError {
@@ -139,10 +138,7 @@ impl Config {
                 })
             }
         };
-        toml::from_str(content.as_str()).map_err(|e| FromFileError {
-            path: path.as_ref().into(),
-            source: FromFileErrorKind::Parse(e),
-        })
+        Self::from_str(&content)
     }
 
     /// Gets the R version we want to use in this project.
@@ -162,6 +158,17 @@ impl Config {
 
     pub fn dependencies(&self) -> &[DependencyKind] {
         &self.project.dependencies
+    }
+}
+
+impl FromStr for Config {
+    type Err = FromFileError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        toml::from_str(s).map_err(|e| FromFileError {
+            path: Path::new(".").into(),
+            source: FromFileErrorKind::Parse(e),
+        })
     }
 }
 
@@ -188,7 +195,9 @@ mod tests {
     fn can_parse_valid_config_files() {
         let paths = std::fs::read_dir("src/tests/valid_config/").unwrap();
         for path in paths {
-            assert!(Config::from_file(path.unwrap().path()).is_ok());
+            let res = Config::from_file(path.unwrap().path());
+            println!("{res:?}");
+            assert!(res.is_ok());
         }
     }
 }

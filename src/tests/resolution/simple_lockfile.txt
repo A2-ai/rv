@@ -1,0 +1,25 @@
+# even with a higher version in the package db it should prefer the lockfile
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "R6",
+]
+---
+Package: R6
+Version: 2.5.2
+Depends: R (>= 3.0)
+Suggests: testthat, pryr
+NeedsCompilation: no
+License: MIT + file LICENSE
+---
+version = 1
+r_version = "4.4"
+
+[[packages]]
+name = "R6"
+version = "2.5.1"
+source = { repository = "http://cran" }
+force_source = false
+dependencies = []

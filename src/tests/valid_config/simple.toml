@@ -6,7 +6,7 @@ authors = [{name = "Bob", email="hello@acme.org", maintainer = true}]
 license = "MIT"
 keywords = []
 # Can specify which version of R is required, could be used later in rv as R version manager?
-r-version = "4.4.1"
+r_version = "4.4.1"
 
 # Are suggested deps also enforcing repository? Only used if you're making a library
 suggests = []

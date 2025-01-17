@@ -1,9 +1,0 @@
-[project]
-name = "test"
-# Version hardcoded in the test
-r-version = "4.5"
-repositories = []
-dependencies = [
-    # 2.1.8 is later in the file but it should return 2.1.7 because it has a higher R requirement that is matched
-    "cluster",
-]

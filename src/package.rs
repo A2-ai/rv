@@ -228,10 +228,10 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
         }
 
         package.name = name.clone();
-        if let Some(p) = packages.get_mut(&name.to_lowercase()) {
+        if let Some(p) = packages.get_mut(&name) {
             p.push(package);
         } else {
-            packages.insert(name.to_lowercase(), vec![package]);
+            packages.insert(name, vec![package]);
         }
     }
 
