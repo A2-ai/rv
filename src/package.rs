@@ -183,57 +183,11 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
         .replace("\n        ", " ")
         .split("\n\n")
     {
-        let mut package = Package::default();
-        let mut name = String::new();
-        // Then we fix the line wrapping for deps
-        for line in package_data.lines() {
-            let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
-            match parts[0] {
-                "Package" => name = parts[1].to_string(),
-                "Version" => {
-                    package.version = Version::from_str(parts[1]).unwrap();
-                }
-                "Depends" => {
-                    for p in parse_dependencies(parts[1]) {
-                        if p.name() == "R" {
-                            package.r_requirement = p.version_requirement().cloned();
-                        } else {
-                            package.depends.push(p);
-                        }
-                    }
-                }
-                "Imports" => package.imports = parse_dependencies(parts[1]),
-                "LinkingTo" => package.linking_to = parse_dependencies(parts[1]),
-                "Suggests" => package.suggests = parse_dependencies(parts[1]),
-                "Enhances" => package.enhances = parse_dependencies(parts[1]),
-                "License" => package.license = parts[1].to_string(),
-                "MD5sum" => package.md5_sum = parts[1].to_string(),
-                "NeedsCompilation" => package.needs_compilation = parts[1] == "yes",
-                "Path" => package.path = Some(parts[1].to_string()),
-                "OS_type" => {
-                    package.os_type = Some(match parts[1] {
-                        "windows" => OsType::Windows,
-                        "unix" => OsType::Unix,
-                        _ => panic!("Unknown OS type: {}", parts[1]),
-                    });
-                }
-                "Priority" => {
-                    if parts[1] == "recommended" {
-                        package.recommended = true;
-                    }
-                }
-                // Posit uses that, maybe we can parse it?
-                "SystemRequirements" => continue,
-                "License_restricts_use" | "License_is_FOSS" | "Archs" | "Hash" => continue,
-                _ => println!("Unexpected field: {} in PACKAGE file", parts[0]),
-            }
-        }
-
-        package.name = name.clone();
-        if let Some(p) = packages.get_mut(&name.to_lowercase()) {
+        let package = parse_description(package_data);
+        if let Some(p) = packages.get_mut(&package.name.to_lowercase()) {
             p.push(package);
         } else {
-            packages.insert(name.to_lowercase(), vec![package]);
+            packages.insert(package.name.to_lowercase(), vec![package]);
         }
     }
 
