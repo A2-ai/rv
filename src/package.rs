@@ -91,6 +91,12 @@ pub struct Package {
     pub(crate) needs_compilation: bool,
 }
 
+#[derive(Debug, Default, PartialEq, Clone, Serialize)]
+pub struct InstallationDependency<'a> {
+    pub(crate) direct: Vec<&'a Dependency>,
+    pub(crate) suggests: Option<Vec<&'a Dependency>>,
+}
+
 impl Package {
     #[inline]
     pub fn works_with_r_version(&self, r_version: &Version) -> bool {
@@ -108,26 +114,25 @@ impl Package {
     pub fn dependencies_to_install(
         &self,
         install_suggestions: bool,
-    ) -> (Vec<&Dependency>, Vec<&Dependency>) {
+    ) -> InstallationDependency {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
-        let mut suggests = Vec::new();
         out.extend(self.depends.iter());
         out.extend(self.imports.iter());
         out.extend(self.linking_to.iter());
 
-        if install_suggestions {
-            suggests.extend(self.suggests.iter());
-        }
-
-        (
-            out.into_iter()
-                .filter(|p| !BASE_PACKAGES.contains(&p.name()))
-                .collect(),
-            suggests.into_iter()
+        let suggests = if install_suggestions {
+            Some(self.suggests.iter()
             .filter(|p| !BASE_PACKAGES.contains(&p.name()))
-            .collect(),
-        )
+            .collect())
+        } else {
+            None
+        };
+
+        InstallationDependency {
+            direct: out,
+            suggests,
+        }
     }
 }
 
