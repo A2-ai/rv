@@ -1,0 +1,92 @@
+Package: gsm
+Title: Good Statistical Monitoring
+Version: 2.2.0.9999
+Authors@R: c(
+    person("George", "Wu", , "george.wu@gilead.com", role = c("aut", "cre")),
+    person("Jeremy", "Wildfire", , "jwildfire@gmail.com", role = "aut"),
+    person("Matt", "Roumaya", , "matthewroumaya@gmail.com", role = "aut",
+           comment = c(ORCID = "0000-0002-8009-2771")),
+    person("Spencer", "Childress", , "spencer.childress@gilead.com", role = "aut",
+           comment = c(ORCID = "0000-0001-6877-8511")),
+    person("Laura", "Maxwell", , "laura.maxwell@atorusresearch.com", role = "aut"),
+    person("Jacob", "Anderson", , "jacob.anderson@atorusresearch.com", role = "aut"),
+    person("Jon", "Harmon", , "jon.harmon@atorusresearch.com", role = "aut"),
+    person("Zelos", "Zhu", , "zelos.zhu@atorusresearch.com", role = "aut"),
+    person("Nathan", "Kosiba", , "Nathan.Kosiba@atorusresearch.com", role = "aut"),
+    person("Douglas", "Sanders", role = "aut"),
+    person("Li", "Ge", role = "aut"),
+    person("Zhongkai", "Wang", , "zhongkai.wang6@gilead.com", role = "aut",
+           comment = c(ORCID = "0000-0002-1883-2265")),
+    person("Colleen", "McLaughlin", , "colleen.mclaughlin@atorusresearch.com", role = "aut"),
+    person("Chelsea", "Dickens", , "chelsea.dickens@atorusresearch.com", role = "aut"),
+    person("Maya", "Gans", , "maya.gans@atorusresearch.com", role = "aut"),
+    person("Anne", "Zheng", , "anne@a2-ai.com", role = "aut"),
+    person("Devin", "Pastoor", , "devin@a2-ai.com", role = "aut"),
+    person("Gilead Sciences", role = "cph")
+  )
+Description: The Good Statistical Monitoring or 'gsm' R package provides a
+    framework for statistical data monitoring.
+License: Apache License (>= 2)
+URL: https://github.com/Gilead-BioStats/gsm, https://gilead-biostats.github.io/gsm
+BugReports: https://github.com/Gilead-BioStats/gsm/issues
+Depends: 
+    R (>= 4.0)
+Imports:
+    broom,
+    cli,
+    DBI,
+    dbplyr,
+    dplyr,
+    duckdb,
+    ggplot2,
+    glue,
+    gt,
+    htmltools,
+    htmlwidgets,
+    jsonlite,
+    lifecycle,
+    log4r,
+    magrittr,
+    purrr,
+    rlang (>= 0.4.11),
+    stats,
+    stringr,
+    tibble,
+    tidyr,
+    tools,
+    utils,
+    yaml
+Suggests:
+    clindata,
+    covr,
+    DT,
+    fontawesome (>= 0.2.2),
+    gggenes,
+    ggiraph,
+    here,
+    knitr,
+    lamW,
+    lubridate,
+    pander,
+    pkgdown,
+    riskmetric,
+    rmarkdown,
+    roxygen2,
+    safetyData,
+    sqldf,
+    styler,
+    testthat,
+    usethis,
+    withr
+VignetteBuilder:
+    knitr
+Remotes:
+    clindata=Gilead-BioStats/clindata
+Config/testthat/edition: 3
+Config/testthat/parallel: true
+Config/testthat/start-first: util-RunWorkflow, util-clindata
+Encoding: UTF-8
+Language: en-US
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
