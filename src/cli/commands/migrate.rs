@@ -32,12 +32,13 @@ fn migrate_renv<P: AsRef<Path>>(path: P) -> Result<()> {
         .unwrap_or("my rv project".to_string());
 
 
-    let config = Config::resolved_lock_to_config(
+    /* let config = Config::resolved_lock_to_config(
         resolved,
         renv_lock.r.repositories,
         renv_lock.r.version,
         project_name,
     ); // need to write config to toml in "human readable" form
+    */
 
     Ok(())
 }

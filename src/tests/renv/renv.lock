@@ -384,6 +384,19 @@
       ],
       "Hash": "91570bba75d0c9d3f1040c835cee8fba"
     },
+    "cqtkit.report": {
+      "Package": "cqtkit.report",
+      "Version": "0.0.1",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "ubuntu-20.04_cqtkit.report_0.0.1_R_x86_64-pc-linux-gnu.tar.gz",
+      "Requirements": [
+        "fs",
+        "purrr",
+        "quarto"
+      ],
+      "Hash": "022d8762221c06012b1288ead8813081"
+    },
     "crayon": {
       "Package": "crayon",
       "Version": "1.5.3",
@@ -706,6 +719,28 @@
       ],
       "Hash": "fbbbc48eba7a6626a08bb365e44b563b"
     },
+    "ghqc": {
+      "Package": "ghqc",
+      "Version": "0.3.2",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "ghqc",
+      "RemoteUsername": "a2-ai",
+      "RemoteSha": "55c23eb6a444542dab742d3d37c7b65af7b12e38",
+      "Requirements": [
+        "R",
+        "cli",
+        "fs",
+        "glue",
+        "httpuv",
+        "rlang",
+        "rstudioapi",
+        "withr",
+        "yaml"
+      ],
+      "Hash": "dcba3cb6539ee3cfce6218049c5016cc"
+    },
     "gitcreds": {
       "Package": "gitcreds",
       "Version": "0.1.2",
@@ -868,6 +903,21 @@
       ],
       "Hash": "81d371a9cc60640e74e4ab6ac46dcedc"
     },
+    "httpuv": {
+      "Package": "httpuv",
+      "Version": "1.6.15",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Requirements": [
+        "R",
+        "R6",
+        "Rcpp",
+        "later",
+        "promises",
+        "utils"
+      ],
+      "Hash": "d55aa087c47a63ead0f6fc10f8fa1ee0"
+    },
     "httr": {
       "Package": "httr",
       "Version": "1.4.7",
@@ -979,6 +1029,17 @@
         "stats"
       ],
       "Hash": "b64ec208ac5bc1852b285f665d6368b3"
+    },
+    "later": {
+      "Package": "later",
+      "Version": "1.4.1",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Requirements": [
+        "Rcpp",
+        "rlang"
+      ],
+      "Hash": "501744395cac0bab0fbcfab9375ae92c"
     },
     "lattice": {
       "Package": "lattice",
@@ -1278,6 +1339,22 @@
       ],
       "Hash": "f4625e061cb2865f111b47ff163a5ca6"
     },
+    "promises": {
+      "Package": "promises",
+      "Version": "1.3.2",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Requirements": [
+        "R6",
+        "Rcpp",
+        "fastmap",
+        "later",
+        "magrittr",
+        "rlang",
+        "stats"
+      ],
+      "Hash": "c84fd4f75ea1f5434735e08b7f50fbca"
+    },
     "ps": {
       "Package": "ps",
       "Version": "1.8.1",
@@ -1303,6 +1380,26 @@
         "vctrs"
       ],
       "Hash": "1cba04a4e9414bdefc9dcaa99649a8dc"
+    },
+    "quarto": {
+      "Package": "quarto",
+      "Version": "1.4.4",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Requirements": [
+        "R",
+        "cli",
+        "jsonlite",
+        "later",
+        "processx",
+        "rlang",
+        "rmarkdown",
+        "rstudioapi",
+        "tools",
+        "utils",
+        "yaml"
+      ],
+      "Hash": "af456d7a181750812bd8b2bfedb3ea4e"
     },
     "ragg": {
       "Package": "ragg",
@@ -1463,6 +1560,18 @@
       "Repository": "RSPM",
       "Hash": "5f90cd73946d706cfe26024294236113"
     },
+    "rv.git.pkgA": {
+      "Package": "rv.git.pkgA",
+      "Version": "0.0.0.9000",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "rv.git.pkgA",
+      "RemoteUsername": "a2-ai",
+      "RemotePkgRef": "a2-ai/rv.git.pkgA",
+      "RemoteSha": "d738812076bb3dccae08f7a8107614b617bbc312",
+      "Hash": "8c8c8f62ee54a612a5f99f5b0346aff5"
+    },
     "rvest": {
       "Package": "rvest",
       "Version": "1.0.4",
@@ -1531,9 +1640,9 @@
     },
     "slurmtools": {
       "Package": "slurmtools",
-      "Version": "0.1.0",
+      "Version": "0.1.2",
       "Source": "Repository",
-      "Repository": "https://github.com/A2-ai/slurmtools.git",
+      "Repository": "slurmtools",
       "Requirements": [
         "brio",
         "cli",
@@ -1553,7 +1662,7 @@
         "whisker",
         "withr"
       ],
-      "Hash": "b33699121acc4041df1d494958934ebe"
+      "Hash": "f1e4f6bf3dcef58d3fe9865060f2a8b7"
     },
     "stringfish": {
       "Package": "stringfish",

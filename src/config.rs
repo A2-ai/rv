@@ -167,7 +167,7 @@ impl Config {
     pub fn dependencies(&self) -> &[DependencyKind] {
         &self.project.dependencies
     }
-
+/*
     pub(crate) fn resolved_lock_to_config(
         resolved_lock: Vec<ResolvedLock>,
         repositories: Vec<Repository>,
@@ -200,6 +200,7 @@ impl Config {
             dependencies,
         } }
     }
+    */
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use crate::version::{Version, VersionRequirement};
+use crate::{renv_lock::PackageInfo, version::{Version, VersionRequirement}};
 use serde::{Deserialize, Serialize};
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
@@ -118,6 +118,30 @@ impl Package {
         out.into_iter()
             .filter(|p| !BASE_PACKAGES.contains(&p.name()))
             .collect()
+    }
+
+    pub fn from_package_info(pkg_info: &PackageInfo) -> Self {
+        let deps = pkg_info.requirements
+            .iter()
+            .map(|x| Dependency::Simple(x.to_string()))
+            .collect::<Vec<_>>();
+
+        Package {
+            name: pkg_info.package.clone(),
+            version: pkg_info.version.clone(),
+            r_requirement: None,
+            depends: deps,
+            imports: Vec::new(),
+            suggests: Vec::new(),
+            enhances: Vec::new(),
+            linking_to: Vec::new(),
+            license: String::new(),
+            md5_sum: String::new(),
+            path: None,
+            os_type: None,
+            recommended: false,
+            needs_compilation: false
+        }
     }
 }
 

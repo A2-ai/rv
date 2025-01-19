@@ -1,0 +1,82 @@
+{
+  "R": {
+    "Version": "4.4.1",
+    "Repositories": [
+      {
+        "Name": "slurmtools",
+        "URL": "https://a2-ai.github.io/gh-pkg-mirror/slurmtools"
+      },
+      {
+        "Name": "gh-pkg-mirror",
+        "URL": "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04"
+      },
+      {
+        "Name": "RSPM",
+        "URL": "https://packagemanager.posit.co/cran/2024-12-04"
+      }
+    ]
+  },
+  "Packages": {
+    "BH": {
+      "Package": "BH",
+      "Version": "1.84.0-0",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "a8235afbcd6316e6e91433ea47661013"
+    },
+    "cqtkit.report": {
+      "Package": "cqtkit.report",
+      "Version": "0.0.1",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "ubuntu-20.04_cqtkit.report_0.0.1_R_x86_64-pc-linux-gnu.tar.gz",
+      "Requirements": [
+        "fs",
+        "purrr",
+        "quarto"
+      ],
+      "Hash": "022d8762221c06012b1288ead8813081"
+    },
+    "ghqc": {
+      "Package": "ghqc",
+      "Version": "0.3.2",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "ghqc",
+      "RemoteUsername": "a2-ai",
+      "RemoteSha": "55c23eb6a444542dab742d3d37c7b65af7b12e38",
+      "Requirements": [
+        "R",
+        "cli",
+        "fs",
+        "glue",
+        "httpuv",
+        "rlang",
+        "rstudioapi",
+        "withr",
+        "yaml"
+      ],
+      "Hash": "dcba3cb6539ee3cfce6218049c5016cc"
+    },
+    "rv.git.pkgA": {
+      "Package": "rv.git.pkgA",
+      "Version": "0.0.0.9000",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "rv.git.pkgA",
+      "RemoteUsername": "a2-ai",
+      "RemotePkgRef": "a2-ai/rv.git.pkgA",
+      "RemoteSha": "d738812076bb3dccae08f7a8107614b617bbc312",
+      "Hash": "8c8c8f62ee54a612a5f99f5b0346aff5"
+    },
+    "zip": {
+      "Package": "zip",
+      "Version": "2.3.1",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "fcc4bd8e6da2d2011eb64a5e5cc685ab"
+    }
+  }
+}
