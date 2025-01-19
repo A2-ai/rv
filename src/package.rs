@@ -111,10 +111,7 @@ impl Package {
         self.r_requirement.as_ref()
     }
 
-    pub fn dependencies_to_install(
-        &self,
-        install_suggestions: bool,
-    ) -> InstallationDependency {
+    pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependency {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -122,15 +119,21 @@ impl Package {
         out.extend(self.linking_to.iter());
 
         let suggests = if install_suggestions {
-            Some(self.suggests.iter()
-            .filter(|p| !BASE_PACKAGES.contains(&p.name()))
-            .collect())
+            Some(
+                self.suggests
+                    .iter()
+                    .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                    .collect(),
+            )
         } else {
             None
         };
 
         InstallationDependency {
-            direct: out,
+            direct: out
+                .into_iter()
+                .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .collect(),
             suggests,
         }
     }
