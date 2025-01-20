@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::cache::InstallationStatus;
 use crate::config::DependencyKind;
-use crate::lockfile::Lockfile;
+use crate::lockfile::{LockedPackage, Lockfile};
 use crate::package::PackageType;
 use crate::repository::RepositoryDatabase;
 use crate::version::{Version, VersionRequirement};
@@ -15,7 +15,9 @@ pub struct ResolvedDependency<'d> {
     pub(crate) version: &'d str,
     pub(crate) repository_url: &'d str,
     pub(crate) dependencies: Vec<&'d str>,
+    pub(crate) suggests: Vec<&'d str>,
     pub(crate) force_source: bool,
+    pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
     pub(crate) installation_status: InstallationStatus,
     pub(crate) path: Option<&'d str>,
@@ -29,6 +31,31 @@ impl<'d> ResolvedDependency<'d> {
             PackageType::Binary => self.installation_status.binary_available(),
         }
     }
+
+    pub fn from_locked_package(package: &'d LockedPackage, cache: &'d impl Cache) -> Self {
+        Self {
+            name: &package.name,
+            version: &package.version,
+            repository_url: package.repo_url().unwrap(),
+            dependencies: package.dependencies.iter().map(|d| d.as_str()).collect(),
+            suggests: package.suggests.iter().map(|s| s.as_str()).collect(),
+            // TODO: what should we do here?
+            kind: if package.force_source {
+                PackageType::Source
+            } else {
+                PackageType::Binary
+            },
+            force_source: package.force_source,
+            install_suggests: package.install_suggests(),
+            installation_status: cache.get_package_installation_status(
+                package.repo_url().unwrap(),
+                &package.name,
+                &package.version,
+            ),
+            path: package.path.as_ref().map(|x| x.as_str()),
+            found_in_lockfile: true,
+        }
+    }
 }
 
 impl<'a> fmt::Display for ResolvedDependency<'a> {
@@ -36,7 +63,12 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
         write!(
             f,
             "{}={} (from {}, type={}, from_lockfile={}, path='{}')",
-            self.name, self.version, self.repository_url, self.kind, self.found_in_lockfile, self.path.unwrap_or("")
+            self.name,
+            self.version,
+            self.repository_url,
+            self.kind,
+            self.found_in_lockfile,
+            self.path.unwrap_or("")
         )
     }
 }
@@ -167,29 +199,13 @@ impl<'d> Resolver<'d> {
             if let Some(lockfile) = self.lockfile {
                 // If we found the package in the lockfile, consider it found and do not look up
                 // the repo at all
-                if let Some(package) = lockfile.get_package(name, pkg_force_source) {
+                if let Some(package) =
+                    lockfile.get_package(name, pkg_force_source, install_suggestions)
+                {
                     found.insert(name);
-                    resolved.push(ResolvedDependency {
-                        name: &package.name,
-                        version: &package.version,
-                        repository_url: package.repo_url().unwrap(),
-                        dependencies: package.dependencies.iter().map(|d| d.as_str()).collect(),
-                        kind: if pkg_force_source {
-                            PackageType::Source
-                        } else {
-                            PackageType::Binary
-                        },
-                        force_source: pkg_force_source,
-                        installation_status: cache.get_package_installation_status(
-                            package.repo_url().unwrap(),
-                            &package.name,
-                            &package.version,
-                        ),
-                        path: package.path.as_ref().map(|x| x.as_str()),
-                        found_in_lockfile: true,
-                    });
+                    resolved.push(ResolvedDependency::from_locked_package(package, cache));
 
-                    for d in &package.dependencies {
+                    for d in package.dependencies.iter().chain(&package.suggests) {
                         if !found.contains(d.as_str()) {
                             queue.push_back((d.as_str(), None, None, false, false, Some(name)));
                         }
@@ -214,15 +230,16 @@ impl<'d> Resolver<'d> {
                 ) {
                     found.insert(name);
                     let deps = package.dependencies_to_install(install_suggestions);
-                    let all_dependencies = deps.direct;
-                  
+
                     resolved.push(ResolvedDependency {
                         name: &package.name,
                         version: &package.version.original,
                         repository_url: &repo.url,
-                        dependencies: all_dependencies.iter().map(|d| d.name()).collect(),
+                        dependencies: deps.direct.iter().map(|d| d.name()).collect(),
+                        suggests: deps.suggests.iter().map(|d| d.name()).collect(),
                         kind: package_type,
                         force_source: pkg_force_source || *repo_source_only,
+                        install_suggests: install_suggestions,
                         installation_status: cache.get_package_installation_status(
                             &repo.url,
                             &package.name,
@@ -232,7 +249,8 @@ impl<'d> Resolver<'d> {
                         found_in_lockfile: false,
                     });
 
-                    for d in all_dependencies {
+                    // deps.suggests will be empty if we don't have install_suggests=True
+                    for d in deps.direct.into_iter().chain(deps.suggests) {
                         if !found.contains(d.name()) {
                             queue.push_back((
                                 d.name(),
@@ -244,26 +262,6 @@ impl<'d> Resolver<'d> {
                             ));
                         }
                     }
-                    if install_suggestions {
-                        // given all the explicitly called out deps are already in the queue
-                        // we don't need to worry about if this is a copy of one of those values
-                        // since they'll be in front of the queue and will get found/setup for resolution first
-                        // since they're suggested deps we also don't want their suggests for now either,
-                        // though one day we might need to add a recursive suggests akin to deps = TRUE
-                        // for R. This would cover that situation a bit
-                        for d in deps.suggests.unwrap() {
-                            if !found.contains(d.name()) {
-                                queue.push_back((
-                                    d.name(),
-                                    None,
-                                    d.version_requirement(),
-                                    false,
-                                    false,
-                                    Some(name),
-                                ));
-                            }
-                        }
-                    } 
                     break;
                 }
             }
@@ -308,7 +306,8 @@ impl<'d> Resolver<'d> {
 
         for d in dependencies {
             // TODO: add source (repository url/git) to the param if set since changing that means a new package
-            let all_deps = lockfile.get_package_tree(d.name(), d.force_source());
+            let all_deps =
+                lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
             // If we don't have an explicit dep in the lockfile, we'll need a full resolve
             if all_deps.is_empty() {
                 return ResolutionNeeded::Full;

@@ -2,4 +2,4 @@
 source: src/resolver.rs
 expression: out
 ---
-cluster=2.1.7 (from http://posit, type=binary, from_lockfile=false)
+cluster=2.1.7 (from http://posit, type=binary, from_lockfile=false, path='4.5.0/Recommended')

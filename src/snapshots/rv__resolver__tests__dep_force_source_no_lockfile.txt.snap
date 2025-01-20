@@ -2,4 +2,4 @@
 source: src/resolver.rs
 expression: out
 ---
-R6=2.5.1 (from http://cran, type=source, from_lockfile=false)
+R6=2.5.1 (from http://cran, type=source, from_lockfile=false, path='')
