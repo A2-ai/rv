@@ -67,7 +67,7 @@ fn resolve_needed(context: &CliContext) -> ResolveNeeded {
 
         for d in context.config.dependencies() {
             // TODO: add source (repository url/git) to the param if set since changing that means a new package
-            let all_deps = lockfile.get_package_tree(d.name(), d.force_source());
+            let all_deps = lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
             // If we don't have an explicit dep, we'll need a full resolve
             if all_deps.is_empty() {
                 log::debug!(

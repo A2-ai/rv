@@ -3,11 +3,11 @@ use std::path::PathBuf;
 
 use crate::cli::{http, utils::write_err, DiskCache};
 use crate::{
-    consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RCommandLine, RepoServer,
+    consts::PACKAGE_FILENAME, consts::LOCKFILE_NAME, timeit, Cache, CacheEntry, Config, RCommandLine, RepoServer,
     Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
-use crate::lockfile::{Lockfile, FILENAME as LOCKFILE_FILENAME};
+use crate::lockfile::{Lockfile};
 use anyhow::{bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
@@ -36,7 +36,7 @@ impl CliContext {
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
-        let lockfile_path = project_dir.join(LOCKFILE_FILENAME);
+        let lockfile_path = project_dir.join(LOCKFILE_NAME);
         let lockfile = if lockfile_path.exists() {
             Some(Lockfile::load(lockfile_path)?)
         } else {
@@ -59,7 +59,7 @@ impl CliContext {
     }
 
     pub fn lockfile_path(&self) -> PathBuf {
-        self.project_dir.join(LOCKFILE_FILENAME)
+        self.project_dir.join(LOCKFILE_NAME)
     }
     pub fn library_path(&self) -> PathBuf {
         self.project_dir.join(RV_DIR_NAME).join(LIBRARY_DIR_NAME)
