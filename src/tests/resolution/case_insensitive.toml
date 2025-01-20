@@ -1,6 +1,0 @@
-[project]
-name = "test"
-repositories = []
-dependencies = [
-    "r6",
-]

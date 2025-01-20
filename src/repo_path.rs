@@ -1,6 +1,6 @@
-use std::sync::LazyLock;
-use regex::Regex;
 use crate::{OsType, SystemInfo};
+use regex::Regex;
+use std::sync::LazyLock;
 
 static SNAPSHOT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(latest|\d{4}-\d{2}-\d{2})$").unwrap());
@@ -150,7 +150,11 @@ impl<'a> RepoServer<'a> {
         sysinfo: &SystemInfo,
     ) -> Option<String> {
         let ext = sysinfo.os_type.tarball_extension();
-        let p = if let Some(p2) = path { format!("{p2}/") } else { String::new() };
+        let p = if let Some(p2) = path {
+            format!("{p2}/")
+        } else {
+            String::new()
+        };
         let file_name = format!("{p}{name}_{version}.{ext}");
         self.get_binary_path(&file_name, r_version, sysinfo)
     }
@@ -161,7 +165,11 @@ impl<'a> RepoServer<'a> {
     }
 
     pub fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
-        let p = if let Some(p2) = path { format!("{p2}/") } else { String::new() };
+        let p = if let Some(p2) = path {
+            format!("{p2}/")
+        } else {
+            String::new()
+        };
         let file_name = format!("{p}{name}_{version}.tar.gz");
         self.get_source_path(&file_name)
     }

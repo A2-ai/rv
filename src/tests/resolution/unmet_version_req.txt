@@ -1,0 +1,20 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    # this package expects a version greater than what exists in the db
+    "unmet-version-req",
+]
+---
+Package: zzlite
+Version: 0.1.2
+Depends: R (>= 3.2)
+NeedsCompilation: no
+License: GPL-3
+
+Package: unmet-version-req
+Version: 0.0.1
+Depends: R (>= 2.4.0), zzlite (>= 1.0)
+NeedsCompilation: no
+---

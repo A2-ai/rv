@@ -1,0 +1,20 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    # If we have it already as binary in the lockfile, we'll need to fetch it from the repo
+    { name = "R6", force_source = true },
+]
+---
+repos = [{name = "cran", binary = "cran-binary", source = "posit-src", force_source = false}]
+---
+version = 1
+r_version = "4.4"
+
+[[packages]]
+name = "r6"
+version = "2.5.1"
+source = { repository = "http://cran" }
+force_source = false
+dependencies = []

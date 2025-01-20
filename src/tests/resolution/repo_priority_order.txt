@@ -1,0 +1,11 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    # It should get the package from the first repo
+    "texPreview",
+]
+---
+repos = [{ name = "gh-pkg-mirror", binary = "gh-pkg-mirror", force_source = false}, {name = "cran", binary = "cran-binary", force_source = false}]
+---

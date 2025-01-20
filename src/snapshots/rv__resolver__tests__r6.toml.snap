@@ -1,5 +1,0 @@
----
-source: src/resolver.rs
-expression: out
----
-R6=2.5.1 (from test, type=binary, status=absent)

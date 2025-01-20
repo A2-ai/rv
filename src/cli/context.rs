@@ -3,10 +3,11 @@ use std::path::PathBuf;
 
 use crate::cli::{http, utils::write_err, DiskCache};
 use crate::{
-    consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RCommandLine, RepoServer,
+    consts::PACKAGE_FILENAME, consts::LOCKFILE_NAME, timeit, Cache, CacheEntry, Config, RCommandLine, RepoServer,
     Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
+use crate::lockfile::{Lockfile};
 use anyhow::{bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
@@ -22,6 +23,7 @@ pub struct CliContext {
     pub r_version: Version,
     pub cache: DiskCache,
     pub databases: Vec<(RepositoryDatabase, bool)>,
+    pub lockfile: Option<Lockfile>,
 }
 
 impl CliContext {
@@ -31,21 +33,34 @@ impl CliContext {
         let r_version = config.get_r_version(r_cli)?;
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
-        // TODO: once we have a lockfile we won't need to always load them
-        let databases = load_databases(config.repositories(), &cache)?;
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
+        let lockfile_path = project_dir.join(LOCKFILE_NAME);
+        let lockfile = if lockfile_path.exists() {
+            Some(Lockfile::load(lockfile_path)?)
+        } else {
+            None
+        };
 
         Ok(Self {
             config,
             cache,
-            databases,
             r_version,
             project_dir,
+            lockfile,
+            databases: Vec::new(),
         })
     }
 
+    pub fn load_databases(&mut self) -> Result<()> {
+        self.databases = load_databases(self.config.repositories(), &self.cache)?;
+        Ok(())
+    }
+
+    pub fn lockfile_path(&self) -> PathBuf {
+        self.project_dir.join(LOCKFILE_NAME)
+    }
     pub fn library_path(&self) -> PathBuf {
         self.project_dir.join(RV_DIR_NAME).join(LIBRARY_DIR_NAME)
     }

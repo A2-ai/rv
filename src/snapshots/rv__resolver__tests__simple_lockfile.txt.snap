@@ -1,0 +1,5 @@
+---
+source: src/resolver.rs
+expression: out
+---
+R6=2.5.1 (from http://cran, type=binary, from_lockfile=true, path='')

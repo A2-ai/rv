@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -6,7 +7,7 @@ use fs_err as fs;
 
 use rv::cli::utils::{timeit, write_err};
 use rv::cli::{sync, CliContext};
-use rv::{ResolvedDependency, Resolver};
+use rv::{Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -32,10 +33,76 @@ pub enum Command {
     Sync,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResolveNeeded {
+    /// No actions needed
+    None,
+    /// We only need to remove those deps from the lockfile + project library
+    RemoveOnly(Vec<String>),
+    /// We will need to look up the package databases so do a full lookup, preferring
+    /// already installed/in lockfile versions
+    Full,
+}
+
+/// Look through the lockfile if there is one to see if we actually need to resolve anything.
+/// We don't look at the versions there, only at the dependencies and whether force_source is enabled
+fn resolve_needed(context: &CliContext) -> ResolveNeeded {
+    if let Some(lockfile) = &context.lockfile {
+        // Different R version always means needing to resolve things.
+        if lockfile.r_version().major_minor() != context.r_version.major_minor() {
+            log::debug!(
+                "Different R version (lockfile={}, user={}). Re-resolving everything",
+                lockfile.r_version(),
+                context.r_version
+            );
+            return ResolveNeeded::Full;
+        }
+
+        // At this point we need to figure out 2 things:
+        // 1. whether we have all the explicit deps and their deps in the lockfile
+        // 2. whether we removed some dep in the config file and need to update the lockfile
+        //    and just remove those from the lockfile/rv dir
+        let lockfile_deps = lockfile.package_names();
+        let mut deps_seen: HashSet<&str> = HashSet::new();
+
+        for d in context.config.dependencies() {
+            // TODO: add source (repository url/git) to the param if set since changing that means a new package
+            let all_deps = lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
+            // If we don't have an explicit dep, we'll need a full resolve
+            if all_deps.is_empty() {
+                log::debug!(
+                    "Could not find {} in lockfile. Re-resolving everything",
+                    d.name()
+                );
+                return ResolveNeeded::Full;
+            }
+            deps_seen.extend(all_deps.into_iter());
+        }
+
+        // Check whether we have things we need to remove or not
+        let unneeded_deps = lockfile_deps
+            .difference(&deps_seen)
+            .map(|d| d.to_string())
+            .collect::<Vec<_>>();
+        if unneeded_deps.is_empty() {
+            ResolveNeeded::None
+        } else {
+            ResolveNeeded::RemoveOnly(unneeded_deps)
+        }
+    } else {
+        log::debug!("No lockfile. Resolving everything");
+        ResolveNeeded::Full
+    }
+}
+
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
-    let resolver = Resolver::new(&context.databases, &context.r_version);
+    let resolver = Resolver::new(
+        &context.databases,
+        &context.r_version,
+        context.lockfile.as_ref(),
+    );
     let (resolved, unresolved) = resolver.resolve(context.config.dependencies(), &context.cache);
     if !unresolved.is_empty() {
         eprintln!("Failed to resolve all dependencies");
@@ -59,37 +126,81 @@ fn try_main() -> Result<()> {
     match cli.command {
         Command::Init => todo!("implement init"),
         Command::Plan => {
-            let context = CliContext::new(&cli.config_file)?;
-            let resolved = resolve_dependencies(&context);
-
-            println!("Plan successful! The following packages will be installed:");
-            for d in resolved {
-                println!("    {d}");
+            let mut context = CliContext::new(&cli.config_file)?;
+            match resolve_needed(&context) {
+                ResolveNeeded::None => {
+                    println!("Nothing to do");
+                }
+                ResolveNeeded::RemoveOnly(deps) => {
+                    println!("Plan successful! The following packages will be removed:");
+                    for d in deps {
+                        println!("    - {d}");
+                    }
+                }
+                ResolveNeeded::Full => {
+                    context.load_databases()?;
+                    // TODO: take into account we might remove some deps, not just installation
+                    let resolved = resolve_dependencies(&context);
+                    println!("Plan successful! The following packages will be installed:");
+                    for d in resolved {
+                        println!("    {d}");
+                    }
+                }
             }
         }
         Command::Sync => {
-            let context = CliContext::new(&cli.config_file)?;
-            let resolved = resolve_dependencies(&context);
-            match timeit!("Synced dependencies", sync(&context, resolved)) {
-                Ok(changes) => {
-                    for c in changes {
-                        if c.installed {
-                            println!(
-                                "+ {} ({}) in {}ms",
-                                c.name,
-                                c.version.unwrap(),
-                                c.timing.unwrap().as_millis()
-                            );
-                        } else {
-                            println!("- {}", c.name);
+            let mut context = CliContext::new(&cli.config_file)?;
+            match resolve_needed(&context) {
+                ResolveNeeded::None => {
+                    println!("Nothing to do");
+                }
+                ResolveNeeded::RemoveOnly(deps) => {
+                    let lockfile_path = context.lockfile_path();
+                    let library_path = context.library_path();
+                    // We can only be here if we have a lockfile
+                    // Just removing things is easy from the lockfile
+                    let lockfile = context.lockfile.as_mut().unwrap();
+                    for d in &deps {
+                        lockfile.remove_package(d);
+                        let p = library_path.join(d);
+                        if p.is_dir() {
+                            fs::remove_dir_all(p)?;
                         }
                     }
-                }
-                Err(e) => {
-                    if context.staging_path().is_dir() {
-                        fs::remove_dir_all(context.staging_path())?;
+                    lockfile.save(lockfile_path)?;
+
+                    for d in deps {
+                        println!("- {d}");
                     }
-                    return Err(e);
+                }
+                ResolveNeeded::Full => {
+                    context.load_databases()?;
+                    let resolved = resolve_dependencies(&context);
+                    let lockfile =
+                        Lockfile::from_resolved(&context.r_version.major_minor(), &resolved);
+                    match timeit!("Synced dependencies", sync(&context, resolved)) {
+                        Ok(changes) => {
+                            lockfile.save(context.lockfile_path())?;
+                            for c in changes {
+                                if c.installed {
+                                    println!(
+                                        "+ {} ({}) in {}ms",
+                                        c.name,
+                                        c.version.unwrap(),
+                                        c.timing.unwrap().as_millis()
+                                    );
+                                } else {
+                                    println!("- {}", c.name);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            if context.staging_path().is_dir() {
+                                fs::remove_dir_all(context.staging_path())?;
+                            }
+                            return Err(e);
+                        }
+                    }
                 }
             }
         }

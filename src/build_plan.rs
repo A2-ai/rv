@@ -113,13 +113,15 @@ mod tests {
         ResolvedDependency {
             name,
             dependencies,
+            suggests: Vec::new(),
             version: "",
-            repository: "",
             repository_url: "",
-            needs_compilation: false,
+            install_suggests: false,
+            force_source: false,
             kind: PackageType::Source,
             installation_status: InstallationStatus::Binary,
             path: None,
+            found_in_lockfile: false,
         }
     }
 

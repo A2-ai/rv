@@ -1,0 +1,6 @@
+---
+source: src/resolver.rs
+expression: out
+---
+--- unresolved --- 
+r6 from: user provided

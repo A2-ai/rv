@@ -84,7 +84,6 @@ pub struct Package {
     linking_to: Vec<Dependency>,
     license: String,
     md5_sum: String,
-    // TODO: we will need that when downloading afaik?
     pub(crate) path: Option<String>,
     os_type: Option<OsType>,
     recommended: bool,
@@ -92,9 +91,9 @@ pub struct Package {
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize)]
-pub struct InstallationDependency<'a> {
+pub struct InstallationDependencies<'a> {
     pub(crate) direct: Vec<&'a Dependency>,
-    pub(crate) suggests: Option<Vec<&'a Dependency>>,
+    pub(crate) suggests: Vec<&'a Dependency>,
 }
 
 impl Package {
@@ -111,7 +110,7 @@ impl Package {
         self.r_requirement.as_ref()
     }
 
-    pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependency {
+    pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependencies {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -119,17 +118,15 @@ impl Package {
         out.extend(self.linking_to.iter());
 
         let suggests = if install_suggestions {
-            Some(
-                self.suggests
-                    .iter()
-                    .filter(|p| !BASE_PACKAGES.contains(&p.name()))
-                    .collect(),
-            )
+            self.suggests
+                .iter()
+                .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .collect()
         } else {
-            None
+            Vec::new()
         };
 
-        InstallationDependency {
+        InstallationDependencies {
             direct: out
                 .into_iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
@@ -229,10 +226,10 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
         }
 
         package.name = name.clone();
-        if let Some(p) = packages.get_mut(&name.to_lowercase()) {
+        if let Some(p) = packages.get_mut(&name) {
             p.push(package);
         } else {
-            packages.insert(name.to_lowercase(), vec![package]);
+            packages.insert(name, vec![package]);
         }
     }
 
