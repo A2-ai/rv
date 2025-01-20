@@ -154,8 +154,9 @@ impl<'d> Resolver<'d> {
                     pkg_force_source || *repo_source_only,
                 ) {
                     found.insert(name);
-                    let all_dependencies = package.dependencies_to_install(install_suggestions);
-
+                    let deps = package.dependencies_to_install(install_suggestions);
+                    let all_dependencies = deps.direct;
+                  
                     resolved.push(ResolvedDependency {
                         name: &package.name,
                         version: &package.version.original,
@@ -184,6 +185,26 @@ impl<'d> Resolver<'d> {
                             ));
                         }
                     }
+                    if install_suggestions {
+                        // given all the explicitly called out deps are already in the queue
+                        // we don't need to worry about if this is a copy of one of those values
+                        // since they'll be in front of the queue and will get found/setup for resolution first
+                        // since they're suggested deps we also don't want their suggests for now either,
+                        // though one day we might need to add a recursive suggests akin to deps = TRUE
+                        // for R. This would cover that situation a bit
+                        for d in deps.suggests.unwrap() {
+                            if !found.contains(d.name()) {
+                                queue.push_back((
+                                    d.name(),
+                                    None,
+                                    d.version_requirement(),
+                                    false,
+                                    false,
+                                    Some(name),
+                                ));
+                            }
+                        }
+                    } 
                     break;
                 }
             }

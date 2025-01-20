@@ -1,0 +1,8 @@
+[project]
+name = "simple"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+]
+dependencies = [
+   { name = "dplyr", install_suggestions = true }
+]
