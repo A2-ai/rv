@@ -35,8 +35,8 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} (from {}, type={}, from_lockfile={})",
-            self.name, self.version, self.repository_url, self.kind, self.found_in_lockfile
+            "{}={} (from {}, type={}, from_lockfile={}, path='{}')",
+            self.name, self.version, self.repository_url, self.kind, self.found_in_lockfile, self.path.unwrap_or("")
         )
     }
 }

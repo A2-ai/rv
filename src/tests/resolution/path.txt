@@ -1,0 +1,10 @@
+[project]
+name = "path"
+r_version = "4.5"
+repositories = []
+dependencies = [
+    "MASS",
+]
+---
+repos = [{name = "posit", source = "posit-src", force_source = false}]
+---

@@ -56,7 +56,7 @@ impl LockedPackage {
             source: Some(Source::Repository {
                 repository: dep.repository_url.to_string(),
             }),
-            path: dep.path.cloned(),
+            path: dep.path.map(|p| p.to_string()),
             force_source: dep.force_source,
             dependencies: dep.dependencies.iter().map(|d| d.to_string()).collect(),
         }

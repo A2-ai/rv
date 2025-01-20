@@ -1,0 +1,5 @@
+---
+source: src/resolver.rs
+expression: out
+---
+MASS=7.3-61 (from http://posit, type=source, from_lockfile=false, path='4.5.0/Recommended')
