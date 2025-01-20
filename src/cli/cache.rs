@@ -118,7 +118,7 @@ impl DiskCache {
     /// The folder may or may not exist depending on whether it's in the cache
     pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
         let encoded = encode_repository_url(repo_url);
-        self.root.join(encoded).join(name).join(version)
+        self.root.join(encoded).join("src").join(name).join(version)
     }
 
     pub fn get_package_paths(&self, repo_url: &str, name: &str, version: &str) -> PackagePaths {
