@@ -1,0 +1,14 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "slurmtools",
+]
+---
+repos = [
+    { name = "a2-ai-universe", source = "a2-ai-universe", force_source = false },
+    { name = "P3M", binary = "posit-src", force_source = false }
+    #{ name = "gh-pkg-mirror", binary = "gh-pkg-mirror", force_source = false}, 
+]
+---
