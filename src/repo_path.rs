@@ -1,7 +1,5 @@
 use std::sync::LazyLock;
-
 use regex::Regex;
-
 use crate::{OsType, SystemInfo};
 
 static SNAPSHOT_RE: LazyLock<Regex> =
@@ -147,10 +145,13 @@ impl<'a> RepoServer<'a> {
         &self,
         name: &str,
         version: &str,
+        path: Option<&str>,
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        let file_name = format!("{name}_{version}.{}", sysinfo.os_type.tarball_extension());
+        let ext = sysinfo.os_type.tarball_extension();
+        let p = if let Some(p2) = path { format!("{p2}/") } else { String::new() };
+        let file_name = format!("{p}{name}_{version}.{ext}");
         self.get_binary_path(&file_name, r_version, sysinfo)
     }
 
@@ -159,8 +160,10 @@ impl<'a> RepoServer<'a> {
         format!("{url}/src/contrib/{file_name}")
     }
 
-    pub fn get_source_tarball_path(&self, name: &str, version: &str) -> String {
-        self.get_source_path(&format!("{name}_{version}.tar.gz"))
+    pub fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
+        let p = if let Some(p2) = path { format!("{p2}/") } else { String::new() };
+        let file_name = format!("{p}{name}_{version}.tar.gz");
+        self.get_source_path(&file_name)
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {

@@ -19,6 +19,7 @@ pub struct ResolvedDependency<'d> {
     pub(crate) needs_compilation: bool,
     pub(crate) kind: PackageType,
     pub(crate) installation_status: InstallationStatus,
+    pub(crate) path: Option<&'d str>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -168,6 +169,7 @@ impl<'d> Resolver<'d> {
                             &package.name,
                             &package.version.original,
                         ),
+                        path: package.path.as_ref().map(|x| x.as_str()),
                     });
 
                     for d in all_dependencies {

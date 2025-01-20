@@ -85,7 +85,7 @@ pub struct Package {
     license: String,
     md5_sum: String,
     // TODO: we will need that when downloading afaik?
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     os_type: Option<OsType>,
     recommended: bool,
     pub(crate) needs_compilation: bool,

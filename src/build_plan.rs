@@ -119,6 +119,7 @@ mod tests {
             needs_compilation: false,
             kind: PackageType::Source,
             installation_status: InstallationStatus::Binary,
+            path: None,
         }
     }
 
