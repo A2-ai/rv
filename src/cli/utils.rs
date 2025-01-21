@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use flate2::read::GzDecoder;
@@ -30,6 +30,21 @@ pub fn untar_package<R: io::Read, T: AsRef<Path>>(reader: R, destination: T) -> 
     Ok(())
 }
 
+/// Builds the path for binary in the cache and the library based on os info and R version
+/// {R_Version}/{arch}/{codename}/
+pub fn get_os_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
+    let mut path = PathBuf::new().join(format!("{}.{}", r_version[0], r_version[1]));
+
+    if let Some(arch) = system_info.arch() {
+        path = path.join(arch);
+    }
+    if let Some(codename) = system_info.codename() {
+        path = path.join(codename);
+    }
+
+    path
+}
+
 #[macro_export]
 macro_rules! timeit {
     ($msg:expr, $x:expr) => {{
@@ -41,4 +56,5 @@ macro_rules! timeit {
     }};
 }
 
+use crate::SystemInfo;
 pub use timeit;
