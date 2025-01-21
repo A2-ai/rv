@@ -7,6 +7,7 @@ use etcetera::BaseStrategy;
 use fs_err as fs;
 
 use crate::cache::InstallationStatus;
+use crate::cli::utils::get_os_path;
 use crate::system_info::SystemInfo;
 use crate::version::Version;
 use crate::{Cache, CacheEntry};
@@ -88,14 +89,9 @@ impl DiskCache {
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
     fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
         let encoded = encode_repository_url(repo_url);
-        let mut path = self.root.join(encoded).join(self.system_info.os_family());
-        if let Some(codename) = self.system_info.codename() {
-            path = path.join(codename);
-        }
-        if let Some(arch) = self.system_info.arch() {
-            path = path.join(arch);
-        }
-        path.join(format!("{}.{}", self.r_version[0], self.r_version[1]))
+        self.root
+            .join(&encoded)
+            .join(get_os_path(&self.system_info, self.r_version))
     }
 
     /// A database contains both source and binary PACKAGE data

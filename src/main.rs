@@ -27,6 +27,8 @@ pub struct Cli {
 pub enum Command {
     /// Creates a new rv project
     Init,
+    /// Returns the path for the library for the current project/system
+    Library,
     /// Dry run of what sync would do
     Plan,
     /// Replaces the library with exactly what is in the lock file
@@ -67,7 +69,8 @@ fn resolve_needed(context: &CliContext) -> ResolveNeeded {
 
         for d in context.config.dependencies() {
             // TODO: add source (repository url/git) to the param if set since changing that means a new package
-            let all_deps = lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
+            let all_deps =
+                lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
             // If we don't have an explicit dep, we'll need a full resolve
             if all_deps.is_empty() {
                 log::debug!(
@@ -125,6 +128,10 @@ fn try_main() -> Result<()> {
 
     match cli.command {
         Command::Init => todo!("implement init"),
+        Command::Library => {
+            let context = CliContext::new(&cli.config_file)?;
+            println!("{}", context.library_path().display());
+        }
         Command::Plan => {
             let mut context = CliContext::new(&cli.config_file)?;
             match resolve_needed(&context) {
