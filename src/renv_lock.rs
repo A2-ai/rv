@@ -19,7 +19,7 @@ where
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 // as enum since logic to resolve depends on this
-enum RenvSource {
+pub(crate) enum RenvSource {
     Repository,
     GitHub,
     Local,
@@ -28,27 +28,27 @@ enum RenvSource {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct PackageInfo {
-    package: String,
+pub(crate) struct PackageInfo {
+    pub(crate) package: String,
     #[serde(deserialize_with = "deserialize_version")]
-    version: Version,
-    source: RenvSource,
+    pub(crate) version: Version,
+    pub(crate) source: RenvSource,
     #[serde(default)]
     repository: Option<String>, // when source is Repository
     #[serde(default)]
     remote_type: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_host: Option<String>, // when source is GitHub
+    pub(crate) remote_host: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_repo: Option<String>, // when source is GitHub
+    pub(crate) remote_repo: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_username: Option<String>, // when source is GitHub
+    pub(crate) remote_username: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_sha: Option<String>, // when source is GitHub
+    pub(crate) remote_sha: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_url: Option<String>, // when source is Local
+    pub(crate) remote_url: Option<String>, // when source is Local
     #[serde(default)]
-    requirements: Vec<String>,
+    pub(crate) requirements: Vec<String>,
     hash: String
 }
 
@@ -62,9 +62,9 @@ struct RInfo {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct RenvLock {
+pub(crate) struct RenvLock {
     r: RInfo,
-    packages: HashMap<String, PackageInfo>,
+    pub(crate) packages: HashMap<String, PackageInfo>,
 }
 
 impl RenvLock {
@@ -84,6 +84,14 @@ impl RenvLock {
             path: path.into(),
             source: FromJsonFileErrorKind::Parse(e),
         })
+    }
+
+    pub(crate) fn repositories(&self) -> &Vec<Repository> {
+        &self.r.repositories
+    }
+
+    pub(crate) fn r_version(&self) -> &Version {
+        &self.r.version
     }
 }
 
