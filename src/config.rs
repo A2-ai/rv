@@ -2,23 +2,17 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::r_cmd::{RCmd, VersionError};
 use crate::version::Version;
 use serde::Deserialize;
 
-fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
+fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let v: Option<String> = Deserialize::deserialize(deserializer)?;
-
-    if let Some(v) = v {
-        match Version::from_str(&v) {
-            Ok(v) => Ok(Some(v)),
-            Err(_) => Err(serde::de::Error::custom("Invalid version number")),
-        }
-    } else {
-        Ok(None)
+    let v: String = Deserialize::deserialize(deserializer)?;
+    match Version::from_str(&v) {
+        Ok(v) => Ok(v),
+        Err(_) => Err(serde::de::Error::custom("Invalid version number")),
     }
 }
 
@@ -99,11 +93,10 @@ impl DependencyKind {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
+    #[serde(deserialize_with = "deserialize_version")]
+    r_version: Version,
     #[serde(default)]
     description: String,
-    #[serde(default)]
-    #[serde(deserialize_with = "deserialize_version")]
-    version: Option<Version>,
     license: Option<String>,
     #[serde(default)]
     authors: Vec<Author>,
@@ -113,12 +106,11 @@ pub(crate) struct Project {
     #[serde(default)]
     suggests: Vec<DependencyKind>,
     #[serde(default)]
-    #[serde(deserialize_with = "deserialize_version")]
-    r_version: Option<Version>,
-    #[serde(default)]
     urls: HashMap<String, String>,
     #[serde(default)]
     dependencies: Vec<DependencyKind>,
+    #[serde(default)]
+    dev_dependencies: Vec<DependencyKind>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -141,23 +133,16 @@ impl Config {
         Self::from_str(&content)
     }
 
-    /// Gets the R version we want to use in this project.
-    /// This will default to whatever is set in the config if set, otherwise pick the output
-    /// from the trait call
-    pub fn get_r_version(&self, r_cli: impl RCmd) -> Result<Version, VersionError> {
-        if let Some(v) = &self.project.r_version {
-            Ok(v.clone())
-        } else {
-            r_cli.version()
-        }
-    }
-
     pub fn repositories(&self) -> &[Repository] {
         &self.project.repositories
     }
 
     pub fn dependencies(&self) -> &[DependencyKind] {
         &self.project.dependencies
+    }
+
+    pub fn r_version(&self) -> &Version {
+        &self.project.r_version
     }
 }
 

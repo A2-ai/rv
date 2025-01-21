@@ -333,11 +333,9 @@ impl<'d> Resolver<'d> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::r_cmd::{InstallError, VersionError};
     use crate::repository::RepositoryDatabase;
-    use crate::{CacheEntry, RCmd};
+    use crate::CacheEntry;
     use serde::Deserialize;
-    use std::io::Error;
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
 
@@ -350,43 +348,6 @@ mod tests {
 
         fn get_package_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
             InstallationStatus::Absent
-        }
-    }
-
-    struct FakeRCmd;
-    impl RCmd for FakeRCmd {
-        fn install(
-            &self,
-            _: impl AsRef<Path>,
-            _: impl AsRef<Path>,
-            _: impl AsRef<Path>,
-        ) -> Result<String, InstallError> {
-            todo!()
-        }
-
-        fn check(
-            &self,
-            _: &Path,
-            _: &Path,
-            _: Vec<&str>,
-            _: Vec<(&str, &str)>,
-        ) -> Result<(), Error> {
-            todo!()
-        }
-
-        fn build(
-            &self,
-            _: &Path,
-            _: &Path,
-            _: &Path,
-            _: Vec<&str>,
-            _: Vec<(&str, &str)>,
-        ) -> Result<(), Error> {
-            todo!()
-        }
-
-        fn version(&self) -> Result<Version, VersionError> {
-            todo!()
         }
     }
 
@@ -409,7 +370,7 @@ mod tests {
         let content = std::fs::read_to_string(path).unwrap();
         let parts: Vec<_> = content.splitn(3, "---").collect();
         let config = Config::from_str(parts[0]).expect("valid config");
-        let r_version = config.get_r_version(FakeRCmd {}).unwrap();
+        let r_version = config.r_version().clone();
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {

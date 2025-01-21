@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use crate::cli::{http, utils::write_err, DiskCache};
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config,
-    RCommandLine, RepoServer, Repository, RepositoryDatabase, SystemInfo, Version,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RepoServer,
+    Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
 use crate::cli::utils::get_os_path;
@@ -30,8 +30,7 @@ pub struct CliContext {
 impl CliContext {
     pub fn new(config_file: &PathBuf) -> Result<Self> {
         let config = Config::from_file(config_file)?;
-        let r_cli = RCommandLine {};
-        let r_version = config.get_r_version(r_cli)?;
+        let r_version = config.r_version().clone();
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
 
