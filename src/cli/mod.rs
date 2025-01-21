@@ -6,5 +6,5 @@ mod link;
 pub mod utils;
 
 pub use cache::DiskCache;
-pub use commands::sync;
+pub use commands::{sync, migrate_renv};
 pub use context::CliContext;

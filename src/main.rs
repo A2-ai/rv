@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err as fs;
 
 use rv::cli::utils::{timeit, write_err};
-use rv::cli::{sync, CliContext};
+use rv::cli::{migrate_renv, sync, CliContext};
 use rv::{ResolvedDependency, Resolver};
 
 #[derive(Parser)]
@@ -30,6 +30,21 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Migrate other package management tools
+    Migrate {
+        #[clap(subcommand)]
+        subcommand: MigrateCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MigrateCommand {
+    /// Migrate an renv project
+    Renv {
+        /// Path to the project directory
+        #[clap(short = 'r', long, default_value = "./")]
+        renv_directory: PathBuf,
+    },
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -90,6 +105,23 @@ fn try_main() -> Result<()> {
                         fs::remove_dir_all(context.staging_path())?;
                     }
                     return Err(e);
+                }
+            }
+        }, 
+        Command::Migrate { subcommand }=> match subcommand {
+            MigrateCommand::Renv { renv_directory } => {
+                match migrate_renv(renv_directory) {
+                    Ok((_resolved_lock, unresolved_lock)) => {
+                        if !unresolved_lock.is_empty() {
+                            println!("The following packages could not be resolved: ");
+                            for ur in unresolved_lock {
+                                println!("{}", ur)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{:#?}", e);
+                    }
                 }
             }
         }

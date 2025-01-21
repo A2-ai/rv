@@ -1,5 +1,6 @@
+use std::fmt::format;
 use std::hash::Hash;
-use std::{collections::HashMap, path::Path, str::FromStr};
+use std::{collections::HashMap, path::Path, str::FromStr, fmt};
 
 use anyhow::Result;
 use serde::Deserialize;
@@ -187,7 +188,7 @@ impl RenvLock {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum PackageSource {
+pub enum PackageSource {
     Repo(Repository),
     Git(GitHubSource),
     Local(String),
@@ -195,15 +196,15 @@ pub(crate) enum PackageSource {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitHubSource {
+struct GitHubSource {
     url: String,
     sha: String
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ResolvedLock {
-    pub(crate) source: PackageSource,
-    pub(crate) package: Package,
+pub struct ResolvedLock {
+    pub source: PackageSource,
+    pub package: Package,
 }
 
 impl ResolvedLock {
@@ -281,6 +282,28 @@ impl ResolvedLock {
 #[derive(Debug, Clone)]
 pub struct UnresolvedLock {
     package: PackageInfo,
+}
+
+impl<'a> fmt::Display for UnresolvedLock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let src_str = match &self.package.source {
+            RenvSource::Repository => &format!("Repository - repository alias: {}", &self.package.repository.as_deref().unwrap_or("None")),
+            RenvSource::GitHub => &format!("GitHub - org: {} - repo: {} - sha: {}", 
+                &self.package.remote_username.as_deref().unwrap_or("None"),
+                &self.package.remote_repo.as_deref().unwrap_or("None"),
+                &self.package.remote_sha.as_deref().unwrap_or("None")
+            ),
+            RenvSource::Local => &format!("Local - path: {}", &self.package.remote_url.as_deref().unwrap_or("None")),
+            RenvSource::Other(other_reason) => other_reason
+        };
+        write!(
+            f,
+            "    {} - version: {} - source: {} - ",
+            self.package.package,
+            self.package.version,
+            src_str
+        )
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
