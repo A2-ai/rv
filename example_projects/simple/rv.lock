@@ -11,25 +11,8 @@ force_source = false
 dependencies = []
 
 [[packages]]
-name = "callr"
-version = "3.7.6"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = [
-    "processx",
-    "R6",
-]
-
-[[packages]]
 name = "cli"
 version = "3.6.3"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = []
-
-[[packages]]
-name = "curl"
-version = "6.0.1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
@@ -61,13 +44,6 @@ force_source = false
 dependencies = []
 
 [[packages]]
-name = "filelock"
-version = "1.0.3"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = []
-
-[[packages]]
 name = "generics"
 version = "0.1.3"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -77,13 +53,6 @@ dependencies = []
 [[packages]]
 name = "glue"
 version = "1.8.0"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = []
-
-[[packages]]
-name = "jsonlite"
-version = "1.8.9"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
@@ -122,40 +91,8 @@ dependencies = [
 ]
 
 [[packages]]
-name = "pkgcache"
-version = "2.2.3"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = [
-    "callr",
-    "cli",
-    "curl",
-    "filelock",
-    "jsonlite",
-    "processx",
-    "R6",
-]
-
-[[packages]]
 name = "pkgconfig"
 version = "2.0.3"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = []
-
-[[packages]]
-name = "processx"
-version = "3.8.4"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = [
-    "ps",
-    "R6",
-]
-
-[[packages]]
-name = "ps"
-version = "1.8.1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
