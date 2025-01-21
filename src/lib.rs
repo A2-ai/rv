@@ -6,12 +6,12 @@ mod config;
 mod lockfile;
 mod package;
 mod r_cmd;
+mod renv_lock;
 mod repo_path;
 mod repository;
 mod resolver;
 mod system_info;
 mod version;
-mod renv_lock;
 
 #[cfg(feature = "cli")]
 pub mod cli;

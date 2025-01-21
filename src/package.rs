@@ -1,9 +1,12 @@
-use std::{collections::HashMap, ops::Deref};
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
+use std::collections::HashMap;
 
-use crate::{renv_lock::PackageInfo, version::{Version, VersionRequirement}};
+use crate::{
+    renv_lock::PackageInfo,
+    version::{Version, VersionRequirement},
+};
 use serde::{Deserialize, Serialize};
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
@@ -137,21 +140,25 @@ impl Package {
 
     pub fn from_renv_pkg_info(pkg_info: &PackageInfo) -> Self {
         let pkg_info = pkg_info.clone();
-        Self { 
+        Self {
             name: pkg_info.package,
-            version: pkg_info.version, 
-            r_requirement: None, 
-            depends: pkg_info.requirements.into_iter().map(|r| Dependency::Simple(r)).collect::<Vec<_>>(), 
-            imports: Vec::new(), 
-            suggests: Vec::new(), 
-            enhances: Vec::new(), 
-            linking_to: Vec::new(), 
-            license: String::new(), 
-            md5_sum: String::new(), 
-            path: None, 
-            os_type: None, 
-            recommended: false, 
-            needs_compilation: false 
+            version: pkg_info.version,
+            r_requirement: None,
+            depends: pkg_info
+                .requirements
+                .into_iter()
+                .map(|r| Dependency::Simple(r))
+                .collect::<Vec<_>>(),
+            imports: Vec::new(),
+            suggests: Vec::new(),
+            enhances: Vec::new(),
+            linking_to: Vec::new(),
+            license: String::new(),
+            md5_sum: String::new(),
+            path: None,
+            os_type: None,
+            recommended: false,
+            needs_compilation: false,
         }
     }
 }

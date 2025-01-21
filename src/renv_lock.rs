@@ -23,7 +23,7 @@ pub(crate) enum RenvSource {
     Repository,
     GitHub,
     Local,
-    Other(String)
+    Other(String),
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -34,7 +34,7 @@ pub(crate) struct PackageInfo {
     pub(crate) version: Version,
     pub(crate) source: RenvSource,
     #[serde(default)]
-    repository: Option<String>, // when source is Repository
+    pub(crate) repository: Option<String>, // when source is Repository
     #[serde(default)]
     remote_type: Option<String>, // when source is GitHub
     #[serde(default)]
@@ -49,7 +49,7 @@ pub(crate) struct PackageInfo {
     pub(crate) remote_url: Option<String>, // when source is Local
     #[serde(default)]
     pub(crate) requirements: Vec<String>,
-    hash: String
+    hash: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
