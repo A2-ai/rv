@@ -189,7 +189,7 @@ impl SyncChange {
 /// 2. Create a temp directory if things need to be installed
 /// 2. Send all dependencies to install to worker threads in order
 /// 3. Once a dep is installed, get the next step until it's over or need to wait on other deps
-pub fn sync(context: &CliContext, deps: Vec<ResolvedDependency>) -> Result<Vec<SyncChange>> {
+pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
     let project_library = context.library_path();
     let staging_path = context.staging_path();

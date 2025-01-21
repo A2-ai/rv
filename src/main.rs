@@ -157,57 +157,44 @@ fn try_main() -> Result<()> {
         }
         Command::Sync => {
             let mut context = CliContext::new(&cli.config_file)?;
-            match resolve_needed(&context) {
-                ResolveNeeded::None => {
-                    println!("Nothing to do");
-                }
-                ResolveNeeded::RemoveOnly(deps) => {
-                    let lockfile_path = context.lockfile_path();
-                    let library_path = context.library_path();
-                    // We can only be here if we have a lockfile
-                    // Just removing things is easy from the lockfile
-                    let lockfile = context.lockfile.as_mut().unwrap();
-                    for d in &deps {
-                        lockfile.remove_package(d);
-                        let p = library_path.join(d);
-                        if p.is_dir() {
-                            fs::remove_dir_all(p)?;
-                        }
-                    }
-                    lockfile.save(lockfile_path)?;
+            let resolution_needing = resolve_needed(&context);
+            if resolution_needing == ResolveNeeded::Full {
+                context.load_databases()?;
+            }
+            let resolved = resolve_dependencies(&context);
 
-                    for d in deps {
-                        println!("- {d}");
+            match timeit!("Synced dependencies", sync(&context, &resolved)) {
+                Ok(changes) => {
+                    if changes.is_empty() {
+                        println!("Nothing to do");
                     }
-                }
-                ResolveNeeded::Full => {
-                    context.load_databases()?;
-                    let resolved = resolve_dependencies(&context);
                     let lockfile =
                         Lockfile::from_resolved(&context.r_version.major_minor(), &resolved);
-                    match timeit!("Synced dependencies", sync(&context, resolved)) {
-                        Ok(changes) => {
+                    if let Some(existing_lockfile) = &context.lockfile {
+                        if existing_lockfile != &lockfile {
                             lockfile.save(context.lockfile_path())?;
-                            for c in changes {
-                                if c.installed {
-                                    println!(
-                                        "+ {} ({}) in {}ms",
-                                        c.name,
-                                        c.version.unwrap(),
-                                        c.timing.unwrap().as_millis()
-                                    );
-                                } else {
-                                    println!("- {}", c.name);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            if context.staging_path().is_dir() {
-                                fs::remove_dir_all(context.staging_path())?;
-                            }
-                            return Err(e);
+                            log::debug!("Lockfile changed, saving it.");
                         }
                     }
+
+                    for c in changes {
+                        if c.installed {
+                            println!(
+                                "+ {} ({}) in {}ms",
+                                c.name,
+                                c.version.unwrap(),
+                                c.timing.unwrap().as_millis()
+                            );
+                        } else {
+                            println!("- {}", c.name);
+                        }
+                    }
+                }
+                Err(e) => {
+                    if context.staging_path().is_dir() {
+                        fs::remove_dir_all(context.staging_path())?;
+                    }
+                    return Err(e);
                 }
             }
         }
