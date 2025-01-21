@@ -4,6 +4,7 @@ use serde::Deserialize;
 
 use crate::{Repository, Version};
 
+// similar to crate::config, but does not return Option since Version must be present
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -17,6 +18,7 @@ where
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+// as enum since logic to resolve depends on this
 enum RenvSource {
     Repository,
     GitHub,
@@ -32,19 +34,19 @@ struct PackageInfo {
     version: Version,
     source: RenvSource,
     #[serde(default)]
-    repository: Option<String>,
+    repository: Option<String>, // when source is Repository
     #[serde(default)]
-    remote_type: Option<String>,
+    remote_type: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_host: Option<String>,
+    remote_host: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_repo: Option<String>,
+    remote_repo: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_username: Option<String>,
+    remote_username: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_sha: Option<String>,
+    remote_sha: Option<String>, // when source is GitHub
     #[serde(default)]
-    remote_url: Option<String>,
+    remote_url: Option<String>, // when source is Local
     #[serde(default)]
     requirements: Vec<String>,
     hash: String
@@ -53,7 +55,7 @@ struct PackageInfo {
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct RInfo {
-    #[serde(default, deserialize_with = "deserialize_version")]
+    #[serde(deserialize_with = "deserialize_version")]
     version: Version,
     repositories: Vec<Repository>,
 }
