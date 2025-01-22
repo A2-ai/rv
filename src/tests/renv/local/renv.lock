@@ -1,0 +1,21 @@
+ {
+  "R": {
+    "Version": "4.4.1",
+    "Repositories": [
+      {
+        "Name": "RSPM",
+        "URL": "https://packagemanager.posit.co/cran/2024-12-04"
+      }
+    ]
+  },
+  "Packages": {
+    "rv.git.pkgA": {
+      "Package": "rv.git.pkgA",
+      "Version": "0.0.0.9000",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "/cluster-data/user-homes/wes/projects/rv.git.pkgA_0.0.0.9000.tar.gz",
+      "Hash": "39e317a9ec5437bd5ce021ad56da04b6"
+    }
+  }
+}
