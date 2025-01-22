@@ -17,12 +17,32 @@
     ]
   },
   "Packages": {
-    "BH": {
-      "Package": "BH",
-      "Version": "1.84.0-0",
+    "Matrix": {
+      "Package": "Matrix",
+      "Version": "1.7-0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "grDevices",
+        "graphics",
+        "grid",
+        "lattice",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "Hash": "1920b2f11133b12350024297d8a4ff4a"
+    },
+    "R6": {
+      "Package": "R6",
+      "Version": "2.5.1",
       "Source": "Repository",
       "Repository": "RSPM",
-      "Hash": "a8235afbcd6316e6e91433ea47661013"
+      "Requirements": [
+        "R"
+      ],
+      "Hash": "470851b6d5d0ac559e9d01bb352b4021"
     },
     "ghqc": {
       "Package": "ghqc",
@@ -45,18 +65,6 @@
         "yaml"
       ],
       "Hash": "dcba3cb6539ee3cfce6218049c5016cc"
-    },
-    "nmrec": {
-      "Package": "nmrec",
-      "Version": "0.4.0",
-      "Source": "Repository",
-      "Repository": "gh-pkg-mirror",
-      "Requirements": [
-        "R6",
-        "purrr",
-        "rlang"
-      ],
-      "Hash": "57e6ef72be2fa449eab0a06f224fb3b4"
     },
     "rv.git.pkgA": {
       "Package": "rv.git.pkgA",

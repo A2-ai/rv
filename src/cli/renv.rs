@@ -1,42 +1,64 @@
 use std::path::PathBuf;
 
 use crate::{
-    package::Package,
     renv_lock::{PackageInfo, RenvLock, RenvSource},
     Repository, RepositoryDatabase, Version,
 };
 
+/// `resolve`` takes in the Repository Databases and the parsed renv lock and determines if the package source can be determined.
+/// There are three unique scenarios for resolution, determined by the Source field of the renv.lock:
+/// ## Repository
+/// 1. Determine which repositories the package is within
+/// 2. Give priority to repository which is specified
+/// 3. Take the repository that is highest in the renv.lock priority order (top to bottom)
+/// 4. If not found in any repository, it is "unresolved" and communicated to the user that the output is not "full"
+/// ## GitHub
+/// Piece together the Url from the renv.lock components and return the Sha
+/// ## Local
+/// Verify the package is present in its location and return the path to the file
+/// 
+/// The function returns two vectors:
+/// 1. Resolved: Each element is a tuple containing package information from the renv.lock file and source information about where the package can be found
+/// 2. Unresolved: Each element is package information from the renv.lock file. For elements in this list, where the package can be sourced from cannot be found
 fn resolve(
     renv_lock: RenvLock,
     databases: &Vec<(RepositoryDatabase, bool)>,
-) -> (Vec<(Package, MigrantSource)>, Vec<PackageInfo>) {
+) -> (Vec<(PackageInfo, MigrantSource)>, Vec<PackageInfo>) {
     let mut resolved = Vec::new();
     let mut unresolved = Vec::new();
 
-    for (pkg_name, pkg_info) in &renv_lock.packages {
-        // resolve based on source. Get back Package struct and info about its source
+    // separating and cloning so that renv_lock can be used directly to result in PackageInfo for returns
+    let r_version = renv_lock.r_version().clone();
+    let repos = renv_lock.repositories().clone();
+
+    for (pkg_name, pkg_info) in renv_lock.packages {
+        // resolve based on source. returns information based on the packages source (either a repository, the git url and sha, or path to a local file_
         let res = match pkg_info.source {
             RenvSource::Repository => resolve_repository(
                 &pkg_name,
                 &pkg_info,
                 &databases,
-                renv_lock.r_version(),
-                renv_lock.repositories(),
-            ),
-            RenvSource::GitHub => resolve_github(&pkg_info),
-            RenvSource::Local => resolve_local(&pkg_info),
+                &r_version,
+                &repos,
+            )
+            .map(|repo| MigrantSource::Repo(repo)),
+            RenvSource::GitHub => {
+                resolve_github(&pkg_info).map(|(url, sha)| MigrantSource::Git { url, sha })
+            }
+            RenvSource::Local => resolve_local(&pkg_info).map(|path| MigrantSource::Local(path)),
             _ => None,
         };
+
         if let Some(r) = res {
-            resolved.push(r);
+            resolved.push((pkg_info, r));
         } else {
-            unresolved.push(pkg_info.clone());
+            unresolved.push(pkg_info);
         };
     }
     (resolved, unresolved)
 }
 
-fn resolve_local(pkg_info: &PackageInfo) -> Option<(Package, MigrantSource)> {
+fn resolve_local(pkg_info: &PackageInfo) -> Option<PathBuf> {
     //verify file exists at path and return the path
     let path = PathBuf::from(&pkg_info.remote_url.as_deref()?);
     if !path.exists() {
@@ -47,12 +69,11 @@ fn resolve_local(pkg_info: &PackageInfo) -> Option<(Package, MigrantSource)> {
         );
         return None;
     };
-    let package = Package::from_renv_pkg_info(&pkg_info);
     log::debug!("{} resolved locally", pkg_info.package);
-    Some((package, MigrantSource::Local(path)))
+    Some(path)
 }
 
-fn resolve_github(pkg_info: &PackageInfo) -> Option<(Package, MigrantSource)> {
+fn resolve_github(pkg_info: &PackageInfo) -> Option<(String, String)> {
     // piece together the git url as the remote_url field in PackageInfo is from the local variant
     let no_api = pkg_info.remote_host.clone()?.replace("api.", "");
     let remote = no_api.trim_end_matches("/api/v3").to_string();
@@ -62,15 +83,8 @@ fn resolve_github(pkg_info: &PackageInfo) -> Option<(Package, MigrantSource)> {
         pkg_info.remote_username.as_deref()?,
         pkg_info.remote_repo.as_deref()?
     );
-    let package = Package::from_renv_pkg_info(&pkg_info);
     log::debug!("{} resolved to be GitHub package", pkg_info.package);
-    Some((
-        package,
-        MigrantSource::Git {
-            url,
-            sha: pkg_info.remote_sha.clone()?,
-        },
-    ))
+    Some((url, pkg_info.remote_sha.clone()?))
 }
 
 fn resolve_repository(
@@ -79,35 +93,37 @@ fn resolve_repository(
     databases: &Vec<(RepositoryDatabase, bool)>,
     r_version: &Version,
     repos: &Vec<Repository>,
-) -> Option<(Package, MigrantSource)> {
+) -> Option<Repository> {
     //using vec over hashmap to maintain repository order
-    let mut pkgs = Vec::new();
+    let mut pkg_repos = Vec::new();
+
+    let pkg_repo = pkg_info.repository.as_deref()?;
 
     // create vector of which repos contain the package
     for (repo_db, force_source) in databases {
-        if let Some((pkg, _)) = repo_db.find_package(&pkg_name, None, r_version, *force_source) {
-            pkgs.push((&repo_db.name, pkg));
+        // using existing tooling to find package among a repository database
+        if let Some(_) = repo_db.find_package(&pkg_name, None, r_version, *force_source) {
+            pkg_repos.push(&repo_db.name);
         }
     }
-    let pkg_repo = pkg_info.repository.as_deref()?;
-    let (repo, pkg) =
-        // see if we can find the package in the repository specified
-        if let Some((repo, package)) = pkgs.iter().find(|(key, _)| key == &pkg_repo) {
-            log::debug!("{} resolved to specified repository", pkg_name);
-            Some((*repo, *package))
-        // if not, use the first repository its found it
-        } else if let Some((repo, package)) = pkgs.first() {
-            log::debug!("{} resolved to a repository other than specified", pkg_name);
-            Some((*repo, *package))
-        // if no first, then the pkg was not found in the repositories
-        } else {
-            log::warn!("{} could not be found in any repository", pkg_info.package);
-            return None
-        }?;
 
-    let r = repos.iter().find(|r| &r.alias == repo)?.clone();
+    // check to see if the package was found in a repository as specified in the renv lock
+    if let Some(repo_name) = pkg_repos.iter().find(|r| **r == pkg_repo) {
+        log::debug!("{} resolved to specified repository", pkg_name);
+        let repo = repos.iter().find(|r| r.alias == **repo_name)?;
+        return Some(repo.clone());
+    }
 
-    Some((pkg.clone(), MigrantSource::Repo(r)))
+    // default to the first repository the package is found in. priority based on order in renv.lock
+    if let Some(repo_name) = pkg_repos.first() {
+        log::debug!("{} resolved to a repository other than specified", pkg_name);
+        let repo = repos.iter().find(|r| &r.alias == *repo_name)?;
+        return Some(repo.clone());
+    }
+
+    // if not found in any repository, inform the user that manual adjustment will be needed for the package
+    log::warn!("{} could not be found in any repository", pkg_info.package);
+    return None;
 }
 
 #[derive(Debug, Clone)]
