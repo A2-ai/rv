@@ -1,9 +1,7 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::{
-    renv_lock::{PackageInfo, RenvLock, RenvRepository, RenvSource},
-    version::VersionRequirement,
-    RepositoryDatabase, Version,
+    consts::RECOMMENDED_PACKAGES, renv_lock::{PackageInfo, RenvRepository, RenvSource}, version::VersionRequirement, RepositoryDatabase, Version
 };
 
 /// `resolve`` takes in the Repository Databases and the parsed renv lock and determines if the package source can be determined.
@@ -18,6 +16,15 @@ use crate::{
 /// ## Local
 /// Verify the package is present in its location and return the path to the file
 ///
+/// The function has 4 inputs:
+/// - `packages``: A hashmap containing the name of the package and then information about the package and its source
+/// - `r_version``: The version of R of interest
+/// - `repository_databases`: A vector of tuples. Each tuple element contains
+///     - The repository in which the repository database is made of
+///     - The repository database containing the packages available in the repository
+///     - A bool indicating whether to force source packages for the repository
+/// - `ignore_recommended`: A bool indicating whether to resolve R packages with priority "recommended"
+/// 
 /// The function returns two vectors:
 /// 1. Resolved: Each element is a tuple containing package information from the renv.lock file and source information about where the package can be found
 /// 2. Unresolved: Each element is package information from the renv.lock file. For elements in this list, where the package can be sourced from cannot be found
@@ -25,11 +32,16 @@ fn resolve(
     packages: HashMap<String, PackageInfo>,
     r_version: &Version,
     repository_databases: &Vec<(RenvRepository, RepositoryDatabase, bool)>,
+    ignore_recommended: bool,
 ) -> (Vec<(PackageInfo, MigrantSource)>, Vec<PackageInfo>) {
     let mut resolved = Vec::new();
     let mut unresolved = Vec::new();
 
     for (pkg_name, pkg_info) in packages {
+        // if ignore recommended and the package is recommended or base priority. Base is not typically found in renv.lock, 
+        if ignore_recommended && RECOMMENDED_PACKAGES.contains(&pkg_name.as_str()) {
+            continue;
+        }
         // resolve based on source. returns information based on the packages source (either a repository, the git url and sha, or path to a local file_
         let res = match pkg_info.source {
             RenvSource::Repository => {
@@ -134,15 +146,17 @@ enum MigrantSource {
 // mod tests {
 //     use crate::{
 //         cli::{context::load_databases, renv, DiskCache},
-//         Repository, SystemInfo,
+//         Repository, SystemInfo, renv_lock::RenvLock,
 //     };
 
-//     use super::{resolve, RenvLock};
+//     use super::resolve;
+    
 
 //     #[test]
 //     fn resolve_renv() {
-//         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/ambiguity/renv.lock").unwrap();
+//         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/multi/renv.lock").unwrap();
 //         let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()).unwrap();
+//         // convert RenvRepository to Repository for database loading
 //         let repositories = &renv_lock
 //             .repositories()
 //             .iter()
@@ -152,14 +166,16 @@ enum MigrantSource {
 //                 force_source: false,
 //             })
 //             .collect::<Vec<_>>();
+
 //         let dbs = load_databases(repositories, &cache).unwrap();
+//         // match RenvRepository with its RepositoryDatabase
 //         let databases = renv_lock.repositories()
 //             .iter()
 //             .cloned()
 //             .zip(dbs.into_iter())
 //             .map(|(repo, (repo_db, force_source))| (repo, repo_db, force_source))
 //             .collect::<Vec<_>>();
-//         let (resolved, unresolved) = resolve(renv_lock.packages, &renv_lock.r.version, &databases);
+//         let (resolved, unresolved) = resolve(renv_lock.packages, &renv_lock.r.version, &databases, true);
 //         println!("Resolved: ");
 //         println!("{:#?}", resolved);
 //         println!("Unresolved: ");
