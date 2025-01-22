@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path, str::FromStr};
 
 use serde::Deserialize;
 
-use crate::{Repository, Version};
+use crate::Version;
 
 // similar to crate::config, but does not return Option since Version must be present
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
@@ -54,10 +54,18 @@ pub(crate) struct PackageInfo {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+struct RenvRepository {
+    name: String,
+    #[serde(rename = "URL")]
+    url: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 struct RInfo {
     #[serde(deserialize_with = "deserialize_version")]
     version: Version,
-    repositories: Vec<Repository>,
+    repositories: Vec<RenvRepository>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -115,6 +123,6 @@ mod tests {
 
     #[test]
     fn test_renv_lock_parse() {
-        RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+        let _renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
     }
 }
