@@ -3,10 +3,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use crate::{
-    renv_lock::PackageInfo,
-    version::{Version, VersionRequirement},
-};
+use crate::version::{Version, VersionRequirement};
 use serde::{Deserialize, Serialize};
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
