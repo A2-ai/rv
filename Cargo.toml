@@ -27,6 +27,7 @@ fs-err = "3"
 walkdir = "2"
 os_pipe = "1"
 tempfile = "3"
+git2 = "0.20.0"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }

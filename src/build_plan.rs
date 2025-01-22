@@ -107,6 +107,7 @@ impl<'a> BuildPlan<'a> {
 mod tests {
     use super::*;
     use crate::cache::InstallationStatus;
+    use crate::lockfile::Source;
     use crate::package::PackageType;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {
@@ -115,7 +116,9 @@ mod tests {
             dependencies,
             suggests: Vec::new(),
             version: "",
-            repository_url: "",
+            source: Source::Repository {
+                repository: "".to_string(),
+            },
             install_suggests: false,
             force_source: false,
             kind: PackageType::Source,

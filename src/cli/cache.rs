@@ -119,9 +119,15 @@ impl DiskCache {
 
     pub fn get_package_paths(&self, repo_url: &str, name: &str, version: &str) -> PackagePaths {
         PackagePaths {
-            binary: self.get_binary_package_path(repo_url, name, version),
             source: self.get_source_package_path(repo_url, name, version),
+            binary: self.get_binary_package_path(repo_url, name, version),
         }
+    }
+
+    /// Gets the path in which a repository should be cloned
+    pub fn get_git_path(&self, git_url: &str) -> PathBuf {
+        let encoded = encode_repository_url(git_url);
+        self.root.join(encoded).join("src")
     }
 }
 

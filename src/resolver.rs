@@ -1,19 +1,20 @@
-use crate::Cache;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt;
-
 use crate::cache::InstallationStatus;
 use crate::config::DependencyKind;
-use crate::lockfile::{LockedPackage, Lockfile};
-use crate::package::PackageType;
+use crate::consts::DESCRIPTION_FILENAME;
+use crate::lockfile::{LockedPackage, Lockfile, Source};
+use crate::package::{parse_description_file, PackageType};
 use crate::repository::RepositoryDatabase;
 use crate::version::{Version, VersionRequirement};
+use crate::{Cache, GitOperations};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::{fmt, fs};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub(crate) name: &'d str,
     pub(crate) version: &'d str,
-    pub(crate) repository_url: &'d str,
+    // TODO: make that a source
+    pub(crate) source: Source,
     pub(crate) dependencies: Vec<&'d str>,
     pub(crate) suggests: Vec<&'d str>,
     pub(crate) force_source: bool,
@@ -36,7 +37,7 @@ impl<'d> ResolvedDependency<'d> {
         Self {
             name: &package.name,
             version: &package.version,
-            repository_url: package.repo_url().unwrap(),
+            source: package.source.clone(),
             dependencies: package.dependencies.iter().map(|d| d.as_str()).collect(),
             suggests: package.suggests.iter().map(|s| s.as_str()).collect(),
             // TODO: what should we do here?
@@ -48,7 +49,7 @@ impl<'d> ResolvedDependency<'d> {
             force_source: package.force_source,
             install_suggests: package.install_suggests(),
             installation_status: cache.get_package_installation_status(
-                package.repo_url().unwrap(),
+                package.source.repository_url(),
                 &package.name,
                 &package.version,
             ),
@@ -62,10 +63,10 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} (from {}, type={}, from_lockfile={}, path='{}')",
+            "{}={} ({}, type={}, from_lockfile={}, path='{}')",
             self.name,
             self.version,
-            self.repository_url,
+            self.source,
             self.kind,
             self.found_in_lockfile,
             self.path.unwrap_or("")
@@ -85,6 +86,8 @@ enum UnresolvedDependencyKind<'d> {
 #[derive(Debug, PartialEq, Clone)]
 pub struct UnresolvedDependency<'d> {
     name: &'d str,
+    // source: Option<&'d Source>,
+    // error: Option<String>,
     version_requirement: Option<&'d VersionRequirement>,
     origins: Vec<UnresolvedDependencyKind<'d>>,
 }
@@ -159,6 +162,7 @@ impl<'d> Resolver<'d> {
         &self,
         dependencies: &'d [DependencyKind],
         cache: &'d impl Cache,
+        git: &'d impl GitOperations,
     ) -> (Vec<ResolvedDependency<'d>>, Vec<UnresolvedDependency<'d>>) {
         let mut resolved = Vec::new();
         // We might have the same unresolved dep multiple times.
@@ -170,7 +174,7 @@ impl<'d> Resolver<'d> {
             .map(|d| {
                 (
                     d.name(),
-                    d.repository(),
+                    d.as_lockfile_source(),
                     // required version
                     None,
                     d.install_suggestions(),
@@ -182,7 +186,7 @@ impl<'d> Resolver<'d> {
 
         while let Some((
             name,
-            repository,
+            pkg_source,
             version_requirement,
             install_suggestions,
             pkg_force_source,
@@ -199,9 +203,12 @@ impl<'d> Resolver<'d> {
             if let Some(lockfile) = self.lockfile {
                 // If we found the package in the lockfile, consider it found and do not look up
                 // the repo at all
-                if let Some(package) =
-                    lockfile.get_package(name, pkg_force_source, install_suggestions)
-                {
+                if let Some(package) = lockfile.get_package(
+                    name,
+                    pkg_force_source,
+                    install_suggestions,
+                    pkg_source.as_ref(),
+                ) {
                     found.insert(name);
                     resolved.push(ResolvedDependency::from_locked_package(package, cache));
 
@@ -215,57 +222,101 @@ impl<'d> Resolver<'d> {
                 }
             }
 
-            for (repo, repo_source_only) in self.repositories {
-                if let Some(r) = repository {
-                    if repo.name != r {
-                        continue;
-                    }
-                }
+            // For git and local sources, we could have errors (eg impossible to access repo, folder
+            // not found) but we want to try to resolve everything rather than returning early
+            let mut error = None;
+            match pkg_source {
+                None | Some(Source::Repository { .. }) => {
+                    let repository = pkg_source.and_then(|c| c.r_repository());
 
-                if let Some((package, package_type)) = repo.find_package(
-                    name,
-                    version_requirement,
-                    self.r_version,
-                    pkg_force_source || *repo_source_only,
-                ) {
-                    found.insert(name);
-                    let deps = package.dependencies_to_install(install_suggestions);
+                    for (repo, repo_source_only) in self.repositories {
+                        if let Some(ref r) = repository {
+                            if repo.name != *r {
+                                continue;
+                            }
+                        }
 
-                    resolved.push(ResolvedDependency {
-                        name: &package.name,
-                        version: &package.version.original,
-                        repository_url: &repo.url,
-                        dependencies: deps.direct.iter().map(|d| d.name()).collect(),
-                        suggests: deps.suggests.iter().map(|d| d.name()).collect(),
-                        kind: package_type,
-                        force_source: pkg_force_source || *repo_source_only,
-                        install_suggests: install_suggestions,
-                        installation_status: cache.get_package_installation_status(
-                            &repo.url,
-                            &package.name,
-                            &package.version.original,
-                        ),
-                        path: package.path.as_ref().map(|x| x.as_str()),
-                        found_in_lockfile: false,
-                    });
+                        if let Some((package, package_type)) = repo.find_package(
+                            name,
+                            version_requirement,
+                            self.r_version,
+                            pkg_force_source || *repo_source_only,
+                        ) {
+                            found.insert(name);
+                            let deps = package.dependencies_to_install(install_suggestions);
 
-                    // deps.suggests will be empty if we don't have install_suggests=True
-                    for d in deps.direct.into_iter().chain(deps.suggests) {
-                        if !found.contains(d.name()) {
-                            queue.push_back((
-                                d.name(),
-                                None,
-                                d.version_requirement(),
-                                false,
-                                false,
-                                Some(name),
-                            ));
+                            resolved.push(ResolvedDependency {
+                                name: &package.name,
+                                version: &package.version.original,
+                                source: Source::Repository {
+                                    repository: repo.url.clone(),
+                                },
+                                dependencies: deps.direct.iter().map(|d| d.name()).collect(),
+                                suggests: deps.suggests.iter().map(|d| d.name()).collect(),
+                                kind: package_type,
+                                force_source: pkg_force_source || *repo_source_only,
+                                install_suggests: install_suggestions,
+                                installation_status: cache.get_package_installation_status(
+                                    &repo.url,
+                                    &package.name,
+                                    &package.version.original,
+                                ),
+                                path: package.path.as_ref().map(|x| x.as_str()),
+                                found_in_lockfile: false,
+                            });
+
+                            // deps.suggests will be empty if we don't have install_suggests=True
+                            for d in deps.direct.into_iter().chain(deps.suggests) {
+                                if !found.contains(d.name()) {
+                                    queue.push_back((
+                                        d.name(),
+                                        None,
+                                        d.version_requirement(),
+                                        false,
+                                        false,
+                                        Some(name),
+                                    ));
+                                }
+                            }
+                            break;
                         }
                     }
-                    break;
+                }
+                // For local and git deps we assume they are source and will need to read the
+                // DESCRIPTION file to get their dependencies
+                Some(Source::Local { path }) => {
+                    let description_path = path.join(DESCRIPTION_FILENAME);
+                    match fs::read_to_string(&description_path) {
+                        Ok(content) => {
+                            if let Some(package) = parse_description_file(&content) {
+                                todo!("Handle local packages")
+                            } else {
+                                error = Some(format!(
+                                    "Invalid DESCRIPTION file at {}",
+                                    description_path.display()
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            error = Some(format!(
+                                "Could not read destination file at {} {e}",
+                                description_path.display()
+                            ))
+                        }
+                    }
+                }
+                Some(Source::Git {
+                    git,
+                    tag,
+                    commit,
+                    branch,
+                    directory,
+                }) => {
+                    // TODO: shallow clone the git repo in the cache and find the DESCRIPTION file
                 }
             }
 
+            // We don't look at repo for git and local packages
             if !found.contains(name) {
                 let ud_kind = if let Some(p) = parent {
                     UnresolvedDependencyKind::Indirect(p)
@@ -305,9 +356,12 @@ impl<'d> Resolver<'d> {
         let mut deps_seen: HashSet<&str> = HashSet::new();
 
         for d in dependencies {
-            // TODO: add source (repository url/git) to the param if set since changing that means a new package
-            let all_deps =
-                lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
+            let all_deps = lockfile.get_package_tree(
+                d.name(),
+                d.force_source(),
+                d.install_suggestions(),
+                d.as_lockfile_source().as_ref(),
+            );
             // If we don't have an explicit dep in the lockfile, we'll need a full resolve
             if all_deps.is_empty() {
                 return ResolutionNeeded::Full;

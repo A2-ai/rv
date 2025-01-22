@@ -7,7 +7,7 @@ use fs_err as fs;
 
 use rv::cli::utils::{timeit, write_err};
 use rv::cli::{sync, CliContext};
-use rv::{Lockfile, ResolvedDependency, Resolver};
+use rv::{Git, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -69,8 +69,12 @@ fn resolve_needed(context: &CliContext) -> ResolveNeeded {
 
         for d in context.config.dependencies() {
             // TODO: add source (repository url/git) to the param if set since changing that means a new package
-            let all_deps =
-                lockfile.get_package_tree(d.name(), d.force_source(), d.install_suggestions());
+            let all_deps = lockfile.get_package_tree(
+                d.name(),
+                d.force_source(),
+                d.install_suggestions(),
+                d.as_lockfile_source().as_ref(),
+            );
             // If we don't have an explicit dep, we'll need a full resolve
             if all_deps.is_empty() {
                 log::debug!(
@@ -106,7 +110,8 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    let (resolved, unresolved) = resolver.resolve(context.config.dependencies(), &context.cache);
+    let (resolved, unresolved) =
+        resolver.resolve(context.config.dependencies(), &context.cache, &Git {});
     if !unresolved.is_empty() {
         eprintln!("Failed to resolve all dependencies");
         for d in unresolved {

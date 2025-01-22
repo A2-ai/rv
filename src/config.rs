@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::lockfile::Source;
 use crate::version::Version;
 use serde::Deserialize;
 
@@ -48,11 +49,27 @@ pub enum DependencyKind {
     Detailed {
         name: String,
         repository: Option<String>,
-        url: Option<String>,
         #[serde(default)]
         install_suggestions: bool,
         #[serde(default)]
         force_source: bool,
+    },
+    Git {
+        name: String,
+        git: String,
+        // TODO: validate that either commit, branch or tag is set
+        commit: Option<String>,
+        tag: Option<String>,
+        branch: Option<String>,
+        directory: Option<String>,
+        #[serde(default)]
+        install_suggestions: bool,
+    },
+    Local {
+        name: String,
+        path: PathBuf,
+        #[serde(default)]
+        install_suggestions: bool,
     },
 }
 
@@ -61,20 +78,43 @@ impl DependencyKind {
         match self {
             DependencyKind::Simple(s) => s,
             DependencyKind::Detailed { name, .. } => name,
+            DependencyKind::Git { name, .. } => name,
+            DependencyKind::Local { name, .. } => name,
         }
     }
 
-    pub fn repository(&self) -> Option<&str> {
+    // We are abusing the Source::Repository enum, it's meant to be a URL
+    // but here we are using the alias. It will all resolve correctly in the resolver.
+    pub fn as_lockfile_source(&self) -> Option<Source> {
         match self {
             DependencyKind::Simple(_) => None,
-            DependencyKind::Detailed { repository, .. } => repository.as_deref(),
+            DependencyKind::Detailed { repository, .. } => {
+                repository.clone().map(|r| Source::Repository {
+                    repository: r.clone(),
+                })
+            }
+            DependencyKind::Git {
+                git,
+                commit,
+                tag,
+                branch,
+                directory,
+                ..
+            } => Some(Source::Git {
+                git: git.clone(),
+                commit: commit.clone(),
+                tag: tag.clone(),
+                branch: tag.clone(),
+                directory: directory.clone(),
+            }),
+            DependencyKind::Local { path, .. } => Some(Source::Local { path: path.clone() }),
         }
     }
 
     pub fn force_source(&self) -> bool {
         match self {
-            DependencyKind::Simple(_) => false,
             DependencyKind::Detailed { force_source, .. } => *force_source,
+            _ => false,
         }
     }
 
@@ -82,6 +122,14 @@ impl DependencyKind {
         match self {
             DependencyKind::Simple(_) => false,
             DependencyKind::Detailed {
+                install_suggestions,
+                ..
+            } => *install_suggestions,
+            DependencyKind::Local {
+                install_suggestions,
+                ..
+            } => *install_suggestions,
+            DependencyKind::Git {
                 install_suggestions,
                 ..
             } => *install_suggestions,

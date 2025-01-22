@@ -12,6 +12,7 @@ use fs_err as fs;
 use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
 use crate::cli::{http, link::LinkMode, CliContext};
+use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
 
@@ -93,17 +94,17 @@ fn download_and_install_binary(
     Ok(())
 }
 
-/// Install a package and returns whether it was installed from cache or not
-fn install_package(
+fn install_package_from_repository(
     context: &CliContext,
     pkg: &ResolvedDependency,
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_server = RepoServer::from_url(pkg.repository_url);
-    let pkg_paths = context
-        .cache
-        .get_package_paths(pkg.repository_url, pkg.name, pkg.version);
+    let repo_server = RepoServer::from_url(pkg.source.repository_url());
+    let pkg_paths =
+        context
+            .cache
+            .get_package_paths(pkg.source.repository_url(), pkg.name, pkg.version);
     let binary_url = repo_server.get_binary_tarball_path(
         pkg.name,
         pkg.version,
@@ -142,6 +143,29 @@ fn install_package(
     link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
     Ok(())
+}
+
+fn install_package_from_git(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
+    let link_mode = LinkMode::new();
+
+    Ok(())
+}
+
+/// Install a package and returns whether it was installed from cache or not
+fn install_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
+    match pkg.source {
+        Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::Git { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::Local { .. } => install_package_from_repository(context, pkg, library_dir),
+    }
 }
 
 #[derive(Debug)]
