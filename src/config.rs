@@ -35,7 +35,7 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    url: String,
+    pub url: String,
     #[serde(default)]
     pub force_source: bool,
 }

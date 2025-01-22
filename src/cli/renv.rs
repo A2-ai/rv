@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use crate::{
-    renv_lock::{PackageInfo, RenvLock, RenvSource},
-    Repository, RepositoryDatabase, Version,
+    renv_lock::{PackageInfo, RenvLock, RenvRepository, RenvSource},
+    version::VersionRequirement,
+    RepositoryDatabase, Version,
 };
 
 /// `resolve`` takes in the Repository Databases and the parsed renv lock and determines if the package source can be determined.
@@ -16,7 +17,7 @@ use crate::{
 /// Piece together the Url from the renv.lock components and return the Sha
 /// ## Local
 /// Verify the package is present in its location and return the path to the file
-/// 
+///
 /// The function returns two vectors:
 /// 1. Resolved: Each element is a tuple containing package information from the renv.lock file and source information about where the package can be found
 /// 2. Unresolved: Each element is package information from the renv.lock file. For elements in this list, where the package can be sourced from cannot be found
@@ -34,14 +35,10 @@ fn resolve(
     for (pkg_name, pkg_info) in renv_lock.packages {
         // resolve based on source. returns information based on the packages source (either a repository, the git url and sha, or path to a local file_
         let res = match pkg_info.source {
-            RenvSource::Repository => resolve_repository(
-                &pkg_name,
-                &pkg_info,
-                &databases,
-                &r_version,
-                &repos,
-            )
-            .map(|repo| MigrantSource::Repo(repo)),
+            RenvSource::Repository => {
+                resolve_repository(&pkg_name, &pkg_info, &databases, &r_version, &repos)
+                    .map(|repo| MigrantSource::Repo(repo))
+            }
             RenvSource::GitHub => {
                 resolve_github(&pkg_info).map(|(url, sha)| MigrantSource::Git { url, sha })
             }
@@ -92,66 +89,77 @@ fn resolve_repository(
     pkg_info: &PackageInfo,
     databases: &Vec<(RepositoryDatabase, bool)>,
     r_version: &Version,
-    repos: &Vec<Repository>,
-) -> Option<Repository> {
+    repos: &Vec<RenvRepository>,
+) -> Option<RenvRepository> {
     //using vec over hashmap to maintain repository order
     let mut pkg_repos = Vec::new();
 
-    let pkg_repo = pkg_info.repository.as_deref()?;
-
     // create vector of which repos contain the package
     for (repo_db, force_source) in databases {
-        // using existing tooling to find package among a repository database
-        if let Some(_) = repo_db.find_package(&pkg_name, None, r_version, *force_source) {
+        // using existing tooling to find package among a repository database.
+        let ver_req =
+            VersionRequirement::from_str(&format!("(== {})", pkg_info.version.original)).ok();
+        if let Some(_) = repo_db.find_package(&pkg_name, ver_req.as_ref(), r_version, *force_source)
+        {
             pkg_repos.push(&repo_db.name);
         }
     }
 
     // check to see if the package was found in a repository as specified in the renv lock
+    let pkg_repo = pkg_info.repository.as_deref()?;
     if let Some(repo_name) = pkg_repos.iter().find(|r| **r == pkg_repo) {
         log::debug!("{} resolved to specified repository", pkg_name);
-        let repo = repos.iter().find(|r| r.alias == **repo_name)?;
+        let repo = repos.iter().find(|r| r.name == **repo_name)?;
         return Some(repo.clone());
     }
 
     // default to the first repository the package is found in. priority based on order in renv.lock
     if let Some(repo_name) = pkg_repos.first() {
         log::debug!("{} resolved to a repository other than specified", pkg_name);
-        let repo = repos.iter().find(|r| &r.alias == *repo_name)?;
+        let repo = repos.iter().find(|r| r.name == **repo_name)?;
         return Some(repo.clone());
     }
 
     // if not found in any repository, inform the user that manual adjustment will be needed for the package
-    log::warn!("{} could not be found in any repository", pkg_info.package);
+    log::warn!(
+        "{} (== {}) could not be found in any repository",
+        pkg_info.package,
+        pkg_info.version.original
+    );
     return None;
 }
 
 #[derive(Debug, Clone)]
 enum MigrantSource {
-    Repo(Repository),
+    Repo(RenvRepository),
     Git { url: String, sha: String },
     Local(PathBuf),
 }
 
-/*
-//Need to mock databases for test
-mod tests {
-    use crate::{
-        cli::{context::load_databases, DiskCache},
-        SystemInfo,
-    };
+// //Need to mock databases for test
+// mod tests {
+//     use crate::{
+//         cli::{context::load_databases, DiskCache},
+//         Repository, SystemInfo,
+//     };
 
-    use super::{resolve, RenvLock};
+//     use super::{resolve, RenvLock};
 
-    #[test]
-    fn resolve_renv() {
-        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
-        let len = renv_lock.packages.len();
-        let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()).unwrap();
-        let databases = load_databases(&renv_lock.repositories(), &cache).unwrap();
-        let (resolved, unresolved) = resolve(renv_lock, &databases);
-        assert_eq!(unresolved.len(), 0);
-        assert_eq!(resolved.len(), len);
-    }
-}
-*/
+//     #[test]
+//     fn resolve_renv() {
+//         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+//         let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()).unwrap();
+//         let repositories = &renv_lock
+//             .repositories()
+//             .iter()
+//             .map(|r| Repository {
+//                 alias: r.name.clone(),
+//                 url: r.url.clone(),
+//                 force_source: false,
+//             })
+//             .collect::<Vec<Repository>>();
+//         let databases = load_databases(repositories, &cache).unwrap();
+//         let (resolved, unresolved) = resolve(renv_lock, &databases);
+//         println!("{:#?}", unresolved);
+//     }
+// }

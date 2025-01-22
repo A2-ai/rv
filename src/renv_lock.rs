@@ -54,10 +54,10 @@ pub(crate) struct PackageInfo {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct RenvRepository {
-    name: String,
+pub(crate) struct RenvRepository {
+    pub(crate) name: String,
     #[serde(rename = "URL")]
-    url: String,
+    pub(crate) url: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -94,7 +94,7 @@ impl RenvLock {
         })
     }
 
-    pub(crate) fn repositories(&self) -> &Vec<Repository> {
+    pub(crate) fn repositories(&self) -> &Vec<RenvRepository> {
         &self.r.repositories
     }
 
@@ -123,6 +123,6 @@ mod tests {
 
     #[test]
     fn test_renv_lock_parse() {
-        let _renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/simple/renv.lock").unwrap();
     }
 }
