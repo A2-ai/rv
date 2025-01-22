@@ -7,10 +7,6 @@
         "URL": "https://a2-ai.github.io/gh-pkg-mirror/slurmtools"
       },
       {
-        "Name": "gh-pkg-mirror",
-        "URL": "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04"
-      },
-      {
         "Name": "RSPM",
         "URL": "https://packagemanager.posit.co/cran/2024-12-04"
       }
@@ -99,6 +95,28 @@
         "withr"
       ],
       "Hash": "f1e4f6bf3dcef58d3fe9865060f2a8b7"
+    },
+    "scicalc": {
+      "Package": "scicalc",
+      "Version": "0.0.0.9000.1725376529",
+      "Source": "Repository",
+      "Repository": "https://github.com/A2-ai/scicalc.git",
+      "Requirements": [
+        "arrow",
+        "checkmate",
+        "digest",
+        "dplyr",
+        "fs",
+        "haven",
+        "magrittr",
+        "pzfx",
+        "readr",
+        "rlang",
+        "stats",
+        "stringr"
+      ],
+      "Hash": "b574c1bce8b11eec3b135f7c585a04c7"
     }
   }
 }
+
