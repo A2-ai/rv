@@ -25,7 +25,7 @@ const BASE_PACKAGES: [&str; 14] = [
 ];
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
-pub(crate) enum PackageType {
+pub enum PackageType {
     Source,
     Binary,
 }

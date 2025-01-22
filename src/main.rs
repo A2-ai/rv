@@ -174,7 +174,7 @@ fn try_main() -> Result<()> {
                         println!("Nothing to do");
                     }
                     let lockfile =
-                        Lockfile::from_resolved(&context.r_version.major_minor(), &resolved);
+                        Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
                     if let Some(existing_lockfile) = &context.lockfile {
                         if existing_lockfile != &lockfile {
                             lockfile.save(context.lockfile_path())?;

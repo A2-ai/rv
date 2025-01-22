@@ -104,11 +104,11 @@ fn install_package_from_repository(
     let pkg_paths =
         context
             .cache
-            .get_package_paths(pkg.source.repository_url(), pkg.name, pkg.version);
+            .get_package_paths(pkg.source.repository_url(), &pkg.name, &pkg.version);
     let binary_url = repo_server.get_binary_tarball_path(
-        pkg.name,
-        pkg.version,
-        pkg.path,
+        &pkg.name,
+        &pkg.version,
+        pkg.path.as_deref(),
         &context.cache.r_version,
         &context.cache.system_info,
     );
@@ -121,7 +121,7 @@ fn install_package_from_repository(
                 pkg.name
             );
             install_via_r(
-                &pkg_paths.source.join(pkg.name),
+                &pkg_paths.source.join(pkg.name.as_ref()),
                 library_dir,
                 &pkg_paths.binary,
             )?;
@@ -129,13 +129,13 @@ fn install_package_from_repository(
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
             download_and_install_source(
-                &repo_server.get_source_tarball_path(pkg.name, pkg.version, pkg.path),
+                &repo_server.get_source_tarball_path(&pkg.name, &pkg.version, pkg.path.as_deref()),
                 &pkg_paths,
                 library_dir,
-                pkg.name,
+                &pkg.name,
             )?;
         } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, pkg.name)?;
+            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name)?;
         }
     }
 
@@ -263,7 +263,7 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
 
     // We can't use references from the BuildPlan since we borrow mutably from it so we
     // create a lookup table for resolved deps by name and use those references across channels.
-    let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
+    let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (&d.name, d)).collect();
     let plan = Arc::new(Mutex::new(plan));
 
     let (ready_sender, ready_receiver) = channel::unbounded();
@@ -273,7 +273,7 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
     {
         let mut plan = plan.lock().unwrap();
         while let BuildStep::Install(d) = plan.get() {
-            ready_sender.send(dep_by_name[d.name]).unwrap();
+            ready_sender.send(dep_by_name[&d.name]).unwrap();
         }
     }
 
@@ -296,13 +296,13 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
                 let mut plan = plan_clone.lock().unwrap();
                 let mut ready = Vec::new();
                 while let BuildStep::Install(d) = plan.get() {
-                    ready.push(dep_by_name[d.name]);
+                    ready.push(dep_by_name[&d.name]);
                 }
                 drop(plan); // Release lock before sending
 
                 for p in ready {
                     if !seen.contains(&p.name) {
-                        seen.insert(p.name);
+                        seen.insert(&p.name);
                         ready_sender_clone.send(p).unwrap();
                     }
                 }
@@ -335,7 +335,7 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
                     match install_package(&context, dep, s_path) {
                         Ok(_) => {
                             let sync_change =
-                                SyncChange::installed(dep.name, dep.version, start.elapsed());
+                                SyncChange::installed(&dep.name, &dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);

@@ -148,15 +148,19 @@ pub struct LockedPackage {
 }
 
 impl LockedPackage {
-    pub fn from_resolved_dep(dep: &ResolvedDependency) -> Self {
+    pub fn from_resolved_dep(dep: ResolvedDependency) -> Self {
         Self {
-            name: dep.name.to_string(),
-            version: dep.version.to_string(),
-            source: dep.source.clone(),
-            path: dep.path.map(|p| p.to_string()),
+            name: dep.name.into_owned(),
+            version: dep.version.into_owned(),
+            source: dep.source,
+            path: dep.path.map(|p| p.into_owned()),
             force_source: dep.force_source,
-            dependencies: dep.dependencies.iter().map(|d| d.to_string()).collect(),
-            suggests: dep.suggests.iter().map(|d| d.to_string()).collect(),
+            dependencies: dep
+                .dependencies
+                .into_iter()
+                .map(|d| d.into_owned())
+                .collect(),
+            suggests: dep.suggests.into_iter().map(|d| d.into_owned()).collect(),
         }
     }
 
@@ -234,8 +238,11 @@ impl Lockfile {
         Ok(())
     }
 
-    pub fn from_resolved(r_version: &[u32; 2], deps: &[ResolvedDependency]) -> Self {
-        let mut packages: Vec<_> = deps.iter().map(LockedPackage::from_resolved_dep).collect();
+    pub fn from_resolved(r_version: &[u32; 2], deps: Vec<ResolvedDependency>) -> Self {
+        let mut packages: Vec<_> = deps
+            .into_iter()
+            .map(LockedPackage::from_resolved_dep)
+            .collect();
         packages.sort_unstable_by(|a, b| a.name.cmp(&b.name));
 
         Self {

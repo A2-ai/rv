@@ -123,12 +123,6 @@ impl DiskCache {
             binary: self.get_binary_package_path(repo_url, name, version),
         }
     }
-
-    /// Gets the path in which a repository should be cloned
-    pub fn get_git_path(&self, git_url: &str) -> PathBuf {
-        let encoded = encode_repository_url(git_url);
-        self.root.join(encoded).join("src")
-    }
 }
 
 impl Cache for DiskCache {
@@ -175,5 +169,10 @@ impl Cache for DiskCache {
             (false, true) => InstallationStatus::Binary,
             (false, false) => InstallationStatus::Absent,
         }
+    }
+
+    fn get_git_clone_path(&self, git_url: &str) -> PathBuf {
+        let encoded = encode_repository_url(git_url);
+        self.root.join("git").join(encoded)
     }
 }

@@ -1,27 +1,30 @@
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::Path;
+use std::{fmt, fs};
+
 use crate::cache::InstallationStatus;
 use crate::config::DependencyKind;
 use crate::consts::DESCRIPTION_FILENAME;
+use crate::git::GitReference;
 use crate::lockfile::{LockedPackage, Lockfile, Source};
-use crate::package::{parse_description_file, PackageType};
+use crate::package::{parse_description_file, InstallationDependencies, Package, PackageType};
 use crate::repository::RepositoryDatabase;
 use crate::version::{Version, VersionRequirement};
 use crate::{Cache, GitOperations};
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::{fmt, fs};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ResolvedDependency<'d> {
-    pub(crate) name: &'d str,
-    pub(crate) version: &'d str,
-    // TODO: make that a source
+    pub(crate) name: Cow<'d, str>,
+    pub(crate) version: Cow<'d, str>,
     pub(crate) source: Source,
-    pub(crate) dependencies: Vec<&'d str>,
-    pub(crate) suggests: Vec<&'d str>,
+    pub(crate) dependencies: Vec<Cow<'d, str>>,
+    pub(crate) suggests: Vec<Cow<'d, str>>,
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
     pub(crate) installation_status: InstallationStatus,
-    pub(crate) path: Option<&'d str>,
+    pub(crate) path: Option<Cow<'d, str>>,
     pub(crate) found_in_lockfile: bool,
 }
 
@@ -35,11 +38,19 @@ impl<'d> ResolvedDependency<'d> {
 
     pub fn from_locked_package(package: &'d LockedPackage, cache: &'d impl Cache) -> Self {
         Self {
-            name: &package.name,
-            version: &package.version,
+            name: Cow::Borrowed(&package.name),
+            version: Cow::Borrowed(&package.version),
             source: package.source.clone(),
-            dependencies: package.dependencies.iter().map(|d| d.as_str()).collect(),
-            suggests: package.suggests.iter().map(|s| s.as_str()).collect(),
+            dependencies: package
+                .dependencies
+                .iter()
+                .map(|d| Cow::Borrowed(d.as_str()))
+                .collect(),
+            suggests: package
+                .suggests
+                .iter()
+                .map(|s| Cow::Borrowed(s.as_str()))
+                .collect(),
             // TODO: what should we do here?
             kind: if package.force_source {
                 PackageType::Source
@@ -53,9 +64,56 @@ impl<'d> ResolvedDependency<'d> {
                 &package.name,
                 &package.version,
             ),
-            path: package.path.as_ref().map(|x| x.as_str()),
+            path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             found_in_lockfile: true,
         }
+    }
+
+    // TODO: 2 bool not great but maybe ok
+    pub fn from_package_repository(
+        package: &'d Package,
+        repo_url: &str,
+        package_type: PackageType,
+        install_suggestions: bool,
+        force_source: bool,
+        cache: &'d impl Cache,
+    ) -> (Self, InstallationDependencies<'d>) {
+        let deps = package.dependencies_to_install(install_suggestions);
+
+        let res = ResolvedDependency {
+            name: Cow::Borrowed(&package.name),
+            version: Cow::Borrowed(&package.version.original),
+            source: Source::Repository {
+                repository: repo_url.to_string(),
+            },
+            dependencies: deps
+                .direct
+                .iter()
+                .map(|d| Cow::Borrowed(d.name()))
+                .collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|d| Cow::Borrowed(d.name()))
+                .collect(),
+            kind: package_type,
+            force_source,
+            install_suggests: install_suggestions,
+            installation_status: cache.get_package_installation_status(
+                repo_url,
+                &package.name,
+                &package.version.original,
+            ),
+            path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
+            found_in_lockfile: false,
+        };
+
+        (res, deps)
+    }
+
+    // Git
+    pub fn from_git_or_local_package(package: &'d Package, cache: &'d impl Cache) -> Self {
+        todo!()
     }
 }
 
@@ -69,7 +127,7 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
             self.source,
             self.kind,
             self.found_in_lockfile,
-            self.path.unwrap_or("")
+            self.path.as_deref().unwrap_or("")
         )
     }
 }
@@ -114,6 +172,28 @@ impl<'a> fmt::Display for UnresolvedDependency<'a> {
             },
             format!("from: {}", origins.join(", "))
         )
+    }
+}
+
+fn read_local_description_file(
+    folder: impl AsRef<Path>,
+) -> Result<Package, Box<dyn std::error::Error>> {
+    let folder = folder.as_ref();
+    let description_path = folder.join(DESCRIPTION_FILENAME);
+
+    match fs::read_to_string(&description_path) {
+        Ok(content) => {
+            if let Some(package) = parse_description_file(&content) {
+                Ok(package)
+            } else {
+                Err(format!("Invalid DESCRIPTION file at {}", description_path.display()).into())
+            }
+        }
+        Err(e) => Err(format!(
+            "Could not read destination file at {} {e}",
+            description_path.display()
+        )
+        .into()),
     }
 }
 
@@ -162,7 +242,7 @@ impl<'d> Resolver<'d> {
         &self,
         dependencies: &'d [DependencyKind],
         cache: &'d impl Cache,
-        git: &'d impl GitOperations,
+        git_ops: &'d impl GitOperations,
     ) -> (Vec<ResolvedDependency<'d>>, Vec<UnresolvedDependency<'d>>) {
         let mut resolved = Vec::new();
         // We might have the same unresolved dep multiple times.
@@ -209,7 +289,7 @@ impl<'d> Resolver<'d> {
                     install_suggestions,
                     pkg_source.as_ref(),
                 ) {
-                    found.insert(name);
+                    found.insert(name.to_string());
                     resolved.push(ResolvedDependency::from_locked_package(package, cache));
 
                     for d in package.dependencies.iter().chain(&package.suggests) {
@@ -242,28 +322,15 @@ impl<'d> Resolver<'d> {
                             self.r_version,
                             pkg_force_source || *repo_source_only,
                         ) {
-                            found.insert(name);
-                            let deps = package.dependencies_to_install(install_suggestions);
-
-                            resolved.push(ResolvedDependency {
-                                name: &package.name,
-                                version: &package.version.original,
-                                source: Source::Repository {
-                                    repository: repo.url.clone(),
-                                },
-                                dependencies: deps.direct.iter().map(|d| d.name()).collect(),
-                                suggests: deps.suggests.iter().map(|d| d.name()).collect(),
-                                kind: package_type,
-                                force_source: pkg_force_source || *repo_source_only,
-                                install_suggests: install_suggestions,
-                                installation_status: cache.get_package_installation_status(
-                                    &repo.url,
-                                    &package.name,
-                                    &package.version.original,
-                                ),
-                                path: package.path.as_ref().map(|x| x.as_str()),
-                                found_in_lockfile: false,
-                            });
+                            found.insert(name.to_string());
+                            let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
+                                package,
+                                &repo.url,
+                                package_type,
+                                install_suggestions,
+                                pkg_force_source || *repo_source_only,
+                                cache,
+                            );
 
                             // deps.suggests will be empty if we don't have install_suggests=True
                             for d in deps.direct.into_iter().chain(deps.suggests) {
@@ -278,41 +345,57 @@ impl<'d> Resolver<'d> {
                                     ));
                                 }
                             }
+                            resolved.push(resolved_dep);
                             break;
                         }
                     }
                 }
                 // For local and git deps we assume they are source and will need to read the
                 // DESCRIPTION file to get their dependencies
-                Some(Source::Local { path }) => {
-                    let description_path = path.join(DESCRIPTION_FILENAME);
-                    match fs::read_to_string(&description_path) {
-                        Ok(content) => {
-                            if let Some(package) = parse_description_file(&content) {
-                                todo!("Handle local packages")
-                            } else {
-                                error = Some(format!(
-                                    "Invalid DESCRIPTION file at {}",
-                                    description_path.display()
-                                ));
+                Some(Source::Local { path }) => match read_local_description_file(path) {
+                    Ok(package) => {
+                        let deps = package.dependencies_to_install(install_suggestions);
+                        found.insert(package.name);
+                    }
+                    Err(e) => {
+                        error = Some(format!("{e}"));
+                    }
+                },
+                Some(Source::Git {
+                    ref git,
+                    ref tag,
+                    ref branch,
+                    ref commit,
+                    directory,
+                }) => {
+                    let git_ref = if let Some(c) = commit {
+                        GitReference::Commit(c)
+                    } else if let Some(b) = branch {
+                        GitReference::Branch(b)
+                    } else if let Some(t) = tag {
+                        GitReference::Tag(t)
+                    } else {
+                        unreachable!("Got an empty git reference")
+                    };
+
+                    let clone_path = cache.get_git_clone_path(git);
+                    println!("Cloning to {clone_path:?}");
+                    match git_ops.clone(git, git_ref.clone(), &clone_path) {
+                        Ok(sha) => match read_local_description_file(clone_path) {
+                            Ok(package) => {
+                                todo!("Add to the queue")
                             }
-                        }
+                            Err(e) => {
+                                error = Some(format!("{e}"));
+                            }
+                        },
                         Err(e) => {
                             error = Some(format!(
-                                "Could not read destination file at {} {e}",
-                                description_path.display()
+                                "Could not clone repository {git} (ref: {:?}) {e}",
+                                git_ref,
                             ))
                         }
                     }
-                }
-                Some(Source::Git {
-                    git,
-                    tag,
-                    commit,
-                    branch,
-                    directory,
-                }) => {
-                    // TODO: shallow clone the git repo in the cache and find the DESCRIPTION file
                 }
             }
 

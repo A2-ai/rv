@@ -55,4 +55,7 @@ pub trait Cache {
         name: &str,
         version: &str,
     ) -> InstallationStatus;
+
+    /// Gets the path to where a git repository should be cloned
+    fn get_git_clone_path(&self, repo_url: &str) -> PathBuf;
 }

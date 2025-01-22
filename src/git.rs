@@ -1,3 +1,4 @@
+use core::fmt;
 use std::path::Path;
 
 use git2::Repository;
@@ -12,6 +13,12 @@ pub enum GitReference<'g> {
     Tag(&'g str),
     /// The commit hash
     Commit(&'g str),
+}
+
+impl fmt::Display for GitReference<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.reference())
+    }
 }
 
 impl<'g> GitReference<'g> {
@@ -47,7 +54,7 @@ fn can_find_reference(repo: &Repository, git_ref: &str) -> bool {
 
 fn clone_repository(
     url: &str,
-    git_ref: &GitReference<'_>,
+    git_ref: GitReference<'_>,
     destination: impl AsRef<Path>,
 ) -> Result<String, git2::Error> {
     let destination = destination.as_ref();
@@ -92,7 +99,7 @@ pub trait GitOperations {
     fn clone(
         &self,
         url: &str,
-        git_ref: &GitReference<'_>,
+        git_ref: GitReference<'_>,
         destination: impl AsRef<Path>,
     ) -> Result<String, git2::Error>;
 }
@@ -103,7 +110,7 @@ impl GitOperations for Git {
     fn clone(
         &self,
         url: &str,
-        git_ref: &GitReference<'_>,
+        git_ref: GitReference<'_>,
         destination: impl AsRef<Path>,
     ) -> Result<String, git2::Error> {
         clone_repository(url, git_ref, destination)
@@ -121,13 +128,11 @@ mod tests {
         let commit = "8fd417a477f8e1df6e4dc7923eca55c9b758df58";
         let branch = "rd2md";
 
-        let sha_found =
-            clone_repository(url, &GitReference::Branch(branch), "from_branch").unwrap();
+        let sha_found = clone_repository(url, GitReference::Branch(branch), "from_branch").unwrap();
         println!("Branch {sha_found:?}");
-        let sha_found = clone_repository(url, &GitReference::Tag(tag), "from_tag").unwrap();
+        let sha_found = clone_repository(url, GitReference::Tag(tag), "from_tag").unwrap();
         println!("Tag {sha_found:?}");
-        let sha_found =
-            clone_repository(url, &GitReference::Commit(commit), "from_commit").unwrap();
+        let sha_found = clone_repository(url, GitReference::Commit(commit), "from_commit").unwrap();
         println!("Commit {sha_found:?}");
         assert!(false);
     }

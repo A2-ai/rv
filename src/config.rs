@@ -46,6 +46,23 @@ impl Repository {
 #[serde(untagged)]
 pub enum DependencyKind {
     Simple(String),
+    Git {
+        git: String,
+        // TODO: validate that either commit, branch or tag is set
+        commit: Option<String>,
+        tag: Option<String>,
+        branch: Option<String>,
+        directory: Option<String>,
+        name: String,
+        #[serde(default)]
+        install_suggestions: bool,
+    },
+    Local {
+        path: PathBuf,
+        name: String,
+        #[serde(default)]
+        install_suggestions: bool,
+    },
     Detailed {
         name: String,
         repository: Option<String>,
@@ -53,23 +70,6 @@ pub enum DependencyKind {
         install_suggestions: bool,
         #[serde(default)]
         force_source: bool,
-    },
-    Git {
-        name: String,
-        git: String,
-        // TODO: validate that either commit, branch or tag is set
-        commit: Option<String>,
-        tag: Option<String>,
-        branch: Option<String>,
-        directory: Option<String>,
-        #[serde(default)]
-        install_suggestions: bool,
-    },
-    Local {
-        name: String,
-        path: PathBuf,
-        #[serde(default)]
-        install_suggestions: bool,
     },
 }
 
@@ -104,7 +104,7 @@ impl DependencyKind {
                 git: git.clone(),
                 commit: commit.clone(),
                 tag: tag.clone(),
-                branch: tag.clone(),
+                branch: branch.clone(),
                 directory: directory.clone(),
             }),
             DependencyKind::Local { path, .. } => Some(Source::Local { path: path.clone() }),
