@@ -62,16 +62,16 @@ pub(crate) struct RenvRepository {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct RInfo {
+pub(crate) struct RInfo {
     #[serde(deserialize_with = "deserialize_version")]
-    version: Version,
-    repositories: Vec<RenvRepository>,
+    pub(crate) version: Version,
+    pub(crate) repositories: Vec<RenvRepository>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct RenvLock {
-    r: RInfo,
+    pub(crate) r: RInfo,
     pub(crate) packages: HashMap<String, PackageInfo>,
 }
 

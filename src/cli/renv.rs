@@ -29,8 +29,8 @@ fn resolve(
     let mut unresolved = Vec::new();
 
     // separating and cloning so that renv_lock can be used directly to result in PackageInfo for returns
-    let r_version = renv_lock.r_version().clone();
-    let repos = renv_lock.repositories().clone();
+    let r_version = renv_lock.r.version;
+    let repos = renv_lock.r.repositories;
 
     for (pkg_name, pkg_info) in renv_lock.packages {
         // resolve based on source. returns information based on the packages source (either a repository, the git url and sha, or path to a local file_
@@ -147,7 +147,7 @@ enum MigrantSource {
 
 //     #[test]
 //     fn resolve_renv() {
-//         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+//         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/ambiguity/renv.lock").unwrap();
 //         let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()).unwrap();
 //         let repositories = &renv_lock
 //             .repositories()
@@ -160,6 +160,9 @@ enum MigrantSource {
 //             .collect::<Vec<Repository>>();
 //         let databases = load_databases(repositories, &cache).unwrap();
 //         let (resolved, unresolved) = resolve(renv_lock, &databases);
+//         println!("Resolved: ");
+//         println!("{:#?}", resolved);
+//         println!("Unresolved: ");
 //         println!("{:#?}", unresolved);
 //     }
 // }
