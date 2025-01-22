@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::{
     renv_lock::{PackageInfo, RenvLock, RenvRepository, RenvSource},
@@ -22,22 +22,19 @@ use crate::{
 /// 1. Resolved: Each element is a tuple containing package information from the renv.lock file and source information about where the package can be found
 /// 2. Unresolved: Each element is package information from the renv.lock file. For elements in this list, where the package can be sourced from cannot be found
 fn resolve(
-    renv_lock: RenvLock,
-    databases: &Vec<(RepositoryDatabase, bool)>,
+    packages: HashMap<String, PackageInfo>,
+    r_version: &Version,
+    repository_databases: &Vec<(RenvRepository, RepositoryDatabase, bool)>,
 ) -> (Vec<(PackageInfo, MigrantSource)>, Vec<PackageInfo>) {
     let mut resolved = Vec::new();
     let mut unresolved = Vec::new();
 
-    // separating and cloning so that renv_lock can be used directly to result in PackageInfo for returns
-    let r_version = renv_lock.r.version;
-    let repos = renv_lock.r.repositories;
-
-    for (pkg_name, pkg_info) in renv_lock.packages {
+    for (pkg_name, pkg_info) in packages {
         // resolve based on source. returns information based on the packages source (either a repository, the git url and sha, or path to a local file_
         let res = match pkg_info.source {
             RenvSource::Repository => {
-                resolve_repository(&pkg_name, &pkg_info, &databases, &r_version, &repos)
-                    .map(|repo| MigrantSource::Repo(repo))
+                resolve_repository(&pkg_name, &pkg_info, &repository_databases, r_version)
+                    .map(|repo| MigrantSource::Repo(repo.clone()))
             }
             RenvSource::GitHub => {
                 resolve_github(&pkg_info).map(|(url, sha)| MigrantSource::Git { url, sha })
@@ -84,40 +81,37 @@ fn resolve_github(pkg_info: &PackageInfo) -> Option<(String, String)> {
     Some((url, pkg_info.remote_sha.clone()?))
 }
 
-fn resolve_repository(
+fn resolve_repository<'a>(
     pkg_name: &String,
     pkg_info: &PackageInfo,
-    databases: &Vec<(RepositoryDatabase, bool)>,
+    repository_databases: &'a Vec<(RenvRepository, RepositoryDatabase, bool)>,
     r_version: &Version,
-    repos: &Vec<RenvRepository>,
-) -> Option<RenvRepository> {
+) -> Option<&'a RenvRepository> {
     //using vec over hashmap to maintain repository order
     let mut pkg_repos = Vec::new();
 
     // create vector of which repos contain the package
-    for (repo_db, force_source) in databases {
+    for (repo, repo_db, force_source) in repository_databases {
         // using existing tooling to find package among a repository database.
         let ver_req =
             VersionRequirement::from_str(&format!("(== {})", pkg_info.version.original)).ok();
         if let Some(_) = repo_db.find_package(&pkg_name, ver_req.as_ref(), r_version, *force_source)
         {
-            pkg_repos.push(&repo_db.name);
+            pkg_repos.push(repo);
         }
     }
 
     // check to see if the package was found in a repository as specified in the renv lock
     let pkg_repo = pkg_info.repository.as_deref()?;
-    if let Some(repo_name) = pkg_repos.iter().find(|r| **r == pkg_repo) {
+    if let Some(repo) = pkg_repos.iter().find(|r| r.name == pkg_repo) {
         log::debug!("{} resolved to specified repository", pkg_name);
-        let repo = repos.iter().find(|r| r.name == **repo_name)?;
-        return Some(repo.clone());
+        return Some(repo)
     }
 
     // default to the first repository the package is found in. priority based on order in renv.lock
-    if let Some(repo_name) = pkg_repos.first() {
+    if let Some(repo) = pkg_repos.first() {
         log::debug!("{} resolved to a repository other than specified", pkg_name);
-        let repo = repos.iter().find(|r| r.name == **repo_name)?;
-        return Some(repo.clone());
+        return Some(repo);
     }
 
     // if not found in any repository, inform the user that manual adjustment will be needed for the package
@@ -139,7 +133,7 @@ enum MigrantSource {
 // //Need to mock databases for test
 // mod tests {
 //     use crate::{
-//         cli::{context::load_databases, DiskCache},
+//         cli::{context::load_databases, renv, DiskCache},
 //         Repository, SystemInfo,
 //     };
 
@@ -157,9 +151,15 @@ enum MigrantSource {
 //                 url: r.url.clone(),
 //                 force_source: false,
 //             })
-//             .collect::<Vec<Repository>>();
-//         let databases = load_databases(repositories, &cache).unwrap();
-//         let (resolved, unresolved) = resolve(renv_lock, &databases);
+//             .collect::<Vec<_>>();
+//         let dbs = load_databases(repositories, &cache).unwrap();
+//         let databases = renv_lock.repositories()
+//             .iter()
+//             .cloned()
+//             .zip(dbs.into_iter())
+//             .map(|(repo, (repo_db, force_source))| (repo, repo_db, force_source))
+//             .collect::<Vec<_>>();
+//         let (resolved, unresolved) = resolve(renv_lock.packages, &renv_lock.r.version, &databases);
 //         println!("Resolved: ");
 //         println!("{:#?}", resolved);
 //         println!("Unresolved: ");
