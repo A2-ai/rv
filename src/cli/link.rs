@@ -2,13 +2,14 @@
 //! Taken from uv: clone (CoW) on MacOS and hard links on Mac/Linux by default
 //! Maybe with optional symlink support for cross disk linking
 
-use std::env;
-use std::path::{Path, PathBuf};
-
 use fs_err as fs;
 use fs_err::DirEntry;
 use reflink_copy as reflink;
+use std::env;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+use crate::fs::copy_folder;
 
 const LINK_ENV_NAME: &str = "RV_LINK_MODE";
 
@@ -89,7 +90,7 @@ impl LinkMode {
         }
 
         let res = match self {
-            LinkMode::Copy => copy_package(source.as_ref(), library.as_ref()),
+            LinkMode::Copy => copy_folder(source.as_ref(), library.as_ref()).map_err(Into::into),
             LinkMode::Clone => clone_package(source.as_ref(), library.as_ref()),
             LinkMode::Hardlink => hardlink_package(source.as_ref(), library.as_ref()),
             LinkMode::Symlink => symlink_package(source.as_ref(), library.as_ref()),
@@ -107,33 +108,11 @@ impl LinkMode {
                 "Failed to {} files: {e}. Falling back to copying files.",
                 self.name()
             );
-            copy_package(source.as_ref(), library.as_ref())?;
+            copy_folder(source.as_ref(), library.as_ref())?;
         }
 
         Ok(())
     }
-}
-
-/// Copy the whole content of a package to the given library, file by file.
-fn copy_package(source: &Path, library: &Path) -> Result<(), Error> {
-    for entry in WalkDir::new(source) {
-        let entry = entry?;
-        let path = entry.path();
-
-        let relative = path
-            .strip_prefix(&source)
-            .expect("walkdir starts with root");
-        let out_path = library.join(relative);
-
-        if entry.file_type().is_dir() {
-            fs::create_dir_all(&out_path)?;
-            continue;
-        }
-
-        fs::copy(path, out_path)?;
-    }
-
-    Ok(())
 }
 
 /// macOS can copy directories recursively but Windows/Linux need to clone file by file

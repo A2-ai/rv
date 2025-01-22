@@ -5,9 +5,9 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use regex::Regex;
-
+use crate::fs::copy_folder;
 use crate::version::Version;
+use regex::Regex;
 
 static R_VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+)\.(\d+)\.(\d+)").unwrap());
@@ -57,16 +57,22 @@ impl RCmd for RCommandLine {
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError> {
+        // Always delete destination if it exists first to avoid issues with incomplete installs
         if destination.as_ref().is_dir() {
-            match fs::remove_dir_all(destination.as_ref()) {
-                Ok(()) => (),
-                Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
-            };
+            fs::remove_dir_all(destination.as_ref())
+                .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
         }
-        match fs::create_dir_all(destination.as_ref()) {
-            Ok(()) => (),
-            Err(e) => return Err(InstallError::from_fs_io(e, destination.as_ref())),
-        };
+        fs::create_dir_all(destination.as_ref())
+            .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
+
+        // We move the source to a temp dir since compilation might create a lot of artifacts that
+        // we don't want to keep around in the cache once we're done
+        let tmp_dir = tempfile::tempdir().map_err(|e| InstallError {
+            source: InstallErrorKind::TempDir(e),
+        })?;
+        copy_folder(source_folder, tmp_dir.path()).map_err(|e| InstallError {
+            source: InstallErrorKind::TempDir(e),
+        })?;
 
         let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
@@ -78,6 +84,7 @@ impl RCmd for RCommandLine {
         let library = library.as_ref().canonicalize().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
+
         let mut command = Command::new("R");
         command
             .arg("CMD")
@@ -88,7 +95,7 @@ impl RCmd for RCommandLine {
                 destination.as_ref().to_string_lossy()
             ))
             .arg("--use-vanilla")
-            .arg(source_folder.as_ref())
+            .arg(tmp_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library)
             .env("R_LIBS_USER", &library)
@@ -181,8 +188,10 @@ pub enum InstallErrorKind {
         error: std::io::Error,
         path: PathBuf,
     },
-    #[error(transparent)]
-    Command(#[from] std::io::Error),
+    #[error("Failed to create or copy files to temp directory: {0}")]
+    TempDir(std::io::Error),
+    #[error("Command failed: {0}")]
+    Command(std::io::Error),
     #[error(transparent)]
     Utf8(#[from] std::str::Utf8Error),
     #[error("Installation failed: {0}")]
