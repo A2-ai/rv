@@ -1,9 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
-use anyhow::Result;
-
 use crate::{
-    cli::{context::load_databases, DiskCache}, consts::RECOMMENDED_PACKAGES, renv_lock::{PackageInfo, RenvRepository, RenvSource}, version::VersionRequirement, Repository, RepositoryDatabase, Version
+    consts::RECOMMENDED_PACKAGES, renv_lock::{PackageInfo, RenvRepository, RenvSource}, version::VersionRequirement, RepositoryDatabase, Version
 };
 
 /// `resolve`` takes in the Repository Databases and the parsed renv lock and determines if the package source can be determined.
@@ -146,40 +144,41 @@ enum MigrantSource {
     Local(PathBuf),
 }
 
-/// this function loads the RepositoryDatabase's for a vector of RenvRepositories and returns a vector of a tuples containing RenvRepository and the loaded repository
-fn load_renv_repository_databases<'a>(repos: &'a Vec<RenvRepository>, cache: &DiskCache) -> Result<Vec<(&'a RenvRepository, RepositoryDatabase, bool)>> {
-    // convert RenvRepository to Repository for loading
-    let repositories = repos
-        .into_iter()
-        .map(|r| Repository {
-            alias: r.name.to_string(),
-            url: r.url.to_string(),
-            force_source: false
-        })
-        .collect::<Vec<_>>();
-
-    // load the RepositoryDatabase
-    let dbs = load_databases(&repositories, cache)?;
-
-    // return the RenvRepository paired with the loaded RepositoryDatabase
-    Ok(
-        repos
-            .iter()
-            .zip(dbs.into_iter())
-            .map(|(repo, (repo_db, force_source)) | (repo, repo_db, force_source))
-            .collect::<Vec<_>>()
-    )
-}
-
 // //Need to mock databases for test
 // mod tests {
 //     use crate::{
 //         cli::{context::load_databases, DiskCache},
-//         Repository, SystemInfo, renv_lock::RenvLock,
+//         Repository, RepositoryDatabase, SystemInfo, renv_lock::{RenvLock, RenvRepository},
 //     };
 
-//     use super::{load_renv_repository_databases, resolve};
+//     use anyhow::Result;
+
+//     use super::resolve;
     
+//     /// this function loads the RepositoryDatabase's for a vector of RenvRepositories and returns a vector of a tuples containing RenvRepository and the loaded repository
+//     fn load_renv_repository_databases<'a>(repos: &'a Vec<RenvRepository>, cache: &DiskCache) -> Result<Vec<(&'a RenvRepository, RepositoryDatabase, bool)>> {
+//         // convert RenvRepository to Repository for loading
+//         let repositories = repos
+//             .into_iter()
+//             .map(|r| Repository {
+//                 alias: r.name.to_string(),
+//                 url: r.url.to_string(),
+//                 force_source: false
+//             })
+//             .collect::<Vec<_>>();
+
+//         // load the RepositoryDatabase
+//         let dbs = load_databases(&repositories, cache)?;
+
+//         // return the RenvRepository paired with the loaded RepositoryDatabase
+//         Ok(
+//             repos
+//                 .iter()
+//                 .zip(dbs.into_iter())
+//                 .map(|(repo, (repo_db, force_source)) | (repo, repo_db, force_source))
+//                 .collect::<Vec<_>>()
+//         )
+//     }
 
 //     #[test]
 //     fn resolve_renv() {
