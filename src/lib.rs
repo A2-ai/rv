@@ -12,6 +12,7 @@ mod repository;
 mod resolver;
 mod system_info;
 mod version;
+mod renv_lock;
 
 #[cfg(feature = "cli")]
 pub mod cli;

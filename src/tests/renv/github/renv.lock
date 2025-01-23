@@ -1,0 +1,35 @@
+ {
+  "R": {
+    "Version": "4.4.1",
+    "Repositories": [
+      {
+        "Name": "RSPM",
+        "URL": "https://packagemanager.posit.co/cran/2024-12-04"
+      }
+    ]
+  },
+  "Packages": {
+    "ghqc": {
+      "Package": "ghqc",
+      "Version": "0.3.2",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "ghqc",
+      "RemoteUsername": "a2-ai",
+      "RemoteSha": "55c23eb6a444542dab742d3d37c7b65af7b12e38",
+      "Requirements": [
+        "R",
+        "cli",
+        "fs",
+        "glue",
+        "httpuv",
+        "rlang",
+        "rstudioapi",
+        "withr",
+        "yaml"
+      ],
+      "Hash": "dcba3cb6539ee3cfce6218049c5016cc"
+    }
+  }
+}
