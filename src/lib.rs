@@ -3,6 +3,7 @@ extern crate core;
 mod build_plan;
 mod cache;
 mod config;
+mod fs;
 mod lockfile;
 mod package;
 mod r_cmd;
