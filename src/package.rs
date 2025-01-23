@@ -224,6 +224,11 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             }
         }
 
+        // We might have some spurious empty packages depending on lines, skip those
+        if name.is_empty() {
+            continue;
+        }
+
         package.name = name.clone();
         if let Some(p) = packages.get_mut(&name) {
             p.push(package);
@@ -241,7 +246,9 @@ pub fn parse_description_file(content: &str) -> Option<Package> {
     let new_content = content
         .replace("\r\n", "\n")
         .replace("\n    ", " ")
-        .replace("\n  ", " ");
+        .replace("\n  ", " ")
+        .replace("  ", " ");
+
     let packages = parse_package_file(new_content.as_str());
     packages
         .into_values()

@@ -180,6 +180,8 @@ fn try_main() -> Result<()> {
                             lockfile.save(context.lockfile_path())?;
                             log::debug!("Lockfile changed, saving it.");
                         }
+                    } else {
+                        lockfile.save(context.lockfile_path())?;
                     }
 
                     for c in changes {

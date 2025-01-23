@@ -68,6 +68,16 @@ impl LinkMode {
         from_env.unwrap_or_default()
     }
 
+    /// Try to symlink if possible and fallback to copy on Windows
+    /// Windows requires admin rights for symlink so it might not work oob
+    pub fn symlink_if_possible() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Copy
+        } else {
+            Self::Symlink
+        }
+    }
+
     fn name(&self) -> &'static str {
         match self {
             Self::Copy => "copy",
@@ -81,19 +91,21 @@ impl LinkMode {
         &self,
         package_name: &str,
         source: impl AsRef<Path>,
-        library: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
     ) -> Result<(), Error> {
         // If it's already exists for some reasons (eg failed halfway before), delete it first
-        let pkg_in_lib = library.as_ref().join(package_name);
+        let pkg_in_lib = destination.as_ref().join(package_name);
         if pkg_in_lib.is_dir() {
             fs::remove_dir_all(&pkg_in_lib)?;
         }
 
         let res = match self {
-            LinkMode::Copy => copy_folder(source.as_ref(), library.as_ref()).map_err(Into::into),
-            LinkMode::Clone => clone_package(source.as_ref(), library.as_ref()),
-            LinkMode::Hardlink => hardlink_package(source.as_ref(), library.as_ref()),
-            LinkMode::Symlink => symlink_package(source.as_ref(), library.as_ref()),
+            LinkMode::Copy => {
+                copy_folder(source.as_ref(), destination.as_ref()).map_err(Into::into)
+            }
+            LinkMode::Clone => clone_package(source.as_ref(), destination.as_ref()),
+            LinkMode::Hardlink => hardlink_package(source.as_ref(), destination.as_ref()),
+            LinkMode::Symlink => symlink_package(source.as_ref(), destination.as_ref()),
         };
 
         if let Err(e) = res {
@@ -108,7 +120,7 @@ impl LinkMode {
                 "Failed to {} files: {e}. Falling back to copying files.",
                 self.name()
             );
-            copy_folder(source.as_ref(), library.as_ref())?;
+            copy_folder(source.as_ref(), destination.as_ref())?;
         }
 
         Ok(())

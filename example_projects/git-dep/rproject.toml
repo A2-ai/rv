@@ -7,3 +7,10 @@ repositories = [
 dependencies = [
     { name = "scicalc", git = "https://github.com/A2-ai/scicalc", tag ="v0.1.1" },
 ]
+
+# TODO
+# 1. ensure all packages from git dep are added to resolver
+# 2. ensure we can build a binary from git (symlink folder to temp dir as it might be big instead of copying it)
+#    this means we need to create the temp dir in the cache to avoid any issues (windows should copy?) handling the
+#    directory. Use sha instead of version for binary path in cache
+# 3. make sure the sha is always saved in lockfile, we can keep the other bits if needed but not necessary

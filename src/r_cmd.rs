@@ -65,6 +65,7 @@ impl RCmd for RCommandLine {
         fs::create_dir_all(destination.as_ref())
             .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
 
+        // TODO: move LinkMode to library rather than cli so we can use it here
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
         let tmp_dir = tempfile::tempdir().map_err(|e| InstallError {

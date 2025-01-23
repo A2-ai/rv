@@ -12,9 +12,11 @@ use fs_err as fs;
 use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
 use crate::cli::{http, link::LinkMode, CliContext};
+use crate::git::GitReference;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+use crate::{Git, GitOperations};
 
 fn is_binary_package(path: &Path, name: &str) -> bool {
     path.join(name)
@@ -151,6 +153,24 @@ fn install_package_from_git(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
+    let repo_url = pkg.source.repository_url();
+    let sha = pkg.source.git_sha();
+    log::debug!("Installing packagr from git");
+
+    let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
+
+    if !pkg.installation_status.binary_available() {
+        let git_ops = Git {};
+        // TODO: this won't work if multiple projects are trying to checkout different refs
+        // on the same user at the same time
+        log::debug!("Cloning repo if necessary + checkout");
+        git_ops.clone_and_checkout(repo_url, GitReference::Commit(&sha), &pkg_paths.source)?;
+        log::debug!("Building the repo in {:?}", pkg_paths);
+        install_via_r(&pkg_paths.source, library_dir, &pkg_paths.binary)?;
+    }
+
+    // And then we always link the binary folder into the staging library
+    link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
     Ok(())
 }
@@ -163,7 +183,7 @@ fn install_package(
 ) -> Result<()> {
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
-        Source::Git { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
         Source::Local { .. } => install_package_from_repository(context, pkg, library_dir),
     }
 }
@@ -196,7 +216,6 @@ impl SyncChange {
     }
 }
 
-// sync should only display the changes made, nothing about the deps that are not changing
 /// `sync` will ensure the project library contains only exactly the dependencies from rproject.toml
 /// or from the lockfile if present
 /// There's 2 different paths:

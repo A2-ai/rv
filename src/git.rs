@@ -96,7 +96,7 @@ pub trait GitOperations {
     /// Returns the sha associated with that reference.
     /// If the repository already exists on disk, only fetch from origin if we can't find the
     /// reference.
-    fn clone(
+    fn clone_and_checkout(
         &self,
         url: &str,
         git_ref: GitReference<'_>,
@@ -107,7 +107,7 @@ pub trait GitOperations {
 pub struct Git;
 
 impl GitOperations for Git {
-    fn clone(
+    fn clone_and_checkout(
         &self,
         url: &str,
         git_ref: GitReference<'_>,
@@ -117,23 +117,23 @@ impl GitOperations for Git {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn can_clone() {
-        let url = "https://github.com/A2-ai/scicalc";
-        let tag = "v0.1.1";
-        let commit = "8fd417a477f8e1df6e4dc7923eca55c9b758df58";
-        let branch = "rd2md";
-
-        let sha_found = clone_repository(url, GitReference::Branch(branch), "from_branch").unwrap();
-        println!("Branch {sha_found:?}");
-        let sha_found = clone_repository(url, GitReference::Tag(tag), "from_tag").unwrap();
-        println!("Tag {sha_found:?}");
-        let sha_found = clone_repository(url, GitReference::Commit(commit), "from_commit").unwrap();
-        println!("Commit {sha_found:?}");
-        assert!(false);
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn can_clone() {
+//         let url = "https://github.com/A2-ai/scicalc";
+//         let tag = "v0.1.1";
+//         let commit = "8fd417a477f8e1df6e4dc7923eca55c9b758df58";
+//         let branch = "rd2md";
+//
+//         let sha_found = clone_repository(url, GitReference::Branch(branch), "from_branch").unwrap();
+//         println!("Branch {sha_found:?}");
+//         let sha_found = clone_repository(url, GitReference::Tag(tag), "from_tag").unwrap();
+//         println!("Tag {sha_found:?}");
+//         let sha_found = clone_repository(url, GitReference::Commit(commit), "from_commit").unwrap();
+//         println!("Commit {sha_found:?}");
+//         assert!(false);
+//     }
+// }

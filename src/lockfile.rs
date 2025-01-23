@@ -80,6 +80,13 @@ impl Source {
         }
     }
 
+    pub fn git_sha(&self) -> &str {
+        match self {
+            Source::Git { ref commit, .. } => commit.as_ref().unwrap(),
+            _ => unreachable!("handle other cases"),
+        }
+    }
+
     // TODO: avoid cloning
     pub(crate) fn r_repository(&self) -> Option<String> {
         match self {

@@ -69,7 +69,7 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
-    // TODO: 2 bool not great but maybe ok
+    // TODO: 2 bool not great but maybe ok if it's only used in one place
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &str,
@@ -111,9 +111,44 @@ impl<'d> ResolvedDependency<'d> {
         (res, deps)
     }
 
-    // Git
-    pub fn from_git_or_local_package(package: &'d Package, cache: &'d impl Cache) -> Self {
-        todo!()
+    pub fn from_git_package<'p>(
+        package: &'p Package,
+        repo_url: &str,
+        sha: String,
+        install_suggestions: bool,
+        cache: &'d impl Cache,
+    ) -> (Self, InstallationDependencies<'p>) {
+        let deps = package.dependencies_to_install(install_suggestions);
+
+        let res = Self {
+            dependencies: deps
+                .direct
+                .iter()
+                .map(|d| Cow::Owned(d.name().to_string()))
+                .collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|s| Cow::Owned(s.name().to_string()))
+                .collect(),
+            kind: PackageType::Source,
+            force_source: true,
+            install_suggests: install_suggestions,
+            installation_status: cache.get_git_installation_status(repo_url, &sha),
+            path: None,
+            found_in_lockfile: false,
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.original.clone()),
+            source: Source::Git {
+                git: repo_url.to_string(),
+                commit: Some(sha),
+                tag: None,
+                branch: None,
+                directory: None,
+            },
+        };
+
+        (res, deps)
     }
 }
 
@@ -138,15 +173,15 @@ enum UnresolvedDependencyKind<'d> {
     Direct,
     /// A package has a dependency not found. It could be nested several times,
     /// we only show the immediate parent which could be an indirect dep as well.
-    Indirect(&'d str),
+    Indirect(Cow<'d, str>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct UnresolvedDependency<'d> {
-    name: &'d str,
+    name: Cow<'d, str>,
     // source: Option<&'d Source>,
     // error: Option<String>,
-    version_requirement: Option<&'d VersionRequirement>,
+    version_requirement: Option<VersionRequirement>,
     origins: Vec<UnresolvedDependencyKind<'d>>,
 }
 
@@ -165,7 +200,7 @@ impl<'a> fmt::Display for UnresolvedDependency<'a> {
             f,
             "{}{} {}",
             self.name,
-            if let Some(l) = self.version_requirement {
+            if let Some(l) = &self.version_requirement {
                 format!(" {l} ")
             } else {
                 String::new()
@@ -233,10 +268,6 @@ impl<'d> Resolver<'d> {
         }
     }
 
-    pub fn set_repositories(&mut self, repositories: &'d [(RepositoryDatabase, bool)]) {
-        self.repositories = repositories;
-    }
-
     /// Tries to find all dependencies from the repos, as well as their install status
     pub fn resolve(
         &self,
@@ -246,14 +277,14 @@ impl<'d> Resolver<'d> {
     ) -> (Vec<ResolvedDependency<'d>>, Vec<UnresolvedDependency<'d>>) {
         let mut resolved = Vec::new();
         // We might have the same unresolved dep multiple times.
-        let mut unresolved = HashMap::<&str, UnresolvedDependency>::new();
+        let mut unresolved = HashMap::<_, UnresolvedDependency>::new();
         let mut found = HashSet::with_capacity(dependencies.len() * 10);
 
         let mut queue: VecDeque<_> = dependencies
             .iter()
             .map(|d| {
                 (
-                    d.name(),
+                    Cow::Borrowed(d.name()),
                     d.as_lockfile_source(),
                     // required version
                     None,
@@ -275,7 +306,7 @@ impl<'d> Resolver<'d> {
         {
             // If we have already found that dependency, skip it
             // TODO: maybe different version req? we can cross that bridge later
-            if found.contains(name) {
+            if found.contains(name.as_ref()) {
                 continue;
             }
 
@@ -284,7 +315,7 @@ impl<'d> Resolver<'d> {
                 // If we found the package in the lockfile, consider it found and do not look up
                 // the repo at all
                 if let Some(package) = lockfile.get_package(
-                    name,
+                    name.as_ref(),
                     pkg_force_source,
                     install_suggestions,
                     pkg_source.as_ref(),
@@ -294,7 +325,14 @@ impl<'d> Resolver<'d> {
 
                     for d in package.dependencies.iter().chain(&package.suggests) {
                         if !found.contains(d.as_str()) {
-                            queue.push_back((d.as_str(), None, None, false, false, Some(name)));
+                            queue.push_back((
+                                Cow::Borrowed(d.as_str()),
+                                None,
+                                None,
+                                false,
+                                false,
+                                Some(name.clone()),
+                            ));
                         }
                     }
 
@@ -317,8 +355,8 @@ impl<'d> Resolver<'d> {
                         }
 
                         if let Some((package, package_type)) = repo.find_package(
-                            name,
-                            version_requirement,
+                            name.as_ref(),
+                            version_requirement.as_ref(),
                             self.r_version,
                             pkg_force_source || *repo_source_only,
                         ) {
@@ -336,12 +374,12 @@ impl<'d> Resolver<'d> {
                             for d in deps.direct.into_iter().chain(deps.suggests) {
                                 if !found.contains(d.name()) {
                                     queue.push_back((
-                                        d.name(),
+                                        Cow::Borrowed(d.name()),
                                         None,
-                                        d.version_requirement(),
+                                        d.version_requirement().map(|v| v.clone()),
                                         false,
                                         false,
-                                        Some(name),
+                                        Some(name.clone()),
                                     ));
                                 }
                             }
@@ -356,6 +394,7 @@ impl<'d> Resolver<'d> {
                     Ok(package) => {
                         let deps = package.dependencies_to_install(install_suggestions);
                         found.insert(package.name);
+                        todo!("handle local deps");
                     }
                     Err(e) => {
                         error = Some(format!("{e}"));
@@ -379,11 +418,32 @@ impl<'d> Resolver<'d> {
                     };
 
                     let clone_path = cache.get_git_clone_path(git);
-                    println!("Cloning to {clone_path:?}");
-                    match git_ops.clone(git, git_ref.clone(), &clone_path) {
+                    match git_ops.clone_and_checkout(git, git_ref.clone(), &clone_path) {
                         Ok(sha) => match read_local_description_file(clone_path) {
                             Ok(package) => {
-                                todo!("Add to the queue")
+                                let (resolved_dep, deps) = ResolvedDependency::from_git_package(
+                                    &package,
+                                    &git,
+                                    sha,
+                                    install_suggestions,
+                                    cache,
+                                );
+
+                                // deps.suggests will be empty if we don't have install_suggests=True
+                                for d in deps.direct.into_iter().chain(deps.suggests) {
+                                    if !found.contains(d.name()) {
+                                        queue.push_back((
+                                            Cow::Owned(d.name().to_string()),
+                                            None,
+                                            d.version_requirement().map(|v| v.clone()),
+                                            false,
+                                            false,
+                                            Some(name.clone()),
+                                        ));
+                                    }
+                                }
+                                resolved.push(resolved_dep);
+                                continue;
                             }
                             Err(e) => {
                                 error = Some(format!("{e}"));
@@ -400,17 +460,17 @@ impl<'d> Resolver<'d> {
             }
 
             // We don't look at repo for git and local packages
-            if !found.contains(name) {
+            if !found.contains(name.as_ref()) {
                 let ud_kind = if let Some(p) = parent {
                     UnresolvedDependencyKind::Indirect(p)
                 } else {
                     UnresolvedDependencyKind::Direct
                 };
-                if let Some(ud) = unresolved.get_mut(name) {
+                if let Some(ud) = unresolved.get_mut(&name) {
                     ud.origins.push(ud_kind);
                 } else {
                     unresolved.insert(
-                        name,
+                        name.clone(),
                         UnresolvedDependency {
                             name,
                             version_requirement,
@@ -472,6 +532,7 @@ mod tests {
     use crate::config::Config;
     use crate::repository::RepositoryDatabase;
     use crate::CacheEntry;
+    use git2::Error;
     use serde::Deserialize;
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
@@ -485,6 +546,27 @@ mod tests {
 
         fn get_package_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
             InstallationStatus::Absent
+        }
+
+        fn get_git_installation_status(&self, _: &str, _: &str) -> InstallationStatus {
+            InstallationStatus::Absent
+        }
+
+        fn get_git_clone_path(&self, _: &str) -> PathBuf {
+            PathBuf::from("")
+        }
+    }
+
+    struct FakeGit;
+
+    impl GitOperations for FakeGit {
+        fn clone_and_checkout(
+            &self,
+            url: &str,
+            git_ref: GitReference<'_>,
+            destination: impl AsRef<Path>,
+        ) -> Result<String, Error> {
+            Ok("abc".to_string())
         }
     }
 
@@ -547,7 +629,8 @@ mod tests {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
             let resolver = Resolver::new(&repositories, &r_version, Some(&lockfile));
-            let (resolved, unresolved) = resolver.resolve(&config.dependencies(), &FakeCache {});
+            let (resolved, unresolved) =
+                resolver.resolve(&config.dependencies(), &FakeCache {}, &FakeGit {});
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), &resolved);
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();

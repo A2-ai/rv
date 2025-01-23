@@ -109,13 +109,14 @@ mod tests {
     use crate::cache::InstallationStatus;
     use crate::lockfile::Source;
     use crate::package::PackageType;
+    use std::borrow::Cow;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {
         ResolvedDependency {
-            name,
-            dependencies,
+            name: Cow::from(name),
+            dependencies: dependencies.into_iter().map(Cow::from).collect(),
             suggests: Vec::new(),
-            version: "",
+            version: Cow::Borrowed(""),
             source: Source::Repository {
                 repository: "".to_string(),
             },
