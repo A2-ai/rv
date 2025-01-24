@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use crate::lockfile::Source;
 use crate::version::Version;
 use serde::Deserialize;
 
@@ -44,7 +43,7 @@ impl Repository {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
-pub enum DependencyKind {
+pub enum ConfigDependency {
     Simple(String),
     Git {
         git: String,
@@ -73,63 +72,42 @@ pub enum DependencyKind {
     },
 }
 
-impl DependencyKind {
+impl ConfigDependency {
     pub fn name(&self) -> &str {
         match self {
-            DependencyKind::Simple(s) => s,
-            DependencyKind::Detailed { name, .. } => name,
-            DependencyKind::Git { name, .. } => name,
-            DependencyKind::Local { name, .. } => name,
-        }
-    }
-
-    // We are abusing the Source::Repository enum, it's meant to be a URL
-    // but here we are using the alias. It will all resolve correctly in the resolver.
-    pub fn as_lockfile_source(&self) -> Option<Source> {
-        match self {
-            DependencyKind::Simple(_) => None,
-            DependencyKind::Detailed { repository, .. } => {
-                repository.clone().map(|r| Source::Repository {
-                    repository: r.clone(),
-                })
-            }
-            DependencyKind::Git {
-                git,
-                commit,
-                tag,
-                branch,
-                directory,
-                ..
-            } => Some(Source::Git {
-                git: git.clone(),
-                commit: commit.clone(),
-                tag: tag.clone(),
-                branch: branch.clone(),
-                directory: directory.clone(),
-            }),
-            DependencyKind::Local { path, .. } => Some(Source::Local { path: path.clone() }),
+            ConfigDependency::Simple(s) => s,
+            ConfigDependency::Detailed { name, .. } => name,
+            ConfigDependency::Git { name, .. } => name,
+            ConfigDependency::Local { name, .. } => name,
         }
     }
 
     pub fn force_source(&self) -> bool {
         match self {
-            DependencyKind::Detailed { force_source, .. } => *force_source,
+            ConfigDependency::Detailed { force_source, .. } => *force_source,
             _ => false,
+        }
+    }
+
+    pub fn r_repository(&self) -> Option<&str> {
+        match self {
+            ConfigDependency::Detailed { repository, .. } => repository.as_deref(),
+            _ => None,
         }
     }
 
     pub fn install_suggestions(&self) -> bool {
         match self {
-            DependencyKind::Simple(_) => false,
-            DependencyKind::Detailed {
+            ConfigDependency::Simple(_) => false,
+            ConfigDependency::Detailed {
                 install_suggestions,
                 ..
             } => *install_suggestions,
-            DependencyKind::Local {
+            ConfigDependency::Local {
                 install_suggestions,
                 ..
             } => *install_suggestions,
-            DependencyKind::Git {
+            ConfigDependency::Git {
                 install_suggestions,
                 ..
             } => *install_suggestions,
@@ -152,13 +130,13 @@ pub(crate) struct Project {
     keywords: Vec<String>,
     repositories: Vec<Repository>,
     #[serde(default)]
-    suggests: Vec<DependencyKind>,
+    suggests: Vec<ConfigDependency>,
     #[serde(default)]
     urls: HashMap<String, String>,
     #[serde(default)]
-    dependencies: Vec<DependencyKind>,
+    dependencies: Vec<ConfigDependency>,
     #[serde(default)]
-    dev_dependencies: Vec<DependencyKind>,
+    dev_dependencies: Vec<ConfigDependency>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -168,24 +146,92 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, FromFileError> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
         let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,
             Err(e) => {
-                return Err(FromFileError {
+                return Err(ConfigLoadError {
                     path: path.as_ref().into(),
-                    source: FromFileErrorKind::Io(e),
+                    source: ConfigLoadErrorKind::Io(e),
                 })
             }
         };
         Self::from_str(&content)
     }
 
+    /// This will do 2 things:
+    /// 1. verify alias used in deps are found
+    /// 2. verify git sources are valid (eg no tag and branch at the same time)
+    /// 3. replace the alias in the dependency by the URL
+    pub(crate) fn finalize(&mut self) -> Result<(), ConfigLoadError> {
+        let repo_mapping: HashMap<_, _> = self
+            .project
+            .repositories
+            .iter()
+            .map(|r| (r.alias.as_str(), r))
+            .collect();
+        let mut errors = Vec::new();
+
+        for d in self.project.dependencies.iter_mut() {
+            match d {
+                // If it has a repository set, we need to check the alias is found and replace it with the url
+                ConfigDependency::Detailed {
+                    repository, name, ..
+                } => {
+                    if name.trim().is_empty() {
+                        errors.push("A dependency is missing a name.".to_string());
+                        continue;
+                    }
+
+                    let mut replacement = None;
+                    if let Some(alias) = repository {
+                        if let Some(repo) = repo_mapping.get(alias.as_str()) {
+                            replacement = Some(repo.url.clone());
+                        } else {
+                            errors.push(format!(
+                                "Dependency {name} is using alias {alias} which is unknown."
+                            ));
+                        }
+                    }
+                    *repository = replacement;
+                }
+                ConfigDependency::Git {
+                    git,
+                    tag,
+                    branch,
+                    commit,
+                    ..
+                } => {
+                    if git.trim().is_empty() {
+                        errors.push("A git dependency is missing a URL.".to_string());
+                        continue;
+                    }
+                    match (tag.is_some(), branch.is_some(), commit.is_some()) {
+                        (true, false, false) | (false, true, false) | (false, false, true) => (),
+                        _ => {
+                            errors.push(format!("A git dependency `{git}` requires one and only one of tag/branch/commit set. "));
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(ConfigLoadError {
+                path: Path::new(".").into(),
+                source: ConfigLoadErrorKind::InvalidConfig(errors.join("\n")),
+            });
+        }
+
+        Ok(())
+    }
+
     pub fn repositories(&self) -> &[Repository] {
         &self.project.repositories
     }
 
-    pub fn dependencies(&self) -> &[DependencyKind] {
+    pub fn dependencies(&self) -> &[ConfigDependency] {
         &self.project.dependencies
     }
 
@@ -195,29 +241,33 @@ impl Config {
 }
 
 impl FromStr for Config {
-    type Err = FromFileError;
+    type Err = ConfigLoadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s).map_err(|e| FromFileError {
+        let mut config: Self = toml::from_str(s).map_err(|e| ConfigLoadError {
             path: Path::new(".").into(),
-            source: FromFileErrorKind::Parse(e),
-        })
+            source: ConfigLoadErrorKind::Parse(e),
+        })?;
+        config.finalize()?;
+        Ok(config)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Error reading `{path}`")]
+#[error("Failed to load config at `{path}`")]
 #[non_exhaustive]
-pub struct FromFileError {
+pub struct ConfigLoadError {
     pub path: Box<Path>,
-    pub source: FromFileErrorKind,
+    pub source: ConfigLoadErrorKind,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub enum FromFileErrorKind {
+pub enum ConfigLoadErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml::de::Error),
+    #[error("Invalid config: {0}")]
+    InvalidConfig(String),
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 ---
-source: src/resolver.rs
+source: src/resolver/mod.rs
 expression: out
 ---
 texPreview=2.1.0 (repository(url: http://gh-pkg-mirror), type=binary, from_lockfile=false, path='')

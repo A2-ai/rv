@@ -1,5 +1,5 @@
 ---
-source: src/resolver.rs
+source: src/resolver/mod.rs
 expression: out
 ---
 dplyr=1.1.4 (repository(url: http://cran), type=binary, from_lockfile=false, path='')

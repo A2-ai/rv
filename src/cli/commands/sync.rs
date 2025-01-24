@@ -165,6 +165,7 @@ fn install_package_from_git(
         // on the same user at the same time
         log::debug!("Cloning repo if necessary + checkout");
         git_ops.clone_and_checkout(repo_url, GitReference::Commit(&sha), &pkg_paths.source)?;
+        // TODO: symlink file in cache directory
         log::debug!("Building the repo in {:?}", pkg_paths);
         install_via_r(&pkg_paths.source, library_dir, &pkg_paths.binary)?;
     }

@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::Formatter;
+use std::path::Path;
 use std::str::FromStr;
+use std::{fmt, fs};
 
+use crate::consts::DESCRIPTION_FILENAME;
 use crate::version::{Version, VersionRequirement};
 use serde::{Deserialize, Serialize};
 
@@ -254,6 +256,28 @@ pub fn parse_description_file(content: &str) -> Option<Package> {
         .into_values()
         .next()
         .and_then(|p| p.into_iter().next())
+}
+
+pub fn read_local_description_file(
+    folder: impl AsRef<Path>,
+) -> Result<Package, Box<dyn std::error::Error>> {
+    let folder = folder.as_ref();
+    let description_path = folder.join(DESCRIPTION_FILENAME);
+
+    match fs::read_to_string(&description_path) {
+        Ok(content) => {
+            if let Some(package) = parse_description_file(&content) {
+                Ok(package)
+            } else {
+                Err(format!("Invalid DESCRIPTION file at {}", description_path.display()).into())
+            }
+        }
+        Err(e) => Err(format!(
+            "Could not read destination file at {} {e}",
+            description_path.display()
+        )
+        .into()),
+    }
 }
 
 #[cfg(test)]

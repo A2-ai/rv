@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -35,73 +34,6 @@ pub enum Command {
     Sync,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ResolveNeeded {
-    /// No actions needed
-    None,
-    /// We only need to remove those deps from the lockfile + project library
-    RemoveOnly(Vec<String>),
-    /// We will need to look up the package databases so do a full lookup, preferring
-    /// already installed/in lockfile versions
-    Full,
-}
-
-/// Look through the lockfile if there is one to see if we actually need to resolve anything.
-/// We don't look at the versions there, only at the dependencies and whether force_source is enabled
-fn resolve_needed(context: &CliContext) -> ResolveNeeded {
-    if let Some(lockfile) = &context.lockfile {
-        // Different R version always means needing to resolve things.
-        if lockfile.r_version().major_minor() != context.r_version.major_minor() {
-            log::debug!(
-                "Different R version (lockfile={}, user={}). Re-resolving everything",
-                lockfile.r_version(),
-                context.r_version
-            );
-            return ResolveNeeded::Full;
-        }
-
-        // At this point we need to figure out 2 things:
-        // 1. whether we have all the explicit deps and their deps in the lockfile
-        // 2. whether we removed some dep in the config file and need to update the lockfile
-        //    and just remove those from the lockfile/rv dir
-        let lockfile_deps = lockfile.package_names();
-        let mut deps_seen: HashSet<&str> = HashSet::new();
-
-        for d in context.config.dependencies() {
-            // TODO: add source (repository url/git) to the param if set since changing that means a new package
-            let all_deps = lockfile.get_package_tree(
-                d.name(),
-                d.force_source(),
-                d.install_suggestions(),
-                d.as_lockfile_source().as_ref(),
-            );
-            // If we don't have an explicit dep, we'll need a full resolve
-            if all_deps.is_empty() {
-                log::debug!(
-                    "Could not find {} in lockfile. Re-resolving everything",
-                    d.name()
-                );
-                return ResolveNeeded::Full;
-            }
-            deps_seen.extend(all_deps.into_iter());
-        }
-
-        // Check whether we have things we need to remove or not
-        let unneeded_deps = lockfile_deps
-            .difference(&deps_seen)
-            .map(|d| d.to_string())
-            .collect::<Vec<_>>();
-        if unneeded_deps.is_empty() {
-            ResolveNeeded::None
-        } else {
-            ResolveNeeded::RemoveOnly(unneeded_deps)
-        }
-    } else {
-        log::debug!("No lockfile. Resolving everything");
-        ResolveNeeded::Full
-    }
-}
-
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
@@ -110,17 +42,16 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    let (resolved, unresolved) =
-        resolver.resolve(context.config.dependencies(), &context.cache, &Git {});
-    if !unresolved.is_empty() {
+    let resolution = resolver.resolve(context.config.dependencies(), &context.cache, &Git {});
+    if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
-        for d in unresolved {
+        for d in resolution.failed {
             eprintln!("    {d}");
         }
         ::std::process::exit(1)
     }
 
-    resolved
+    resolution.found
 }
 
 fn try_main() -> Result<()> {
@@ -139,33 +70,33 @@ fn try_main() -> Result<()> {
         }
         Command::Plan => {
             let mut context = CliContext::new(&cli.config_file)?;
-            match resolve_needed(&context) {
-                ResolveNeeded::None => {
-                    println!("Nothing to do");
-                }
-                ResolveNeeded::RemoveOnly(deps) => {
-                    println!("Plan successful! The following packages will be removed:");
-                    for d in deps {
-                        println!("    - {d}");
-                    }
-                }
-                ResolveNeeded::Full => {
-                    context.load_databases()?;
-                    // TODO: take into account we might remove some deps, not just installation
-                    let resolved = resolve_dependencies(&context);
-                    println!("Plan successful! The following packages will be installed:");
-                    for d in resolved {
-                        println!("    {d}");
-                    }
-                }
-            }
+            context.load_databases_if_needed()?;
+
+            // TODO: add back rv plan
+            // match resolve_needed(&context) {
+            //     ResolveNeeded::None => {
+            //         println!("Nothing to do");
+            //     }
+            //     ResolveNeeded::RemoveOnly(deps) => {
+            //         println!("Plan successful! The following packages will be removed:");
+            //         for d in deps {
+            //             println!("    - {d}");
+            //         }
+            //     }
+            //     ResolveNeeded::Full => {
+            //         context.load_databases()?;
+            //         // TODO: take into account we might remove some deps, not just installation
+            //         let resolved = resolve_dependencies(&context);
+            //         println!("Plan successful! The following packages will be installed:");
+            //         for d in resolved {
+            //             println!("    {d}");
+            //         }
+            //     }
+            // }
         }
         Command::Sync => {
             let mut context = CliContext::new(&cli.config_file)?;
-            let resolution_needing = resolve_needed(&context);
-            if resolution_needing == ResolveNeeded::Full {
-                context.load_databases()?;
-            }
+            context.load_databases_if_needed()?;
             let resolved = resolve_dependencies(&context);
 
             match timeit!("Synced dependencies", sync(&context, &resolved)) {

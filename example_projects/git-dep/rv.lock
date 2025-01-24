@@ -323,7 +323,7 @@ dependencies = []
 [[packages]]
 name = "scicalc"
 version = "0.1.1"
-source = { git = "https://github.com/A2-ai/scicalc", commit = "bc50e550e432c3c620714f30dd59115801f89995" }
+source = { git = "https://github.com/A2-ai/scicalc", sha = "bc50e550e432c3c620714f30dd59115801f89995" }
 force_source = true
 dependencies = [
     "arrow",

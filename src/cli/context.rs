@@ -2,10 +2,7 @@
 use std::path::PathBuf;
 
 use crate::cli::{http, utils::write_err, DiskCache};
-use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RepoServer,
-    Repository, RepositoryDatabase, SystemInfo, Version,
-};
+use crate::{consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RepoServer, Repository, RepositoryDatabase, SystemInfo, Version};
 
 use crate::cli::utils::get_os_path;
 use crate::lockfile::Lockfile;
@@ -55,6 +52,13 @@ impl CliContext {
 
     pub fn load_databases(&mut self) -> Result<()> {
         self.databases = load_databases(self.config.repositories(), &self.cache)?;
+        Ok(())
+    }
+
+    pub fn load_databases_if_needed(&mut self) -> Result<()> {
+        if self.lockfile.as_ref().and_then(|l| Some(l.can_resolve(self.config.dependencies()))).unwrap_or(true) {
+            self.load_databases()?;
+        }
         Ok(())
     }
 
