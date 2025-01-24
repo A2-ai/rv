@@ -163,55 +163,55 @@ enum MigrantSource {
     Local(PathBuf),
 }
 
-//Need to mock databases for test
-mod tests {
-    use crate::{
-        cli::{context::load_databases, DiskCache},
-        Repository, SystemInfo, renv_lock::{RenvLock, RenvRepository},
-    };
+// //Need to mock databases for test
+// mod tests {
+//     use crate::{
+//         cli::{context::load_databases, DiskCache},
+//         Repository, SystemInfo, renv_lock::{RenvLock, RenvRepository},
+//     };
 
-    use anyhow::Result;
+//     use anyhow::Result;
 
-    use super::{resolve, RenvRepositoryDatabase};
+//     use super::{resolve, RenvRepositoryDatabase};
     
-    /// this function loads the RepositoryDatabase's for a vector of RenvRepositories and returns a vector of a tuples containing RenvRepository and the loaded repository
-    fn load_renv_repository_databases<'a>(repos: &'a Vec<RenvRepository>, cache: &DiskCache) -> Result<Vec<RenvRepositoryDatabase<'a>>> {
-        // convert RenvRepository to Repository for loading
-        let repositories = repos
-            .into_iter()
-            .map(|r| Repository {
-                alias: r.name.to_string(),
-                url: r.url.to_string(),
-                force_source: false
-            })
-            .collect::<Vec<_>>();
+//     /// this function loads the RepositoryDatabase's for a vector of RenvRepositories and returns a vector of a tuples containing RenvRepository and the loaded repository
+//     fn load_renv_repository_databases<'a>(repos: &'a Vec<RenvRepository>, cache: &DiskCache) -> Result<Vec<RenvRepositoryDatabase<'a>>> {
+//         // convert RenvRepository to Repository for loading
+//         let repositories = repos
+//             .into_iter()
+//             .map(|r| Repository {
+//                 alias: r.name.to_string(),
+//                 url: r.url.to_string(),
+//                 force_source: false
+//             })
+//             .collect::<Vec<_>>();
 
-        // load the RepositoryDatabase
-        let dbs = load_databases(&repositories, cache)?;
+//         // load the RepositoryDatabase
+//         let dbs = load_databases(&repositories, cache)?;
 
-        // return the RenvRepository paired with the loaded RepositoryDatabase
-        Ok(
-            repos
-                .iter()
-                .zip(dbs.into_iter())
-                .map(|(repo, (repo_db, force_source)) | RenvRepositoryDatabase{renv_repo: repo, repository_database: repo_db, force_source})
-                .collect::<Vec<_>>()
-        )
-    }
+//         // return the RenvRepository paired with the loaded RepositoryDatabase
+//         Ok(
+//             repos
+//                 .iter()
+//                 .zip(dbs.into_iter())
+//                 .map(|(repo, (repo_db, force_source)) | RenvRepositoryDatabase{renv_repo: repo, repository_database: repo_db, force_source})
+//                 .collect::<Vec<_>>()
+//         )
+//     }
 
-    #[test]
-    fn resolve_renv() {
-        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/multi/renv.lock").unwrap();
-        let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()).unwrap();
+//     #[test]
+//     fn resolve_renv() {
+//         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/multi/renv.lock").unwrap();
+//         let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()).unwrap();
 
-        // match RenvRepository with its RepositoryDatabase
-        let databases = load_renv_repository_databases(&renv_lock.r.repositories, &cache).unwrap();
+//         // match RenvRepository with its RepositoryDatabase
+//         let databases = load_renv_repository_databases(&renv_lock.r.repositories, &cache).unwrap();
 
-        // take only the PackageInfo since it contains the name of the package
-        let packages = renv_lock.packages.into_values().collect::<Vec<_>>();
+//         // take only the PackageInfo since it contains the name of the package
+//         let packages = renv_lock.packages.into_values().collect::<Vec<_>>();
 
-        let (resolved, unresolved) = resolve(packages, &renv_lock.r.version, &databases, true);
-        println!("{:#?}", resolved);
-        println!("{:#?}", unresolved);
-    }
-}
+//         let (resolved, unresolved) = resolve(packages, &renv_lock.r.version, &databases, true);
+//         println!("{:#?}", resolved);
+//         println!("{:#?}", unresolved);
+//     }
+// }
