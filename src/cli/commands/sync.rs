@@ -42,6 +42,7 @@ fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result
     if let Err(e) = r_cmd.install(source, library_dir, binary_dir) {
         // Do not leave empty binary dir if some install failed otherwise later install
         // would fail
+        log::warn!("Failed to install {source:?}, {:?}", e);
         if binary_dir.is_dir() {
             fs::remove_dir_all(binary_dir)?;
         }
@@ -289,7 +290,8 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
 
         // Our worker threads that will actually perform the installation
         // TODO: make this overridable
-        let num_workers = num_cpus::get();
+        let num_cpus = num_cpus::get();
+        let num_workers = if num_cpus > 8 { num_cpus - 2 } else { num_cpus };
         for _ in 0..num_workers {
             let ready_receiver = ready_receiver.clone();
             let done_sender = done_sender.clone();
