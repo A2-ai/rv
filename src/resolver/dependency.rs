@@ -70,11 +70,11 @@ impl<'d> ResolvedDependency<'d> {
         package: &'d Package,
         repo_url: &str,
         package_type: PackageType,
-        install_suggestions: bool,
+        install_suggests: bool,
         force_source: bool,
         installation_status: InstallationStatus,
     ) -> (Self, InstallationDependencies<'d>) {
-        let deps = package.dependencies_to_install(install_suggestions);
+        let deps = package.dependencies_to_install(install_suggests);
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
@@ -94,7 +94,7 @@ impl<'d> ResolvedDependency<'d> {
                 .collect(),
             kind: package_type,
             force_source,
-            install_suggests: install_suggestions,
+            install_suggests,
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             found_in_lockfile: false,
             installation_status,
@@ -105,15 +105,13 @@ impl<'d> ResolvedDependency<'d> {
 
     /// If we find the package to be a git repo, we will read the DESCRIPTION file during resolution
     /// This means the data will not outlive this struct and needs to be owned
-    pub fn from_git_package<'p>(
-        package: &'p Package,
-        repo_url: &str,
-        sha: String,
-        directory: Option<String>,
-        install_suggestions: bool,
+    pub fn from_git_package(
+        package: &Package,
+        source: Source,
+        install_suggests: bool,
         installation_status: InstallationStatus,
-    ) -> (Self, InstallationDependencies<'p>) {
-        let deps = package.dependencies_to_install(install_suggestions);
+    ) -> (Self, InstallationDependencies) {
+        let deps = package.dependencies_to_install(install_suggests);
 
         let res = Self {
             dependencies: deps
@@ -128,17 +126,13 @@ impl<'d> ResolvedDependency<'d> {
                 .collect(),
             kind: PackageType::Source,
             force_source: true,
-            install_suggests: install_suggestions,
             path: None,
             found_in_lockfile: false,
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.original.clone()),
-            source: Source::Git {
-                git: repo_url.to_string(),
-                directory,
-                sha,
-            },
+            source,
             installation_status,
+            install_suggests,
         };
 
         (res, deps)

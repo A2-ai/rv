@@ -81,14 +81,13 @@ fn clone_repository(
             builder.branch(b);
         }
 
-        let repo = builder.clone(url, destination)?;
-        repo
+        builder.clone(url, destination)?
     };
 
     // For commits/tags, we need to checkout the ref specifically
     // This will be a no-op for branches
     checkout(&repo, git_ref.reference())?;
-    Ok(get_sha(&repo)?)
+    get_sha(&repo)
 }
 
 pub trait GitOperations {

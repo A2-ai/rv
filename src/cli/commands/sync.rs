@@ -11,8 +11,9 @@ use fs_err as fs;
 
 use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
-use crate::cli::{http, link::LinkMode, CliContext};
+use crate::cli::{http, CliContext};
 use crate::git::GitReference;
+use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
@@ -167,7 +168,15 @@ fn install_package_from_git(
         git_ops.clone_and_checkout(repo_url, GitReference::Commit(&sha), &pkg_paths.source)?;
         // TODO: symlink file in cache directory
         log::debug!("Building the repo in {:?}", pkg_paths);
-        install_via_r(&pkg_paths.source, library_dir, &pkg_paths.binary)?;
+        // If we have a directory, don't forget to set it before building it
+        let source_path = match &pkg.source {
+            Source::Git {
+                directory: Some(dir),
+                ..
+            } => pkg_paths.source.join(&dir),
+            _ => pkg_paths.source,
+        };
+        install_via_r(&source_path, library_dir, &pkg_paths.binary)?;
     }
 
     // And then we always link the binary folder into the staging library
@@ -181,7 +190,12 @@ fn install_package(
     context: &CliContext,
     pkg: &ResolvedDependency,
     library_dir: &Path,
+    dry_run: bool,
 ) -> Result<()> {
+    if dry_run {
+        return Ok(());
+    }
+
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
@@ -233,7 +247,11 @@ impl SyncChange {
 /// 2. Create a temp directory if things need to be installed
 /// 2. Send all dependencies to install to worker threads in order
 /// 3. Once a dep is installed, get the next step until it's over or need to wait on other deps
-pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<SyncChange>> {
+pub fn sync(
+    context: &CliContext,
+    deps: &[ResolvedDependency],
+    dry_run: bool,
+) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
     let project_library = context.library_path();
     let staging_path = context.staging_path();
@@ -352,7 +370,7 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
                         PackageType::Binary => log::debug!("Installing {} (binary)", dep.name),
                     }
                     let start = std::time::Instant::now();
-                    match install_package(&context, dep, s_path) {
+                    match install_package(&context, dep, s_path, dry_run) {
                         Ok(_) => {
                             let sync_change =
                                 SyncChange::installed(&dep.name, &dep.version, start.elapsed());

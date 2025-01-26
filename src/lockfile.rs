@@ -25,8 +25,8 @@ pub enum Source {
         // We keep tag and branch around to quickly compare with the config file, eg
         // if the tag changed in the config file we know that it will require an update without
         // having to look up anything
-        // tag: Option<String>,
-        // branch: Option<String>,
+        tag: Option<String>,
+        branch: Option<String>,
     },
     Repository {
         repository: String,
@@ -45,20 +45,20 @@ impl Source {
                 git,
                 sha,
                 directory,
-                // tag,
-                // branch,
+                tag,
+                branch,
             } => {
                 table.insert("git", Value::from(git));
                 table.insert("sha", Value::from(sha));
                 if let Some(d) = directory {
                     table.insert("directory", Value::from(d));
                 }
-                // if let Some(d) = tag {
-                //     table.insert("tag", Value::from(d));
-                // }
-                // if let Some(d) = branch {
-                //     table.insert("branch", Value::from(d));
-                // }
+                if let Some(d) = tag {
+                    table.insert("tag", Value::from(d));
+                }
+                if let Some(d) = branch {
+                    table.insert("branch", Value::from(d));
+                }
             }
             Self::Repository { repository } => {
                 table.insert("repository", Value::from(repository));
@@ -110,14 +110,16 @@ impl fmt::Display for Source {
                 git,
                 sha,
                 directory,
+                tag,
+                branch,
             } => {
-                write!(f, "git(url: {git}, sha: {sha}, directory: {directory:?})")
+                write!(f, "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?})")
             }
             Self::Repository { repository } => {
                 write!(f, "repository(url: {repository})")
             }
             Self::Local { path } => {
-                write!(f, "local(path: {})", path.display().to_string())
+                write!(f, "local(path: {})", path.display())
             }
         }
     }
@@ -318,6 +320,8 @@ impl Lockfile {
                 if p.source.is_matching(d) {
                     return Some(p);
                 }
+            } else {
+                return Some(p);
             }
         }
 

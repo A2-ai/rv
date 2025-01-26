@@ -104,8 +104,8 @@ impl<'d> Resolver<'d> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
         for (repo, repo_source_only) in self.repositories {
-            if let Some(ref r) = repository {
-                if repo.name != *r {
+            if let Some(r) = repository {
+                if repo.name != r {
                     continue;
                 }
             }
@@ -156,7 +156,6 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
         repo_url: &str,
         git_ref: GitReference,
-        directory: Option<String>,
         git_ops: &'d impl GitOperations,
         cache: &'d impl Cache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
@@ -166,11 +165,10 @@ impl<'d> Resolver<'d> {
             Ok(sha) => {
                 let package = read_local_description_file(&clone_path)?;
                 let status = cache.get_git_installation_status(repo_url, &sha);
+                let source = item.dep.unwrap().as_git_source_with_sha(sha);
                 let (resolved_dep, deps) = ResolvedDependency::from_git_package(
                     &package,
-                    repo_url,
-                    sha,
-                    directory,
+                    source,
                     item.install_suggestions,
                     status,
                 );
@@ -260,7 +258,6 @@ impl<'d> Resolver<'d> {
                     tag,
                     commit,
                     branch,
-                    directory,
                     ..
                 }) => {
                     let git_ref = if let Some(c) = commit {
@@ -273,7 +270,7 @@ impl<'d> Resolver<'d> {
                         unreachable!("Got an empty git reference")
                     };
 
-                    match self.git_lookup(&item, git, git_ref, directory.clone(), git_ops, cache) {
+                    match self.git_lookup(&item, git, git_ref, git_ops, cache) {
                         Ok((resolved_dep, items)) => {
                             result.found.push(resolved_dep);
                             queue.extend(items);
@@ -399,8 +396,7 @@ mod tests {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
             let resolver = Resolver::new(&repositories, &r_version, Some(&lockfile));
-            let resolution =
-                resolver.resolve(&config.dependencies(), &FakeCache {}, &FakeGit {});
+            let resolution = resolver.resolve(&config.dependencies(), &FakeCache {}, &FakeGit {});
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), &resolved);
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();

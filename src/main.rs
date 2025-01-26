@@ -54,6 +54,49 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
+fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
+    let mut context = CliContext::new(config_file)?;
+    context.load_databases_if_needed()?;
+    let resolved = resolve_dependencies(&context);
+
+    match timeit!(if dry_run { "Planned dependencies" } else { "Synced dependencies" }, sync(&context, &resolved, dry_run)) {
+        Ok(changes) => {
+            if changes.is_empty() {
+                println!("Nothing to do");
+            }
+            let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
+            if let Some(existing_lockfile) = &context.lockfile {
+                if existing_lockfile != &lockfile {
+                    lockfile.save(context.lockfile_path())?;
+                    log::debug!("Lockfile changed, saving it.");
+                }
+            } else {
+                lockfile.save(context.lockfile_path())?;
+            }
+
+            for c in changes {
+                if c.installed {
+                    println!(
+                        "+ {} ({}) in {}ms",
+                        c.name,
+                        c.version.unwrap(),
+                        c.timing.unwrap().as_millis()
+                    );
+                } else {
+                    println!("- {}", c.name);
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if context.staging_path().is_dir() {
+                fs::remove_dir_all(context.staging_path())?;
+            }
+            Err(e)
+        }
+    }
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     env_logger::Builder::new()
@@ -69,72 +112,10 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan => {
-            let mut context = CliContext::new(&cli.config_file)?;
-            context.load_databases_if_needed()?;
-
-            // TODO: add back rv plan
-            // match resolve_needed(&context) {
-            //     ResolveNeeded::None => {
-            //         println!("Nothing to do");
-            //     }
-            //     ResolveNeeded::RemoveOnly(deps) => {
-            //         println!("Plan successful! The following packages will be removed:");
-            //         for d in deps {
-            //             println!("    - {d}");
-            //         }
-            //     }
-            //     ResolveNeeded::Full => {
-            //         context.load_databases()?;
-            //         // TODO: take into account we might remove some deps, not just installation
-            //         let resolved = resolve_dependencies(&context);
-            //         println!("Plan successful! The following packages will be installed:");
-            //         for d in resolved {
-            //             println!("    {d}");
-            //         }
-            //     }
-            // }
+            _sync(&cli.config_file, true)?;
         }
         Command::Sync => {
-            let mut context = CliContext::new(&cli.config_file)?;
-            context.load_databases_if_needed()?;
-            let resolved = resolve_dependencies(&context);
-
-            match timeit!("Synced dependencies", sync(&context, &resolved)) {
-                Ok(changes) => {
-                    if changes.is_empty() {
-                        println!("Nothing to do");
-                    }
-                    let lockfile =
-                        Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
-                    if let Some(existing_lockfile) = &context.lockfile {
-                        if existing_lockfile != &lockfile {
-                            lockfile.save(context.lockfile_path())?;
-                            log::debug!("Lockfile changed, saving it.");
-                        }
-                    } else {
-                        lockfile.save(context.lockfile_path())?;
-                    }
-
-                    for c in changes {
-                        if c.installed {
-                            println!(
-                                "+ {} ({}) in {}ms",
-                                c.name,
-                                c.version.unwrap(),
-                                c.timing.unwrap().as_millis()
-                            );
-                        } else {
-                            println!("- {}", c.name);
-                        }
-                    }
-                }
-                Err(e) => {
-                    if context.staging_path().is_dir() {
-                        fs::remove_dir_all(context.staging_path())?;
-                    }
-                    return Err(e);
-                }
-            }
+            _sync(&cli.config_file, false)?;
         }
     }
 

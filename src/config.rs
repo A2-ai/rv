@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::lockfile::Source;
 use crate::version::Version;
 use serde::Deserialize;
 
@@ -93,6 +94,31 @@ impl ConfigDependency {
         match self {
             ConfigDependency::Detailed { repository, .. } => repository.as_deref(),
             _ => None,
+        }
+    }
+
+    pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
+        // git: String,
+        // // TODO: validate that either commit, branch or tag is set
+        // commit: Option<String>,
+        // tag: Option<String>,
+        // branch: Option<String>,
+        // directory: Option<String>,
+        match self.clone() {
+            ConfigDependency::Git {
+                git,
+                directory,
+                tag,
+                branch,
+                ..
+            } => Source::Git {
+                git,
+                sha,
+                directory,
+                tag,
+                branch,
+            },
+            _ => unreachable!(),
         }
     }
 

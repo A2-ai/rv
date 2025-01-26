@@ -3,6 +3,7 @@ mod cache;
 mod config;
 mod fs;
 mod git;
+mod link;
 mod lockfile;
 mod package;
 mod r_cmd;
