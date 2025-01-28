@@ -1,0 +1,5 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+R6=2.5.1 (repository(url: http://cran), type=source, from_lockfile=false, path='')

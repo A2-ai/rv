@@ -11,9 +11,13 @@ use fs_err as fs;
 
 use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
-use crate::cli::{http, link::LinkMode, CliContext};
+use crate::cli::{http, CliContext};
+use crate::git::GitReference;
+use crate::link::LinkMode;
+use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+use crate::{Git, GitOperations};
 
 fn is_binary_package(path: &Path, name: &str) -> bool {
     path.join(name)
@@ -93,21 +97,21 @@ fn download_and_install_binary(
     Ok(())
 }
 
-/// Install a package and returns whether it was installed from cache or not
-fn install_package(
+fn install_package_from_repository(
     context: &CliContext,
     pkg: &ResolvedDependency,
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_server = RepoServer::from_url(pkg.repository_url);
-    let pkg_paths = context
-        .cache
-        .get_package_paths(pkg.repository_url, pkg.name, pkg.version);
+    let repo_server = RepoServer::from_url(pkg.source.repository_url());
+    let pkg_paths =
+        context
+            .cache
+            .get_package_paths(pkg.source.repository_url(), &pkg.name, &pkg.version);
     let binary_url = repo_server.get_binary_tarball_path(
-        pkg.name,
-        pkg.version,
-        pkg.path,
+        &pkg.name,
+        &pkg.version,
+        pkg.path.as_deref(),
         &context.cache.r_version,
         &context.cache.system_info,
     );
@@ -120,7 +124,7 @@ fn install_package(
                 pkg.name
             );
             install_via_r(
-                &pkg_paths.source.join(pkg.name),
+                &pkg_paths.source.join(pkg.name.as_ref()),
                 library_dir,
                 &pkg_paths.binary,
             )?;
@@ -128,13 +132,13 @@ fn install_package(
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
             download_and_install_source(
-                &repo_server.get_source_tarball_path(pkg.name, pkg.version, pkg.path),
+                &repo_server.get_source_tarball_path(&pkg.name, &pkg.version, pkg.path.as_deref()),
                 &pkg_paths,
                 library_dir,
-                pkg.name,
+                &pkg.name,
             )?;
         } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, pkg.name)?;
+            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name)?;
         }
     }
 
@@ -142,6 +146,61 @@ fn install_package(
     link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
     Ok(())
+}
+
+fn install_package_from_git(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
+    let link_mode = LinkMode::new();
+    let repo_url = pkg.source.repository_url();
+    let sha = pkg.source.git_sha();
+    log::debug!("Installing packagr from git");
+
+    let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
+
+    if !pkg.installation_status.binary_available() {
+        let git_ops = Git {};
+        // TODO: this won't work if multiple projects are trying to checkout different refs
+        // on the same user at the same time
+        log::debug!("Cloning repo if necessary + checkout");
+        git_ops.clone_and_checkout(repo_url, GitReference::Commit(&sha), &pkg_paths.source)?;
+        // TODO: symlink file in cache directory
+        log::debug!("Building the repo in {:?}", pkg_paths);
+        // If we have a directory, don't forget to set it before building it
+        let source_path = match &pkg.source {
+            Source::Git {
+                directory: Some(dir),
+                ..
+            } => pkg_paths.source.join(&dir),
+            _ => pkg_paths.source,
+        };
+        install_via_r(&source_path, library_dir, &pkg_paths.binary)?;
+    }
+
+    // And then we always link the binary folder into the staging library
+    link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
+
+    Ok(())
+}
+
+/// Install a package and returns whether it was installed from cache or not
+fn install_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+    dry_run: bool,
+) -> Result<()> {
+    if dry_run {
+        return Ok(());
+    }
+
+    match pkg.source {
+        Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
+        Source::Local { .. } => install_package_from_repository(context, pkg, library_dir),
+    }
 }
 
 #[derive(Debug)]
@@ -172,7 +231,6 @@ impl SyncChange {
     }
 }
 
-// sync should only display the changes made, nothing about the deps that are not changing
 /// `sync` will ensure the project library contains only exactly the dependencies from rproject.toml
 /// or from the lockfile if present
 /// There's 2 different paths:
@@ -189,7 +247,11 @@ impl SyncChange {
 /// 2. Create a temp directory if things need to be installed
 /// 2. Send all dependencies to install to worker threads in order
 /// 3. Once a dep is installed, get the next step until it's over or need to wait on other deps
-pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<SyncChange>> {
+pub fn sync(
+    context: &CliContext,
+    deps: &[ResolvedDependency],
+    dry_run: bool,
+) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
     let project_library = context.library_path();
     let staging_path = context.staging_path();
@@ -239,7 +301,7 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
 
     // We can't use references from the BuildPlan since we borrow mutably from it so we
     // create a lookup table for resolved deps by name and use those references across channels.
-    let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
+    let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (&d.name, d)).collect();
     let plan = Arc::new(Mutex::new(plan));
 
     let (ready_sender, ready_receiver) = channel::unbounded();
@@ -249,7 +311,7 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
     {
         let mut plan = plan.lock().unwrap();
         while let BuildStep::Install(d) = plan.get() {
-            ready_sender.send(dep_by_name[d.name]).unwrap();
+            ready_sender.send(dep_by_name[&d.name]).unwrap();
         }
     }
 
@@ -272,13 +334,13 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
                 let mut plan = plan_clone.lock().unwrap();
                 let mut ready = Vec::new();
                 while let BuildStep::Install(d) = plan.get() {
-                    ready.push(dep_by_name[d.name]);
+                    ready.push(dep_by_name[&d.name]);
                 }
                 drop(plan); // Release lock before sending
 
                 for p in ready {
                     if !seen.contains(&p.name) {
-                        seen.insert(p.name);
+                        seen.insert(&p.name);
                         ready_sender_clone.send(p).unwrap();
                     }
                 }
@@ -308,10 +370,10 @@ pub fn sync(context: &CliContext, deps: &[ResolvedDependency]) -> Result<Vec<Syn
                         PackageType::Binary => log::debug!("Installing {} (binary)", dep.name),
                     }
                     let start = std::time::Instant::now();
-                    match install_package(&context, dep, s_path) {
+                    match install_package(&context, dep, s_path, dry_run) {
                         Ok(_) => {
                             let sync_change =
-                                SyncChange::installed(dep.name, dep.version, start.elapsed());
+                                SyncChange::installed(&dep.name, &dep.version, start.elapsed());
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);

@@ -1,0 +1,6 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+--- unresolved --- 
+r6 [listed in rproject.toml]
