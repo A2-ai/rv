@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::Formatter;
+use std::path::Path;
 use std::str::FromStr;
+use std::{fmt, fs};
 
+use crate::consts::DESCRIPTION_FILENAME;
 use crate::version::{Version, VersionRequirement};
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +27,7 @@ const BASE_PACKAGES: [&str; 14] = [
 ];
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
-pub(crate) enum PackageType {
+pub enum PackageType {
     Source,
     Binary,
 }
@@ -220,9 +222,13 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 }
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
-                "License_restricts_use" | "License_is_FOSS" | "Archs" | "Hash" => continue,
-                _ => println!("Unexpected field: {} in PACKAGE file", parts[0]),
+                _ => continue,
             }
+        }
+
+        // We might have some spurious empty packages depending on lines, skip those
+        if name.is_empty() {
+            continue;
         }
 
         package.name = name.clone();
@@ -234,6 +240,44 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     }
 
     packages
+}
+
+/// A DESCRIPTION file is like a PACKAGE file, only that it contains info about a single package
+pub fn parse_description_file(content: &str) -> Option<Package> {
+    // TODO: handle remotes in package for deps
+    let new_content = content
+        .replace("\r\n", "\n")
+        .replace("\n    ", " ")
+        .replace("\n  ", " ")
+        .replace("  ", " ");
+
+    let packages = parse_package_file(new_content.as_str());
+    packages
+        .into_values()
+        .next()
+        .and_then(|p| p.into_iter().next())
+}
+
+pub fn read_local_description_file(
+    folder: impl AsRef<Path>,
+) -> Result<Package, Box<dyn std::error::Error>> {
+    let folder = folder.as_ref();
+    let description_path = folder.join(DESCRIPTION_FILENAME);
+
+    match fs::read_to_string(&description_path) {
+        Ok(content) => {
+            if let Some(package) = parse_description_file(&content) {
+                Ok(package)
+            } else {
+                Err(format!("Invalid DESCRIPTION file at {}", description_path.display()).into())
+            }
+        }
+        Err(e) => Err(format!(
+            "Could not read destination file at {} {e}",
+            description_path.display()
+        )
+        .into()),
+    }
 }
 
 #[cfg(test)]
@@ -306,5 +350,60 @@ mod tests {
             std::fs::read_to_string("src/tests/package_files/cran-binary.PACKAGE").unwrap();
         let packages = parse_package_file(&content);
         assert_eq!(packages.len(), 22361);
+    }
+
+    #[test]
+    fn can_parse_description_file() {
+        let description = r#"
+Package: scicalc
+Title: Scientific Calculations for Quantitative Clinical Pharmacology and Pharmacometrics Analysis
+Version: 0.1.1
+Authors@R: c(
+    person("Matthew", "Smith", , "matthews@a2-ai.com", role = c("aut", "cre")),
+    person("Jenna", "Johnson", , "jenna@a2-ai.com", role = "aut"),
+    person("Devin", "Pastoor", , "devin@a2-ai.com", role = "aut"),
+    person("Wesley", "Cummings", , "wes@a2-ai.com", role = "ctb"),
+    person("Emily", "Schapiro", , "emily@a2-ai.com", role = "ctb"),
+    person("Ryan", "Crass", , "ryan@a2-ai.com", role = "ctb"),
+    person("Jonah", "Lyon", , "jonah@a2-ai.com", role = "ctb"),
+    person("Elizabeth", "LeBeau", ,"elizabeth@a2-ai.com", role = "ctb")
+  )
+Description: Utility functions helpful for reproducible scientific calculations.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    arrow,
+    checkmate,
+    digest,
+    dplyr,
+    fs,
+    haven,
+    magrittr,
+    readr,
+    readxl,
+    rlang,
+    stats,
+    stringr
+Suggests:
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    ggplot2,
+    here,
+    purrr,
+    pzfx,
+    tools,
+    tidyr
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+URL: https://a2-ai.github.io/scicalc
+        "#;
+        let package = parse_description_file(&description).unwrap();
+        assert_eq!(package.name, "scicalc");
+        assert_eq!(package.version.original, "0.1.1");
+        assert_eq!(package.imports.len(), 12);
+        assert_eq!(package.suggests.len(), 9);
     }
 }

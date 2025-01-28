@@ -5,7 +5,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use crate::fs::copy_folder;
+use crate::link::{LinkError, LinkMode};
 use crate::version::Version;
 use regex::Regex;
 
@@ -67,12 +67,15 @@ impl RCmd for RCommandLine {
 
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
+        // Since it's right next to each other, we symlink if possible except on Windows
         let tmp_dir = tempfile::tempdir().map_err(|e| InstallError {
             source: InstallErrorKind::TempDir(e),
         })?;
-        copy_folder(source_folder, tmp_dir.path()).map_err(|e| InstallError {
-            source: InstallErrorKind::TempDir(e),
-        })?;
+        let link = LinkMode::symlink_if_possible();
+        link.link_files("tmp_build", source_folder, tmp_dir.path())
+            .map_err(|e| InstallError {
+                source: InstallErrorKind::LinkError(e),
+            })?;
 
         let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
@@ -188,6 +191,8 @@ pub enum InstallErrorKind {
         error: std::io::Error,
         path: PathBuf,
     },
+    #[error(transparent)]
+    LinkError(LinkError),
     #[error("Failed to create or copy files to temp directory: {0}")]
     TempDir(std::io::Error),
     #[error("Command failed: {0}")]

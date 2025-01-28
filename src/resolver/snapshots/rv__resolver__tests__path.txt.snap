@@ -1,0 +1,5 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+MASS=7.3-61 (repository(url: http://posit), type=source, from_lockfile=false, path='4.5.0/Recommended')

@@ -119,9 +119,30 @@ impl DiskCache {
 
     pub fn get_package_paths(&self, repo_url: &str, name: &str, version: &str) -> PackagePaths {
         PackagePaths {
-            binary: self.get_binary_package_path(repo_url, name, version),
             source: self.get_source_package_path(repo_url, name, version),
+            binary: self.get_binary_package_path(repo_url, name, version),
         }
+    }
+
+    pub fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
+        let encoded = encode_repository_url(repo_url);
+        self.root.join("git").join(encoded)
+    }
+
+    pub fn get_binary_git_package_path(&self, repo_url: &str, sha: &str) -> PathBuf {
+        self.get_repo_root_binary_dir(repo_url).join(sha)
+    }
+
+    pub fn get_git_package_paths(&self, repo_url: &str, sha: &str) -> PackagePaths {
+        PackagePaths {
+            source: self.get_source_git_package_path(repo_url),
+            binary: self.get_binary_git_package_path(repo_url, sha),
+        }
+    }
+
+    pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
+        let encoded = encode_repository_url(repo_url);
+        self.root.join("git").join("builds").join(encoded).join(sha)
     }
 }
 
@@ -169,5 +190,21 @@ impl Cache for DiskCache {
             (false, true) => InstallationStatus::Binary,
             (false, false) => InstallationStatus::Absent,
         }
+    }
+
+    fn get_git_installation_status(&self, repo_url: &str, sha: &str) -> InstallationStatus {
+        let paths = self.get_git_package_paths(repo_url, sha);
+
+        // TODO: check if we need to add the name for binary path
+        match (paths.source.is_dir(), paths.binary.is_dir()) {
+            (true, true) => InstallationStatus::Both,
+            (true, false) => InstallationStatus::Source,
+            (false, true) => InstallationStatus::Binary,
+            (false, false) => InstallationStatus::Absent,
+        }
+    }
+
+    fn get_git_clone_path(&self, git_url: &str) -> PathBuf {
+        self.get_source_git_package_path(git_url)
     }
 }

@@ -21,23 +21,23 @@ pub struct BuildPlan<'a> {
 
 impl<'a> BuildPlan<'a> {
     pub fn new(deps: &'a [ResolvedDependency<'a>]) -> Self {
-        let by_name: HashMap<_, _> = deps.iter().map(|d| (d.name, d)).collect();
+        let by_name: HashMap<_, _> = deps.iter().map(|d| (d.name.as_ref(), d)).collect();
         let mut full_deps = HashMap::new();
 
         for dep in deps {
             let mut all_deps = HashSet::new();
 
-            let mut queue = VecDeque::from_iter(dep.dependencies.iter());
+            let mut queue = VecDeque::from_iter(dep.dependencies.iter().map(|x| x.as_ref()));
             while let Some(dep_name) = queue.pop_front() {
-                all_deps.insert(*dep_name);
+                all_deps.insert(dep_name);
                 for d in &by_name[dep_name].dependencies {
-                    if !all_deps.contains(d) {
-                        queue.push_back(d);
+                    if !all_deps.contains(d.as_ref()) {
+                        queue.push_back(d.as_ref());
                     }
                 }
             }
 
-            full_deps.insert(dep.name, all_deps);
+            full_deps.insert(dep.name.as_ref(), all_deps);
         }
 
         Self {
@@ -55,11 +55,11 @@ impl<'a> BuildPlan<'a> {
             .iter()
             .find(|d| d.name == name)
             .expect("to find the dep");
-        self.installed.insert(pkg.name);
-        self.installing.remove(pkg.name);
+        self.installed.insert(pkg.name.as_ref());
+        self.installing.remove(pkg.name.as_ref());
 
         for (_, deps) in self.full_deps.iter_mut() {
-            deps.remove(pkg.name);
+            deps.remove(pkg.name.as_ref());
         }
     }
 
@@ -76,7 +76,7 @@ impl<'a> BuildPlan<'a> {
     }
 
     pub fn all_dependencies_names(&self) -> HashSet<&str> {
-        self.deps.iter().map(|r| r.name).collect()
+        self.deps.iter().map(|r| r.name.as_ref()).collect()
     }
 
     /// get a package to install, an enum {Package, Wait, Done}
@@ -107,15 +107,19 @@ impl<'a> BuildPlan<'a> {
 mod tests {
     use super::*;
     use crate::cache::InstallationStatus;
+    use crate::lockfile::Source;
     use crate::package::PackageType;
+    use std::borrow::Cow;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {
         ResolvedDependency {
-            name,
-            dependencies,
+            name: Cow::from(name),
+            dependencies: dependencies.into_iter().map(Cow::from).collect(),
             suggests: Vec::new(),
-            version: "",
-            repository_url: "",
+            version: Cow::Borrowed(""),
+            source: Source::Repository {
+                repository: "".to_string(),
+            },
             install_suggests: false,
             force_source: false,
             kind: PackageType::Source,

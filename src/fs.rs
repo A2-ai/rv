@@ -14,7 +14,7 @@ pub(crate) fn copy_folder(
         let entry = entry?;
         let path = entry.path();
 
-        let relative = path.strip_prefix(&from).expect("walkdir starts with root");
+        let relative = path.strip_prefix(from).expect("walkdir starts with root");
         let out_path = to.join(relative);
 
         if entry.file_type().is_dir() {

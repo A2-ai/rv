@@ -1,0 +1,7 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+unmet-version-req=0.0.1 (repository(url: ), type=source, from_lockfile=false, path='')
+--- unresolved --- 
+zzlite (>= 1.0)  [required by: unmet-version-req]

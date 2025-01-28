@@ -14,7 +14,7 @@ use crate::fs::copy_folder;
 const LINK_ENV_NAME: &str = "RV_LINK_MODE";
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum LinkError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Failed to walk the directory")]
@@ -53,7 +53,7 @@ impl Default for LinkMode {
 impl LinkMode {
     pub fn new() -> Self {
         // First try to find out if the mode is set in the env
-        let from_env = if let Some(val) = env::var(LINK_ENV_NAME).ok() {
+        let from_env = if let Ok(val) = env::var(LINK_ENV_NAME) {
             match val.to_lowercase().as_str() {
                 "copy" => Some(Self::Copy),
                 "clone" => Some(Self::Clone),
@@ -66,6 +66,16 @@ impl LinkMode {
         };
 
         from_env.unwrap_or_default()
+    }
+
+    /// Try to symlink if possible and fallback to copy on Windows
+    /// Windows requires admin rights for symlink so it might not work oob
+    pub fn symlink_if_possible() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::Copy
+        } else {
+            Self::Symlink
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -81,19 +91,21 @@ impl LinkMode {
         &self,
         package_name: &str,
         source: impl AsRef<Path>,
-        library: impl AsRef<Path>,
-    ) -> Result<(), Error> {
+        destination: impl AsRef<Path>,
+    ) -> Result<(), LinkError> {
         // If it's already exists for some reasons (eg failed halfway before), delete it first
-        let pkg_in_lib = library.as_ref().join(package_name);
+        let pkg_in_lib = destination.as_ref().join(package_name);
         if pkg_in_lib.is_dir() {
             fs::remove_dir_all(&pkg_in_lib)?;
         }
 
         let res = match self {
-            LinkMode::Copy => copy_folder(source.as_ref(), library.as_ref()).map_err(Into::into),
-            LinkMode::Clone => clone_package(source.as_ref(), library.as_ref()),
-            LinkMode::Hardlink => hardlink_package(source.as_ref(), library.as_ref()),
-            LinkMode::Symlink => symlink_package(source.as_ref(), library.as_ref()),
+            LinkMode::Copy => {
+                copy_folder(source.as_ref(), destination.as_ref()).map_err(Into::into)
+            }
+            LinkMode::Clone => clone_package(source.as_ref(), destination.as_ref()),
+            LinkMode::Hardlink => hardlink_package(source.as_ref(), destination.as_ref()),
+            LinkMode::Symlink => symlink_package(source.as_ref(), destination.as_ref()),
         };
 
         if let Err(e) = res {
@@ -108,7 +120,7 @@ impl LinkMode {
                 "Failed to {} files: {e}. Falling back to copying files.",
                 self.name()
             );
-            copy_folder(source.as_ref(), library.as_ref())?;
+            copy_folder(source.as_ref(), destination.as_ref())?;
         }
 
         Ok(())
@@ -116,7 +128,7 @@ impl LinkMode {
 }
 
 /// macOS can copy directories recursively but Windows/Linux need to clone file by file
-fn clone_recursive(source: &Path, library: &Path, entry: &DirEntry) -> Result<(), Error> {
+fn clone_recursive(source: &Path, library: &Path, entry: &DirEntry) -> Result<(), LinkError> {
     let from = entry.path();
     let to = library.join(from.strip_prefix(source).unwrap());
 
@@ -128,12 +140,12 @@ fn clone_recursive(source: &Path, library: &Path, entry: &DirEntry) -> Result<()
         return Ok(());
     }
 
-    reflink::reflink(&from, &to).map_err(|err| Error::Reflink { from, to, err })?;
+    reflink::reflink(&from, &to).map_err(|err| LinkError::Reflink { from, to, err })?;
     Ok(())
 }
 
 // Taken from uv
-fn clone_package(source: &Path, library: &Path) -> Result<(), Error> {
+fn clone_package(source: &Path, library: &Path) -> Result<(), LinkError> {
     for entry in fs::read_dir(source)? {
         clone_recursive(source, library, &entry?)?;
     }
@@ -142,13 +154,13 @@ fn clone_package(source: &Path, library: &Path) -> Result<(), Error> {
 }
 
 // Same as copy but hardlinking instead
-fn hardlink_package(source: &Path, library: &Path) -> Result<(), Error> {
+fn hardlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
     for entry in WalkDir::new(source) {
         let entry = entry?;
         let path = entry.path();
 
         let relative = path
-            .strip_prefix(&source)
+            .strip_prefix(source)
             .expect("walkdir starts with root");
         let out_path = library.join(relative);
 
@@ -163,13 +175,13 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn symlink_package(source: &Path, library: &Path) -> Result<(), Error> {
+fn symlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
     for entry in WalkDir::new(source) {
         let entry = entry?;
         let path = entry.path();
 
         let relative = path
-            .strip_prefix(&source)
+            .strip_prefix(source)
             .expect("walkdir starts with root");
         let out_path = library.join(relative);
 
