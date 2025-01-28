@@ -1,5 +1,5 @@
-mod sync;
 mod init;
+mod sync;
 
-pub use sync::sync;
 pub use init::init;
+pub use sync::sync;

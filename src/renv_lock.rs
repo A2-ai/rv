@@ -23,7 +23,7 @@ enum RenvSource {
     Repository,
     GitHub,
     Local,
-    Other(String)
+    Other(String),
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -49,7 +49,7 @@ struct PackageInfo {
     remote_url: Option<String>, // when source is Local
     #[serde(default)]
     requirements: Vec<String>,
-    hash: String
+    hash: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
