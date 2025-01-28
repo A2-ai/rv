@@ -1,12 +1,11 @@
 [project]
 name = "project_name"
+# Can specify which version of R is required, could be used later in rv as R version manager?
+r_version = "4.4.1"
 description = ""
-version = "2.4"
 authors = [{name = "Bob", email="hello@acme.org", maintainer = true}]
 license = "MIT"
 keywords = []
-# Can specify which version of R is required, could be used later in rv as R version manager?
-r_version = "4.4.1"
 
 # Are suggested deps also enforcing repository? Only used if you're making a library
 suggests = []
@@ -20,7 +19,9 @@ repositories = [
 dependencies = [
     "dplyr",
     { name = "some-package", repository = "mpn", install_suggestions = true },
-    { name = "some-package", url = "mpn"},
+    { name = "some-package", path = "../mpn", install_suggestions = true },
+    { name = "some-package", git = "https://github.com/A2-ai/scicalc", tag = "v0.1.1", install_suggestions = true },
+    { name = "some-package", git = "https://github.com/A2-ai/scicalc", commit = "bc50e550e432c3c620714f30dd59115801f89995", install_suggestions = true },
 ]
 
 [project.urls]

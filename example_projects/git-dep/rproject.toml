@@ -1,9 +1,9 @@
 [project]
-name = "simple"
+name = "git-dep"
 r_version = "4.4"
 repositories = [
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
 ]
 dependencies = [
-    "dplyr",
+    { name = "scicalc", git = "https://github.com/A2-ai/scicalc", tag ="v0.1.1" },
 ]
