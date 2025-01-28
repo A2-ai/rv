@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: r-lib/httr@v0.4
+expression: "format!(\"{name} => {remote:?}\")"
+---
+httr => Git { url: "https://github.com/r-lib/httr", reference: Some("v0.4"), pull_request: None, directory: None }
