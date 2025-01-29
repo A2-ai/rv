@@ -1,8 +1,16 @@
-use std::{collections::HashMap, error::Error, path::Path, str::FromStr};
+use std::{
+    collections::HashMap,
+    error::Error,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use serde::Deserialize;
 
-use crate::{version::{Operator, VersionRequirement}, RepositoryDatabase, Version};
+use crate::{
+    version::{Operator, VersionRequirement},
+    RepositoryDatabase, Version,
+};
 
 // similar to crate::config, but does not return Option since Version must be present
 fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
@@ -19,7 +27,7 @@ where
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 // as enum since logic to resolve depends on this
-pub(crate) enum RenvSource {
+enum RenvSource {
     Repository,
     GitHub,
     Local,
@@ -28,55 +36,55 @@ pub(crate) enum RenvSource {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct PackageInfo {
-    pub(crate) package: String,
+struct PackageInfo {
+    package: String,
     #[serde(deserialize_with = "deserialize_version")]
-    pub(crate) version: Version,
-    pub(crate) source: RenvSource,
+    version: Version,
+    source: RenvSource,
     #[serde(default)]
-    pub(crate) repository: Option<String>, // when source is Repository
+    repository: Option<String>, // when source is Repository
     #[serde(default)]
     remote_type: Option<String>, // when source is GitHub
     #[serde(default)]
-    pub(crate) remote_host: Option<String>, // when source is GitHub
+    remote_host: Option<String>, // when source is GitHub
     #[serde(default)]
-    pub(crate) remote_repo: Option<String>, // when source is GitHub
+    remote_repo: Option<String>, // when source is GitHub
     #[serde(default)]
-    pub(crate) remote_username: Option<String>, // when source is GitHub
+    remote_username: Option<String>, // when source is GitHub
     #[serde(default)]
-    pub(crate) remote_sha: Option<String>, // when source is GitHub
+    remote_sha: Option<String>, // when source is GitHub
     #[serde(default)]
-    pub(crate) remote_url: Option<String>, // when source is Local
+    remote_url: Option<String>, // when source is Local
     #[serde(default)]
-    pub(crate) requirements: Vec<String>,
+    requirements: Vec<String>,
     hash: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct RenvRepository {
-    pub(crate) name: String,
+struct RenvRepository {
+    name: String,
     #[serde(rename = "URL")]
-    pub(crate) url: String,
+    url: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct RInfo {
+struct RInfo {
     #[serde(deserialize_with = "deserialize_version")]
-    pub(crate) version: Version,
-    pub(crate) repositories: Vec<RenvRepository>,
+    version: Version,
+    repositories: Vec<RenvRepository>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct RenvLock {
-    pub(crate) r: RInfo,
-    pub(crate) packages: HashMap<String, PackageInfo>,
+struct RenvLock {
+    r: RInfo,
+    packages: HashMap<String, PackageInfo>,
 }
 
 impl RenvLock {
-    pub fn parse_renv_lock<P: AsRef<Path>>(path: P) -> Result<Self, FromJsonFileError> {
+    fn parse_renv_lock<P: AsRef<Path>>(path: P) -> Result<Self, FromJsonFileError> {
         let path = path.as_ref();
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
@@ -120,6 +128,39 @@ impl RenvLock {
                         }),
                     }
                 }
+                RenvSource::GitHub => {
+                    let res = resolve_github(pkg_info);
+                    match res {
+                        Ok((url, sha)) => resolved.push(ResolvedRenv {
+                            package_info: pkg_info,
+                            source: Source::GitHub { url, sha },
+                        }),
+                        Err(e) => unresolved.push(UnresolvedRenv {
+                            package_info: pkg_info,
+                            error: e,
+                        }),
+                    }
+                }
+
+                // Example package in renv.lock of Source Local
+                // "rv.git.pkgA": {
+                //     "Package": "rv.git.pkgA",
+                //     "Version": "0.0.0.9000",
+                //     "Source": "Local",
+                //     "RemoteType": "local",
+                //     "RemoteUrl": "src/tests/renv/rv.git.pkgA_0.0.0.9000.tar.gz",
+                //     "Hash": "39e317a9ec5437bd5ce021ad56da04b6"
+                // }
+                RenvSource::Local => match &pkg_info.remote_url {
+                    Some(path) => resolved.push(ResolvedRenv {
+                        package_info: pkg_info,
+                        source: Source::Local(PathBuf::from(path)),
+                    }),
+                    None => unresolved.push(UnresolvedRenv {
+                        package_info: pkg_info,
+                        error: "Path not specified".into(),
+                    }),
+                },
                 _ => unresolved.push(UnresolvedRenv {
                     package_info: pkg_info,
                     error: "Unsupported source".into(),
@@ -144,8 +185,8 @@ impl RenvLock {
 // }
 fn resolve_repository<'a>(
     pkg_info: &PackageInfo,
-    repositories: &'a Vec<RenvRepository>,
-    repository_databases: &Vec<(RepositoryDatabase, bool)>,
+    repositories: &'a [RenvRepository],
+    repository_databases: &[(RepositoryDatabase, bool)],
     r_version: &Version,
 ) -> Result<&'a RenvRepository, Box<dyn std::error::Error>> {
     // pair the repository with its database
@@ -186,11 +227,15 @@ fn resolve_repository<'a>(
         .into_iter()
         .find_map(|(repo, repo_db, force_source)| {
             repo_db.find_package(
-                &pkg_info.package, 
-                Some(&VersionRequirement::new(pkg_info.version.clone(), Operator::Equal)),
-                r_version, 
-                *force_source)?;
-            
+                &pkg_info.package,
+                Some(&VersionRequirement::new(
+                    pkg_info.version.clone(),
+                    Operator::Equal,
+                )),
+                r_version,
+                *force_source,
+            )?;
+
             Some(repo)
         });
 
@@ -199,6 +244,54 @@ fn resolve_repository<'a>(
     };
 
     Err("Not found in any repository".into())
+}
+
+// Example package in renv.lock of Source GitHub
+//   "ghqc": {
+//     "Package": "ghqc",
+//     "Version": "0.3.2",
+//     "Source": "GitHub",
+//     "RemoteType": "github",
+//     "RemoteHost": "api.github.com",
+//     "RemoteRepo": "ghqc",
+//     "RemoteUsername": "a2-ai",
+//     "RemoteSha": "55c23eb6a444542dab742d3d37c7b65af7b12e38",
+//     "Requirements": [
+//       "R",
+//       "cli",
+//       "fs",
+//       "glue",
+//       "httpuv",
+//       "rlang",
+//       "rstudioapi",
+//       "withr",
+//       "yaml"
+//     ],
+//     "Hash": "dcba3cb6539ee3cfce6218049c5016cc"
+//   }
+fn resolve_github(pkg_info: &PackageInfo) -> Result<(String, String), Box<dyn Error>> {
+    let remote_host = pkg_info
+        .remote_host
+        .as_deref()
+        .ok_or("Missing remote host")?;
+    let remote_repo = pkg_info.remote_repo.as_deref().ok_or("Missing repo")?;
+    let remote_username = pkg_info
+        .remote_username
+        .as_deref()
+        .ok_or("Missing organization/username")?;
+    let remote_sha = pkg_info.remote_sha.as_deref().ok_or("Missing sha")?;
+
+    let remote_host = remote_host
+        .trim_start_matches("api.") // trim base github api
+        .trim_end_matches("/api/v3"); // trim github enterprise api
+
+    Ok((
+        format!(
+            "https://{}/{}/{}",
+            remote_host, remote_username, remote_repo
+        ),
+        remote_sha.to_string(),
+    ))
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -216,6 +309,8 @@ struct UnresolvedRenv<'a> {
 #[derive(Debug, PartialEq, Clone)]
 enum Source<'a> {
     Repository(&'a RenvRepository),
+    GitHub { url: String, sha: String },
+    Local(PathBuf),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -248,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_renv_resolve() {
-        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/simple/renv.lock").unwrap();
+        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/multi/renv.lock").unwrap();
         let repos = renv_lock
             .r
             .repositories
@@ -259,5 +354,6 @@ mod tests {
         let repo_db = load_databases(&repos, &cache).unwrap();
         let (resolved, unresolved) = renv_lock.resolve(repo_db);
         println!("{:#?}", resolved);
+        println!("{:#?}", unresolved);
     }
 }
