@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: "github::tidyverse/ggplot2"
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-ggplot2 => Git { url: "https://github.com/tidyverse/ggplot2", reference: None, pull_request: None, directory: None }
+Some("ggplot2") => Git { url: "https://github.com/tidyverse/ggplot2", reference: None, pull_request: None, directory: None }

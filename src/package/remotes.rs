@@ -42,7 +42,7 @@ pub(crate) enum PackageRemote {
 }
 
 impl PackageRemote {
-    fn is_supported(&self) -> bool {
+    pub(crate) fn is_supported(&self) -> bool {
         matches!(self, Self::Git { .. })
     }
 }
@@ -97,7 +97,7 @@ fn parse_github_like_url(base_url: &str, content: &str) -> (String, PackageRemot
     }
 }
 
-pub(crate) fn parse_remote(content: &str) -> (String, PackageRemote) {
+pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
     let mut package_name = String::new();
     let mut content = content;
 
@@ -150,9 +150,9 @@ pub(crate) fn parse_remote(content: &str) -> (String, PackageRemote) {
     };
 
     if package_name.is_empty() {
-        (pkg_name, remote)
+        (if !pkg_name.is_empty() { Some(pkg_name) } else { None }, remote)
     } else {
-        (package_name, remote)
+        (Some(package_name), remote)
     }
 }
 
@@ -188,7 +188,7 @@ mod tests {
             insta::with_settings!({
                 description => t,
             }, {
-                insta::assert_snapshot!(format!("{name} => {remote:?}"));
+                insta::assert_snapshot!(format!("{name:?} => {remote:?}"));
             });
         }
     }

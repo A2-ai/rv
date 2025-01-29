@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: clindata=Gilead-BioStats/clindata
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-clindata => Git { url: "https://github.com/Gilead-BioStats/clindata", reference: None, pull_request: None, directory: None }
+Some("clindata") => Git { url: "https://github.com/Gilead-BioStats/clindata", reference: None, pull_request: None, directory: None }
