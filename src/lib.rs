@@ -8,7 +8,6 @@ mod lockfile;
 mod package;
 mod r_cmd;
 mod renv;
-//mod renv_resolve;
 mod repo_path;
 mod repository;
 mod resolver;
