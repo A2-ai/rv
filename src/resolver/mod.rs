@@ -1,13 +1,13 @@
-use std::borrow::Cow;
-use std::collections::{HashSet, VecDeque};
-
 use crate::VersionRequirement;
 use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase, Version};
+use std::borrow::Cow;
+use std::collections::{HashSet, VecDeque};
 
 mod dependency;
 
 use crate::git::GitReference;
-use crate::package::parse_description_file_in_folder;
+use crate::lockfile::Source;
+use crate::package::{parse_description_file_in_folder, PackageRemote};
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -30,6 +30,7 @@ struct QueueItem<'d> {
     install_suggestions: bool,
     force_source: bool,
     parent: Option<Cow<'d, str>>,
+    remote: Option<PackageRemote>,
 }
 
 impl<'d> QueueItem<'d> {
@@ -155,17 +156,35 @@ impl<'d> Resolver<'d> {
         &self,
         item: &QueueItem<'d>,
         repo_url: &str,
-        git_ref: GitReference,
+        directory: Option<&str>,
+        git_ref: Option<GitReference>,
         git_ops: &'d impl GitOperations,
         cache: &'d impl Cache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+        log::debug!("Cloning {repo_url} with ref {git_ref:?}");
         let clone_path = cache.get_git_clone_path(repo_url);
 
         match git_ops.clone_and_checkout(repo_url, git_ref.clone(), &clone_path) {
             Ok(sha) => {
-                let package = parse_description_file_in_folder(&clone_path)?;
+                let package_path = if let Some(d) = directory {
+                    clone_path.join(d)
+                } else {
+                    clone_path
+                };
+                let package = parse_description_file_in_folder(&package_path)?;
                 let status = cache.get_git_installation_status(repo_url, &sha);
-                let source = item.dep.unwrap().as_git_source_with_sha(sha);
+                let source = if let Some(dep) = item.dep {
+                    dep.as_git_source_with_sha(sha)
+                } else {
+                    // If it's coming from a remote, only store the sha
+                    Source::Git {
+                        git: repo_url.to_string(),
+                        sha,
+                        directory: None,
+                        tag: None,
+                        branch: None,
+                    }
+                };
                 let (resolved_dep, deps) = ResolvedDependency::from_git_package(
                     &package,
                     source,
@@ -184,6 +203,13 @@ impl<'d> Resolver<'d> {
                         );
                         i.version_requirement =
                             p.version_requirement().map(|x| Cow::Owned(x.clone()));
+                        for (pkg_name, remote) in resolved_dep.remotes.values() {
+                            if let Some(n) = pkg_name {
+                                if p.name() == n.as_str() {
+                                    i.remote = Some(remote.clone());
+                                }
+                            }
+                        }
                         i
                     })
                     .collect();
@@ -215,6 +241,7 @@ impl<'d> Resolver<'d> {
                 install_suggestions: d.install_suggestions(),
                 force_source: d.force_source(),
                 parent: None,
+                remote: None,
             })
             .collect();
 
@@ -236,6 +263,56 @@ impl<'d> Resolver<'d> {
             // Then we handle it differently depending on the source but even if we fail to find
             // something, we will consider it processed
             processed.insert(item.name.to_string());
+
+            // But first, we check if the item has a remote and use that instead
+            if let Some(ref remote) = item.remote {
+                log::debug!("Package {} has a remote: {:?}", item.name, remote);
+                match remote {
+                    PackageRemote::Git {
+                        url,
+                        reference,
+                        // TODO: support PR somehow
+                        // pull_request,
+                        directory,
+                        ..
+                    } => {
+                        log::debug!("Package {} has a git repository: {:?}", item.name, url);
+                        match self.git_lookup(
+                            &item,
+                            url,
+                            directory.as_deref(),
+                            reference.clone().as_deref().map(GitReference::Unknown),
+                            git_ops,
+                            cache,
+                        ) {
+                            Ok((resolved_dep, items)) => {
+                                result.found.push(resolved_dep);
+                                queue.extend(items);
+                            }
+                            Err(e) => {
+                                result.failed.push(UnresolvedDependency {
+                                    name: item.name.clone(),
+                                    error: Some(format!("{e:?}")),
+                                    version_requirement: item.version_requirement.clone(),
+                                    parent: item.parent.clone(),
+                                    remote: Some(remote.clone()),
+                                });
+                            }
+                        }
+                    }
+                    _ => {
+                        result.failed.push(UnresolvedDependency {
+                            name: item.name.clone(),
+                            error: Some("Remote not supported".to_string()),
+                            version_requirement: item.version_requirement.clone(),
+                            parent: item.parent.clone(),
+                            remote: Some(remote.clone()),
+                        });
+                    }
+                }
+                continue;
+            }
+
             match item.dep {
                 None
                 | Some(ConfigDependency::Detailed { .. })
@@ -244,11 +321,13 @@ impl<'d> Resolver<'d> {
                         result.found.push(resolved_dep);
                         queue.extend(items);
                     } else {
+                        log::debug!("Didn't find {}", item.name);
                         result.failed.push(UnresolvedDependency {
                             name: item.name.clone(),
                             error: None,
                             version_requirement: item.version_requirement.clone(),
                             parent: item.parent.clone(),
+                            remote: None,
                         });
                     }
                 }
@@ -258,6 +337,7 @@ impl<'d> Resolver<'d> {
                     tag,
                     commit,
                     branch,
+                    directory,
                     ..
                 }) => {
                     let git_ref = if let Some(c) = commit {
@@ -270,7 +350,14 @@ impl<'d> Resolver<'d> {
                         unreachable!("Got an empty git reference")
                     };
 
-                    match self.git_lookup(&item, git, git_ref, git_ops, cache) {
+                    match self.git_lookup(
+                        &item,
+                        git,
+                        directory.as_deref(),
+                        Some(git_ref),
+                        git_ops,
+                        cache,
+                    ) {
                         Ok((resolved_dep, items)) => {
                             result.found.push(resolved_dep);
                             queue.extend(items);
@@ -278,9 +365,10 @@ impl<'d> Resolver<'d> {
                         Err(e) => {
                             result.failed.push(UnresolvedDependency {
                                 name: item.name.clone(),
-                                error: Some(format!("{e}")),
+                                error: Some(format!("{e:?}")),
                                 version_requirement: item.version_requirement.clone(),
                                 parent: item.parent.clone(),
+                                remote: None,
                             });
                         }
                     }
@@ -330,7 +418,7 @@ mod tests {
         fn clone_and_checkout(
             &self,
             url: &str,
-            git_ref: GitReference<'_>,
+            git_ref: Option<GitReference<'_>>,
             destination: impl AsRef<Path>,
         ) -> Result<String, Error> {
             Ok("abc".to_string())

@@ -24,7 +24,7 @@ impl RemoteType {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub(crate) enum PackageRemote {
+pub enum PackageRemote {
     Git {
         url: String,
         // Could be a tag, a branch or a commit but we can't know
@@ -39,12 +39,6 @@ pub(crate) enum PackageRemote {
     Bioc(String),
     Local(String),
     Other(String),
-}
-
-impl PackageRemote {
-    pub(crate) fn is_supported(&self) -> bool {
-        matches!(self, Self::Git { .. })
-    }
 }
 
 // Not for raw git urls.
@@ -130,7 +124,7 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
     // Then the rest will depend on the remote type
     let (pkg_name, remote) = match remote_type {
         RemoteType::GitHub | RemoteType::GitLab | RemoteType::Bitbucket => {
-            parse_github_like_url(remote_type.git_url().unwrap(), &content)
+            parse_github_like_url(remote_type.git_url().unwrap(), content)
         }
         RemoteType::Git => {
             if content.contains("git@") {
@@ -139,7 +133,7 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
                 let (pkg_name, remote) = parse_github_like_url(&format!("{}:", parts[0]), parts[1]);
                 (pkg_name.trim_end_matches(".git").to_string(), remote)
             } else {
-                parse_github_like_url("", &content)
+                parse_github_like_url("", content)
             }
         }
         RemoteType::Svn => (String::new(), PackageRemote::Other(content.to_string())),
@@ -150,7 +144,14 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
     };
 
     if package_name.is_empty() {
-        (if !pkg_name.is_empty() { Some(pkg_name) } else { None }, remote)
+        (
+            if !pkg_name.is_empty() {
+                Some(pkg_name)
+            } else {
+                None
+            },
+            remote,
+        )
     } else {
         (Some(package_name), remote)
     }

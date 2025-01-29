@@ -126,6 +126,7 @@ mod tests {
             installation_status: InstallationStatus::Binary,
             path: None,
             found_in_lockfile: false,
+            remotes: HashMap::new(),
         }
     }
 

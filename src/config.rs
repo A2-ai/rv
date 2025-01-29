@@ -33,6 +33,7 @@ impl Repository {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
+#[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
     Simple(String),
     Git {

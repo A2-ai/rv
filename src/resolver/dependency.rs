@@ -1,15 +1,16 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
-use crate::package::{InstallationDependencies, Package, PackageType};
+use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::VersionRequirement;
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
 /// will be borrowed
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
     pub(crate) version: Cow<'d, str>,
@@ -22,6 +23,8 @@ pub struct ResolvedDependency<'d> {
     pub(crate) installation_status: InstallationStatus,
     pub(crate) path: Option<Cow<'d, str>>,
     pub(crate) found_in_lockfile: bool,
+    // Remotes are only for local/git deps so the values will always be owned
+    pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -62,6 +65,7 @@ impl<'d> ResolvedDependency<'d> {
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             found_in_lockfile: true,
             installation_status,
+            remotes: HashMap::new(),
         }
     }
 
@@ -98,6 +102,7 @@ impl<'d> ResolvedDependency<'d> {
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             found_in_lockfile: false,
             installation_status,
+            remotes: HashMap::new(),
         };
 
         (res, deps)
@@ -133,6 +138,7 @@ impl<'d> ResolvedDependency<'d> {
             source,
             installation_status,
             install_suggests,
+            remotes: package.remotes.clone(),
         };
 
         (res, deps)
@@ -162,6 +168,7 @@ pub struct UnresolvedDependency<'d> {
     pub(crate) version_requirement: Option<Cow<'d, VersionRequirement>>,
     // The first parent we encountered requiring that package
     pub(crate) parent: Option<Cow<'d, str>>,
+    pub(crate) remote: Option<PackageRemote>,
 }
 
 impl<'d> UnresolvedDependency<'d> {

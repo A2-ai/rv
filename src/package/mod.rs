@@ -9,9 +9,9 @@ mod parser;
 mod remotes;
 mod version;
 
-use crate::package::remotes::PackageRemote;
 pub use description::parse_description_file_in_folder;
 pub use parser::parse_package_file;
+pub use remotes::PackageRemote;
 pub use version::{deserialize_version, Version, VersionRequirement};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
@@ -119,4 +119,12 @@ impl Package {
             suggests,
         }
     }
+
+    // pub fn invalid_remotes(&self) -> bool {
+    //     let mut issues = Vec::new();
+    //
+    //     for (original, (name, remote)) in &self.remotes {
+    //
+    //     }
+    // }
 }
