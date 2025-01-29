@@ -4,7 +4,7 @@ use std::fmt;
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageType};
-use crate::version::VersionRequirement;
+use crate::VersionRequirement;
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority

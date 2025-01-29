@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "local::/pkgs/testthat"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+ => Local("/pkgs/testthat")

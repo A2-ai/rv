@@ -3,19 +3,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::lockfile::Source;
-use crate::version::Version;
+use crate::package::{deserialize_version, Version};
 use serde::Deserialize;
-
-fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v: String = Deserialize::deserialize(deserializer)?;
-    match Version::from_str(&v) {
-        Ok(v) => Ok(v),
-        Err(_) => Err(serde::de::Error::custom("Invalid version number")),
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

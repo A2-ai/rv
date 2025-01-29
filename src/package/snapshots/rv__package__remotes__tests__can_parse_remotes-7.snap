@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "git::git@bitbucket.org:djnavarro/lsr.git"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+lsr => Git { url: "git@bitbucket.org:djnavarro/lsr.git", reference: None, pull_request: None, directory: None }

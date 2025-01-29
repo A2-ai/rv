@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::package::{parse_package_file, Package, PackageType};
-use crate::version::{Version, VersionRequirement};
+use crate::package::{Version, VersionRequirement};
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {

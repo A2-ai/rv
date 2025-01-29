@@ -159,9 +159,7 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
         let entry = entry?;
         let path = entry.path();
 
-        let relative = path
-            .strip_prefix(source)
-            .expect("walkdir starts with root");
+        let relative = path.strip_prefix(source).expect("walkdir starts with root");
         let out_path = library.join(relative);
 
         if entry.file_type().is_dir() {
@@ -180,9 +178,7 @@ fn symlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
         let entry = entry?;
         let path = entry.path();
 
-        let relative = path
-            .strip_prefix(source)
-            .expect("walkdir starts with root");
+        let relative = path.strip_prefix(source).expect("walkdir starts with root");
         let out_path = library.join(relative);
 
         if entry.file_type().is_dir() {

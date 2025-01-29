@@ -47,7 +47,7 @@ pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
     parts: [u32; 10],
-    pub(crate) original: String,
+    pub original: String,
 }
 
 impl Version {
@@ -103,6 +103,17 @@ impl Ord for Version {
 impl PartialOrd for Version {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+pub fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: String = Deserialize::deserialize(deserializer)?;
+    match Version::from_str(&v) {
+        Ok(v) => Ok(v),
+        Err(_) => Err(serde::de::Error::custom("Invalid version number")),
     }
 }
 
