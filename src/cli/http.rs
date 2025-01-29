@@ -9,9 +9,20 @@ pub fn download<W: Write>(url: &str, writer: &mut W, headers: Vec<(&str, String)
     for (key, val) in headers {
         request = request.set(key, &val);
     }
-    let resp = request
-        .call()
-        .with_context(|| format!("Failed to download file {url}"))?;
+    let ogresp = request
+        .call();
+    
+    let resp = match ogresp {
+        Ok(r) => r,
+        Err(e) => {
+            match e {
+                // if the server returns an actual status code, we can get the response
+                // to the later matcher
+                ureq::Error::Status(_, resp) => resp ,
+                _ => bail!("Error downloading file from: {url}: {e}"),
+            }
+        }
+    };
     // in practice an empty 200 and a 404 will be treated the same
     match resp.status() {
         200 => std::io::copy(&mut resp.into_reader(), writer)
