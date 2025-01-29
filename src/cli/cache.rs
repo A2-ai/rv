@@ -9,7 +9,7 @@ use fs_err as fs;
 use crate::cache::InstallationStatus;
 use crate::cli::utils::get_os_path;
 use crate::system_info::SystemInfo;
-use crate::version::Version;
+use crate::Version;
 use crate::{Cache, CacheEntry};
 
 /// How long are the package databases cached for

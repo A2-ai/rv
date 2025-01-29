@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: insightsengineering/teal.data
+expression: "format!(\"{name} => {remote:?}\")"
+---
+teal.data => Git { url: "https://github.com/insightsengineering/teal.data", reference: None, pull_request: None, directory: None }

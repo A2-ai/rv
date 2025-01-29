@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "svn::https://github.com/tidyverse/stringr"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+ => Other("https://github.com/tidyverse/stringr")

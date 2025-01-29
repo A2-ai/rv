@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 use crate::link::{LinkError, LinkMode};
-use crate::version::Version;
+use crate::Version;
 use regex::Regex;
 
 static R_VERSION_RE: LazyLock<Regex> =

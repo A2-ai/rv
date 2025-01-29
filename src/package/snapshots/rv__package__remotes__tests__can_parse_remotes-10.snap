@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "bitbucket::sulab/mygene.r@default"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+mygene.r => Git { url: "https://bitbucket.org/sulab/mygene.r", reference: Some("default"), pull_request: None, directory: None }
