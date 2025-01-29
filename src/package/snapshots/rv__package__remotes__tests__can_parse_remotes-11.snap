@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "bioc::3.3/SummarizedExperiment#117513"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+ => Bioc("3.3/SummarizedExperiment#117513")

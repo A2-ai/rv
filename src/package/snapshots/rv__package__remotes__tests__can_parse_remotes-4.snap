@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "klutometis/roxygen#142"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+roxygen => Git { url: "https://github.com/klutometis/roxygen", reference: None, pull_request: Some("142"), directory: None }

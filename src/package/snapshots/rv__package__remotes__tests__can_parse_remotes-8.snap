@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "git::git@github.com:username/repo.git@a1b2c3d4"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+repo => Git { url: "git@github.com:username/repo.git", reference: Some("a1b2c3d4"), pull_request: None, directory: None }

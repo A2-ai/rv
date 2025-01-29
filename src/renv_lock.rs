@@ -1,20 +1,8 @@
-use std::{collections::HashMap, path::Path, str::FromStr};
+use std::{collections::HashMap, path::Path};
 
 use serde::Deserialize;
 
-use crate::Version;
-
-// similar to crate::config, but does not return Option since Version must be present
-fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v: String = Deserialize::deserialize(deserializer)?;
-    match Version::from_str(&v) {
-        Ok(v) => Ok(v),
-        Err(_) => Err(serde::de::Error::custom("Invalid version number")),
-    }
-}
+use crate::package::{deserialize_version, Version};
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -110,6 +98,7 @@ pub struct FromJsonFileError {
     pub source: FromJsonFileErrorKind,
 }
 
+#[cfg(test)]
 mod tests {
     use super::RenvLock;
 

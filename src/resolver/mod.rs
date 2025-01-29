@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 
-use crate::version::VersionRequirement;
+use crate::VersionRequirement;
 use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase, Version};
 
 mod dependency;
 
 use crate::git::GitReference;
-use crate::package::read_local_description_file;
+use crate::package::parse_description_file_in_folder;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -163,7 +163,7 @@ impl<'d> Resolver<'d> {
 
         match git_ops.clone_and_checkout(repo_url, git_ref.clone(), &clone_path) {
             Ok(sha) => {
-                let package = read_local_description_file(&clone_path)?;
+                let package = parse_description_file_in_folder(&clone_path)?;
                 let status = cache.get_git_installation_status(repo_url, &sha);
                 let source = item.dep.unwrap().as_git_source_with_sha(sha);
                 let (resolved_dep, deps) = ResolvedDependency::from_git_package(

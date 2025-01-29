@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "url::https://github.com/tidyverse/stringr/archive/HEAD.zip"
+expression: "format!(\"{name} => {remote:?}\")"
+---
+ => Url("https://github.com/tidyverse/stringr/archive/HEAD.zip")

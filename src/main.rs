@@ -59,7 +59,14 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
 
-    match timeit!(if dry_run { "Planned dependencies" } else { "Synced dependencies" }, sync(&context, &resolved, dry_run)) {
+    match timeit!(
+        if dry_run {
+            "Planned dependencies"
+        } else {
+            "Synced dependencies"
+        },
+        sync(&context, &resolved, dry_run)
+    ) {
         Ok(changes) => {
             if changes.is_empty() {
                 println!("Nothing to do");
