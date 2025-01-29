@@ -8,7 +8,9 @@ use std::{
 use serde::Deserialize;
 
 use crate::{
-    consts::RECOMMENDED_PACKAGES, version::{Operator, VersionRequirement}, RepositoryDatabase, Version
+    consts::RECOMMENDED_PACKAGES,
+    version::{Operator, VersionRequirement},
+    RepositoryDatabase, Version,
 };
 
 // similar to crate::config, but does not return Option since Version must be present
@@ -118,10 +120,12 @@ impl RenvLock {
                         &self.r.repositories,
                         &repository_databases,
                         &self.r.version,
-                    ).map(|r| Source::Repository(r))
+                    )
+                    .map(|r| Source::Repository(r))
                 }
-                RenvSource::GitHub => resolve_github(pkg_info)
-                        .map(|(url, sha)| Source::GitHub { url, sha }),
+                RenvSource::GitHub => {
+                    resolve_github(pkg_info).map(|(url, sha)| Source::GitHub { url, sha })
+                }
 
                 // Example package in renv.lock of Source Local
                 // "rv.git.pkgA": {
@@ -139,8 +143,14 @@ impl RenvLock {
                 _ => Err("Unsupported source".into()),
             };
             match res {
-                Ok(source) => resolved.push(ResolvedRenv{package_info: pkg_info, source}),
-                Err(error) => unresolved.push(UnresolvedRenv{package_info: pkg_info, error}),
+                Ok(source) => resolved.push(ResolvedRenv {
+                    package_info: pkg_info,
+                    source,
+                }),
+                Err(error) => unresolved.push(UnresolvedRenv {
+                    package_info: pkg_info,
+                    error,
+                }),
             };
         }
         (resolved, unresolved)
