@@ -125,6 +125,10 @@ impl VersionRequirement {
             Operator::LowerOrEqual => version <= &self.version,
         }
     }
+
+    pub fn new(version: Version, op: Operator) -> Self {
+        Self { version, op }
+    }
 }
 
 impl FromStr for VersionRequirement {

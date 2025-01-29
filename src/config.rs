@@ -35,7 +35,7 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    pub url: String,
+    url: String,
     #[serde(default)]
     pub force_source: bool,
 }
@@ -44,6 +44,14 @@ impl Repository {
     /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {
         self.url.trim_end_matches("/")
+    }
+
+    pub fn new(alias: String, url: String, force_source: bool) -> Self {
+        Self {
+            alias,
+            url,
+            force_source,
+        }
     }
 }
 

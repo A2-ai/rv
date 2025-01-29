@@ -1,7 +1,10 @@
 use std::{path::PathBuf, str::FromStr};
 
 use crate::{
-    consts::RECOMMENDED_PACKAGES, renv_lock::{PackageInfo, RenvRepository, RenvSource}, version::VersionRequirement, RepositoryDatabase, Version
+    consts::RECOMMENDED_PACKAGES,
+    renv_lock::{PackageInfo, RenvRepository, RenvSource},
+    version::VersionRequirement,
+    RepositoryDatabase, Version,
 };
 
 /// `resolve`` takes in the Repository Databases and the parsed renv lock and determines if the package source can be determined.
@@ -21,7 +24,7 @@ use crate::{
 /// - `r_version`: The version of R of interest
 /// - `repository_databases`: A vector of struct RenvRepositoryDatabase. The struct contains the repository, corresponding to the loaded repository database, and whether the repository is only source
 /// - `ignore_recommended`: A bool indicating whether to resolve R packages with priority "recommended"
-/// 
+///
 /// The function returns a vector of results, of the same order of the input `packages`, indicating either the package source or the reason the package could not be resolved
 fn resolve(
     packages: Vec<PackageInfo>,
@@ -33,7 +36,7 @@ fn resolve(
     let mut unresolved = Vec::new();
 
     for pkg_info in packages {
-        // if ignore recommended and the package is recommended or base priority. Base is not typically found in renv.lock, 
+        // if ignore recommended and the package is recommended or base priority. Base is not typically found in renv.lock,
         if ignore_recommended && RECOMMENDED_PACKAGES.contains(&pkg_info.package.as_str()) {
             continue;
         }
@@ -43,16 +46,17 @@ fn resolve(
                 resolve_repository(&pkg_info, &repository_databases, r_version)
                     .map(|repo| MigrantSource::Repo(repo.clone()))
             }
-            RenvSource::GitHub => {
-                resolve_github(&pkg_info).map(|(url, sha)| MigrantSource::Git { url, sha: sha.to_string() })
-            }
+            RenvSource::GitHub => resolve_github(&pkg_info).map(|(url, sha)| MigrantSource::Git {
+                url,
+                sha: sha.to_string(),
+            }),
             RenvSource::Local => resolve_local(&pkg_info).map(|path| MigrantSource::Local(path)),
             RenvSource::Other(source) => Err(format!("`{}` is not a supported source", source)),
         };
 
         match res {
-            Ok(source) => resolved.push(ResolvedRenv{ pkg_info, source }),
-            Err(cause) => unresolved.push(UnresolvedRenv{ pkg_info, cause }),
+            Ok(source) => resolved.push(ResolvedRenv { pkg_info, source }),
+            Err(cause) => unresolved.push(UnresolvedRenv { pkg_info, cause }),
         }
     }
     (resolved, unresolved)
@@ -63,7 +67,7 @@ fn resolve_local(pkg_info: &PackageInfo) -> Result<PathBuf, String> {
     let path = if let Some(p) = &pkg_info.remote_url {
         PathBuf::from(p)
     } else {
-        return Err("Path not specified".to_string())
+        return Err("Path not specified".to_string());
     };
     if !path.exists() {
         log::warn!(
@@ -79,20 +83,26 @@ fn resolve_local(pkg_info: &PackageInfo) -> Result<PathBuf, String> {
 
 fn resolve_github<'a>(pkg_info: &'a PackageInfo) -> Result<(String, &'a String), String> {
     // piece together the git url as the remote_url field in PackageInfo is from the local variant
-    let remote_host = pkg_info.remote_host.as_ref()
+    let remote_host = pkg_info
+        .remote_host
+        .as_ref()
         .ok_or("Remote host not specified")?
         .replace("api.", "")
         .trim_end_matches("/api/v3")
         .to_string();
-    let org = pkg_info.remote_username.as_ref().ok_or("GitHub organization not specified")?;
-    let repo = pkg_info.remote_username.as_ref().ok_or("GitHub repository not specified")?;
-    let url = format!(
-        "https://{}/{}/{}",
-        remote_host,
-        org,
-        repo,
-    );
-    let sha = pkg_info.remote_sha.as_ref().ok_or("GitHub Sha not specified")?;
+    let org = pkg_info
+        .remote_username
+        .as_ref()
+        .ok_or("GitHub organization not specified")?;
+    let repo = pkg_info
+        .remote_username
+        .as_ref()
+        .ok_or("GitHub repository not specified")?;
+    let url = format!("https://{}/{}/{}", remote_host, org, repo,);
+    let sha = pkg_info
+        .remote_sha
+        .as_ref()
+        .ok_or("GitHub Sha not specified")?;
     log::debug!("{} resolved to be GitHub package", pkg_info.package);
     Ok((url, sha))
 }
@@ -106,26 +116,41 @@ fn resolve_repository<'a>(
     let mut pkg_repos = Vec::new();
 
     // create vector of which repos contain the package
-    for RenvRepositoryDatabase{renv_repo, repository_database, force_source} in repository_databases {
+    for RenvRepositoryDatabase {
+        renv_repo,
+        repository_database,
+        force_source,
+    } in repository_databases
+    {
         // using existing tooling to find package among a repository database.
         let ver_req =
             VersionRequirement::from_str(&format!("(== {})", pkg_info.version.original)).ok();
-        if let Some(_) = repository_database.find_package(&pkg_info.package, ver_req.as_ref(), r_version, *force_source)
-        {
+        if let Some(_) = repository_database.find_package(
+            &pkg_info.package,
+            ver_req.as_ref(),
+            r_version,
+            *force_source,
+        ) {
             pkg_repos.push(renv_repo);
         }
     }
 
     // check to see if the package was found in a repository as specified in the renv lock
-    let pkg_repo = pkg_info.repository.as_ref().ok_or("Repository not specified")?;
+    let pkg_repo = pkg_info
+        .repository
+        .as_ref()
+        .ok_or("Repository not specified")?;
     if let Some(repo) = pkg_repos.iter().find(|r| &r.name == pkg_repo) {
         log::debug!("{} resolved to specified repository", &pkg_info.package);
-        return Ok(repo)
+        return Ok(repo);
     }
 
     // default to the first repository the package is found in. priority based on order in renv.lock
     if let Some(repo) = pkg_repos.first() {
-        log::debug!("{} resolved to a repository other than specified", &pkg_info.package);
+        log::debug!(
+            "{} resolved to a repository other than specified",
+            &pkg_info.package
+        );
         return Ok(repo);
     }
 
@@ -173,7 +198,7 @@ enum MigrantSource {
 //     use anyhow::Result;
 
 //     use super::{resolve, RenvRepositoryDatabase};
-    
+
 //     /// this function loads the RepositoryDatabase's for a vector of RenvRepositories and returns a vector of a tuples containing RenvRepository and the loaded repository
 //     fn load_renv_repository_databases<'a>(repos: &'a Vec<RenvRepository>, cache: &DiskCache) -> Result<Vec<RenvRepositoryDatabase<'a>>> {
 //         // convert RenvRepository to Repository for loading
