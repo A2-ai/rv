@@ -6,8 +6,8 @@ use anyhow::Result;
 use fs_err as fs;
 
 use rv::cli::utils::{timeit, write_err};
-use rv::cli::{sync, CliContext};
-use rv::{Lockfile, ResolvedDependency, Resolver};
+use rv::cli::{determine_repository_from_r, init, sync, CliContext};
+use rv::{Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -127,7 +127,18 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init => todo!("implement init"),
+        Command::Init => {
+            let repository = determine_repository_from_r()?;
+            let r_version = RCommandLine {}.version()?;
+            let project_directory = std::env::current_dir()?;
+            if let Err(e) = timeit!(
+                "Initialized project",
+                init(&project_directory, r_version, repository)
+            ) {
+                fs::remove_dir_all(&project_directory.as_path().join("rv/library"))?;
+                return Err(e.into());
+            }
+        }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
