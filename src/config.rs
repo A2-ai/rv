@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::lockfile::Source;
 use crate::package::{deserialize_version, Version};
+use serde::de::IntoDeserializer;
 use serde::Deserialize;
-use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -14,6 +16,18 @@ struct Author {
     email: String,
     #[serde(default)]
     maintainer: bool,
+}
+
+impl Author {
+    fn to_toml_table(&self) -> InlineTable {
+        let mut table = InlineTable::new();
+        table.insert("name", self.name.as_str().into());
+        table.insert("email", self.email.as_str().into());
+        if self.maintainer {
+            table.insert("maintainer", true.into());
+        }
+        table
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -143,7 +157,15 @@ impl ConfigDependency {
     fn as_toml_value(&self) -> Value {
         match self {
             Self::Simple(pkg) => Value::from(pkg.as_str()),
-            Self::Git { git, commit, tag, branch, directory, name, install_suggestions } => {
+            Self::Git {
+                git,
+                commit,
+                tag,
+                branch,
+                directory,
+                name,
+                install_suggestions,
+            } => {
                 let mut table = InlineTable::new();
                 table.insert("name", name.into());
                 table.insert("git", git.into());
@@ -155,13 +177,19 @@ impl ConfigDependency {
                 } else if let Some(b) = branch {
                     table.insert("branch", b.into());
                 }
-                directory.as_deref().map(|d| table.insert("directory", d.into()));
+                directory
+                    .as_deref()
+                    .map(|d| table.insert("directory", d.into()));
                 if *install_suggestions {
                     table.insert("install_suggestions", true.into());
                 }
                 table.into()
-            },
-            Self::Local { path, name, install_suggestions } => {
+            }
+            Self::Local {
+                path,
+                name,
+                install_suggestions,
+            } => {
                 let mut table = InlineTable::new();
                 table.insert("name", name.into());
                 table.insert("path", path.to_string_lossy().as_ref().into());
@@ -169,11 +197,18 @@ impl ConfigDependency {
                     table.insert("install_suggestions", true.into());
                 }
                 table.into()
-            },
-            Self::Detailed { name, repository, install_suggestions, force_source } => {
+            }
+            Self::Detailed {
+                name,
+                repository,
+                install_suggestions,
+                force_source,
+            } => {
                 let mut table = InlineTable::new();
                 table.insert("name", name.into());
-                repository.as_deref().map(|r| table.insert("repository", r.into()));
+                repository
+                    .as_deref()
+                    .map(|r| table.insert("repository", r.into()));
                 if *install_suggestions {
                     table.insert("install_suggestions", true.into());
                 }
@@ -183,7 +218,6 @@ impl ConfigDependency {
                 table.into()
             }
         }
-
     }
 }
 
@@ -209,6 +243,77 @@ pub(crate) struct Project {
     dependencies: Vec<ConfigDependency>,
     #[serde(default)]
     dev_dependencies: Vec<ConfigDependency>,
+}
+
+impl Project {
+    fn edit_toml_table(&self, table: &mut Table) -> Result<(), ConfigErrorKind> {
+        table.insert("name", self.name.as_str().into());
+        table.insert("r_version", self.r_version.original.as_str().into());
+        if !self.description.is_empty() {
+            table.insert("description", self.description.as_str().into());
+        }
+        self.license
+            .as_ref()
+            .map(|l| table.insert("license", l.as_str().into()));
+        if !self.authors.is_empty() {
+            let mut authors = Array::new();
+            for a in &self.authors {
+                authors.push_formatted(Value::from(a.to_toml_table()));
+            }
+            table.insert("authors", authors.into());
+        }
+        if !self.keywords.is_empty() {
+            let mut keywords = Array::new();
+            for k in &self.keywords {
+                keywords.push(Value::from(k));
+            }
+            table.insert("keywords", keywords.into());
+        }
+        // Repositories field is mandatory. If in init or renv migration the repositories is not set, want to create blank field
+        let mut repos = Array::new();
+        for r in &self.repositories {
+            repos.push_formatted(Value::from(r.to_toml_table()));
+        }
+        table.insert("repositories", Item::Value(Value::Array(repos)));
+
+        if !self.suggests.is_empty() {
+            let mut suggests = Array::new();
+            for s in &self.suggests {
+                suggests.push_formatted(s.as_toml_value());
+            }
+            table.insert("suggests", suggests.into());
+        }
+
+        let url_table = table
+            .entry("urls")
+            .or_insert(Item::Table(Table::new()))
+            .as_table_mut()
+            .ok_or_else(|| {
+                ConfigErrorKind::InvalidConfig(
+                    "`[project.urls]` exists but is not a table".to_string(),
+                )
+            })?;
+        for (k, v) in &self.urls {
+            url_table.insert(&k, v.as_str().into());
+        }
+
+        // Dependencies field is mandatory. Want to have blank field if no dependencies in init
+        let mut deps = Array::new();
+        for d in &self.dependencies {
+            deps.push_formatted(d.as_toml_value());
+        }
+        table.insert("dependencies", deps.into());
+
+        if !self.dev_dependencies.is_empty() {
+            let mut dev_deps = Array::new();
+            for d in &self.dev_dependencies {
+                dev_deps.push_formatted(d.as_toml_value());
+            }
+            table.insert("dev_dependencies", dev_deps.into());
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -311,27 +416,50 @@ impl Config {
         &self.project.r_version
     }
 
-    pub fn save(&self, path: impl AsRef<Path>) {
-        let out = self.as_toml_string();
-    }
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
+        let file_path = path.as_ref();
+        let content = if file_path.exists() {
+            fs::read_to_string(file_path).map_err(|e| ConfigError {
+                path: file_path.into(),
+                source: ConfigErrorKind::Io(e),
+            })?
+        } else {
+            String::new()
+        };
 
-    fn as_toml_string(&self) -> String {
-        let mut doc = toml_edit::DocumentMut::new();
-        doc.insert("name", Item::Value(Value::from(self.project.name.to_string())));
-        doc.insert("r_version", Item::Value(Value::from(self.project.r_version.original.to_string())));
-        let mut repos = Array::new();
-        for r in self.repositories() {
-            repos.push(Value::from(r.to_toml_table()));
-        }
-        doc.insert("repositories", Item::Value(Value::Array(repos)));
+        let mut doc = if content.is_empty() {
+            DocumentMut::new()
+        } else {
+            content.parse::<DocumentMut>().map_err(|e| ConfigError {
+                path: file_path.into(),
+                source: ConfigErrorKind::DocParse(e),
+            })?
+        };
 
-        let mut deps = Array::new();
-        for d in self.dependencies() {
-            deps.push(Value::from(d.as_toml_value()));
-        }
-        doc.insert("dependencies", Item::Value(Value::Array(deps)));
+        let project = doc
+            .entry("project")
+            .or_insert(Item::Table(Default::default()))
+            .as_table_mut()
+            .ok_or_else(|| ConfigError {
+                path: file_path.into(),
+                source: ConfigErrorKind::InvalidConfig(
+                    "Could not parse Project as table".to_string(),
+                ),
+            })?;
 
-        doc.to_string()
+        self.project
+            .edit_toml_table(project)
+            .map_err(|ek| ConfigError {
+                path: file_path.into(),
+                source: ek,
+            })?;
+
+        println!("{}", doc.to_string());
+        // fs::write(file_path, doc.to_string()).map_err(|e| ConfigError {
+        //     path: file_path.into(),
+        //     source: ConfigErrorKind::Io(e),
+        // })
+        Ok(())
     }
 }
 
@@ -363,6 +491,7 @@ pub enum ConfigErrorKind {
     Parse(#[from] toml::de::Error),
     #[error("Invalid config: {0}")]
     InvalidConfig(String),
+    DocParse(#[from] toml_edit::TomlError),
 }
 
 #[cfg(test)]
@@ -381,7 +510,7 @@ mod tests {
 
     #[test]
     fn tester() {
-        let res = Config::from_file("example_projects/rspm-cran/rproject.toml").unwrap();
-        println!("{}", res.as_toml_string());
+        let res = Config::from_file("src/tests/valid_config/all_fields.toml").unwrap();
+        res.save("src/tests/valid_config/all_fields.toml").unwrap();
     }
 }
