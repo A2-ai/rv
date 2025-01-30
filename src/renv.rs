@@ -3,7 +3,8 @@ use std::{collections::HashMap, error::Error, path::Path};
 use serde::Deserialize;
 
 use crate::{
-    package::{deserialize_version, Operator, Version, VersionRequirement}, RepositoryDatabase,
+    package::{deserialize_version, Operator, Version, VersionRequirement},
+    RepositoryDatabase,
 };
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -92,19 +93,29 @@ impl RenvLock {
         let mut unresolved = Vec::new();
         for (_, package_info) in &self.packages {
             let res = match package_info.source {
-                RenvSource::Repository => resolve_repository(package_info, &self.r.repositories, repository_database, &self.r.version)
-                    .map(|r| Source::Repository(r)),
+                RenvSource::Repository => resolve_repository(
+                    package_info,
+                    &self.r.repositories,
+                    repository_database,
+                    &self.r.version,
+                )
+                .map(|r| Source::Repository(r)),
                 _ => Err("Source is not supported".into()),
             };
             match res {
-                Ok(source) => resolved.push(ResolvedRenv{package_info, source}),
-                Err(error) => unresolved.push(UnresolvedRenv{package_info, error}),
+                Ok(source) => resolved.push(ResolvedRenv {
+                    package_info,
+                    source,
+                }),
+                Err(error) => unresolved.push(UnresolvedRenv {
+                    package_info,
+                    error,
+                }),
             }
-        };
+        }
         (resolved, unresolved)
     }
 }
-
 
 // Expected Repository sourced package format from renv.lock
 // "R6": {
@@ -133,11 +144,10 @@ fn resolve_repository<'a>(
         .collect::<Vec<_>>();
 
     // if a repository is found as that is specified by the package log, look in it first
-    let pref_repo_pair = pkg_info.repository.as_ref().and_then(|repo_name| {
-        repo_pairs
-            .iter()
-            .find(|(r, _, _)| &r.name == repo_name)
-    });
+    let pref_repo_pair = pkg_info
+        .repository
+        .as_ref()
+        .and_then(|repo_name| repo_pairs.iter().find(|(r, _, _)| &r.name == repo_name));
     if let Some((repo, repo_db, force_source)) = pref_repo_pair {
         if repo_db
             .find_package(
@@ -176,7 +186,7 @@ struct ResolvedRenv<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Source<'a> {
-    Repository(&'a RenvRepository)
+    Repository(&'a RenvRepository),
 }
 
 struct UnresolvedRenv<'a> {

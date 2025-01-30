@@ -138,10 +138,7 @@ impl VersionRequirement {
     }
 
     pub fn new(version: Version, op: Operator) -> Self {
-        Self {
-            version,
-            op,
-        }
+        Self { version, op }
     }
 }
 
