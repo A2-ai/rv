@@ -205,6 +205,6 @@ impl Cache for DiskCache {
     }
 
     fn get_git_clone_path(&self, git_url: &str) -> PathBuf {
-        self.get_source_git_package_path(git_url)
+        self.get_source_git_package_path(&git_url.to_ascii_lowercase())
     }
 }

@@ -22,7 +22,8 @@ pub struct ResolvedDependency<'d> {
     pub(crate) kind: PackageType,
     pub(crate) installation_status: InstallationStatus,
     pub(crate) path: Option<Cow<'d, str>>,
-    pub(crate) found_in_lockfile: bool,
+    pub(crate) from_lockfile: bool,
+    pub(crate) from_remote: bool,
     // Remotes are only for local/git deps so the values will always be owned
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
 }
@@ -63,9 +64,11 @@ impl<'d> ResolvedDependency<'d> {
             force_source: package.force_source,
             install_suggests: package.install_suggests(),
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
-            found_in_lockfile: true,
+            from_lockfile: true,
             installation_status,
             remotes: HashMap::new(),
+            // it might come from a remote but we don't keep track of that
+            from_remote: false,
         }
     }
 
@@ -100,9 +103,10 @@ impl<'d> ResolvedDependency<'d> {
             force_source,
             install_suggests,
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
-            found_in_lockfile: false,
+            from_lockfile: false,
             installation_status,
             remotes: HashMap::new(),
+            from_remote: false,
         };
 
         (res, deps)
@@ -132,13 +136,14 @@ impl<'d> ResolvedDependency<'d> {
             kind: PackageType::Source,
             force_source: true,
             path: None,
-            found_in_lockfile: false,
+            from_lockfile: false,
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.original.clone()),
             source,
             installation_status,
             install_suggests,
             remotes: package.remotes.clone(),
+            from_remote: false,
         };
 
         (res, deps)
@@ -149,13 +154,14 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} ({}, type={}, from_lockfile={}, path='{}')",
+            "{}={} ({}, type={}, path='{}', from_lockfile={}, from_remote={})",
             self.name,
             self.version,
             self.source,
             self.kind,
-            self.found_in_lockfile,
-            self.path.as_deref().unwrap_or("")
+            self.path.as_deref().unwrap_or(""),
+            self.from_lockfile,
+            self.from_remote,
         )
     }
 }

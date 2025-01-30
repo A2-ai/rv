@@ -125,7 +125,8 @@ mod tests {
             kind: PackageType::Source,
             installation_status: InstallationStatus::Binary,
             path: None,
-            found_in_lockfile: false,
+            from_lockfile: false,
+            from_remote: false,
             remotes: HashMap::new(),
         }
     }

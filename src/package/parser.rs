@@ -183,6 +183,6 @@ mod tests {
         let content =
             std::fs::read_to_string("src/tests/package_files/cran-binary.PACKAGE").unwrap();
         let packages = parse_package_file(&content);
-        assert_eq!(packages.len(), 22361);
+        assert_eq!(packages.len(), 22362);
     }
 }

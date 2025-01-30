@@ -162927,3 +162927,7 @@ Depends: R (>= 3.2)
 Imports: httr, jsonlite
 Suggests: httptest, roxygen2, testthat, knitr, rmarkdown
 License: GPL-3
+
+Package: gsm
+Version: 2.2.2
+Depends: R (>= 3.5.0)

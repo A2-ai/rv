@@ -270,10 +270,11 @@ impl<'d> Resolver<'d> {
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
             // .contains would need to allocate
-            let can_be_overriden = item.version_requirement.is_some()
+            let can_be_overridden = item.version_requirement.is_some()
                 && prefer_repositories_for
                     .iter()
                     .any(|s| s == item.name.as_ref());
+
             if let Some(ref remote) = item.remote {
                 match remote {
                     PackageRemote::Git {
@@ -292,8 +293,10 @@ impl<'d> Resolver<'d> {
                             git_ops,
                             cache,
                         ) {
-                            Ok((resolved_dep, items)) => {
-                                if can_be_overriden {
+                            Ok((mut resolved_dep, items)) => {
+                                // TODO: do we want to keep track of the remote string?w
+                                resolved_dep.from_remote = true;
+                                if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
                                 } else {
                                     result.found.push(resolved_dep);
@@ -404,14 +407,28 @@ mod tests {
     use super::*;
     use crate::cache::InstallationStatus;
     use crate::config::Config;
+    use crate::consts::DESCRIPTION_FILENAME;
     use crate::repository::RepositoryDatabase;
     use crate::CacheEntry;
+    use base64::engine::general_purpose::STANDARD_NO_PAD;
+    use base64::Engine;
     use git2::Error;
     use serde::Deserialize;
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
+    use tempfile::TempDir;
 
-    struct FakeCache;
+    struct FakeCache {
+        cache_dir: TempDir,
+    }
+
+    impl FakeCache {
+        pub fn new() -> Self {
+            Self {
+                cache_dir: tempfile::tempdir().unwrap(),
+            }
+        }
+    }
 
     impl Cache for FakeCache {
         fn get_package_db_entry(&self, _: &str) -> CacheEntry {
@@ -426,8 +443,10 @@ mod tests {
             InstallationStatus::Absent
         }
 
-        fn get_git_clone_path(&self, _: &str) -> PathBuf {
-            PathBuf::from("")
+        fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
+            self.cache_dir
+                .path()
+                .join(STANDARD_NO_PAD.encode(repo_url.to_ascii_lowercase()))
         }
     }
 
@@ -499,12 +518,34 @@ mod tests {
     #[test]
     fn resolving() {
         let paths = std::fs::read_dir("src/tests/resolution/").unwrap();
+        let cache = FakeCache::new();
+        // Add the DESCRIPTION file for git deps
+        let remotes = vec![
+            ("gsm", "https://github.com/Gilead-BioStats/gsm"),
+            ("clindata", "https://github.com/Gilead-BioStats/clindata"),
+            ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
+        ];
+
+        for (dep, url) in &remotes {
+            let cache_path = cache.get_git_clone_path(url);
+            std::fs::create_dir_all(&cache_path).unwrap();
+            std::fs::copy(
+                &format!("src/tests/descriptions/{dep}.DESCRIPTION"),
+                cache_path.join(DESCRIPTION_FILENAME),
+            )
+            .unwrap();
+        }
+
         for path in paths {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
             let resolver = Resolver::new(&repositories, &r_version, Some(&lockfile));
-            let resolution =
-                resolver.resolve(&config.dependencies(), &[], &FakeCache {}, &FakeGit {});
+            let resolution = resolver.resolve(
+                &config.dependencies(),
+                config.prefer_repositories_for(),
+                &cache,
+                &FakeGit {},
+            );
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), &resolved);
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();
