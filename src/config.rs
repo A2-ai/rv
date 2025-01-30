@@ -5,6 +5,7 @@ use std::str::FromStr;
 use crate::lockfile::Source;
 use crate::package::{deserialize_version, Version};
 use serde::Deserialize;
+use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,6 +29,16 @@ impl Repository {
     /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {
         self.url.trim_end_matches("/")
+    }
+
+    fn to_toml_table(&self) -> InlineTable {
+        let mut table = InlineTable::new();
+        table.insert("alias", self.alias.as_str().into());
+        table.insert("url", self.url().into());
+        if self.force_source {
+            table.insert("force_source", true.into());
+        }
+        table
     }
 }
 
@@ -128,6 +139,52 @@ impl ConfigDependency {
             } => *install_suggestions,
         }
     }
+
+    fn as_toml_value(&self) -> Value {
+        match self {
+            Self::Simple(pkg) => Value::from(pkg.as_str()),
+            Self::Git { git, commit, tag, branch, directory, name, install_suggestions } => {
+                let mut table = InlineTable::new();
+                table.insert("name", name.into());
+                table.insert("git", git.into());
+                // insert one of commit, tag, branch (in that order). Inserting multiple could lead to conflict
+                if let Some(c) = commit {
+                    table.insert("commit", c.into());
+                } else if let Some(t) = tag {
+                    table.insert("tag", t.into());
+                } else if let Some(b) = branch {
+                    table.insert("branch", b.into());
+                }
+                directory.as_deref().map(|d| table.insert("directory", d.into()));
+                if *install_suggestions {
+                    table.insert("install_suggestions", true.into());
+                }
+                table.into()
+            },
+            Self::Local { path, name, install_suggestions } => {
+                let mut table = InlineTable::new();
+                table.insert("name", name.into());
+                table.insert("path", path.to_string_lossy().as_ref().into());
+                if *install_suggestions {
+                    table.insert("install_suggestions", true.into());
+                }
+                table.into()
+            },
+            Self::Detailed { name, repository, install_suggestions, force_source } => {
+                let mut table = InlineTable::new();
+                table.insert("name", name.into());
+                repository.as_deref().map(|r| table.insert("repository", r.into()));
+                if *install_suggestions {
+                    table.insert("install_suggestions", true.into());
+                }
+                if *force_source {
+                    table.insert("force_source", true.into());
+                }
+                table.into()
+            }
+        }
+
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -161,13 +218,13 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,
             Err(e) => {
-                return Err(ConfigLoadError {
+                return Err(ConfigError {
                     path: path.as_ref().into(),
-                    source: ConfigLoadErrorKind::Io(e),
+                    source: ConfigErrorKind::Io(e),
                 })
             }
         };
@@ -178,7 +235,7 @@ impl Config {
     /// 1. verify alias used in deps are found
     /// 2. verify git sources are valid (eg no tag and branch at the same time)
     /// 3. replace the alias in the dependency by the URL
-    pub(crate) fn finalize(&mut self) -> Result<(), ConfigLoadError> {
+    pub(crate) fn finalize(&mut self) -> Result<(), ConfigError> {
         let repo_mapping: HashMap<_, _> = self
             .project
             .repositories
@@ -233,9 +290,9 @@ impl Config {
         }
 
         if !errors.is_empty() {
-            return Err(ConfigLoadError {
+            return Err(ConfigError {
                 path: Path::new(".").into(),
-                source: ConfigLoadErrorKind::InvalidConfig(errors.join("\n")),
+                source: ConfigErrorKind::InvalidConfig(errors.join("\n")),
             });
         }
 
@@ -253,15 +310,38 @@ impl Config {
     pub fn r_version(&self) -> &Version {
         &self.project.r_version
     }
+
+    pub fn save(&self, path: impl AsRef<Path>) {
+        let out = self.as_toml_string();
+    }
+
+    fn as_toml_string(&self) -> String {
+        let mut doc = toml_edit::DocumentMut::new();
+        doc.insert("name", Item::Value(Value::from(self.project.name.to_string())));
+        doc.insert("r_version", Item::Value(Value::from(self.project.r_version.original.to_string())));
+        let mut repos = Array::new();
+        for r in self.repositories() {
+            repos.push(Value::from(r.to_toml_table()));
+        }
+        doc.insert("repositories", Item::Value(Value::Array(repos)));
+
+        let mut deps = Array::new();
+        for d in self.dependencies() {
+            deps.push(Value::from(d.as_toml_value()));
+        }
+        doc.insert("dependencies", Item::Value(Value::Array(deps)));
+
+        doc.to_string()
+    }
 }
 
 impl FromStr for Config {
-    type Err = ConfigLoadError;
+    type Err = ConfigError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut config: Self = toml::from_str(s).map_err(|e| ConfigLoadError {
+        let mut config: Self = toml::from_str(s).map_err(|e| ConfigError {
             path: Path::new(".").into(),
-            source: ConfigLoadErrorKind::Parse(e),
+            source: ConfigErrorKind::Parse(e),
         })?;
         config.finalize()?;
         Ok(config)
@@ -271,14 +351,14 @@ impl FromStr for Config {
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to load config at `{path}`")]
 #[non_exhaustive]
-pub struct ConfigLoadError {
+pub struct ConfigError {
     pub path: Box<Path>,
-    pub source: ConfigLoadErrorKind,
+    pub source: ConfigErrorKind,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub enum ConfigLoadErrorKind {
+pub enum ConfigErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml::de::Error),
     #[error("Invalid config: {0}")]
@@ -297,5 +377,11 @@ mod tests {
             println!("{res:?}");
             assert!(res.is_ok());
         }
+    }
+
+    #[test]
+    fn tester() {
+        let res = Config::from_file("example_projects/rspm-cran/rproject.toml").unwrap();
+        println!("{}", res.as_toml_string());
     }
 }
