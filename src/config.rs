@@ -5,7 +5,6 @@ use std::str::FromStr;
 
 use crate::lockfile::Source;
 use crate::package::{deserialize_version, Version};
-use serde::de::IntoDeserializer;
 use serde::Deserialize;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
@@ -256,10 +255,11 @@ impl Project {
             .as_ref()
             .map(|l| table.insert("license", l.as_str().into()));
         if !self.authors.is_empty() {
-            let mut authors = Array::new();
+            let mut authors = Vec::new();
             for a in &self.authors {
-                authors.push_formatted(Value::from(a.to_toml_table()));
+                authors.push(Value::from(a.to_toml_table()));
             }
+            let authors = format_array(authors);
             table.insert("authors", authors.into());
         }
         if !self.keywords.is_empty() {
@@ -270,45 +270,51 @@ impl Project {
             table.insert("keywords", keywords.into());
         }
         // Repositories field is mandatory. If in init or renv migration the repositories is not set, want to create blank field
-        let mut repos = Array::new();
+        let mut repos = Vec::new();
         for r in &self.repositories {
-            repos.push_formatted(Value::from(r.to_toml_table()));
+            repos.push(Value::from(r.to_toml_table()));
         }
+        let repos = format_array(repos);
         table.insert("repositories", Item::Value(Value::Array(repos)));
 
         if !self.suggests.is_empty() {
-            let mut suggests = Array::new();
+            let mut suggests = Vec::new();
             for s in &self.suggests {
-                suggests.push_formatted(s.as_toml_value());
+                suggests.push(s.as_toml_value());
             }
+            let suggests = format_array(suggests);
             table.insert("suggests", suggests.into());
         }
 
-        let url_table = table
-            .entry("urls")
-            .or_insert(Item::Table(Table::new()))
-            .as_table_mut()
-            .ok_or_else(|| {
-                ConfigErrorKind::InvalidConfig(
-                    "`[project.urls]` exists but is not a table".to_string(),
-                )
-            })?;
-        for (k, v) in &self.urls {
-            url_table.insert(&k, v.as_str().into());
+        if !self.urls.is_empty() {
+            let url_table = table
+                .entry("urls")
+                .or_insert(Item::Table(Table::new()))
+                .as_table_mut()
+                .ok_or_else(|| {
+                    ConfigErrorKind::InvalidConfig(
+                        "`[project.urls]` exists but is not a table".to_string(),
+                    )
+                })?;
+            for (k, v) in &self.urls {
+                url_table.insert(&k, v.as_str().into());
+            }
         }
 
         // Dependencies field is mandatory. Want to have blank field if no dependencies in init
-        let mut deps = Array::new();
+        let mut deps = Vec::new();
         for d in &self.dependencies {
-            deps.push_formatted(d.as_toml_value());
+            deps.push(d.as_toml_value());
         }
+        let deps = format_array(deps);
         table.insert("dependencies", deps.into());
 
         if !self.dev_dependencies.is_empty() {
-            let mut dev_deps = Array::new();
+            let mut dev_deps = Vec::new();
             for d in &self.dev_dependencies {
-                dev_deps.push_formatted(d.as_toml_value());
+                dev_deps.push(d.as_toml_value());
             }
+            let dev_deps = format_array(dev_deps);
             table.insert("dev_dependencies", dev_deps.into());
         }
 
@@ -454,12 +460,10 @@ impl Config {
                 source: ek,
             })?;
 
-        println!("{}", doc.to_string());
-        // fs::write(file_path, doc.to_string()).map_err(|e| ConfigError {
-        //     path: file_path.into(),
-        //     source: ConfigErrorKind::Io(e),
-        // })
-        Ok(())
+        fs::write(file_path, doc.to_string()).map_err(|e| ConfigError {
+            path: file_path.into(),
+            source: ConfigErrorKind::Io(e),
+        })
     }
 }
 
@@ -474,6 +478,24 @@ impl FromStr for Config {
         config.finalize()?;
         Ok(config)
     }
+}
+
+fn format_array(vals: Vec<Value>) -> Array {
+    let mut array = vals
+        .into_iter()
+        .map(|mut v| {
+            v.decor_mut().set_prefix("\n    ");
+            v
+        })
+        .collect::<Array>();
+    array.set_trailing_comma(true);
+    array.set_trailing("\n");
+    // if empty, want blank line to prompt user to add value
+    // should only reach this function as empty for repositories and dependencies fields
+    if array.is_empty() {
+        array.set_trailing("\n\n");
+    }
+    array
 }
 
 #[derive(Debug, thiserror::Error)]
