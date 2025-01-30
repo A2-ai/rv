@@ -226,6 +226,7 @@ impl<'d> Resolver<'d> {
     pub fn resolve(
         &self,
         dependencies: &'d [ConfigDependency],
+        prefer_repositories_for: &'d [String],
         cache: &'d impl Cache,
         git_ops: &'d impl GitOperations,
     ) -> Resolution<'d> {
@@ -265,8 +266,15 @@ impl<'d> Resolver<'d> {
             processed.insert(item.name.to_string());
 
             // But first, we check if the item has a remote and use that instead
+            // We will the remote result around _if_ the item has a version requirement and is in
+            // override list so we can check in the repo before pushing the remote version
+            let mut remote_result = None;
+            // .contains would need to allocate
+            let can_be_overriden = item.version_requirement.is_some()
+                && prefer_repositories_for
+                    .iter()
+                    .any(|s| s == item.name.as_ref());
             if let Some(ref remote) = item.remote {
-                log::debug!("Package {} has a remote: {:?}", item.name, remote);
                 match remote {
                     PackageRemote::Git {
                         url,
@@ -276,7 +284,6 @@ impl<'d> Resolver<'d> {
                         directory,
                         ..
                     } => {
-                        log::debug!("Package {} has a git repository: {:?}", item.name, url);
                         match self.git_lookup(
                             &item,
                             url,
@@ -286,8 +293,12 @@ impl<'d> Resolver<'d> {
                             cache,
                         ) {
                             Ok((resolved_dep, items)) => {
-                                result.found.push(resolved_dep);
-                                queue.extend(items);
+                                if can_be_overriden {
+                                    remote_result = Some((resolved_dep, items));
+                                } else {
+                                    result.found.push(resolved_dep);
+                                    queue.extend(items);
+                                }
                             }
                             Err(e) => {
                                 result.failed.push(UnresolvedDependency {
@@ -310,7 +321,9 @@ impl<'d> Resolver<'d> {
                         });
                     }
                 }
-                continue;
+                if remote_result.is_none() {
+                    continue;
+                }
             }
 
             match item.dep {
@@ -321,14 +334,20 @@ impl<'d> Resolver<'d> {
                         result.found.push(resolved_dep);
                         queue.extend(items);
                     } else {
-                        log::debug!("Didn't find {}", item.name);
-                        result.failed.push(UnresolvedDependency {
-                            name: item.name.clone(),
-                            error: None,
-                            version_requirement: item.version_requirement.clone(),
-                            parent: item.parent.clone(),
-                            remote: None,
-                        });
+                        // Fallback to the remote result otherwise
+                        if let Some((resolved_dep, items)) = remote_result {
+                            result.found.push(resolved_dep);
+                            queue.extend(items);
+                        } else {
+                            log::debug!("Didn't find {}", item.name);
+                            result.failed.push(UnresolvedDependency {
+                                name: item.name.clone(),
+                                error: None,
+                                version_requirement: item.version_requirement.clone(),
+                                parent: item.parent.clone(),
+                                remote: None,
+                            });
+                        }
                     }
                 }
                 Some(ConfigDependency::Local { .. }) => todo!(),
@@ -484,7 +503,8 @@ mod tests {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
             let resolver = Resolver::new(&repositories, &r_version, Some(&lockfile));
-            let resolution = resolver.resolve(&config.dependencies(), &FakeCache {}, &FakeGit {});
+            let resolution =
+                resolver.resolve(&config.dependencies(), &[], &FakeCache {}, &FakeGit {});
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), &resolved);
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err as fs;
 
-use rv::cli::utils::{timeit};
+use rv::cli::utils::timeit;
 use rv::cli::{sync, CliContext};
 use rv::{Git, Lockfile, ResolvedDependency, Resolver};
 
@@ -42,7 +42,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    let resolution = resolver.resolve(context.config.dependencies(), &context.cache, &Git {});
+    let resolution = resolver.resolve(
+        context.config.dependencies(),
+        context.config.prefer_repositories_for(),
+        &context.cache,
+        &Git {},
+    );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
         for d in resolution.failed {
