@@ -7,7 +7,7 @@ mod link;
 mod lockfile;
 mod package;
 mod r_cmd;
-mod renv_lock;
+mod renv;
 mod repo_path;
 mod repository;
 mod resolver;
