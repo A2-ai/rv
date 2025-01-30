@@ -105,6 +105,18 @@ impl RenvLock {
     }
 }
 
+
+// Expected Repository sourced package format from renv.lock
+// "R6": {
+//     "Package": "R6",
+//     "Version": "2.5.1",
+//     "Source": "Repository",
+//     "Repository": "RSPM",
+//     "Requirements": [
+//     "R"
+//     ],
+//     "Hash": "470851b6d5d0ac559e9d01bb352b4021"
+// },
 fn resolve_repository<'a>(
     pkg_info: &PackageInfo,
     repositories: &'a [RenvRepository],
