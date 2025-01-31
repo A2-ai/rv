@@ -450,6 +450,7 @@ impl Config {
                 source: ConfigErrorKind::Io(e),
             })?
         } else {
+            fs::
             String::new()
         };
 
@@ -554,7 +555,7 @@ mod tests {
 
     // TODO: convert to snapshot test
     #[test]
-    fn can_output_new_config() {
+    fn can_edit_config() {
         let config = Config {
             project: Project {
                 name: "test".to_string(),
@@ -574,8 +575,7 @@ mod tests {
                 dev_dependencies: Vec::new(),
             },
         };
-        let d = tempdir().unwrap();
-        let path = d.path().join("rproject.toml");
-        config.save(path).unwrap();
+
+        config.save("src/tests/config/valid_config/all_fields.toml").unwrap();
     }
 }
