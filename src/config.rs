@@ -450,7 +450,6 @@ impl Config {
                 source: ConfigErrorKind::Io(e),
             })?
         } else {
-            fs::
             String::new()
         };
 
