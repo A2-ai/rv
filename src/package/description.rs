@@ -1,9 +1,12 @@
-use std::fs;
-use std::path::Path;
-
 use crate::consts::DESCRIPTION_FILENAME;
 use crate::package::parser::parse_package_file;
 use crate::package::Package;
+use crate::Version;
+use std::fs;
+use std::fs::File;
+use std::io::BufRead;
+use std::path::Path;
+use std::str::FromStr;
 
 /// A DESCRIPTION file is like a PACKAGE file, only that it contains info about a single package
 pub fn parse_description_file(content: &str) -> Option<Package> {
@@ -43,6 +46,18 @@ pub fn parse_description_file_in_folder(
     }
 }
 
+/// Quick version that only cares about retrieving the version of a package and ignores everything else
+pub fn parse_version(file_path: impl AsRef<Path>) -> Result<Version, Box<dyn std::error::Error>> {
+    let file = File::open(file_path)?;
+    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+        if let Some(stripped) = line.strip_prefix("Version:") {
+            return Ok(Version::from_str(stripped.trim()).expect("Version should be parsable"));
+        }
+    }
+
+    Err("Version not found.".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,68 +65,26 @@ mod tests {
 
     #[test]
     fn can_parse_description_file() {
-        let description = r#"
-Package: scicalc
-Title: Scientific Calculations for Quantitative Clinical Pharmacology and Pharmacometrics Analysis
-Version: 0.1.1
-Authors@R: c(
-    person("Matthew", "Smith", , "matthews@a2-ai.com", role = c("aut", "cre")),
-    person("Jenna", "Johnson", , "jenna@a2-ai.com", role = "aut"),
-    person("Devin", "Pastoor", , "devin@a2-ai.com", role = "aut"),
-    person("Wesley", "Cummings", , "wes@a2-ai.com", role = "ctb"),
-    person("Emily", "Schapiro", , "emily@a2-ai.com", role = "ctb"),
-    person("Ryan", "Crass", , "ryan@a2-ai.com", role = "ctb"),
-    person("Jonah", "Lyon", , "jonah@a2-ai.com", role = "ctb"),
-    person("Elizabeth", "LeBeau", ,"elizabeth@a2-ai.com", role = "ctb")
-  )
-Description: Utility functions helpful for reproducible scientific calculations.
-License: MIT + file LICENSE
-Encoding: UTF-8
-Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
-Imports:
-    arrow,
-    checkmate,
-    digest,
-    dplyr,
-    fs,
-    haven,
-    magrittr,
-    readr,
-    readxl,
-    rlang,
-    stats,
-    stringr
-Suggests:
-    knitr,
-    rmarkdown,
-    testthat (>= 3.0.0),
-    ggplot2,
-    here,
-    purrr,
-    pzfx,
-    tools,
-    tidyr
-Config/testthat/edition: 3
-VignetteBuilder: knitr
-URL: https://a2-ai.github.io/scicalc
-Remotes:
-    insightsengineering/teal.code,
-    insightsengineering/teal.data,
-    insightsengineering/teal.slice
-        "#;
-        let package = parse_description_file(&description).unwrap();
-        assert_eq!(package.name, "scicalc");
-        assert_eq!(package.version.original, "0.1.1");
-        assert_eq!(package.imports.len(), 12);
-        assert_eq!(package.suggests.len(), 9);
-        assert_eq!(package.remotes.len(), 3);
-        match &package.remotes["insightsengineering/teal.code"] {
+        let content = fs::read_to_string("src/tests/descriptions/gsm.app.DESCRIPTION").unwrap();
+        let package = parse_description_file(&content).unwrap();
+        assert_eq!(package.name, "gsm.app");
+        assert_eq!(package.version.original, "2.3.0.9000");
+        assert_eq!(package.imports.len(), 15);
+        assert_eq!(package.suggests.len(), 11);
+        assert_eq!(package.remotes.len(), 1);
+        println!("{:#?}", package.remotes);
+        match &package.remotes["gsm=gilead-biostats/gsm@v2.2.2"] {
             (name, PackageRemote::Git { url, .. }) => {
-                assert_eq!(url, "https://github.com/insightsengineering/teal.code");
-                assert_eq!(name, &Some("teal.code".to_string()));
+                assert_eq!(url, "https://github.com/gilead-biostats/gsm");
+                assert_eq!(name, &Some("gsm".to_string()));
             }
             _ => panic!("Should have gotten a git repo"),
         }
+    }
+
+    #[test]
+    fn can_read_version() {
+        let version = parse_version("src/tests/descriptions/gsm.app.DESCRIPTION").unwrap();
+        assert_eq!(version.original, "2.3.0.9000");
     }
 }

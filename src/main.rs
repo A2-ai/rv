@@ -42,6 +42,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
+    // TODO: pass currently installed deps and their version and check whether they need to be installed
     let resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
@@ -70,7 +71,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, dry_run)
+        sync(&context, &resolved, &context.library, dry_run)
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -89,16 +90,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
             }
 
             for c in changes {
-                if c.installed {
-                    println!(
-                        "+ {} ({}) in {}ms",
-                        c.name,
-                        c.version.unwrap(),
-                        c.timing.unwrap().as_millis()
-                    );
-                } else {
-                    println!("- {}", c.name);
-                }
+                println!("{}", c.print(!dry_run));
             }
             Ok(())
         }

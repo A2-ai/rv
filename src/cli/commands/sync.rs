@@ -16,7 +16,7 @@ use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::PackageType;
-use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+use crate::{BuildPlan, BuildStep, Library, RCmd, RCommandLine, RepoServer, ResolvedDependency};
 use crate::{Git, GitOperations};
 
 fn is_binary_package(path: &Path, name: &str) -> bool {
@@ -104,13 +104,14 @@ fn install_package_from_repository(
 ) -> Result<()> {
     let link_mode = LinkMode::new();
     let repo_server = RepoServer::from_url(pkg.source.repository_url());
-    let pkg_paths =
-        context
-            .cache
-            .get_package_paths(pkg.source.repository_url(), &pkg.name, &pkg.version);
+    let pkg_paths = context.cache.get_package_paths(
+        pkg.source.repository_url(),
+        &pkg.name,
+        &pkg.version.original,
+    );
     let binary_url = repo_server.get_binary_tarball_path(
         &pkg.name,
-        &pkg.version,
+        &pkg.version.original,
         pkg.path.as_deref(),
         &context.cache.r_version,
         &context.cache.system_info,
@@ -132,7 +133,11 @@ fn install_package_from_repository(
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
             download_and_install_source(
-                &repo_server.get_source_tarball_path(&pkg.name, &pkg.version, pkg.path.as_deref()),
+                &repo_server.get_source_tarball_path(
+                    &pkg.name,
+                    &pkg.version.original,
+                    pkg.path.as_deref(),
+                ),
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
@@ -211,16 +216,26 @@ fn install_package(
 pub struct SyncChange {
     pub name: String,
     pub installed: bool,
+    pub kind: Option<PackageType>,
     pub version: Option<String>,
+    pub source: Option<String>,
     pub timing: Option<Duration>,
 }
 
 impl SyncChange {
-    pub fn installed(name: &str, version: &str, timing: Duration) -> Self {
+    pub fn installed(
+        name: &str,
+        version: &str,
+        source: &str,
+        kind: PackageType,
+        timing: Duration,
+    ) -> Self {
         Self {
             name: name.to_string(),
             installed: true,
+            kind: Some(kind),
             timing: Some(timing),
+            source: Some(source.to_string()),
             version: Some(version.to_string()),
         }
     }
@@ -229,8 +244,31 @@ impl SyncChange {
         Self {
             name: name.to_string(),
             installed: false,
+            kind: None,
             timing: None,
+            source: None,
             version: None,
+        }
+    }
+
+    pub fn print(&self, include_timings: bool) -> String {
+        if self.installed {
+            let mut base = format!(
+                "+ {} ({}, {} from {})",
+                self.name,
+                self.version.as_ref().unwrap(),
+                self.kind.unwrap(),
+                self.source.as_ref().unwrap(),
+            );
+
+            if include_timings {
+                base += &format!(" in {}ms", self.timing.unwrap().as_millis());
+                base
+            } else {
+                base
+            }
+        } else {
+            format!("- {}", self.name)
         }
     }
 }
@@ -254,6 +292,7 @@ impl SyncChange {
 pub fn sync(
     context: &CliContext,
     deps: &[ResolvedDependency],
+    library: &Library,
     dry_run: bool,
 ) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
@@ -261,21 +300,29 @@ pub fn sync(
     let staging_path = context.staging_path();
     let plan = BuildPlan::new(&deps);
     let num_deps_to_install = plan.num_to_install();
-    let deps_to_install = plan.all_dependencies_names();
+    let deps_to_install = plan.all_dependencies();
+    // (name, notify). We do not notify if the package is broken in some ways, otherwise we
+    // do notify.
     let mut to_remove = HashSet::new();
     let mut deps_seen = 0;
 
     fs::create_dir_all(&project_library)?;
-    for p in fs::read_dir(&project_library)? {
-        let p = p?.path().canonicalize()?;
-        if p.is_dir() {
-            let dir_name = p.file_name().unwrap().to_string_lossy();
-            if deps_to_install.contains(&*dir_name) {
-                deps_seen += 1;
-            } else {
-                to_remove.insert(dir_name.to_string());
-            }
+    // TODO: handle upgrades here
+    for (name, version) in &library.packages {
+        if deps_to_install
+            .get(name.as_str())
+            .map(|v| *v == version)
+            .unwrap_or(false)
+        {
+            deps_seen += 1;
+        } else {
+            to_remove.insert((name.to_string(), true));
         }
+    }
+
+    for name in &library.broken {
+        log::debug!("Package {name} in library is broken");
+        to_remove.insert((name.to_string(), false));
     }
 
     // Clean up at all times, even with a dry run
@@ -283,17 +330,19 @@ pub fn sync(
         fs::remove_dir_all(&staging_path)?;
     }
 
-    for dir_name in to_remove {
+    for (dir_name, notify) in to_remove {
         // Only actually remove the deps if we are not going to rebuild the lib folder
         if deps_seen == num_deps_to_install {
             let p = project_library.join(&dir_name);
-            if !dry_run {
+            if !dry_run && notify {
                 log::debug!("Removing {dir_name} from library");
                 fs::remove_dir_all(&p)?;
             }
         }
 
-        sync_changes.push(SyncChange::removed(&dir_name));
+        if notify {
+            sync_changes.push(SyncChange::removed(&dir_name));
+        }
     }
 
     // If we have all the deps we need, exit early
@@ -382,8 +431,13 @@ pub fn sync(
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, s_path, dry_run) {
                         Ok(_) => {
-                            let sync_change =
-                                SyncChange::installed(&dep.name, &dep.version, start.elapsed());
+                            let sync_change = SyncChange::installed(
+                                &dep.name,
+                                &dep.version.original,
+                                dep.source.repository_url(),
+                                dep.kind,
+                                start.elapsed(),
+                            );
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
@@ -445,6 +499,14 @@ pub fn sync(
     }
 
     fs::rename(&staging_path, &project_library)?;
+
+    // Sort all changes by a-z and fall back on installed status for things with the same name
+    sync_changes.sort_unstable_by(
+        |a, b| match a.name.to_lowercase().cmp(&b.name.to_lowercase()) {
+            std::cmp::Ordering::Equal => a.installed.cmp(&b.installed),
+            ordering => ordering,
+        },
+    );
 
     Ok(sync_changes)
 }

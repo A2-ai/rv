@@ -1,11 +1,11 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt;
-
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
-use crate::VersionRequirement;
+use crate::{Version, VersionRequirement};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt;
+use std::str::FromStr;
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -13,7 +13,7 @@ use crate::VersionRequirement;
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
-    pub(crate) version: Cow<'d, str>,
+    pub(crate) version: Cow<'d, Version>,
     pub(crate) source: Source,
     pub(crate) dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
@@ -43,7 +43,7 @@ impl<'d> ResolvedDependency<'d> {
     ) -> Self {
         Self {
             name: Cow::Borrowed(&package.name),
-            version: Cow::Borrowed(&package.version),
+            version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
             source: package.source.clone(),
             dependencies: package
                 .dependencies
@@ -85,7 +85,7 @@ impl<'d> ResolvedDependency<'d> {
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
-            version: Cow::Borrowed(&package.version.original),
+            version: Cow::Borrowed(&package.version),
             source: Source::Repository {
                 repository: repo_url.to_string(),
             },
@@ -138,7 +138,7 @@ impl<'d> ResolvedDependency<'d> {
             path: None,
             from_lockfile: false,
             name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.original.clone()),
+            version: Cow::Owned(package.version.clone()),
             source,
             installation_status,
             install_suggests,
@@ -156,7 +156,7 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
             f,
             "{}={} ({}, type={}, path='{}', from_lockfile={}, from_remote={})",
             self.name,
-            self.version,
+            self.version.original,
             self.source,
             self.kind,
             self.path.as_deref().unwrap_or(""),

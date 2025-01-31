@@ -222,7 +222,7 @@ impl<'d> Resolver<'d> {
         }
     }
 
-    /// Tries to find all dependencies from the repos, as well as their install status
+    /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
         dependencies: &'d [ConfigDependency],
@@ -269,7 +269,7 @@ impl<'d> Resolver<'d> {
             // We will the remote result around _if_ the item has a version requirement and is in
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
-            // .contains would need to allocate
+            // .contains would need to allocate, so using iter().any() instead
             let can_be_overridden = item.version_requirement.is_some()
                 && prefer_repositories_for
                     .iter()

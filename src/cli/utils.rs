@@ -30,9 +30,9 @@ pub fn untar_package<R: io::Read, T: AsRef<Path>>(reader: R, destination: T) -> 
     Ok(())
 }
 
-/// Builds the path for binary in the cache and the library based on os info and R version
+/// Builds the path for binary in the cache and the library based on system info and R version
 /// {R_Version}/{arch}/{codename}/
-pub fn get_os_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
+pub fn get_current_system_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
     let mut path = PathBuf::new().join(format!("{}.{}", r_version[0], r_version[1]));
 
     if let Some(arch) = system_info.arch() {

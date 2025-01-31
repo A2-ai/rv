@@ -161,7 +161,7 @@ impl LockedPackage {
     pub fn from_resolved_dep(dep: ResolvedDependency) -> Self {
         Self {
             name: dep.name.into_owned(),
-            version: dep.version.into_owned(),
+            version: dep.version.original.clone(),
             source: dep.source,
             path: dep.path.map(|p| p.into_owned()),
             force_source: dep.force_source,
