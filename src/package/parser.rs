@@ -85,15 +85,10 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                     let remotes = parts[1]
                         .trim()
                         .split(",")
-                        .map(|x| parse_remote(x.trim()))
+                        .map(|x| (x.to_string(), parse_remote(x.trim())))
                         .collect::<Vec<_>>();
-
-                    // TODO: need to decide what to do when we can't figure the name or it is
-                    // a source we don't support
-                    for (name, remote) in remotes {
-                        if !name.is_empty() {
-                            package.remotes.insert(name, remote);
-                        }
+                    for (original, out) in remotes {
+                        package.remotes.insert(original, out);
                     }
                 }
                 // Posit uses that, maybe we can parse it?
@@ -188,6 +183,6 @@ mod tests {
         let content =
             std::fs::read_to_string("src/tests/package_files/cran-binary.PACKAGE").unwrap();
         let packages = parse_package_file(&content);
-        assert_eq!(packages.len(), 22361);
+        assert_eq!(packages.len(), 22362);
     }
 }

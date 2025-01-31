@@ -66,7 +66,7 @@ struct RenvLock {
 impl RenvLock {
     pub fn parse_renv_lock<P: AsRef<Path>>(path: P) -> Result<Self, FromJsonFileError> {
         let path = path.as_ref();
-        let content = match std::fs::read_to_string(&path) {
+        let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
                 return Err(FromJsonFileError {

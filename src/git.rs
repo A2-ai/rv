@@ -13,6 +13,9 @@ pub enum GitReference<'g> {
     Tag(&'g str),
     /// The commit hash
     Commit(&'g str),
+    /// We don't know what it is.
+    /// Used for Remotes
+    Unknown(&'g str),
 }
 
 impl fmt::Display for GitReference<'_> {
@@ -27,6 +30,7 @@ impl<'g> GitReference<'g> {
             GitReference::Branch(b) => b,
             GitReference::Tag(b) => b,
             GitReference::Commit(b) => b,
+            GitReference::Unknown(b) => b,
         }
     }
 }
@@ -54,7 +58,7 @@ fn can_find_reference(repo: &Repository, git_ref: &str) -> bool {
 
 fn clone_repository(
     url: &str,
-    git_ref: GitReference<'_>,
+    git_ref: Option<GitReference<'_>>,
     destination: impl AsRef<Path>,
 ) -> Result<String, git2::Error> {
     let destination = destination.as_ref();
@@ -63,21 +67,23 @@ fn clone_repository(
     let repo = if destination.exists() {
         let repo = Repository::open(destination)?;
         // Only fetch if we can't find the reference
-        if !can_find_reference(&repo, git_ref.reference()) {
-            let remote_name = repo
-                .remotes()?
-                .get(0)
-                .ok_or_else(|| git2::Error::from_str("No remotes found"))?
-                .to_string();
-            let mut remote = repo.find_remote(&remote_name)?;
-            remote.fetch(&["HEAD"], None, None)?;
+        if let Some(reference) = &git_ref {
+            if !can_find_reference(&repo, reference.reference()) {
+                let remote_name = repo
+                    .remotes()?
+                    .get(0)
+                    .ok_or_else(|| git2::Error::from_str("No remotes found"))?
+                    .to_string();
+                let mut remote = repo.find_remote(&remote_name)?;
+                remote.fetch(&["HEAD"], None, None)?;
+            }
         }
 
         repo
     } else {
         let mut builder = git2::build::RepoBuilder::new();
 
-        if let GitReference::Branch(b) = git_ref {
+        if let Some(GitReference::Branch(b)) = &git_ref {
             builder.branch(b);
         }
 
@@ -86,7 +92,9 @@ fn clone_repository(
 
     // For commits/tags, we need to checkout the ref specifically
     // This will be a no-op for branches
-    checkout(&repo, git_ref.reference())?;
+    if let Some(reference) = &git_ref {
+        checkout(&repo, reference.reference())?;
+    }
     get_sha(&repo)
 }
 
@@ -98,7 +106,7 @@ pub trait GitOperations {
     fn clone_and_checkout(
         &self,
         url: &str,
-        git_ref: GitReference<'_>,
+        git_ref: Option<GitReference<'_>>,
         destination: impl AsRef<Path>,
     ) -> Result<String, git2::Error>;
 }
@@ -109,7 +117,7 @@ impl GitOperations for Git {
     fn clone_and_checkout(
         &self,
         url: &str,
-        git_ref: GitReference<'_>,
+        git_ref: Option<GitReference<'_>>,
         destination: impl AsRef<Path>,
     ) -> Result<String, git2::Error> {
         clone_repository(url, git_ref, destination)

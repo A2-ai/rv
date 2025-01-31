@@ -4,11 +4,144 @@ version = 1
 r_version = "4.4"
 
 [[packages]]
+name = "BiocManager"
+version = "1.30.25"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "DBI"
+version = "1.2.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "DT"
+version = "0.33"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "htmltools",
+    "htmlwidgets",
+    "httpuv",
+    "jsonlite",
+    "magrittr",
+    "crosstalk",
+    "jquerylib",
+    "promises",
+]
+
+[[packages]]
+name = "MASS"
+version = "7.3-61"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "Matrix"
+version = "1.7-1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "lattice",
+]
+
+[[packages]]
+name = "R.cache"
+version = "0.16.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "R.methodsS3",
+    "R.oo",
+    "R.utils",
+    "digest",
+]
+
+[[packages]]
+name = "R.methodsS3"
+version = "1.8.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "R.oo"
+version = "1.27.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "R.methodsS3",
+]
+
+[[packages]]
+name = "R.utils"
+version = "2.12.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "R.oo",
+    "R.methodsS3",
+]
+
+[[packages]]
 name = "R6"
 version = "2.5.1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
+
+[[packages]]
+name = "RColorBrewer"
+version = "1.1-3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "RSQLite"
+version = "2.3.9"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "bit64",
+    "blob",
+    "DBI",
+    "memoise",
+    "pkgconfig",
+    "rlang",
+    "plogr",
+    "cpp11",
+]
+
+[[packages]]
+name = "Rcpp"
+version = "1.0.13-1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "RcppParallel"
+version = "5.1.9"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "V8"
+version = "6.0.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "Rcpp",
+    "jsonlite",
+    "curl",
+    "Rcpp",
+]
 
 [[packages]]
 name = "arrow"
@@ -28,6 +161,15 @@ dependencies = [
 ]
 
 [[packages]]
+name = "askpass"
+version = "1.2.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "sys",
+]
+
+[[packages]]
 name = "assertthat"
 version = "0.2.1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -37,6 +179,20 @@ dependencies = []
 [[packages]]
 name = "backports"
 version = "1.5.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "base64enc"
+version = "0.1-3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "bigD"
+version = "0.3.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
@@ -58,23 +214,99 @@ dependencies = [
 ]
 
 [[packages]]
-name = "cellranger"
-version = "1.1.0"
+name = "bitops"
+version = "1.0-9"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "blob"
+version = "1.2.4"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = [
-    "rematch",
-    "tibble",
+    "rlang",
+    "vctrs",
 ]
 
 [[packages]]
-name = "checkmate"
-version = "2.3.2"
+name = "brew"
+version = "1.0-10"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "brio"
+version = "1.1.5"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "broom"
+version = "1.0.7"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = [
     "backports",
+    "dplyr",
+    "generics",
+    "glue",
+    "lifecycle",
+    "purrr",
+    "rlang",
+    "stringr",
+    "tibble",
+    "tidyr",
 ]
+
+[[packages]]
+name = "bslib"
+version = "0.8.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "base64enc",
+    "cachem",
+    "fastmap",
+    "htmltools",
+    "jquerylib",
+    "jsonlite",
+    "lifecycle",
+    "memoise",
+    "mime",
+    "rlang",
+    "sass",
+]
+
+[[packages]]
+name = "cachem"
+version = "1.1.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "rlang",
+    "fastmap",
+]
+
+[[packages]]
+name = "callr"
+version = "3.7.6"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "processx",
+    "R6",
+]
+
+[[packages]]
+name = "chron"
+version = "2.3-61"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
 
 [[packages]]
 name = "cli"
@@ -84,11 +316,62 @@ force_source = false
 dependencies = []
 
 [[packages]]
+name = "clindata"
+version = "1.0.5"
+source = { git = "https://github.com/Gilead-BioStats/clindata", sha = "f90add5334a9c5765655e837a94885131d20e21c" }
+force_source = true
+dependencies = [
+    "arrow",
+    "cli",
+    "data.table",
+    "dplyr",
+    "glue",
+    "lubridate",
+    "magrittr",
+    "purrr",
+    "readr",
+    "rlang",
+    "stringr",
+    "tibble",
+    "tidyr",
+    "yaml",
+]
+
+[[packages]]
 name = "clipr"
 version = "0.8.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
+
+[[packages]]
+name = "colorspace"
+version = "2.1-1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "commonmark"
+version = "1.9.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "covr"
+version = "3.6.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "digest",
+    "jsonlite",
+    "rex",
+    "httr",
+    "crayon",
+    "withr",
+    "yaml",
+]
 
 [[packages]]
 name = "cpp11"
@@ -98,6 +381,16 @@ force_source = false
 dependencies = []
 
 [[packages]]
+name = "cranlogs"
+version = "2.1.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "httr",
+    "jsonlite",
+]
+
+[[packages]]
 name = "crayon"
 version = "1.5.3"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -105,11 +398,140 @@ force_source = false
 dependencies = []
 
 [[packages]]
+name = "credentials"
+version = "2.0.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "openssl",
+    "sys",
+    "curl",
+    "jsonlite",
+    "askpass",
+]
+
+[[packages]]
+name = "crosstalk"
+version = "1.2.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "htmltools",
+    "jsonlite",
+    "lazyeval",
+    "R6",
+]
+
+[[packages]]
+name = "curl"
+version = "6.0.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "data.table"
+version = "1.16.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "dbplyr"
+version = "2.5.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "blob",
+    "cli",
+    "DBI",
+    "dplyr",
+    "glue",
+    "lifecycle",
+    "magrittr",
+    "pillar",
+    "purrr",
+    "R6",
+    "rlang",
+    "tibble",
+    "tidyr",
+    "tidyselect",
+    "vctrs",
+    "withr",
+]
+
+[[packages]]
+name = "desc"
+version = "1.4.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "R6",
+]
+
+[[packages]]
+name = "devtools"
+version = "2.4.5"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "usethis",
+    "cli",
+    "desc",
+    "ellipsis",
+    "fs",
+    "lifecycle",
+    "memoise",
+    "miniUI",
+    "pkgbuild",
+    "pkgdown",
+    "pkgload",
+    "profvis",
+    "rcmdcheck",
+    "remotes",
+    "rlang",
+    "roxygen2",
+    "rversions",
+    "sessioninfo",
+    "testthat",
+    "urlchecker",
+    "withr",
+]
+
+[[packages]]
+name = "diffobj"
+version = "0.3.5"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "crayon",
+]
+
+[[packages]]
 name = "digest"
 version = "0.6.37"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
+
+[[packages]]
+name = "downlit"
+version = "0.4.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "brio",
+    "desc",
+    "digest",
+    "evaluate",
+    "fansi",
+    "memoise",
+    "rlang",
+    "vctrs",
+    "withr",
+    "yaml",
+]
 
 [[packages]]
 name = "dplyr"
@@ -131,6 +553,31 @@ dependencies = [
 ]
 
 [[packages]]
+name = "duckdb"
+version = "1.1.3-1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "DBI",
+]
+
+[[packages]]
+name = "ellipsis"
+version = "0.3.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "rlang",
+]
+
+[[packages]]
+name = "evaluate"
+version = "1.0.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
 name = "fansi"
 version = "1.0.6"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -138,17 +585,27 @@ force_source = false
 dependencies = []
 
 [[packages]]
-name = "forcats"
-version = "1.0.0"
+name = "farver"
+version = "2.1.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "fastmap"
+version = "1.2.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "fontawesome"
+version = "0.5.3"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = [
-    "cli",
-    "glue",
-    "lifecycle",
-    "magrittr",
     "rlang",
-    "tibble",
+    "htmltools",
 ]
 
 [[packages]]
@@ -166,6 +623,107 @@ force_source = false
 dependencies = []
 
 [[packages]]
+name = "gert"
+version = "2.1.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "askpass",
+    "credentials",
+    "openssl",
+    "rstudioapi",
+    "sys",
+    "zip",
+]
+
+[[packages]]
+name = "ggfittext"
+version = "0.10.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "stringi",
+    "shades",
+    "gridtext",
+    "ggplot2",
+    "cli",
+]
+
+[[packages]]
+name = "gggenes"
+version = "0.5.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "ggplot2",
+    "ggfittext",
+    "rlang",
+]
+
+[[packages]]
+name = "ggiraph"
+version = "0.8.11"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "ggplot2",
+    "htmltools",
+    "htmlwidgets",
+    "purrr",
+    "Rcpp",
+    "rlang",
+    "systemfonts",
+    "uuid",
+    "vctrs",
+    "Rcpp",
+    "systemfonts",
+]
+
+[[packages]]
+name = "ggplot2"
+version = "3.5.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "glue",
+    "gtable",
+    "isoband",
+    "lifecycle",
+    "MASS",
+    "mgcv",
+    "rlang",
+    "scales",
+    "tibble",
+    "vctrs",
+    "withr",
+]
+
+[[packages]]
+name = "gh"
+version = "1.4.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "gitcreds",
+    "glue",
+    "httr2",
+    "ini",
+    "jsonlite",
+    "lifecycle",
+    "rlang",
+]
+
+[[packages]]
+name = "gitcreds"
+version = "0.1.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
 name = "glue"
 version = "1.8.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -173,21 +731,139 @@ force_source = false
 dependencies = []
 
 [[packages]]
-name = "haven"
-version = "2.5.4"
+name = "gridtext"
+version = "0.1.5"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "curl",
+    "markdown",
+    "rlang",
+    "Rcpp",
+    "png",
+    "jpeg",
+    "stringr",
+    "xml2",
+    "Rcpp",
+]
+
+[[packages]]
+name = "gsm"
+version = "2.2.2"
+source = { git = "https://github.com/Gilead-BioStats/gsm/", sha = "7e12eb7832c0472f06ace2f4e0843399d821ba02", tag = "v2.2.2" }
+force_source = true
+dependencies = [
+    "broom",
+    "cli",
+    "DBI",
+    "dbplyr",
+    "dplyr",
+    "ggplot2",
+    "glue",
+    "gt",
+    "htmltools",
+    "htmlwidgets",
+    "jsonlite",
+    "lifecycle",
+    "log4r",
+    "magrittr",
+    "purrr",
+    "rlang",
+    "stringr",
+    "tibble",
+    "tidyr",
+    "yaml",
+]
+suggests = [
+    "clindata",
+    "covr",
+    "DT",
+    "duckdb",
+    "fontawesome",
+    "gggenes",
+    "ggiraph",
+    "here",
+    "knitr",
+    "lamW",
+    "lubridate",
+    "pander",
+    "pkgdown",
+    "riskmetric",
+    "rmarkdown",
+    "roxygen2",
+    "safetyData",
+    "sqldf",
+    "styler",
+    "testthat",
+    "usethis",
+    "withr",
+]
+
+[[packages]]
+name = "gsubfn"
+version = "0.7"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "proto",
+]
+
+[[packages]]
+name = "gt"
+version = "0.11.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "base64enc",
+    "bigD",
+    "bitops",
+    "cli",
+    "commonmark",
+    "dplyr",
+    "fs",
+    "glue",
+    "htmltools",
+    "htmlwidgets",
+    "juicyjuice",
+    "magrittr",
+    "markdown",
+    "reactable",
+    "rlang",
+    "sass",
+    "scales",
+    "tidyselect",
+    "vctrs",
+    "xml2",
+]
+
+[[packages]]
+name = "gtable"
+version = "0.3.6"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = [
     "cli",
-    "forcats",
-    "hms",
+    "glue",
     "lifecycle",
-    "readr",
     "rlang",
-    "tibble",
-    "tidyselect",
-    "vctrs",
-    "cpp11",
+]
+
+[[packages]]
+name = "here"
+version = "1.0.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "rprojroot",
+]
+
+[[packages]]
+name = "highr"
+version = "0.11"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "xfun",
 ]
 
 [[packages]]
@@ -203,6 +879,179 @@ dependencies = [
 ]
 
 [[packages]]
+name = "htmltools"
+version = "0.5.8.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "base64enc",
+    "digest",
+    "fastmap",
+    "rlang",
+]
+
+[[packages]]
+name = "htmlwidgets"
+version = "1.6.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "htmltools",
+    "jsonlite",
+    "knitr",
+    "rmarkdown",
+    "yaml",
+]
+
+[[packages]]
+name = "httpuv"
+version = "1.6.15"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "later",
+    "promises",
+    "R6",
+    "Rcpp",
+    "later",
+    "Rcpp",
+]
+
+[[packages]]
+name = "httr"
+version = "1.4.7"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "curl",
+    "jsonlite",
+    "mime",
+    "openssl",
+    "R6",
+]
+
+[[packages]]
+name = "httr2"
+version = "1.0.7"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "curl",
+    "glue",
+    "lifecycle",
+    "magrittr",
+    "openssl",
+    "R6",
+    "rappdirs",
+    "rlang",
+    "vctrs",
+    "withr",
+]
+
+[[packages]]
+name = "ini"
+version = "0.3.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "isoband"
+version = "0.2.7"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "jpeg"
+version = "0.1-10"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "jquerylib"
+version = "0.1.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "htmltools",
+]
+
+[[packages]]
+name = "jsonlite"
+version = "1.8.9"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "juicyjuice"
+version = "0.1.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "V8",
+]
+
+[[packages]]
+name = "knitr"
+version = "1.49"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "evaluate",
+    "highr",
+    "xfun",
+    "yaml",
+]
+
+[[packages]]
+name = "labeling"
+version = "0.4.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "lamW"
+version = "2.2.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "Rcpp",
+    "RcppParallel",
+    "Rcpp",
+    "RcppParallel",
+]
+
+[[packages]]
+name = "later"
+version = "1.4.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "Rcpp",
+    "rlang",
+    "Rcpp",
+]
+
+[[packages]]
+name = "lattice"
+version = "0.22-6"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "lazyeval"
+version = "0.2.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
 name = "lifecycle"
 version = "1.0.4"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -214,11 +1063,113 @@ dependencies = [
 ]
 
 [[packages]]
+name = "log4r"
+version = "0.4.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "lubridate"
+version = "1.9.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "generics",
+    "timechange",
+]
+
+[[packages]]
 name = "magrittr"
 version = "2.0.3"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
+
+[[packages]]
+name = "markdown"
+version = "1.13"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "commonmark",
+    "xfun",
+]
+
+[[packages]]
+name = "memoise"
+version = "2.0.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "rlang",
+    "cachem",
+]
+
+[[packages]]
+name = "mgcv"
+version = "1.9-1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "nlme",
+    "Matrix",
+]
+
+[[packages]]
+name = "mime"
+version = "0.12"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "miniUI"
+version = "0.1.1.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "shiny",
+    "htmltools",
+]
+
+[[packages]]
+name = "munsell"
+version = "0.5.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "colorspace",
+]
+
+[[packages]]
+name = "nlme"
+version = "3.1-166"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "lattice",
+]
+
+[[packages]]
+name = "openssl"
+version = "2.2.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "askpass",
+]
+
+[[packages]]
+name = "pander"
+version = "0.6.5"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "digest",
+    "Rcpp",
+    "Rcpp",
+]
 
 [[packages]]
 name = "pillar"
@@ -236,8 +1187,88 @@ dependencies = [
 ]
 
 [[packages]]
+name = "pkgbuild"
+version = "1.4.5"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "callr",
+    "cli",
+    "desc",
+    "processx",
+    "R6",
+]
+
+[[packages]]
 name = "pkgconfig"
 version = "2.0.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "pkgdown"
+version = "2.1.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "bslib",
+    "callr",
+    "cli",
+    "desc",
+    "digest",
+    "downlit",
+    "fontawesome",
+    "fs",
+    "httr2",
+    "jsonlite",
+    "openssl",
+    "purrr",
+    "ragg",
+    "rlang",
+    "rmarkdown",
+    "tibble",
+    "whisker",
+    "withr",
+    "xml2",
+    "yaml",
+]
+
+[[packages]]
+name = "pkgload"
+version = "1.4.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "desc",
+    "fs",
+    "glue",
+    "lifecycle",
+    "pkgbuild",
+    "processx",
+    "rlang",
+    "rprojroot",
+    "withr",
+]
+
+[[packages]]
+name = "plogr"
+version = "0.2.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "png"
+version = "0.1-8"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "praise"
+version = "1.0.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
@@ -248,6 +1279,27 @@ version = "1.2.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
+
+[[packages]]
+name = "processx"
+version = "3.8.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "ps",
+    "R6",
+]
+
+[[packages]]
+name = "profvis"
+version = "0.4.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "htmlwidgets",
+    "rlang",
+    "vctrs",
+]
 
 [[packages]]
 name = "progress"
@@ -262,6 +1314,36 @@ dependencies = [
 ]
 
 [[packages]]
+name = "promises"
+version = "1.3.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "fastmap",
+    "later",
+    "magrittr",
+    "R6",
+    "Rcpp",
+    "rlang",
+    "later",
+    "Rcpp",
+]
+
+[[packages]]
+name = "proto"
+version = "1.0.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "ps"
+version = "1.8.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
 name = "purrr"
 version = "1.0.2"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -273,6 +1355,67 @@ dependencies = [
     "rlang",
     "vctrs",
     "cli",
+]
+
+[[packages]]
+name = "ragg"
+version = "1.3.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "systemfonts",
+    "textshaping",
+    "systemfonts",
+    "textshaping",
+]
+
+[[packages]]
+name = "rappdirs"
+version = "0.3.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "rcmdcheck"
+version = "1.4.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "callr",
+    "cli",
+    "curl",
+    "desc",
+    "digest",
+    "pkgbuild",
+    "prettyunits",
+    "R6",
+    "rprojroot",
+    "sessioninfo",
+    "withr",
+    "xopen",
+]
+
+[[packages]]
+name = "reactR"
+version = "0.6.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "htmltools",
+]
+
+[[packages]]
+name = "reactable"
+version = "0.4.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "digest",
+    "htmltools",
+    "htmlwidgets",
+    "jsonlite",
+    "reactR",
 ]
 
 [[packages]]
@@ -295,23 +1438,42 @@ dependencies = [
 ]
 
 [[packages]]
-name = "readxl"
-version = "1.4.3"
-source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
-force_source = false
-dependencies = [
-    "cellranger",
-    "tibble",
-    "cpp11",
-    "progress",
-]
-
-[[packages]]
-name = "rematch"
-version = "2.0.0"
+name = "remotes"
+version = "2.5.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
+
+[[packages]]
+name = "rex"
+version = "1.2.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "lazyeval",
+]
+
+[[packages]]
+name = "riskmetric"
+version = "0.2.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "backports",
+    "xml2",
+    "httr",
+    "curl",
+    "urltools",
+    "memoise",
+    "BiocManager",
+    "cranlogs",
+    "covr",
+    "vctrs",
+    "pillar",
+    "tibble",
+    "pkgload",
+    "devtools",
+]
 
 [[packages]]
 name = "rlang"
@@ -321,22 +1483,168 @@ force_source = false
 dependencies = []
 
 [[packages]]
-name = "scicalc"
-version = "0.1.1"
-source = { git = "https://github.com/A2-ai/scicalc", sha = "bc50e550e432c3c620714f30dd59115801f89995", tag = "v0.1.1" }
-force_source = true
+name = "rmarkdown"
+version = "2.29"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
 dependencies = [
-    "arrow",
-    "checkmate",
-    "digest",
-    "dplyr",
-    "fs",
-    "haven",
-    "magrittr",
-    "readr",
-    "readxl",
+    "bslib",
+    "evaluate",
+    "fontawesome",
+    "htmltools",
+    "jquerylib",
+    "jsonlite",
+    "knitr",
+    "tinytex",
+    "xfun",
+    "yaml",
+]
+
+[[packages]]
+name = "roxygen2"
+version = "7.3.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "brew",
+    "cli",
+    "commonmark",
+    "desc",
+    "knitr",
+    "pkgload",
+    "purrr",
+    "R6",
     "rlang",
+    "stringi",
     "stringr",
+    "withr",
+    "xml2",
+    "cpp11",
+]
+
+[[packages]]
+name = "rprojroot"
+version = "2.0.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "rstudioapi"
+version = "0.17.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "rversions"
+version = "2.1.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "curl",
+    "xml2",
+]
+
+[[packages]]
+name = "safetyData"
+version = "1.0.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "sass"
+version = "0.4.9"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "fs",
+    "rlang",
+    "htmltools",
+    "R6",
+    "rappdirs",
+]
+
+[[packages]]
+name = "scales"
+version = "1.3.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "farver",
+    "glue",
+    "labeling",
+    "lifecycle",
+    "munsell",
+    "R6",
+    "RColorBrewer",
+    "rlang",
+    "viridisLite",
+]
+
+[[packages]]
+name = "sessioninfo"
+version = "1.2.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+]
+
+[[packages]]
+name = "shades"
+version = "1.4.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "shiny"
+version = "1.10.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "httpuv",
+    "mime",
+    "jsonlite",
+    "xtable",
+    "fontawesome",
+    "htmltools",
+    "R6",
+    "sourcetools",
+    "later",
+    "promises",
+    "crayon",
+    "rlang",
+    "fastmap",
+    "withr",
+    "commonmark",
+    "glue",
+    "bslib",
+    "cachem",
+    "lifecycle",
+]
+
+[[packages]]
+name = "sourcetools"
+version = "0.1.7-1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "sqldf"
+version = "0.4-11"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "gsubfn",
+    "proto",
+    "RSQLite",
+    "DBI",
+    "chron",
 ]
 
 [[packages]]
@@ -362,6 +1670,76 @@ dependencies = [
 ]
 
 [[packages]]
+name = "styler"
+version = "1.10.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "magrittr",
+    "purrr",
+    "R.cache",
+    "rlang",
+    "rprojroot",
+    "vctrs",
+    "withr",
+]
+
+[[packages]]
+name = "sys"
+version = "3.4.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "systemfonts"
+version = "1.1.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "lifecycle",
+    "cpp11",
+]
+
+[[packages]]
+name = "testthat"
+version = "3.2.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "brio",
+    "callr",
+    "cli",
+    "desc",
+    "digest",
+    "evaluate",
+    "jsonlite",
+    "lifecycle",
+    "magrittr",
+    "pkgload",
+    "praise",
+    "processx",
+    "ps",
+    "R6",
+    "rlang",
+    "waldo",
+    "withr",
+]
+
+[[packages]]
+name = "textshaping"
+version = "0.4.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "lifecycle",
+    "systemfonts",
+    "cpp11",
+    "systemfonts",
+]
+
+[[packages]]
 name = "tibble"
 version = "3.2.1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -374,6 +1752,26 @@ dependencies = [
     "pkgconfig",
     "rlang",
     "vctrs",
+]
+
+[[packages]]
+name = "tidyr"
+version = "1.3.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "dplyr",
+    "glue",
+    "lifecycle",
+    "magrittr",
+    "purrr",
+    "rlang",
+    "stringr",
+    "tibble",
+    "tidyselect",
+    "vctrs",
+    "cpp11",
 ]
 
 [[packages]]
@@ -391,6 +1789,34 @@ dependencies = [
 ]
 
 [[packages]]
+name = "timechange"
+version = "0.3.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cpp11",
+]
+
+[[packages]]
+name = "tinytex"
+version = "0.54"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "xfun",
+]
+
+[[packages]]
+name = "triebeard"
+version = "0.4.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "Rcpp",
+    "Rcpp",
+]
+
+[[packages]]
 name = "tzdb"
 version = "0.4.0"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
@@ -400,8 +1826,64 @@ dependencies = [
 ]
 
 [[packages]]
+name = "urlchecker"
+version = "1.0.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "curl",
+    "xml2",
+]
+
+[[packages]]
+name = "urltools"
+version = "1.7.3"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "Rcpp",
+    "triebeard",
+    "Rcpp",
+]
+
+[[packages]]
+name = "usethis"
+version = "3.1.0"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "clipr",
+    "crayon",
+    "curl",
+    "desc",
+    "fs",
+    "gert",
+    "gh",
+    "glue",
+    "jsonlite",
+    "lifecycle",
+    "purrr",
+    "rappdirs",
+    "rlang",
+    "rprojroot",
+    "rstudioapi",
+    "whisker",
+    "withr",
+    "yaml",
+]
+
+[[packages]]
 name = "utf8"
 version = "1.2.4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "uuid"
+version = "1.2-1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []
@@ -417,6 +1899,13 @@ dependencies = [
     "lifecycle",
     "rlang",
 ]
+
+[[packages]]
+name = "viridisLite"
+version = "0.4.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
 
 [[packages]]
 name = "vroom"
@@ -442,8 +1931,74 @@ dependencies = [
 ]
 
 [[packages]]
+name = "waldo"
+version = "0.6.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "diffobj",
+    "glue",
+    "rlang",
+]
+
+[[packages]]
+name = "whisker"
+version = "0.4.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
 name = "withr"
 version = "3.0.2"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "xfun"
+version = "0.49"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "xml2"
+version = "1.3.6"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "cli",
+    "rlang",
+]
+
+[[packages]]
+name = "xopen"
+version = "1.0.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = [
+    "processx",
+]
+
+[[packages]]
+name = "xtable"
+version = "1.8-4"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "yaml"
+version = "2.3.10"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "zip"
+version = "2.3.1"
 source = { repository = "https://packagemanager.posit.co/cran/2024-12-16" }
 force_source = false
 dependencies = []

@@ -1,0 +1,55 @@
+Package: gsm.app
+Title: gsm Shiny Application
+Version: 2.3.0.9000
+Authors@R: c(
+    person("Jon", "Harmon", , "jonthegeek@gmail.com", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0003-4781-4346")),
+    person("Spencer", "Childress", , "spencer.childress@gilead.com", role = "aut"),
+    person("Taylor", "Rodgers", , "Taylor.Rodgers@freestateanalytics.com", role = "aut"),
+    person("Matt", "Roumaya", , "matthewroumaya@gmail.com", role = "aut",
+           comment = c(ORCID = "0000-0002-8009-2771"))
+  )
+Description: Explore the results of gsm assessments.
+License: Apache License (>= 2)
+URL: https://gilead-biostats.github.io/gsm.app/,
+    https://github.com/Gilead-BioStats/gsm.app
+BugReports: https://github.com/Gilead-BioStats/gsm.app/issues
+Depends:
+    R (>= 4.0)
+Imports:
+    bslib,
+    cli,
+    dplyr,
+    favawesome,
+    glue,
+    gsm (>= 2.2.2),
+    htmltools,
+    htmlwidgets,
+    jsonlite,
+    magrittr,
+    purrr,
+    rlang,
+    shiny (>= 1.6.0),
+    shinyjs,
+    yaml
+Suggests:
+    chromote (>= 0.3.1),
+    devtools,
+    here,
+    knitr,
+    pak,
+    rmarkdown,
+    shinytest2,
+    stringr,
+    testthat (>= 3.0.0),
+    usethis,
+    withr
+Remotes:
+    gsm=gilead-biostats/gsm@v2.2.2
+Config/testthat/edition: 3
+Encoding: UTF-8
+Language: en-US
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+VignetteBuilder: knitr
