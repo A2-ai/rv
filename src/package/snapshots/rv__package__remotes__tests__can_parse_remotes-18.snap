@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: dmlc/xgboost/R-package
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-xgboost => Git { url: "https://github.com/dmlc/xgboost/R-package", reference: None, pull_request: None, directory: Some("R-package") }
+Some("xgboost") => Git { url: "https://github.com/dmlc/xgboost/R-package", reference: None, pull_request: None, directory: Some("R-package") }

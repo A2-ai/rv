@@ -33,6 +33,7 @@ impl Repository {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
+#[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
     Simple(String),
     Git {
@@ -152,6 +153,15 @@ pub(crate) struct Project {
     dependencies: Vec<ConfigDependency>,
     #[serde(default)]
     dev_dependencies: Vec<ConfigDependency>,
+    /// By default, we will always follow the remotes defined in a DESCRIPTION file
+    /// It is possible to override this behaviour by setting the package name in that vector if
+    /// the following conditions are met:
+    /// 1. the package has a version requirement
+    /// 2. we can find a package matching that version requirement in a repository
+    /// If a package doesn't list a version requirement in the DESCRIPTION file, we will ALWAYS
+    /// install from the remote.
+    #[serde(default)]
+    prefer_repositories_for: Vec<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -248,6 +258,10 @@ impl Config {
 
     pub fn dependencies(&self) -> &[ConfigDependency] {
         &self.project.dependencies
+    }
+
+    pub fn prefer_repositories_for(&self) -> &[String] {
+        &self.project.prefer_repositories_for
     }
 
     pub fn r_version(&self) -> &Version {

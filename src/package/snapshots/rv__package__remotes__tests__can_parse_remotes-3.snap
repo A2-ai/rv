@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: r-lib/testthat@c67018fa4970
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-testthat => Git { url: "https://github.com/r-lib/testthat", reference: Some("c67018fa4970"), pull_request: None, directory: None }
+Some("testthat") => Git { url: "https://github.com/r-lib/testthat", reference: Some("c67018fa4970"), pull_request: None, directory: None }

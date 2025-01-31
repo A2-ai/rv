@@ -62,7 +62,7 @@ impl CliContext {
         if self
             .lockfile
             .as_ref()
-            .and_then(|l| Some(l.can_resolve(self.config.dependencies())))
+            .and_then(|l| Some(!l.can_resolve(self.config.dependencies())))
             .unwrap_or(true)
         {
             self.load_databases()?;
