@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: "gitlab::jimhester/covr"
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-covr => Git { url: "https://gitlab.com/jimhester/covr", reference: None, pull_request: None, directory: None }
+Some("covr") => Git { url: "https://gitlab.com/jimhester/covr", reference: None, pull_request: None, directory: None }

@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: yaml=vubiostat/r-yaml
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-yaml => Git { url: "https://github.com/vubiostat/r-yaml", reference: None, pull_request: None, directory: None }
+Some("yaml") => Git { url: "https://github.com/vubiostat/r-yaml", reference: None, pull_request: None, directory: None }

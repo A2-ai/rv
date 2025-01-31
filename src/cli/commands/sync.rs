@@ -74,7 +74,7 @@ fn download_and_install_binary(
 ) -> Result<()> {
     // If we get an error doing the binary download, fall back to source
     if let Err(e) = download_and_untar(&url, &paths.binary) {
-        log::warn!("Failed to download/untar binary package: {e}");
+        log::warn!("Failed to download/untar binary package: {e:?}");
         return download_and_install_source(url, paths, library_dir, pkg_name);
     }
 
@@ -156,7 +156,7 @@ fn install_package_from_git(
     let link_mode = LinkMode::new();
     let repo_url = pkg.source.repository_url();
     let sha = pkg.source.git_sha();
-    log::debug!("Installing packagr from git");
+    log::debug!("Installing {} from git", pkg.name);
 
     let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
 
@@ -165,7 +165,11 @@ fn install_package_from_git(
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
         log::debug!("Cloning repo if necessary + checkout");
-        git_ops.clone_and_checkout(repo_url, GitReference::Commit(&sha), &pkg_paths.source)?;
+        git_ops.clone_and_checkout(
+            repo_url,
+            Some(GitReference::Commit(&sha)),
+            &pkg_paths.source,
+        )?;
         // TODO: symlink file in cache directory
         log::debug!("Building the repo in {:?}", pkg_paths);
         // If we have a directory, don't forget to set it before building it
@@ -274,7 +278,7 @@ pub fn sync(
         }
     }
 
-    // Clean up at all times
+    // Clean up at all times, even with a dry run
     if staging_path.is_dir() {
         fs::remove_dir_all(&staging_path)?;
     }
@@ -282,9 +286,11 @@ pub fn sync(
     for dir_name in to_remove {
         // Only actually remove the deps if we are not going to rebuild the lib folder
         if deps_seen == num_deps_to_install {
-            log::debug!("Removing {dir_name} from library");
             let p = project_library.join(&dir_name);
-            fs::remove_dir_all(&p)?;
+            if !dry_run {
+                log::debug!("Removing {dir_name} from library");
+                fs::remove_dir_all(&p)?;
+            }
         }
 
         sync_changes.push(SyncChange::removed(&dir_name));
@@ -292,7 +298,9 @@ pub fn sync(
 
     // If we have all the deps we need, exit early
     if deps_seen == num_deps_to_install {
-        log::debug!("No new dependencies to install");
+        if !dry_run {
+            log::debug!("No new dependencies to install");
+        }
         return Ok(sync_changes);
     }
 
@@ -365,9 +373,11 @@ pub fn sync(
                     if has_errors_clone.load(Ordering::Relaxed) {
                         break;
                     }
-                    match dep.kind {
-                        PackageType::Source => log::debug!("Installing {} (source)", dep.name),
-                        PackageType::Binary => log::debug!("Installing {} (binary)", dep.name),
+                    if !dry_run {
+                        match dep.kind {
+                            PackageType::Source => log::debug!("Installing {} (source)", dep.name),
+                            PackageType::Binary => log::debug!("Installing {} (binary)", dep.name),
+                        }
                     }
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, s_path, dry_run) {
@@ -398,12 +408,14 @@ pub fn sync(
             // timeout is necessary to avoid deadlock
             if let Ok(change) = done_receiver.recv_timeout(Duration::from_millis(1)) {
                 installed_count.fetch_add(1, Ordering::Relaxed);
-                log::debug!(
-                    "Completed installing {} ({}/{})",
-                    change.name,
-                    installed_count.load(Ordering::Relaxed),
-                    num_deps_to_install
-                );
+                if !dry_run {
+                    log::debug!(
+                        "Completed installing {} ({}/{})",
+                        change.name,
+                        installed_count.load(Ordering::Relaxed),
+                        num_deps_to_install
+                    );
+                }
                 sync_changes.push(change);
                 if installed_count.load(Ordering::Relaxed) == num_deps_to_install
                     || has_errors.load(Ordering::Relaxed)

@@ -2,4 +2,4 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-cluster=2.1.7 (repository(url: http://posit), type=binary, from_lockfile=false, path='4.5.0/Recommended')
+cluster=2.1.7 (repository(url: http://posit), type=binary, path='4.5.0/Recommended', from_lockfile=false, from_remote=false)

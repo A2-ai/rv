@@ -9,16 +9,15 @@ pub fn download<W: Write>(url: &str, writer: &mut W, headers: Vec<(&str, String)
     for (key, val) in headers {
         request = request.set(key, &val);
     }
-    let ogresp = request
-        .call();
-    
+    let ogresp = request.call();
+
     let resp = match ogresp {
         Ok(r) => r,
         Err(e) => {
             match e {
                 // if the server returns an actual status code, we can get the response
                 // to the later matcher
-                ureq::Error::Status(_, resp) => resp ,
+                ureq::Error::Status(_, resp) => resp,
                 _ => bail!("Error downloading file from: {url}: {e}"),
             }
         }

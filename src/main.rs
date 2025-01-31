@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err as fs;
 
-use rv::cli::utils::{timeit, write_err};
+use rv::cli::utils::timeit;
 use rv::cli::{sync, CliContext};
 use rv::{Git, Lockfile, ResolvedDependency, Resolver};
 
@@ -42,7 +42,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    let resolution = resolver.resolve(context.config.dependencies(), &context.cache, &Git {});
+    let resolution = resolver.resolve(
+        context.config.dependencies(),
+        context.config.prefer_repositories_for(),
+        &context.cache,
+        &Git {},
+    );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
         for d in resolution.failed {
@@ -71,14 +76,16 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
             if changes.is_empty() {
                 println!("Nothing to do");
             }
-            let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
-            if let Some(existing_lockfile) = &context.lockfile {
-                if existing_lockfile != &lockfile {
+            if !dry_run {
+                let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
+                if let Some(existing_lockfile) = &context.lockfile {
+                    if existing_lockfile != &lockfile {
+                        lockfile.save(context.lockfile_path())?;
+                        log::debug!("Lockfile changed, saving it.");
+                    }
+                } else {
                     lockfile.save(context.lockfile_path())?;
-                    log::debug!("Lockfile changed, saving it.");
                 }
-            } else {
-                lockfile.save(context.lockfile_path())?;
             }
 
             for c in changes {
@@ -131,7 +138,7 @@ fn try_main() -> Result<()> {
 
 fn main() {
     if let Err(e) = try_main() {
-        eprintln!("{}", write_err(&*e));
+        eprintln!("{e:?}");
         ::std::process::exit(1)
     }
 }
