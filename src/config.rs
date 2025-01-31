@@ -53,6 +53,14 @@ impl Repository {
         }
         table
     }
+
+    pub fn new(alias: String, url: String, force_source: bool) -> Self {
+        Self {
+            alias,
+            url,
+            force_source,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -259,7 +267,7 @@ impl Project {
 
         table.insert("name", self.name.as_str().into());
         table.insert("r_version", self.r_version.original.as_str().into());
-        
+
         if !self.description.is_empty() {
             table.insert("description", self.description.as_str().into());
         }
@@ -357,7 +365,7 @@ impl Config {
     /// This will do 2 things:
     /// 1. verify alias used in deps are found
     /// 2. verify git sources are valid (eg no tag and branch at the same time)
-    /// 3. replace the alias in the dependency by the URL
+    /// 3. replace the alias in the dependency by the URLx
     pub(crate) fn finalize(&mut self) -> Result<(), ConfigError> {
         let repo_mapping: HashMap<_, _> = self
             .project
@@ -530,11 +538,13 @@ pub enum ConfigErrorKind {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+
     use super::*;
 
     #[test]
     fn can_parse_valid_config_files() {
-        let paths = std::fs::read_dir("src/tests/valid_config/").unwrap();
+        let paths = std::fs::read_dir("src/tests/config/valid_config/").unwrap();
         for path in paths {
             let res = Config::from_file(path.unwrap().path());
             println!("{res:?}");
@@ -542,9 +552,30 @@ mod tests {
         }
     }
 
+    // TODO: convert to snapshot test
     #[test]
-    fn tester() {
-        let res = Config::from_file("src/tests/valid_config/all_fields.toml").unwrap();
-        res.save("src/tests/output.toml").unwrap();
+    fn can_output_new_config() {
+        let config = Config {
+            project: Project {
+                name: "test".to_string(),
+                r_version: Version::from_str("4.4.1").unwrap(),
+                description: String::new(),
+                license: None,
+                authors: Vec::new(),
+                keywords: Vec::new(),
+                repositories: vec![Repository::new(
+                    "a2-ai".to_string(),
+                    "some/url".to_string(),
+                    true,
+                )],
+                suggests: Vec::new(),
+                urls: HashMap::new(),
+                dependencies: Vec::new(),
+                dev_dependencies: Vec::new(),
+            },
+        };
+        let d = tempdir().unwrap();
+        let path = d.path().join("rproject.toml");
+        config.save(path).unwrap();
     }
 }
