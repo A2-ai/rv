@@ -153,7 +153,7 @@ impl ConfigDependency {
         }
     }
 
-    fn as_toml_value(&self) -> Value {
+    fn as_toml_value(&self, repo_hash: &HashMap<&str, &str>) -> Value {
         match self {
             Self::Simple(pkg) => Value::from(pkg.as_str()),
             Self::Git {
@@ -205,9 +205,13 @@ impl ConfigDependency {
             } => {
                 let mut table = InlineTable::new();
                 table.insert("name", name.into());
-                repository
-                    .as_deref()
-                    .map(|r| table.insert("repository", r.into()));
+                if let Some(r) = repository.as_deref() {
+                    // repository alias is replaced by url as part of finalize, therefore re-finding the alias should always happen
+                    // In edge cases where repository alias is not found, do not specify and let resolver/lockfile determine package source
+                    if let Some(name) = repo_hash.get(r) {
+                        table.insert("repository", Value::from(*name));
+                    }
+                }
                 if *install_suggestions {
                     table.insert("install_suggestions", true.into());
                 }
@@ -246,8 +250,16 @@ pub(crate) struct Project {
 
 impl Project {
     fn edit_toml_table(&self, table: &mut Table) -> Result<(), ConfigErrorKind> {
+        // hashmap of urls to alias to convert back `finalize` augmenting the url into the repositories field of ConfigDependency::Detailed
+        let repo_hash = self
+            .repositories
+            .iter()
+            .map(|r| (r.url.as_str(), r.alias.as_str()))
+            .collect::<HashMap<_, _>>();
+
         table.insert("name", self.name.as_str().into());
         table.insert("r_version", self.r_version.original.as_str().into());
+        
         if !self.description.is_empty() {
             table.insert("description", self.description.as_str().into());
         }
@@ -280,7 +292,7 @@ impl Project {
         if !self.suggests.is_empty() {
             let mut suggests = Vec::new();
             for s in &self.suggests {
-                suggests.push(s.as_toml_value());
+                suggests.push(s.as_toml_value(&repo_hash));
             }
             let suggests = format_array(suggests);
             table.insert("suggests", suggests.into());
@@ -304,7 +316,7 @@ impl Project {
         // Dependencies field is mandatory. Want to have blank field if no dependencies in init
         let mut deps = Vec::new();
         for d in &self.dependencies {
-            deps.push(d.as_toml_value());
+            deps.push(d.as_toml_value(&repo_hash));
         }
         let deps = format_array(deps);
         table.insert("dependencies", deps.into());
@@ -312,7 +324,7 @@ impl Project {
         if !self.dev_dependencies.is_empty() {
             let mut dev_deps = Vec::new();
             for d in &self.dev_dependencies {
-                dev_deps.push(d.as_toml_value());
+                dev_deps.push(d.as_toml_value(&repo_hash));
             }
             let dev_deps = format_array(dev_deps);
             table.insert("dev_dependencies", dev_deps.into());
@@ -533,6 +545,6 @@ mod tests {
     #[test]
     fn tester() {
         let res = Config::from_file("src/tests/valid_config/all_fields.toml").unwrap();
-        res.save("src/tests/valid_config/all_fields.toml").unwrap();
+        res.save("src/tests/output.toml").unwrap();
     }
 }
