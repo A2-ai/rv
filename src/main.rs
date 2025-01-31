@@ -5,8 +5,8 @@ use anyhow::Result;
 use fs_err as fs;
 
 use rv::cli::utils::timeit;
-use rv::cli::{sync, CliContext};
-use rv::{Git, Lockfile, ResolvedDependency, Resolver};
+use rv::cli::{find_r_repositories, sync, CliContext};
+use rv::{Git, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -120,7 +120,10 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init => todo!("implement init"),
+        Command::Init => {
+            let r_version = RCommandLine {}.version()?;
+            let repositories = find_r_repositories()?;
+        },
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
