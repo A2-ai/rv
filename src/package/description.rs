@@ -99,6 +99,8 @@ Remotes:
     insightsengineering/teal.code,
     insightsengineering/teal.data,
     insightsengineering/teal.slice
+RemoteUrl: https://github.com/a2-ai/scicalc
+RemoteSha: bc50e550e432c3c620714f30dd59115801f89995
         "#;
         let package = parse_description_file(&description).unwrap();
         assert_eq!(package.name, "scicalc");
@@ -106,6 +108,7 @@ Remotes:
         assert_eq!(package.imports.len(), 12);
         assert_eq!(package.suggests.len(), 9);
         assert_eq!(package.remotes.len(), 3);
+        assert_eq!(package.remote_url.unwrap(), "https://github.com/a2-ai/scicalc");
         match &package.remotes["insightsengineering/teal.code"] {
             (name, PackageRemote::Git { url, .. }) => {
                 assert_eq!(url, "https://github.com/insightsengineering/teal.code");
