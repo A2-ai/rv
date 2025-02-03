@@ -137,8 +137,15 @@ impl fmt::Display for Source {
             Self::Local { path } => {
                 write!(f, "local(path: {})", path.display())
             }
-            Self::RUniverse { repository, git, sha } => {
-                write!(f, "r-universe(repository_url: {repository}, git_url: {git}, sha: {sha}")
+            Self::RUniverse {
+                repository,
+                git,
+                sha,
+            } => {
+                write!(
+                    f,
+                    "r-universe(repository_url: {repository}, git_url: {git}, sha: {sha}"
+                )
             }
         }
     }
