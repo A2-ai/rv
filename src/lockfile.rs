@@ -34,6 +34,11 @@ pub enum Source {
     Local {
         path: PathBuf,
     },
+    RUniverse {
+        repository: String,
+        git: String,
+        sha: String,
+    },
 }
 
 impl Source {
@@ -66,16 +71,27 @@ impl Source {
             Self::Local { path } => {
                 table.insert("path", Value::from(path.display().to_string()));
             }
+            Self::RUniverse {
+                repository,
+                git,
+                sha,
+            } => {
+                table.insert("repository", Value::from(repository));
+                table.insert("git", Value::from(git));
+                table.insert("sha", Value::from(sha));
+            }
         };
 
         table
     }
 
-    /// The key to use in the cache: URL for a package repository, git URL for a git repository
-    /// and for local ??? TODO
+    /// The key to use in the cache: URL for a package repository, git URL for a git repository,
+    /// URL for RUniverse repository, and for local ??? TODO
     pub fn repository_url(&self) -> &str {
         match self {
-            Source::Repository { ref repository } => repository.as_str(),
+            Source::Repository { ref repository } | Source::RUniverse { ref repository, .. } => {
+                repository.as_str()
+            }
             Source::Local { ref path } => path.to_str().unwrap(),
             Source::Git { ref git, .. } => git.as_str(),
         }
@@ -83,7 +99,7 @@ impl Source {
 
     pub fn git_sha(&self) -> &str {
         match self {
-            Source::Git { ref sha, .. } => sha.as_str(),
+            Source::Git { ref sha, .. } | Source::RUniverse { ref sha, .. } => sha.as_str(),
             _ => unreachable!("handle other cases"),
         }
     }
@@ -120,6 +136,9 @@ impl fmt::Display for Source {
             }
             Self::Local { path } => {
                 write!(f, "local(path: {})", path.display())
+            }
+            Self::RUniverse { repository, git, sha } => {
+                write!(f, "r-universe(repository_url: {repository}, git_url: {git}, sha: {sha}")
             }
         }
     }
