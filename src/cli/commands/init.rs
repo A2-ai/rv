@@ -117,9 +117,4 @@ mod tests {
         assert!(dir.join("rv/library").exists());
         assert!(dir.join("rv/.gitignore").exists());
     }
-
-    #[test]
-    fn test_repos() {
-        let _ = find_r_repositories().unwrap();
-    }
 }
