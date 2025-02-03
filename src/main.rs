@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -62,7 +63,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
 fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
-    let resolved = resolve_dependencies(&context);
+    let mut resolved = resolve_dependencies(&context);
 
     match timeit!(
         if dry_run {
@@ -76,6 +77,14 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
             if changes.is_empty() {
                 println!("Nothing to do");
             }
+            for c in &changes {
+                if let Some(d) = resolved.iter_mut().find(|r|r.name.to_string() == c.name) {
+                    if let Some(s) = &c.source_change {
+                        d.source = s.clone();
+                    }
+                }
+            };
+
             if !dry_run {
                 let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
                 if let Some(existing_lockfile) = &context.lockfile {

@@ -15,7 +15,7 @@ use crate::cli::{http, CliContext};
 use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
-use crate::package::PackageType;
+use crate::package::{parse_description_file_in_folder, PackageType};
 use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
 use crate::{Git, GitOperations};
 
@@ -101,9 +101,10 @@ fn install_package_from_repository(
     context: &CliContext,
     pkg: &ResolvedDependency,
     library_dir: &Path,
-) -> Result<()> {
+) -> Result<Option<Source>> {
     let link_mode = LinkMode::new();
-    let repo_server = RepoServer::from_url(pkg.source.repository_url());
+    let repo_url = pkg.source.repository_url();
+    let repo_server = RepoServer::from_url(repo_url);
     let pkg_paths =
         context
             .cache
@@ -145,14 +146,22 @@ fn install_package_from_repository(
     // And then we always link the binary folder into the staging library
     link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
-    Ok(())
+    if repo_url.contains("r-universe.dev") {
+        if let Ok(pkg) = parse_description_file_in_folder(pkg_paths.binary.join(pkg.name.as_ref())) {
+            if let (Some(git), Some(sha)) = (pkg.remote_url, pkg.remote_sha) {
+                return Ok(Some(Source::RUniverse { repository: repo_url.to_string(), git, sha }))
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 fn install_package_from_git(
     context: &CliContext,
     pkg: &ResolvedDependency,
     library_dir: &Path,
-) -> Result<()> {
+) -> Result<Option<Source>> {
     let link_mode = LinkMode::new();
     let repo_url = pkg.source.repository_url();
     let sha = pkg.source.git_sha();
@@ -186,7 +195,7 @@ fn install_package_from_git(
     // And then we always link the binary folder into the staging library
     link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
-    Ok(())
+    Ok(None)
 }
 
 /// Install a package and returns whether it was installed from cache or not
@@ -195,9 +204,9 @@ fn install_package(
     pkg: &ResolvedDependency,
     library_dir: &Path,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<Option<Source>> {
     if dry_run {
-        return Ok(());
+        return Ok(None);
     }
 
     match pkg.source {
@@ -214,15 +223,17 @@ pub struct SyncChange {
     pub installed: bool,
     pub version: Option<String>,
     pub timing: Option<Duration>,
+    pub source_change: Option<Source>,
 }
 
 impl SyncChange {
-    pub fn installed(name: &str, version: &str, timing: Duration) -> Self {
+    pub fn installed(name: &str, version: &str, timing: Duration, source_change: Option<Source>) -> Self {
         Self {
             name: name.to_string(),
             installed: true,
             timing: Some(timing),
             version: Some(version.to_string()),
+            source_change,
         }
     }
 
@@ -232,6 +243,7 @@ impl SyncChange {
             installed: false,
             timing: None,
             version: None,
+            source_change: None,
         }
     }
 }
@@ -382,9 +394,9 @@ pub fn sync(
                     }
                     let start = std::time::Instant::now();
                     match install_package(&context, dep, s_path, dry_run) {
-                        Ok(_) => {
+                        Ok(source_change) => {
                             let sync_change =
-                                SyncChange::installed(&dep.name, &dep.version, start.elapsed());
+                                SyncChange::installed(&dep.name, &dep.version, start.elapsed(), source_change);
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
