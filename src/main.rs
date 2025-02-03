@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err as fs;
 
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, sync, CliContext};
+use rv::cli::{find_r_repositories, init, sync, CliContext};
 use rv::{Git, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
@@ -121,8 +121,13 @@ fn try_main() -> Result<()> {
 
     match cli.command {
         Command::Init => {
+            // TODO: use cli flag for non-default r_version
             let r_version = RCommandLine {}.version()?;
+            // TODO: use cli flag to turn off default repositories (or specify non-default repos)
             let repositories = find_r_repositories()?;
+            // TODO: use cli flag to allow specification of another directory
+            let project_directory = std::env::current_dir()?;
+            init(project_directory, r_version, repositories)?;
         },
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;

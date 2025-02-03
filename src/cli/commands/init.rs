@@ -6,6 +6,12 @@ const GITIGNORE_CONTENT: &str = "library/\nstaging/\n";
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 
+/// This function initializes a given directory to be an rv project. It does this by:
+/// - Creating the directory if it does not exist
+/// - Creating the library directory if it does not exist (<path/to/directory>/rv/library)
+///     - If a library directory exists, init will not create a new one or remove any of the installed packages
+/// - Creating a .gitignore file within the rv subdirectory to prevent upload of installed packages to git
+/// - Initialize the config file with the R version and repositories set as options within R
 pub fn init(project_directory: impl AsRef<Path>, r_version: Version, repositories: Vec<Repository>) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
 
@@ -95,7 +101,7 @@ mod tests {
 
     use crate::{Repository, Version};
 
-    use super::init;
+    use super::{find_r_repositories, init};
     use tempfile::tempdir;
 
     #[test]
@@ -110,5 +116,10 @@ mod tests {
         let dir = &project_directory.into_path();
         assert!(dir.join("rv/library").exists());
         assert!(dir.join("rv/.gitignore").exists());
+    }
+
+    #[test]
+    fn test_repos() {
+        let _ = find_r_repositories().unwrap();
     }
 }
