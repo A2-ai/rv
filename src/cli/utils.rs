@@ -19,7 +19,10 @@ pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     out
 }
 
-pub fn get_r_universe_git_sha_from_api(repo_url: &str, package_name: &str) -> Result<(String, String)> {
+pub fn get_r_universe_git_sha_from_api(
+    repo_url: &str,
+    package_name: &str,
+) -> Result<(String, String)> {
     let mut api = Vec::new();
     let api_url = &format!("{repo_url}/api/packages/{package_name}");
     let bytes_read = timeit!(

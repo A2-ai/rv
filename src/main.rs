@@ -57,12 +57,16 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     }
     for r in resolution.found.iter_mut() {
         let repository = r.source.repository_url();
-        if !repository.contains("r-universe.dev") || matches!(r.source, Source::RUniverse { .. }){
+        if !repository.contains("r-universe.dev") || matches!(r.source, Source::RUniverse { .. }) {
             continue;
         }
         let (git, sha) = get_r_universe_git_sha_from_api(repository, &r.name)
             .unwrap_or((String::default(), String::default()));
-        r.source = Source::RUniverse { repository: repository.to_string(), git, sha }
+        r.source = Source::RUniverse {
+            repository: repository.to_string(),
+            git,
+            sha,
+        }
     }
     resolution.found
 }
