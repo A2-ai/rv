@@ -40,7 +40,7 @@ dependencies = []
 
 [[packages]]
 name = "ghqc"
-version = "0.3.7"
+version = "0.3.6"
 source = { repository = "https://a2-ai.r-universe.dev", git = "https://github.com/a2-ai/ghqc", sha = "4ae3a681cdbe781ab708c0c41c8acbc355a02fa2" }
 force_source = false
 dependencies = [
