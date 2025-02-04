@@ -84,31 +84,13 @@ impl<'d> ResolvedDependency<'d> {
         installation_status: InstallationStatus,
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
-        let source = if repo_url.contains("r-universe.dev") {
-            if let Ok((git, sha)) = r_universe_api_git_sha(repo_url, &package.name) {
-                Source::RUniverse {
-                    repository: repo_url.to_string(),
-                    git,
-                    sha,
-                }
-                //TODO: add better error handling
-            } else {
-                Source::RUniverse {
-                    repository: repo_url.to_string(),
-                    git: String::new(),
-                    sha: String::new(),
-                }
-            }
-        } else {
-            Source::Repository {
-                repository: repo_url.to_string(),
-            }
-        };
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
             version: Cow::Borrowed(&package.version.original),
-            source,
+            source: Source::Repository {
+                repository: repo_url.to_string(),
+            },
             dependencies: deps
                 .direct
                 .iter()
