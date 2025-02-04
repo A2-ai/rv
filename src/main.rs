@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fs_err as fs;
@@ -25,7 +25,10 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Creates a new rv project
-    Init,
+    Init{
+        #[clap(value_parser)]
+        project_directory: PathBuf,
+    },
     /// Returns the path for the library for the current project/system
     Library,
     /// Dry run of what sync would do
@@ -120,15 +123,20 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init => {
+        Command::Init{
+            project_directory
+        } => {
+            // TODO: use cli flag to allow specification of another directory
+            if project_directory.exists() {
+                println!("{} already exists", project_directory.display());
+                return Ok(());
+            }
             // TODO: use cli flag for non-default r_version
             let r_version = RCommandLine {}.version()?;
             // TODO: use cli flag to turn off default repositories (or specify non-default repos)
             let repositories = find_r_repositories()?;
-            // TODO: use cli flag to allow specification of another directory
-            let project_directory = std::env::current_dir()?;
             init(project_directory, r_version, repositories)?;
-        },
+        }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
