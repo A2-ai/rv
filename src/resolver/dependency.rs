@@ -12,9 +12,9 @@ use crate::VersionRequirement;
 /// will be borrowed
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
-    pub name: Cow<'d, str>,
+    pub(crate) name: Cow<'d, str>,
     pub(crate) version: Cow<'d, str>,
-    pub source: Source,
+    pub(crate) source: Source,
     pub(crate) dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
     pub(crate) force_source: bool,
