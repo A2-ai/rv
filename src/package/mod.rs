@@ -73,8 +73,6 @@ pub struct Package {
     pub(crate) needs_compilation: bool,
     // {remote_string => (pkg name, remote)}
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
-    remote_url: Option<String>,
-    remote_sha: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize)]

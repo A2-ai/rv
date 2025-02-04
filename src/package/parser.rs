@@ -93,8 +93,6 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 }
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
-                "RemoteUrl" => package.remote_url = Some(parts[1].to_string()),
-                "RemoteSha" => package.remote_sha = Some(parts[1].to_string()),
                 _ => continue,
             }
         }

@@ -113,7 +113,10 @@ impl Source {
                 ConfigDependency::Detailed { repository: r2, .. },
             ) => Some(r1) == r2.as_ref(),
             // TODO: verify this
-            (Source::Repository { .. } | Source::RUniverse { .. }, ConfigDependency::Simple(..)) => true,
+            (
+                Source::Repository { .. } | Source::RUniverse { .. },
+                ConfigDependency::Simple(..),
+            ) => true,
             _ => false,
         }
     }

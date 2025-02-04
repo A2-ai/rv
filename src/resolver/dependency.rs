@@ -87,13 +87,23 @@ impl<'d> ResolvedDependency<'d> {
         let deps = package.dependencies_to_install(install_suggests);
         let source = if repo_url.contains("r-universe.dev") {
             if let Ok((git, sha)) = r_universe_api_git_sha(repo_url, &package.name) {
-                Source::RUniverse { repository: repo_url.to_string(), git, sha }
+                Source::RUniverse {
+                    repository: repo_url.to_string(),
+                    git,
+                    sha,
+                }
                 //TODO: add better error handling
             } else {
-                Source::RUniverse { repository: repo_url.to_string(), git: String::new(), sha: String::new() }
+                Source::RUniverse {
+                    repository: repo_url.to_string(),
+                    git: String::new(),
+                    sha: String::new(),
+                }
             }
         } else {
-            Source::Repository { repository: repo_url.to_string() }
+            Source::Repository {
+                repository: repo_url.to_string(),
+            }
         };
 
         let res = Self {
@@ -222,8 +232,8 @@ impl<'a> fmt::Display for UnresolvedDependency<'a> {
 #[derive(Debug, thiserror::Error)]
 #[error("Lockfile error: {source}")]
 #[non_exhaustive]
-struct RUniverseApiError{
-    source: RUniverseApiErrorKind
+struct RUniverseApiError {
+    source: RUniverseApiErrorKind,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -238,31 +248,32 @@ enum RUniverseApiErrorKind {
     NoFile(String),
 }
 
-fn r_universe_api_git_sha(repo_url: &str, package_name: &str) -> Result<(String, String), RUniverseApiError> {
+fn r_universe_api_git_sha(
+    repo_url: &str,
+    package_name: &str,
+) -> Result<(String, String), RUniverseApiError> {
     let mut api = Vec::new();
     let url = format!("{repo_url}/api/packages/{package_name}");
-    let bytes_read = http::download(&url, &mut api, vec![])
-        .map_err(|e| RUniverseApiError {
-            source: RUniverseApiErrorKind::Download(e)
-        })?;
+    let bytes_read = http::download(&url, &mut api, vec![]).map_err(|e| RUniverseApiError {
+        source: RUniverseApiErrorKind::Download(e),
+    })?;
     if bytes_read == 0 {
-        return Err(RUniverseApiError{
-            source: RUniverseApiErrorKind::NoFile(url)
-        })
+        return Err(RUniverseApiError {
+            source: RUniverseApiErrorKind::NoFile(url),
+        });
     }
     parse_r_universe_api(unsafe { std::str::from_utf8_unchecked(&api) })
 }
 
 fn parse_r_universe_api(api: &str) -> Result<(String, String), RUniverseApiError> {
-    let p: Value = serde_json::from_str(api)
-        .map_err(|e| RUniverseApiError {
-            source: RUniverseApiErrorKind::Parse(e)
-        })?;
-    let url = p["RemoteUrl"].as_str().ok_or(RUniverseApiError {
-        source: RUniverseApiErrorKind::NotFound("RemoteUrl".to_string())
+    let p: Value = serde_json::from_str(api).map_err(|e| RUniverseApiError {
+        source: RUniverseApiErrorKind::Parse(e),
     })?;
-    let sha = p["RemoteSha"].as_str().ok_or(RUniverseApiError { 
-        source: RUniverseApiErrorKind::NotFound("RemoteSha".to_string()) 
+    let url = p["RemoteUrl"].as_str().ok_or(RUniverseApiError {
+        source: RUniverseApiErrorKind::NotFound("RemoteUrl".to_string()),
+    })?;
+    let sha = p["RemoteSha"].as_str().ok_or(RUniverseApiError {
+        source: RUniverseApiErrorKind::NotFound("RemoteSha".to_string()),
     })?;
 
     Ok((url.to_string(), sha.to_string()))
