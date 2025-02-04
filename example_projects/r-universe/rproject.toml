@@ -1,0 +1,10 @@
+[project]
+name = "r-universe test"
+r_version = "4.4.1"
+repositories = [
+    {alias = "a2-ai", url = "https://a2-ai.r-universe.dev"},
+    {alias = "rspm", url = "https://packagemanager.posit.co/cran/2024-10-06"}
+]
+dependencies = [
+    "ghqc"
+]
