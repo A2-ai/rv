@@ -1,9 +1,10 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use flate2::read::GzDecoder;
 use fs_err as fs;
+use serde_json::Value;
 use tar::Archive;
 
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
@@ -16,6 +17,31 @@ pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     }
 
     out
+}
+
+pub fn get_r_universe_git_sha_from_api(repo_url: &str, package_name: &str) -> Result<(String, String)> {
+    let mut api = Vec::new();
+    let api_url = &format!("{repo_url}/api/packages/{package_name}");
+    let bytes_read = timeit!(
+        &format!("Downloaded r-universe api for `{package_name}`"),
+        http::download(&api_url, &mut api, Vec::new())?
+    );
+    if bytes_read == 0 {
+        bail!("File at {api_url} was not found");
+    };
+    // UNSAFE: we trust the api data to be valid UTF-8
+    let content = unsafe { std::str::from_utf8_unchecked(&api) };
+    let v: Value = serde_json::from_str(content)?;
+    let url = v["RemoteUrl"]
+        .as_str()
+        .ok_or(anyhow!("RemoteUrl not found"))?
+        .to_string();
+    let sha = v["RemoteSha"]
+        .as_str()
+        .ok_or(anyhow!("RemoteSha not found"))?
+        .to_string();
+
+    Ok((url, sha))
 }
 
 pub fn untar_package<R: io::Read, T: AsRef<Path>>(reader: R, destination: T) -> Result<()> {
@@ -56,5 +82,6 @@ macro_rules! timeit {
     }};
 }
 
+use crate::cli::http;
 use crate::SystemInfo;
 pub use timeit;

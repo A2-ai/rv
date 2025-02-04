@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err as fs;
 
-use rv::cli::utils::timeit;
+use rv::cli::utils::{get_r_universe_git_sha_from_api, timeit};
 use rv::cli::{sync, CliContext};
-use rv::{Git, Lockfile, ResolvedDependency, Resolver};
+use rv::{Git, Lockfile, ResolvedDependency, Resolver, Source};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -42,7 +42,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    let resolution = resolver.resolve(
+    let mut resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
@@ -55,7 +55,15 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         }
         ::std::process::exit(1)
     }
-
+    for r in resolution.found.iter_mut() {
+        let repository = r.source.repository_url();
+        if !repository.contains("r-universe.dev") || matches!(r.source, Source::RUniverse { .. }){
+            continue;
+        }
+        let (git, sha) = get_r_universe_git_sha_from_api(repository, &r.name)
+            .unwrap_or((String::default(), String::default()));
+        r.source = Source::RUniverse { repository: repository.to_string(), git, sha }
+    }
     resolution.found
 }
 
