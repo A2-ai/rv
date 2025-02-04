@@ -2,8 +2,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 
-use serde_json::Value;
-
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
