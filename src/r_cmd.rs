@@ -48,7 +48,10 @@ pub trait RCmd {
     fn version(&self) -> Result<Version, VersionError>;
 }
 
-pub struct RCommandLine;
+#[derive(Debug, Clone, PartialEq)]
+pub struct RCommandLine {
+    pub(crate) r: PathBuf,
+}
 
 impl RCmd for RCommandLine {
     fn install(
@@ -88,7 +91,7 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = Command::new("R");
+        let mut command = Command::new(&self.r);
         command
             .arg("CMD")
             .arg("INSTALL")
@@ -147,7 +150,7 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new("R")
+        let output = Command::new(&self.r)
             .arg("--version")
             .output()
             .map_err(|e| VersionError {

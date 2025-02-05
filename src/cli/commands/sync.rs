@@ -41,8 +41,7 @@ fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result<()> {
-    let r_cmd = RCommandLine {};
+fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path, r_cmd: &RCommandLine) -> Result<()> {
     if let Err(e) = r_cmd.install(source, library_dir, binary_dir) {
         // Do not leave empty binary dir if some install failed otherwise later install
         // would fail
@@ -59,10 +58,11 @@ fn download_and_install_source(
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
+    r_cmd: &RCommandLine,
 ) -> Result<()> {
     download_and_untar(&url, &paths.source)?;
     log::debug!("Compiling binary from {}", &paths.source.display());
-    RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
+    r_cmd.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
 }
 
@@ -71,11 +71,12 @@ fn download_and_install_binary(
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
+    r_cmd: &RCommandLine,
 ) -> Result<()> {
     // If we get an error doing the binary download, fall back to source
     if let Err(e) = download_and_untar(&url, &paths.binary) {
         log::warn!("Failed to download/untar binary package: {e:?}");
-        return download_and_install_source(url, paths, library_dir, pkg_name);
+        return download_and_install_source(url, paths, library_dir, pkg_name, r_cmd);
     }
 
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
@@ -91,7 +92,7 @@ fn download_and_install_binary(
         }
 
         // And install it to the binary path
-        install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary)?;
+        install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary, r_cmd)?;
     }
 
     Ok(())
@@ -127,6 +128,7 @@ fn install_package_from_repository(
                 &pkg_paths.source.join(pkg.name.as_ref()),
                 library_dir,
                 &pkg_paths.binary,
+                &context.r_cmd
             )?;
         }
     } else {
@@ -136,9 +138,10 @@ fn install_package_from_repository(
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
+                &context.r_cmd
             )?;
         } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name)?;
+            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
         }
     }
 
@@ -180,7 +183,7 @@ fn install_package_from_git(
             } => pkg_paths.source.join(&dir),
             _ => pkg_paths.source,
         };
-        install_via_r(&source_path, library_dir, &pkg_paths.binary)?;
+        install_via_r(&source_path, library_dir, &pkg_paths.binary, &context.r_cmd)?;
     }
 
     // And then we always link the binary folder into the staging library

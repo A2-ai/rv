@@ -20,3 +20,16 @@ pub(crate) const BASE_PACKAGES: [&str; 14] = [
     "tools",
     "utils",
 ];
+
+pub(crate) const DEFAULT_R_PATHS: [&str; 13] = [
+    "/usr/lib/R",
+    "/usr/lib64/R",
+    "/usr/local/lib/R",
+    "/usr/local/lib64/R",
+    "/opt/local/lib/R",
+    "/opt/local/lib64/R",
+    "/opt/R/*",
+    "/opt/local/R/*",
+];
+
+pub(crate) const ADDITIONAL_R_VERSIONS_FILENAME: &str = "/rv/r-versions";

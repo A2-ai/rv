@@ -1,8 +1,13 @@
+use std::path::PathBuf;
 use std::cmp::Ordering;
-use std::fmt;
+use std::{fmt, fs};
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use anyhow::{bail, Result};
+
+use crate::consts::DEFAULT_R_PATHS;
+use crate::{RCmd, RCommandLine};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
 pub enum Operator {
@@ -58,6 +63,82 @@ impl Version {
     #[inline]
     pub fn major_minor(&self) -> [u32; 2] {
         [self.parts[0], self.parts[1]]
+    }
+
+    pub fn find_local_r_version(&self) -> Result<RCommandLine> {
+        for p in DEFAULT_R_PATHS {
+            let mut path = PathBuf::from(p);
+            if path.ends_with("*") {
+                path.pop();
+            }
+            if !path.exists() {
+                continue;
+            }
+
+            let r_path = ls_r_versions(p);
+            let r_path = r_path
+                .into_iter()
+                .find(|r| {
+                    let v = RCommandLine{r: r.to_path_buf()}.version();
+                    if let Ok(ver) = v {
+                        self.hazy_version_match(ver)
+                    } else {
+                        false
+                    }
+                });
+            if let Some(r) = r_path {
+                return Ok(RCommandLine{r})
+            }
+        };
+        bail!(format!("Could not find R version on system matching specified version ({self})"))
+    }
+
+    fn hazy_version_match(&self, found_version: Version) -> bool {
+        // TODO: improve to not require map
+        let num_specified = self
+            .original
+            .trim()
+            .replace('-', ".")
+            .split('.')
+            .map(|x| x.parse().unwrap())
+            .collect::<Vec<u32>>()
+            .len();
+
+        self.parts[..num_specified] == found_version.parts[..num_specified]
+    }
+}
+
+fn ls_r_versions(path: &str) -> Vec<PathBuf> {
+    let mut path = PathBuf::from(path);
+
+    if path.ends_with("*") {
+        path.pop();
+        if !path.exists() || !path.is_dir() {
+            return Vec::new()
+        }
+        list_content(path)
+            .into_iter()
+            .map(|p| p.join("bin/R"))
+            .filter(|p| p.exists())
+            .collect::<Vec<PathBuf>>()
+    } else {
+        if path.exists() {
+            vec![path]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+fn list_content(path: PathBuf) -> Vec<PathBuf> {
+    if let Ok(entries) = fs::read_dir(path) {
+        entries
+            .into_iter()
+            .filter_map(Result::ok)
+            .map(|x| x.path())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
     }
 }
 
