@@ -304,7 +304,7 @@ pub fn sync(
     // (name, notify). We do not notify if the package is broken in some ways, otherwise we
     // do notify.
     let mut to_remove = HashSet::new();
-    let mut deps_seen = 0;
+    let mut deps_seen = HashSet::new();
 
     fs::create_dir_all(&project_library)?;
     // TODO: handle upgrades here
@@ -314,7 +314,7 @@ pub fn sync(
             .map(|v| *v == version)
             .unwrap_or(false)
         {
-            deps_seen += 1;
+            deps_seen.insert(name.as_str());
         } else {
             to_remove.insert((name.to_string(), true));
         }
@@ -332,7 +332,7 @@ pub fn sync(
 
     for (dir_name, notify) in to_remove {
         // Only actually remove the deps if we are not going to rebuild the lib folder
-        if deps_seen == num_deps_to_install {
+        if deps_seen.len() == num_deps_to_install {
             let p = project_library.join(&dir_name);
             if !dry_run && notify {
                 log::debug!("Removing {dir_name} from library");
@@ -346,7 +346,7 @@ pub fn sync(
     }
 
     // If we have all the deps we need, exit early
-    if deps_seen == num_deps_to_install {
+    if deps_seen.len() == num_deps_to_install {
         if !dry_run {
             log::debug!("No new dependencies to install");
         }
@@ -470,7 +470,9 @@ pub fn sync(
                         num_deps_to_install
                     );
                 }
-                sync_changes.push(change);
+                if !deps_seen.contains(change.name.as_str()) {
+                    sync_changes.push(change);
+                }
                 if installed_count.load(Ordering::Relaxed) == num_deps_to_install
                     || has_errors.load(Ordering::Relaxed)
                 {
