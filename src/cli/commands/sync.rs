@@ -41,7 +41,12 @@ fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path, r_cmd: &RCommandLine) -> Result<()> {
+fn install_via_r(
+    source: &Path,
+    library_dir: &Path,
+    binary_dir: &Path,
+    r_cmd: &RCommandLine,
+) -> Result<()> {
     if let Err(e) = r_cmd.install(source, library_dir, binary_dir) {
         // Do not leave empty binary dir if some install failed otherwise later install
         // would fail
@@ -92,7 +97,12 @@ fn download_and_install_binary(
         }
 
         // And install it to the binary path
-        install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary, r_cmd)?;
+        install_via_r(
+            &paths.source.join(pkg_name),
+            library_dir,
+            &paths.binary,
+            r_cmd,
+        )?;
     }
 
     Ok(())
@@ -128,7 +138,7 @@ fn install_package_from_repository(
                 &pkg_paths.source.join(pkg.name.as_ref()),
                 library_dir,
                 &pkg_paths.binary,
-                &context.r_cmd
+                &context.r_cmd,
             )?;
         }
     } else {
@@ -138,10 +148,16 @@ fn install_package_from_repository(
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
-                &context.r_cmd
+                &context.r_cmd,
             )?;
         } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
+            download_and_install_binary(
+                &binary_url.unwrap(),
+                &pkg_paths,
+                library_dir,
+                &pkg.name,
+                &context.r_cmd,
+            )?;
         }
     }
 

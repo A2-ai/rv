@@ -21,7 +21,7 @@ pub(crate) const BASE_PACKAGES: [&str; 14] = [
     "utils",
 ];
 
-pub(crate) const DEFAULT_R_PATHS: [&str; 13] = [
+pub(crate) const DEFAULT_R_PATHS: [&str; 8] = [
     "/usr/lib/R",
     "/usr/lib64/R",
     "/usr/local/lib/R",

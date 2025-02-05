@@ -1,12 +1,14 @@
-use std::path::PathBuf;
 use std::cmp::Ordering;
-use std::{fmt, fs};
+use std::fs::File;
+use std::io::BufRead;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::{env, fmt, fs, io};
 
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
-use anyhow::{bail, Result};
 
-use crate::consts::DEFAULT_R_PATHS;
+use crate::consts::{ADDITIONAL_R_VERSIONS_FILENAME, DEFAULT_R_PATHS};
 use crate::{RCmd, RCommandLine};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
@@ -65,32 +67,32 @@ impl Version {
         [self.parts[0], self.parts[1]]
     }
 
-    pub fn find_local_r_version(&self) -> Result<RCommandLine> {
-        for p in DEFAULT_R_PATHS {
-            let mut path = PathBuf::from(p);
-            if path.ends_with("*") {
-                path.pop();
+    pub fn find_r_version_command(&self) -> Result<RCommandLine> {
+        for path in potential_r_paths()? {
+            let mut path_clone = path.clone();
+            if path_clone.ends_with("*") {
+                path_clone.pop();
             }
-            if !path.exists() {
+            if !path_clone.exists() {
                 continue;
             }
 
-            let r_path = ls_r_versions(p);
-            let r_path = r_path
-                .into_iter()
-                .find(|r| {
-                    let v = RCommandLine{r: r.to_path_buf()}.version();
-                    if let Ok(ver) = v {
-                        self.hazy_version_match(ver)
-                    } else {
-                        false
-                    }
-                });
+            let r_path = ls_r_versions(path);
+            let r_path = r_path.into_iter().find(|r| {
+                let v = RCommandLine { r: r.to_path_buf() }.version();
+                if let Ok(ver) = v {
+                    self.hazy_version_match(ver)
+                } else {
+                    false
+                }
+            });
             if let Some(r) = r_path {
-                return Ok(RCommandLine{r})
+                return Ok(RCommandLine { r });
             }
-        };
-        bail!(format!("Could not find R version on system matching specified version ({self})"))
+        }
+        bail!(format!(
+            "Could not find R version on system matching specified version ({self})"
+        ))
     }
 
     fn hazy_version_match(&self, found_version: Version) -> bool {
@@ -105,40 +107,6 @@ impl Version {
             .len();
 
         self.parts[..num_specified] == found_version.parts[..num_specified]
-    }
-}
-
-fn ls_r_versions(path: &str) -> Vec<PathBuf> {
-    let mut path = PathBuf::from(path);
-
-    if path.ends_with("*") {
-        path.pop();
-        if !path.exists() || !path.is_dir() {
-            return Vec::new()
-        }
-        list_content(path)
-            .into_iter()
-            .map(|p| p.join("bin/R"))
-            .filter(|p| p.exists())
-            .collect::<Vec<PathBuf>>()
-    } else {
-        if path.exists() {
-            vec![path]
-        } else {
-            Vec::new()
-        }
-    }
-}
-
-fn list_content(path: PathBuf) -> Vec<PathBuf> {
-    if let Ok(entries) = fs::read_dir(path) {
-        entries
-            .into_iter()
-            .filter_map(Result::ok)
-            .map(|x| x.path())
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
     }
 }
 
@@ -196,6 +164,67 @@ where
         Ok(v) => Ok(v),
         Err(_) => Err(serde::de::Error::custom("Invalid version number")),
     }
+}
+
+fn ls_r_versions(path: impl AsRef<Path>) -> Vec<PathBuf> {
+    let mut path = PathBuf::from(path.as_ref());
+
+    if path.ends_with("*") {
+        path.pop();
+        if !path.exists() || !path.is_dir() {
+            return Vec::new();
+        }
+        list_content(path)
+            .into_iter()
+            .map(|p| p.join("bin/R"))
+            .filter(|p| p.exists())
+            .collect::<Vec<PathBuf>>()
+    } else {
+        if path.exists() {
+            vec![path]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+fn list_content(path: PathBuf) -> Vec<PathBuf> {
+    if let Ok(entries) = fs::read_dir(path) {
+        entries
+            .into_iter()
+            .filter_map(Result::ok)
+            .map(|x| x.path())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    }
+}
+
+fn potential_r_paths() -> Result<Vec<PathBuf>> {
+    let add_r_vers_file = env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or({
+            let home = env::var("HOME").map_err(|_| anyhow!("HOME env var not set"))?;
+            PathBuf::from(home).join(".config")
+        })
+        .join(ADDITIONAL_R_VERSIONS_FILENAME);
+
+    if !add_r_vers_file.exists() {
+        return Ok(DEFAULT_R_PATHS
+            .into_iter()
+            .map(PathBuf::from)
+            .collect::<Vec<_>>());
+    }
+
+    let file = File::open(add_r_vers_file)?;
+    let reader = io::BufReader::new(file);
+    let mut content = Vec::new();
+    for l in reader.lines() {
+        content.push(PathBuf::from(l?));
+    }
+    content.extend(DEFAULT_R_PATHS.into_iter().map(PathBuf::from));
+
+    Ok(content)
 }
 
 /// A package can require specific version for some versions.
