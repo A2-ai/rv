@@ -22,7 +22,7 @@ pub use build_plan::{BuildPlan, BuildStep};
 pub use cache::{Cache, CacheEntry};
 pub use config::{Config, ConfigDependency, Repository};
 pub use git::{Git, GitOperations};
-pub use lockfile::Lockfile;
+pub use lockfile::{Lockfile, Source};
 pub use package::{Version, VersionRequirement};
 pub use r_cmd::{RCmd, RCommandLine};
 pub use repo_path::RepoServer;

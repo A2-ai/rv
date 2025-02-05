@@ -204,6 +204,7 @@ fn install_package(
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
         Source::Local { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::RUniverse { .. } => install_package_from_repository(context, pkg, library_dir),
     }
 }
 
