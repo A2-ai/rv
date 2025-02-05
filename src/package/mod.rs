@@ -12,7 +12,7 @@ mod version;
 pub use description::parse_description_file_in_folder;
 pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
-pub use version::{deserialize_version, Version, VersionRequirement};
+pub use version::{deserialize_version, Operator, Version, VersionRequirement};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
 pub enum PackageType {
