@@ -1,0 +1,10 @@
+Package: dummy
+Title: Package Which Has No Dependencies
+Version: 0.0.0.9001
+Authors@R: 
+    person("Wes", "Cummings", , "wes@a2-ai.com", role = c("aut", "cre"))
+Description: This package has no dependencies
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2

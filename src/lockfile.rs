@@ -72,8 +72,8 @@ impl Source {
     }
 
     /// The key to use in the cache: URL for a package repository, git URL for a git repository
-    /// and for local ??? TODO
-    pub fn repository_url(&self) -> &str {
+    /// and for local the actual path
+    pub fn source_path(&self) -> &str {
         match self {
             Source::Repository { ref repository } => repository.as_str(),
             Source::Local { ref path } => path.to_str().unwrap(),

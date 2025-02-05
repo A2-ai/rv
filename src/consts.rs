@@ -7,6 +7,9 @@ pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
 pub const STAGING_DIR_NAME: &str = "staging";
 
+// Filename where we will stick the max mtime of a local dep
+pub(crate) const LOCAL_MTIME_FILENAME: &str = ".rv.mtime";
+
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 pub(crate) const BASE_PACKAGES: [&str; 14] = [
     "base",

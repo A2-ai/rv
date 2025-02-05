@@ -2,6 +2,7 @@ use crate::VersionRequirement;
 use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase, Version};
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+use std::path::PathBuf;
 
 mod dependency;
 
@@ -31,6 +32,7 @@ struct QueueItem<'d> {
     force_source: bool,
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
+    local_path: Option<PathBuf>,
 }
 
 impl<'d> QueueItem<'d> {
@@ -68,11 +70,46 @@ impl<'d> Resolver<'d> {
         }
     }
 
+    fn local_lookup(
+        &self,
+        item: &QueueItem<'d>,
+    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+        let local_path = item.local_path.as_ref().unwrap();
+        if !local_path.exists() || !local_path.is_dir() {
+            return Err(format!(
+                "{} doesn't exist or is not a directory",
+                local_path.display()
+            )
+            .into());
+        }
+
+        let package = parse_description_file_in_folder(local_path)?;
+        let (resolved_dep, deps) = ResolvedDependency::local_package(
+            &package,
+            Source::Local {
+                path: local_path.clone(),
+            },
+            item.install_suggestions,
+        );
+
+        let items = deps
+            .direct
+            .into_iter()
+            .chain(deps.suggests)
+            .map(|p| {
+                QueueItem::name_and_parent_only(Cow::Owned(p.name().to_string()), item.name.clone())
+            })
+            .collect();
+
+        Ok((resolved_dep, items))
+    }
+
     fn lockfile_lookup(
         &self,
         item: &QueueItem<'d>,
         cache: &'d impl Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+        // TODO: handle local dep
         if let Some(package) = self
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
@@ -80,7 +117,7 @@ impl<'d> Resolver<'d> {
             let resolved_dep = ResolvedDependency::from_locked_package(
                 package,
                 cache.get_package_installation_status(
-                    package.source.repository_url(),
+                    package.source.source_path(),
                     &package.name,
                     &package.version,
                 ),
@@ -243,6 +280,7 @@ impl<'d> Resolver<'d> {
                 force_source: d.force_source(),
                 parent: None,
                 remote: None,
+                local_path: d.local_path(),
             })
             .collect();
 
@@ -250,6 +288,29 @@ impl<'d> Resolver<'d> {
             // If we have already found that dependency, skip it
             // TODO: maybe different version req? we can cross that bridge later
             if processed.contains(item.name.as_ref()) {
+                continue;
+            }
+
+            // If we have a local path, we don't need to check anything at all, just the actual path
+            if item.local_path.is_some() {
+                match self.local_lookup(&item) {
+                    Ok((resolved_dep, items)) => {
+                        processed.insert(resolved_dep.name.to_string());
+                        result.found.push(resolved_dep);
+                        queue.extend(items);
+                        continue;
+                    }
+                    Err(e) => {
+                        result.failed.push(UnresolvedDependency {
+                            name: item.name.clone(),
+                            error: Some(format!("{e:?}")),
+                            version_requirement: item.version_requirement.clone(),
+                            parent: item.parent.clone(),
+                            remote: None,
+                            local_path: item.local_path.clone(),
+                        });
+                    }
+                }
                 continue;
             }
 
@@ -310,6 +371,7 @@ impl<'d> Resolver<'d> {
                                     version_requirement: item.version_requirement.clone(),
                                     parent: item.parent.clone(),
                                     remote: Some(remote.clone()),
+                                    local_path: None,
                                 });
                             }
                         }
@@ -321,6 +383,7 @@ impl<'d> Resolver<'d> {
                             version_requirement: item.version_requirement.clone(),
                             parent: item.parent.clone(),
                             remote: Some(remote.clone()),
+                            local_path: None,
                         });
                     }
                 }
@@ -349,6 +412,7 @@ impl<'d> Resolver<'d> {
                                 version_requirement: item.version_requirement.clone(),
                                 parent: item.parent.clone(),
                                 remote: None,
+                                local_path: None,
                             });
                         }
                     }
@@ -391,6 +455,7 @@ impl<'d> Resolver<'d> {
                                 version_requirement: item.version_requirement.clone(),
                                 parent: item.parent.clone(),
                                 remote: None,
+                                local_path: None,
                             });
                         }
                     }

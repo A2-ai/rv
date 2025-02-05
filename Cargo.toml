@@ -31,6 +31,7 @@ tempfile = "3"
 git2 = "0.20.0"
 reflink-copy = "0.1"
 log = "0.4"
+filetime = "0.2.25"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }
