@@ -128,8 +128,8 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        // rv does not support binaries for less than R/4.0
-        if r_version[0] < 4 {
+        // rv does not support binaries for less than R/3.6
+        if r_version < &[3, 6] {
             return None;
         }
 
@@ -190,7 +190,7 @@ impl<'a> RepoServer<'a> {
         sysinfo: &SystemInfo,
     ) -> Option<String> {
         // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.2
-        if r_version[1] <= 2 {
+        if r_version <= &[4, 2] {
             return Some(format!(
                 "{}/bin/macosx/contrib/{}.{}/{file_name}",
                 self.url(),
@@ -272,6 +272,23 @@ mod tests {
         let ref_url = format!("{}/src/contrib/test-file", PPM_URL);
         assert_eq!(source_url, ref_url);
     }
+    #[test]
+    fn test_binary_35_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("ubuntu"),
+            Some("x86_64".to_string()),
+            Some("jammy".to_string()),
+            "22.04",
+        );
+        if let None = RepoServer::from_url(PPM_URL).get_binary_path(
+            "test-file",
+            &[3, 5],
+            &sysinfo,
+        ) {
+            assert!(true)
+        }
+    }
+
     #[test]
     fn test_windows_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
