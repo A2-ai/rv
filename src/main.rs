@@ -1,12 +1,12 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fs_err as fs;
 
 use rv::cli::utils::timeit;
-use rv::cli::{sync, CliContext};
-use rv::{Git, Lockfile, ResolvedDependency, Resolver};
+use rv::cli::{find_r_repositories, init, sync, CliContext};
+use rv::{Git, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -25,7 +25,10 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Creates a new rv project
-    Init,
+    Init{
+        #[clap(value_parser)]
+        project_directory: PathBuf,
+    },
     /// Returns the path for the library for the current project/system
     Library,
     /// Dry run of what sync would do
@@ -120,7 +123,20 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init => todo!("implement init"),
+        Command::Init{
+            project_directory
+        } => {
+            // TODO: use cli flag to allow specification of another directory
+            if project_directory.exists() {
+                println!("{} already exists", project_directory.display());
+                return Ok(());
+            }
+            // TODO: use cli flag for non-default r_version
+            let r_version = RCommandLine {}.version()?;
+            // TODO: use cli flag to turn off default repositories (or specify non-default repos)
+            let repositories = find_r_repositories()?;
+            init(project_directory, r_version, repositories)?;
+        }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());

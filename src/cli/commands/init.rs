@@ -1,21 +1,79 @@
-use std::{io::Write, path::Path};
+use std::{io::{Read, Write}, path::Path, process::Command};
+
+use crate::{Repository, Version};
 
 const GITIGNORE_CONTENT: &str = "library/\nstaging/\n";
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 
-pub fn init(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+/// This function initializes a given directory to be an rv project. It does this by:
+/// - Creating the directory if it does not exist
+/// - Creating the library directory if it does not exist (<path/to/directory>/rv/library)
+///     - If a library directory exists, init will not create a new one or remove any of the installed packages
+/// - Creating a .gitignore file within the rv subdirectory to prevent upload of installed packages to git
+/// - Initialize the config file with the R version and repositories set as options within R
+pub fn init(
+    project_directory: impl AsRef<Path>,
+    r_version: Version,
+    repositories: Vec<Repository>,
+) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
-    
     create_library_structure(proj_dir)?;
     create_gitignore(proj_dir)?;
     Ok(())
 }
 
+pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
+    let r_code = r#"
+    repos <- getOption("repos")
+    cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))
+    "#;
+
+    let (mut reader, writer) = os_pipe::pipe().map_err(|e| InitError{
+        source: InitErrorKind::Command(e)
+    })?;
+    let writer_clone = writer.try_clone().map_err(|e| InitError{
+        source: InitErrorKind::Command(e)
+    })?;
+
+    let mut command = Command::new("Rscript");
+    command
+        .arg("-e")
+        .arg(r_code)
+        .stdout(writer)
+        .stderr(writer_clone);
+
+    let mut handle = command.spawn().map_err(|e| InitError {
+        source: InitErrorKind::Command(e),
+    })?;
+
+    drop(command);
+
+    let mut output = String::new();
+    reader.read_to_string(&mut output).unwrap();
+    let status = handle.wait().unwrap();
+
+    if !status.success() {
+        return Err(InitError {
+            source: InitErrorKind::CommandFailed(output),
+        });
+    }
+
+    Ok(output
+        .as_str()
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(2, '\t');
+            Some(Repository::new(parts.next()?.to_string(), parts.next()?.to_string(), false))
+        })
+        .collect::<Vec<_>>())
+}
+
 fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
-    std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH)).map_err(|e| InitError {
-        source: InitErrorKind::Io(e)
-    })
+    std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH))
+        .map_err(|e| InitError {
+            source: InitErrorKind::Io(e),
+        })
 }
 
 fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
@@ -25,12 +83,13 @@ fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError
     }
 
     let mut file = std::fs::File::create(path).map_err(|e| InitError {
-        source: InitErrorKind::Io(e)
+        source: InitErrorKind::Io(e),
     })?;
 
-    file.write_all(GITIGNORE_CONTENT.as_bytes()).map_err(|e| InitError {
-        source: InitErrorKind::Io(e)
-    })
+    file.write_all(GITIGNORE_CONTENT.as_bytes())
+        .map_err(|e| InitError {
+            source: InitErrorKind::Io(e),
+        })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -40,23 +99,38 @@ pub struct InitError {
     source: InitErrorKind,
 }
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum InitErrorKind {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("R command failed: {0}")]
+    Command(std::io::Error),
+    #[error("Failed to find repositories: {0}")]
+    CommandFailed(String)
 }
 
 mod tests {
+    use std::str::FromStr;
+
+    use crate::{
+        cli::commands::init::{GITIGNORE_PATH, LIBRARY_PATH},
+        Repository, Version,
+    };
+
+    use super::{find_r_repositories, init};
     use tempfile::tempdir;
-    use super::init;
 
     #[test]
     fn test_init_content() {
         let project_directory = tempdir().unwrap();
-        init(&project_directory).unwrap();
+        let r_version = Version::from_str("4.4.1").unwrap();
+        let repositories = vec![
+            Repository::new("test1".to_string(), "this is test1".to_string(), true),
+            Repository::new("test2".to_string(), "this is test2".to_string(), false),
+        ];
+        init(&project_directory, r_version, repositories).unwrap();
         let dir = &project_directory.into_path();
-        assert!(dir.join("rv/library").exists());
-        assert!(dir.join("rv/.gitignore").exists());
+        assert!(dir.join(LIBRARY_PATH).exists());
+        assert!(dir.join(GITIGNORE_PATH).exists());
     }
 }
