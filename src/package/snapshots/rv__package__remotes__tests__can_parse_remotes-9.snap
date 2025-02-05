@@ -1,6 +1,6 @@
 ---
 source: src/package/remotes.rs
 description: "git::https://github.com/igraph/rigraph.git@main"
-expression: "format!(\"{name} => {remote:?}\")"
+expression: "format!(\"{name:?} => {remote:?}\")"
 ---
- => Git { url: "https://github.com/igraph/rigraph.git", reference: Some("main"), pull_request: None, directory: None }
+None => Git { url: "https://github.com/igraph/rigraph.git", reference: Some("main"), pull_request: None, directory: None }

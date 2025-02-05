@@ -106,9 +106,10 @@ Remotes:
         assert_eq!(package.imports.len(), 12);
         assert_eq!(package.suggests.len(), 9);
         assert_eq!(package.remotes.len(), 3);
-        match &package.remotes["teal.code"] {
-            PackageRemote::Git { url, .. } => {
-                assert_eq!(url, "https://github.com/insightsengineering/teal.code")
+        match &package.remotes["insightsengineering/teal.code"] {
+            (name, PackageRemote::Git { url, .. }) => {
+                assert_eq!(url, "https://github.com/insightsengineering/teal.code");
+                assert_eq!(name, &Some("teal.code".to_string()));
             }
             _ => panic!("Should have gotten a git repo"),
         }
