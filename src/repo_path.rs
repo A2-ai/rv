@@ -103,8 +103,6 @@ impl<'a> RepoServer<'a> {
     /// Windows binaries are found under `/bin/windows/contrib/<R version major>.<R version minor>`
     ///
     /// ### MacOS
-    /// MacOS binaries are not widely supported for R < 4.0 and are not supported in this tooling.
-    ///
     /// There is a split in the repository structure at R/4.2
     ///
     /// * For R <= 4.2, binaries are found under `/bin/macosx/contrib/4.<R version minor>`
@@ -280,11 +278,8 @@ mod tests {
             Some("jammy".to_string()),
             "22.04",
         );
-        if let None = RepoServer::from_url(PPM_URL).get_binary_path(
-            "test-file",
-            &[3, 5],
-            &sysinfo,
-        ) {
+        if let None = RepoServer::from_url(PPM_URL).get_binary_path("test-file", &[3, 5], &sysinfo)
+        {
             assert!(true)
         }
     }
