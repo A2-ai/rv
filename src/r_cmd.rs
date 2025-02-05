@@ -90,7 +90,7 @@ impl RCmd for RCommandLine {
         let library = library.as_ref().canonicalize().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
-
+        
         let mut command = Command::new(&self.r);
         command
             .arg("CMD")

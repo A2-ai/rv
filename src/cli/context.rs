@@ -34,6 +34,11 @@ impl CliContext {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
         let r_cmd = r_version.find_r_version_command()?;
+        if r_cmd.r == PathBuf::from("R") {
+            log::debug!("Found R on the Path");
+        } else {
+            log::debug!("Found R at {}", r_cmd.r.display());
+        }
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
 

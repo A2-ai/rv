@@ -68,6 +68,13 @@ impl Version {
     }
 
     pub fn find_r_version_command(&self) -> Result<RCommandLine> {
+        // first check if the correct version is on the $PATH. If so, return just R
+        if let Ok(ver) = (RCommandLine {r: PathBuf::from("R")}).version() {
+            if self.hazy_version_match(ver) {
+                return Ok(RCommandLine{r: PathBuf::from("R")})
+            }
+        }
+
         for path in potential_r_paths()? {
             let mut path_clone = path.clone();
             if path_clone.ends_with("*") {
@@ -223,7 +230,7 @@ fn potential_r_paths() -> Result<Vec<PathBuf>> {
         content.push(PathBuf::from(l?));
     }
     content.extend(DEFAULT_R_PATHS.into_iter().map(PathBuf::from));
-
+    
     Ok(content)
 }
 
