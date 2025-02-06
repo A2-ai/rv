@@ -86,9 +86,11 @@ impl Version {
             .filter_map(Result::ok)
             .map(|p| p.path().join("bin/R"))
             .filter(|p| p.exists())
-            .find(|p| self.does_r_binary_match_version(p.to_path_buf())) 
-            .map(|r| RCommandLine{ r })
-            .ok_or(anyhow!("Could not find R version on system matching specified version ({self})"))
+            .find(|p| self.does_r_binary_match_version(p.to_path_buf()))
+            .map(|r| RCommandLine { r })
+            .ok_or(anyhow!(
+                "Could not find R version on system matching specified version ({self})"
+            ))
     }
 
     // See if the found R binary matches the specified version.
