@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::ResolvedDependency;
+use crate::{ResolvedDependency, Version};
 
 #[derive(Debug, PartialEq)]
 pub enum BuildStep<'a> {
@@ -75,8 +75,11 @@ impl<'a> BuildPlan<'a> {
         self.deps.len() - self.installed.len()
     }
 
-    pub fn all_dependencies_names(&self) -> HashSet<&str> {
-        self.deps.iter().map(|r| r.name.as_ref()).collect()
+    pub fn all_dependencies(&self) -> HashMap<&str, &Version> {
+        self.deps
+            .iter()
+            .map(|r| (r.name.as_ref(), r.version.as_ref()))
+            .collect()
     }
 
     /// get a package to install, an enum {Package, Wait, Done}
@@ -110,13 +113,14 @@ mod tests {
     use crate::lockfile::Source;
     use crate::package::PackageType;
     use std::borrow::Cow;
+    use std::str::FromStr;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {
         ResolvedDependency {
             name: Cow::from(name),
             dependencies: dependencies.into_iter().map(Cow::from).collect(),
             suggests: Vec::new(),
-            version: Cow::Borrowed(""),
+            version: Cow::Owned(Version::from_str("0.1.0").unwrap()),
             source: Source::Repository {
                 repository: "".to_string(),
             },
