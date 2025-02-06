@@ -1,15 +1,11 @@
 use std::cmp::Ordering;
-use std::fs::File;
-use std::io::BufRead;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::{fmt, fs, io};
+use std::{fmt, fs};
 
-use anyhow::{bail, Result};
-use etcetera::BaseStrategy;
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::consts::{ADDITIONAL_R_VERSIONS_FILENAME, DEFAULT_R_PATHS};
 use crate::{RCmd, RCommandLine};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
@@ -78,40 +74,25 @@ impl Version {
             });
         }
 
-        // look through all paths specified as default and whatever is the additional r path config file
-        for mut path in potential_r_paths() {
-            // if path is supposed to be an R binary, check it exists and that its version matches
-            if !path.ends_with("*") {
-                if !path.exists() {
-                    continue;
-                }
-                if !self.does_r_binary_match_version(path.to_path_buf()) {
-                    continue;
-                }
-                return Ok(RCommandLine { r: path });
-            }
-            // otherwise, remove the wildcard and ensure its parent exists
-            path.pop();
-            if !path.exists() {
-                continue;
-            }
-            // look in each sub folder for "bin/R" and see that that R binary is the correct version
-            let r_path = list_content(&path)
-                .into_iter()
-                .map(|p| p.join("bin/R"))
-                .filter(|p| p.exists())
-                .find(|p| self.does_r_binary_match_version(p.to_path_buf()));
-            if let Some(r) = r_path {
-                return Ok(RCommandLine { r });
-            }
+        let opt_r = PathBuf::from("/opt/R");
+        if !opt_r.exists() {
+            bail!("Could not find R version on system matching specified version ({self})");
         }
-        bail!(format!(
-            "Could not find R version on system matching specified version ({self})"
-        ))
+
+        // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
+        // returns an RCommandLine struct with the path to the executable if found
+        fs::read_dir(opt_r)?
+            .into_iter()
+            .filter_map(Result::ok)
+            .map(|p| p.path().join("bin/R"))
+            .filter(|p| p.exists())
+            .find(|p| self.does_r_binary_match_version(p.to_path_buf())) 
+            .map(|r| RCommandLine{ r })
+            .ok_or(anyhow!("Could not find R version on system matching specified version ({self})"))
     }
 
-    // see if the found R binary matches the specified version.
-    // If cannot determine version return false
+    // See if the found R binary matches the specified version.
+    // If version cannot be determined, return false
     // Hazy matches version based on number of specified elements
     fn does_r_binary_match_version(&self, r_binary_path: PathBuf) -> bool {
         if let Ok(v) = (RCommandLine { r: r_binary_path }).version() {
@@ -177,55 +158,6 @@ where
         Ok(v) => Ok(v),
         Err(_) => Err(serde::de::Error::custom("Invalid version number")),
     }
-}
-
-// list the content within a directory as Vec<PathBuf>
-// Used for wildcard R version directories
-fn list_content(path: &PathBuf) -> Vec<PathBuf> {
-    if let Ok(entries) = fs::read_dir(path) {
-        entries
-            .into_iter()
-            .filter_map(Result::ok)
-            .map(|x| x.path())
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    }
-}
-
-// determine the potential paths R may be on based on the list of default paths and paths specified within the r versions config
-fn potential_r_paths() -> Vec<PathBuf> {
-    // determine r versions config path based on XDG spec
-    let config_file = etcetera::base_strategy::choose_base_strategy()
-        .map(|s| s.config_dir().join(ADDITIONAL_R_VERSIONS_FILENAME))
-        .unwrap_or(PathBuf::new());
-
-    // if path doesn't exist, return only the default r paths
-    if !config_file.exists() {
-        return DEFAULT_R_PATHS
-            .into_iter()
-            .map(PathBuf::from)
-            .collect::<Vec<_>>();
-    }
-
-    // if path does exist, read the content of the file and append the default r versions to it
-    // paths specified in config file are given precedent
-    let mut content = if let Ok(file) = File::open(config_file) {
-        let reader = io::BufReader::new(file);
-        reader
-            .lines()
-            .filter_map(|line| {
-                line.ok()
-                    .map(PathBuf::from)
-                    .and_then(|path| fs::canonicalize(&path).ok())
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-
-    content.extend(DEFAULT_R_PATHS.into_iter().map(PathBuf::from));
-    content
 }
 
 /// A package can require specific version for some versions.
