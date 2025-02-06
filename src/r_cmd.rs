@@ -50,6 +50,7 @@ pub trait RCmd {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RCommandLine {
+    /// specifies the path to the R executable on the system. specifying "R" will default to the R executable on the $PATH
     pub(crate) r: PathBuf,
 }
 
