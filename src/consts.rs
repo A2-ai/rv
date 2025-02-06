@@ -33,4 +33,4 @@ pub(crate) const DEFAULT_R_PATHS: [&str; 9] = [
     "/opt/local/R/*",
 ];
 
-pub(crate) const ADDITIONAL_R_VERSIONS_FILENAME: &str = "/rv/r-versions";
+pub(crate) const ADDITIONAL_R_VERSIONS_FILENAME: &str = "rv/r-versions";

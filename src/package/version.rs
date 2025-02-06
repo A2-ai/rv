@@ -69,9 +69,14 @@ impl Version {
 
     pub fn find_r_version_command(&self) -> Result<RCommandLine> {
         // first check if the correct version is on the $PATH. If so, return just R
-        if let Ok(ver) = (RCommandLine {r: PathBuf::from("R")}).version() {
+        if let Ok(ver) = (RCommandLine {
+            r: PathBuf::from("R"),
+        }).version()
+        {
             if self.hazy_version_match(ver) {
-                return Ok(RCommandLine{r: PathBuf::from("R")})
+                return Ok(RCommandLine {
+                    r: PathBuf::from("R"),
+                });
             }
         }
 
@@ -103,15 +108,7 @@ impl Version {
     }
 
     fn hazy_version_match(&self, found_version: Version) -> bool {
-        // TODO: improve to not require map
-        let num_specified = self
-            .original
-            .trim()
-            .replace('-', ".")
-            .split('.')
-            .map(|x| x.parse().unwrap())
-            .collect::<Vec<u32>>()
-            .len();
+        let num_specified = self.original.split('.').count();
 
         self.parts[..num_specified] == found_version.parts[..num_specified]
     }
@@ -225,12 +222,15 @@ fn potential_r_paths() -> Result<Vec<PathBuf>> {
 
     let file = File::open(add_r_vers_file)?;
     let reader = io::BufReader::new(file);
-    let mut content = Vec::new();
-    for l in reader.lines() {
-        content.push(PathBuf::from(l?));
-    }
+    let mut content = reader
+        .lines() 
+        .filter_map(|line| {
+            line.ok() 
+                .map(PathBuf::from) 
+                .and_then(|path| fs::canonicalize(&path).ok()) 
+        })
+        .collect::<Vec<_>>();
     content.extend(DEFAULT_R_PATHS.into_iter().map(PathBuf::from));
-    
     Ok(content)
 }
 
