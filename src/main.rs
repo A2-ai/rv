@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use fs_err as fs;
@@ -25,7 +25,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Creates a new rv project
-    Init{
+    Init {
         #[clap(value_parser)]
         project_directory: PathBuf,
     },
@@ -123,10 +123,7 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init{
-            project_directory
-        } => {
-            // TODO: use cli flag to allow specification of another directory
+        Command::Init { project_directory } => {
             if project_directory.exists() {
                 println!("{} already exists", project_directory.display());
                 return Ok(());

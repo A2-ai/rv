@@ -1,6 +1,10 @@
-use std::{io::{Read, Write}, path::Path, process::Command};
+use std::{
+    io::{Read, Write},
+    path::Path,
+    process::Command,
+};
 
-use crate::{Repository, Version};
+use crate::{Config, Repository, Version};
 
 const GITIGNORE_CONTENT: &str = "library/\nstaging/\n";
 const GITIGNORE_PATH: &str = "rv/.gitignore";
@@ -20,6 +24,13 @@ pub fn init(
     let proj_dir = project_directory.as_ref();
     create_library_structure(proj_dir)?;
     create_gitignore(proj_dir)?;
+    let name = proj_dir
+        .iter()
+        .last()
+        .map(|x| x.to_string_lossy().to_string())
+        .unwrap_or("my rv project".to_string());
+    let mut config = Config::new();
+    config.set_required_fields(name, r_version, repositories, Vec::new());
     Ok(())
 }
 
@@ -29,11 +40,11 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))
     "#;
 
-    let (mut reader, writer) = os_pipe::pipe().map_err(|e| InitError{
-        source: InitErrorKind::Command(e)
+    let (mut reader, writer) = os_pipe::pipe().map_err(|e| InitError {
+        source: InitErrorKind::Command(e),
     })?;
-    let writer_clone = writer.try_clone().map_err(|e| InitError{
-        source: InitErrorKind::Command(e)
+    let writer_clone = writer.try_clone().map_err(|e| InitError {
+        source: InitErrorKind::Command(e),
     })?;
 
     let mut command = Command::new("Rscript");
@@ -64,16 +75,19 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
         .lines()
         .filter_map(|line| {
             let mut parts = line.splitn(2, '\t');
-            Some(Repository::new(parts.next()?.to_string(), parts.next()?.to_string(), false))
+            Some(Repository::new(
+                parts.next()?.to_string(),
+                parts.next()?.to_string(),
+                false,
+            ))
         })
         .collect::<Vec<_>>())
 }
 
 fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
-    std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH))
-        .map_err(|e| InitError {
-            source: InitErrorKind::Io(e),
-        })
+    std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH)).map_err(|e| InitError {
+        source: InitErrorKind::Io(e),
+    })
 }
 
 fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
@@ -106,7 +120,7 @@ pub enum InitErrorKind {
     #[error("R command failed: {0}")]
     Command(std::io::Error),
     #[error("Failed to find repositories: {0}")]
-    CommandFailed(String)
+    CommandFailed(String),
 }
 
 mod tests {

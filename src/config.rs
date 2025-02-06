@@ -179,6 +179,38 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new() -> Config {
+        Config {
+            project: Project {
+                name: String::new(),
+                r_version: Version::new(),
+                description: String::new(),
+                license: None,
+                authors: Vec::new(),
+                keywords: Vec::new(),
+                repositories: Vec::new(),
+                suggests: Vec::new(),
+                urls: HashMap::new(),
+                dependencies: Vec::new(),
+                dev_dependencies: Vec::new(),
+                prefer_repositories_for: Vec::new(),
+            },
+        }
+    }
+
+    pub fn set_required_fields(
+        &mut self,
+        name: String,
+        r_version: Version,
+        repositories: Vec<Repository>,
+        dependencies: Vec<ConfigDependency>,
+    ) {
+        self.project.name = name;
+        self.project.r_version = r_version;
+        self.project.repositories = repositories;
+        self.project.dependencies = dependencies;
+    }
+
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
         let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,
