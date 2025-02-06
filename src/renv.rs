@@ -1,4 +1,8 @@
-use std::{collections::HashMap, error::Error, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use serde::Deserialize;
 
@@ -100,10 +104,10 @@ impl RenvLock {
                     &self.r.version,
                 )
                 .map(|r| Source::Repository(r)),
-                RenvSource::GitHub => resolve_github(package_info)
-                    .map(|(git, sha)| Source::GitHub {git, sha}),
-                RenvSource::Local => resolve_local(package_info)
-                    .map(|path| Source::Local(path)),
+                RenvSource::GitHub => {
+                    resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
+                }
+                RenvSource::Local => resolve_local(package_info).map(|path| Source::Local(path)),
                 _ => Err("Source is not supported".into()),
             };
             match res {
@@ -182,7 +186,6 @@ fn resolve_repository<'a>(
         .ok_or("Could not find package in repository".into())
 }
 
-
 // Expected GitHub sourced package format from renv.lock
 // "ghqc": {
 //     "Package": "ghqc",
@@ -205,11 +208,23 @@ fn resolve_repository<'a>(
 //       "yaml"
 //     ],
 fn resolve_github(pkg_info: &PackageInfo) -> Result<(String, String), Box<dyn Error>> {
-    let host = pkg_info.remote_host.as_ref().ok_or("RemoteHost not found")?;
-    let repo = pkg_info.remote_repo.as_ref().ok_or("RemoteRepo not found")?;
-    let org = &pkg_info.remote_username.as_ref().ok_or("RemoteUsername not found")?;
+    let host = pkg_info
+        .remote_host
+        .as_ref()
+        .ok_or("RemoteHost not found")?;
+    let repo = pkg_info
+        .remote_repo
+        .as_ref()
+        .ok_or("RemoteRepo not found")?;
+    let org = &pkg_info
+        .remote_username
+        .as_ref()
+        .ok_or("RemoteUsername not found")?;
     let sha = &pkg_info.remote_sha.as_ref().ok_or("RemoteSha not found")?;
-    let base_url = host.trim_start_matches("https://").trim_start_matches("api.").trim_end_matches("api/v3");
+    let base_url = host
+        .trim_start_matches("https://")
+        .trim_start_matches("api.")
+        .trim_end_matches("api/v3");
     let url = format!("https://{base_url}/{org}/{repo}");
     Ok((url, sha.to_string()))
 }
@@ -237,8 +252,8 @@ struct ResolvedRenv<'a> {
 #[derive(Debug, Clone, PartialEq)]
 enum Source<'a> {
     Repository(&'a RenvRepository),
-    GitHub{git: String, sha: String},
-    Local(PathBuf)
+    GitHub { git: String, sha: String },
+    Local(PathBuf),
 }
 
 struct UnresolvedRenv<'a> {
