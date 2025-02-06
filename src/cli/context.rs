@@ -10,7 +10,7 @@ use crate::{RCmd, RCommandLine};
 
 use crate::cli::utils::get_os_path;
 use crate::lockfile::Lockfile;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
 
@@ -33,7 +33,8 @@ impl CliContext {
     pub fn new(config_file: &PathBuf) -> Result<Self> {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
-        let r_cmd = r_version.find_r_version_command()?;
+        let r_cmd = r_version.find_r_version_command()
+            .ok_or(anyhow!("Could not find specified version ({r_version})"))?;
         if r_cmd.r == PathBuf::from("R") {
             log::debug!("Found R on the Path");
         } else {

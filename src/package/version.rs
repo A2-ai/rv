@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fmt, fs};
 
-use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{RCmd, RCommandLine};
@@ -66,31 +65,29 @@ impl Version {
 
     /// This function is meant to take an R version specified within a config and find it on the system
     /// This allows the binaries built by rv to be built by the correct version of R
-    pub fn find_r_version_command(&self) -> Result<RCommandLine> {
+    pub fn find_r_version_command(&self) -> Option<RCommandLine> {
         // Give preference to the R version on the $PATH
         if self.does_r_binary_match_version(PathBuf::from("R")) {
-            return Ok(RCommandLine {
+            return Some(RCommandLine {
                 r: PathBuf::from("R"),
             });
         }
 
         let opt_r = PathBuf::from("/opt/R");
         if !opt_r.exists() {
-            bail!("Could not find R version on system matching specified version ({self})");
+            return None;
         }
 
         // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
         // returns an RCommandLine struct with the path to the executable if found
-        fs::read_dir(opt_r)?
+        fs::read_dir(opt_r)
+            .ok()?
             .into_iter()
             .filter_map(Result::ok)
             .map(|p| p.path().join("bin/R"))
             .filter(|p| p.exists())
             .find(|p| self.does_r_binary_match_version(p.to_path_buf()))
             .map(|r| RCommandLine { r })
-            .ok_or(anyhow!(
-                "Could not find R version on system matching specified version ({self})"
-            ))
     }
 
     // See if the found R binary matches the specified version.
