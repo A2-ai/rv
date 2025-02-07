@@ -6,7 +6,7 @@ use crate::lockfile::Source;
 use crate::package::{deserialize_version, Version};
 use serde::Deserialize;
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Author {
     name: String,
@@ -15,7 +15,7 @@ struct Author {
     maintainer: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
@@ -69,12 +69,6 @@ pub enum ConfigDependency {
         #[serde(default)]
         force_source: bool,
     },
-}
-
-impl Default for ConfigDependency {
-    fn default() -> Self {
-        Self::Simple(String::new())
-    }
 }
 
 impl ConfigDependency {
@@ -145,7 +139,7 @@ impl ConfigDependency {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize, Default)]
+#[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
@@ -178,14 +172,20 @@ pub(crate) struct Project {
     prefer_repositories_for: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize, Default)]
+#[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub(crate) project: Project,
 }
 
 impl Config {
-    pub(crate) fn set_required_fields(&mut self, name: String, r_version: Version, repositories: Vec<Repository>, dependencies: Vec<ConfigDependency>) {
+    pub(crate) fn set_required_fields(
+        &mut self,
+        name: String,
+        r_version: Version,
+        repositories: Vec<Repository>,
+        dependencies: Vec<ConfigDependency>,
+    ) {
         self.project.name = name;
         self.project.r_version = r_version;
         self.project.repositories = repositories;
