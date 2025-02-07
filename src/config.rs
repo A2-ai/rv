@@ -29,14 +29,6 @@ impl Repository {
     pub fn url(&self) -> &str {
         self.url.trim_end_matches("/")
     }
-
-    pub fn new(alias: String, url: String, force_source: bool) -> Self {
-        Self {
-            alias,
-            url,
-            force_source,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]

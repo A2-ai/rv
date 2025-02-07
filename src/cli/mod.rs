@@ -5,5 +5,5 @@ pub mod http;
 pub mod utils;
 
 pub use cache::DiskCache;
-pub use commands::{migrate_renv, sync};
+pub use commands::sync;
 pub use context::CliContext;

@@ -88,7 +88,7 @@ impl CliContext {
     }
 }
 
-pub(crate) fn load_databases(
+fn load_databases(
     repositories: &[Repository],
     cache: &DiskCache,
 ) -> Result<Vec<(RepositoryDatabase, bool)>> {

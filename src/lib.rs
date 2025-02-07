@@ -27,7 +27,6 @@ pub use library::Library;
 pub use lockfile::Lockfile;
 pub use package::{Version, VersionRequirement};
 pub use r_cmd::{RCmd, RCommandLine};
-pub use renv::RenvLock;
 pub use repo_path::RepoServer;
 pub use repository::RepositoryDatabase;
 pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};
