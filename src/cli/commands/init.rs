@@ -63,7 +63,6 @@ pub fn init(
         .map_err(|e| InitError{
             source: InitErrorKind::Io(e)
         })?;
-
     Ok(())
 }
 
