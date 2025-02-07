@@ -59,13 +59,6 @@ impl Version {
     pub fn major_minor(&self) -> [u32; 2] {
         [self.parts[0], self.parts[1]]
     }
-
-    pub fn new() -> Self {
-        Self {
-            parts: [0; 10],
-            original: String::new(),
-        }
-    }
 }
 
 impl FromStr for Version {

@@ -29,8 +29,9 @@ pub fn init(
         .last()
         .map(|x| x.to_string_lossy().to_string())
         .unwrap_or("my rv project".to_string());
-    let mut config = Config::new();
+    let mut config = Config::default();
     config.set_required_fields(name, r_version, repositories, Vec::new());
+    
     Ok(())
 }
 
