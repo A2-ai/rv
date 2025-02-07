@@ -50,8 +50,44 @@ pub trait RCmd {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RCommandLine {
-    /// specifies the path to the R executable on the system. specifying "R" will default to the R executable on the $PATH
-    pub(crate) r: PathBuf,
+    /// specifies the path to the R executable on the system. None indicates using "R" on the $PATH
+    pub(crate) r: Option<PathBuf>,
+}
+
+impl RCommandLine {
+    pub fn find_r_version_command(r_version: &Version) -> Option<Self> {
+        // Give preference to the R version on the $PATH
+        if (Self { r: None }).does_r_cmd_match_version(&r_version) {
+            return Some(RCommandLine { r: None });
+        }
+
+        let opt_r = PathBuf::from("/opt/R");
+        if !opt_r.exists() {
+            return None;
+        }
+
+        // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
+        // returns an RCommandLine struct with the path to the executable if found
+        fs::read_dir(opt_r)
+            .ok()?
+            .into_iter()
+            .filter_map(Result::ok)
+            .map(|p| p.path().join("bin/R"))
+            .filter(|p| p.exists())
+            .map(|r| RCommandLine { r: Some(r) })
+            .find(|r_cmd| r_cmd.does_r_cmd_match_version(&r_version))
+    }
+
+    // See if the found R binary matches the specified version.
+    // If version cannot be determined, return false
+    // Hazy matches version based on number of specified elements
+    fn does_r_cmd_match_version(&self, version: &Version) -> bool {
+        if let Ok(v) = self.version() {
+            version.hazy_match(&v)
+        } else {
+            false
+        }
+    }
 }
 
 impl RCmd for RCommandLine {
@@ -92,7 +128,10 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = Command::new(&self.r);
+        let mut command = match &self.r {
+            Some(r) => Command::new(r),
+            None => Command::new("R"),
+        };
         command
             .arg("CMD")
             .arg("INSTALL")
@@ -151,7 +190,7 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(&self.r)
+        let output = Command::new(&self.r.as_ref().unwrap_or(&PathBuf::from("R")))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
