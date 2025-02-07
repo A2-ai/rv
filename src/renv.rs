@@ -1,4 +1,8 @@
-use std::{collections::HashMap, error::Error, path::Path};
+use std::{
+    collections::HashMap,
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use serde::Deserialize;
 
@@ -100,6 +104,10 @@ impl RenvLock {
                     &self.r.version,
                 )
                 .map(|r| Source::Repository(r)),
+                RenvSource::GitHub => {
+                    resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
+                }
+                RenvSource::Local => resolve_local(package_info).map(|path| Source::Local(path)),
                 _ => Err("Source is not supported".into()),
             };
             match res {
@@ -178,6 +186,63 @@ fn resolve_repository<'a>(
         .ok_or("Could not find package in repository".into())
 }
 
+// Expected GitHub sourced package format from renv.lock
+// "ghqc": {
+//     "Package": "ghqc",
+//     "Version": "0.3.2",
+//     "Source": "GitHub",
+//     "RemoteType": "github",
+//     "RemoteHost": "api.github.com",
+//     "RemoteRepo": "ghqc",
+//     "RemoteUsername": "a2-ai",
+//     "RemoteSha": "55c23eb6a444542dab742d3d37c7b65af7b12e38",
+//     "Requirements": [
+//       "R",
+//       "cli",
+//       "fs",
+//       "glue",
+//       "httpuv",
+//       "rlang",
+//       "rstudioapi",
+//       "withr",
+//       "yaml"
+//     ],
+fn resolve_github(pkg_info: &PackageInfo) -> Result<(String, String), Box<dyn Error>> {
+    let host = pkg_info
+        .remote_host
+        .as_ref()
+        .ok_or("RemoteHost not found")?;
+    let repo = pkg_info
+        .remote_repo
+        .as_ref()
+        .ok_or("RemoteRepo not found")?;
+    let org = &pkg_info
+        .remote_username
+        .as_ref()
+        .ok_or("RemoteUsername not found")?;
+    let sha = &pkg_info.remote_sha.as_ref().ok_or("RemoteSha not found")?;
+    let base_url = host
+        .trim_start_matches("https://")
+        .trim_start_matches("api.")
+        .trim_end_matches("api/v3");
+    let url = format!("https://{base_url}/{org}/{repo}");
+    Ok((url, sha.to_string()))
+}
+
+// Expected local sourced package, installed via renv::install, format from renv.lock
+// "rv.git.pkgA": {
+//       "Package": "rv.git.pkgA",
+//       "Version": "0.0.0.9000",
+//       "Source": "Local",
+//       "RemoteType": "local",
+//       "RemoteUrl": "~/projects/rv.git.pkgA_0.0.0.9000.tar.gz",
+//       "Hash": "39e317a9ec5437bd5ce021ad56da04b6"
+//     }
+fn resolve_local(pkg_info: &PackageInfo) -> Result<PathBuf, Box<dyn Error>> {
+    let path = pkg_info.remote_url.as_ref().ok_or("RemoteUrl not found")?;
+    Ok(PathBuf::from(path))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ResolvedRenv<'a> {
     package_info: &'a PackageInfo,
@@ -187,6 +252,8 @@ struct ResolvedRenv<'a> {
 #[derive(Debug, Clone, PartialEq)]
 enum Source<'a> {
     Repository(&'a RenvRepository),
+    GitHub { git: String, sha: String },
+    Local(PathBuf),
 }
 
 struct UnresolvedRenv<'a> {
