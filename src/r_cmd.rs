@@ -77,9 +77,6 @@ impl RCmd for RCommandLine {
                 source: InstallErrorKind::LinkError(e),
             })?;
 
-        // println!("{:?}", tmp_dir.path());
-        // std::thread::sleep(std::time::Duration::from_secs(500));
-
         let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;

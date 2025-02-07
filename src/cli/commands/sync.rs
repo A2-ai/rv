@@ -194,24 +194,11 @@ fn install_package_from_git(
     Ok(())
 }
 
-fn install_local_package(
-    context: &CliContext,
-    pkg: &ResolvedDependency,
-    library_dir: &Path,
-) -> Result<()> {
+fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
     // First we check if the package exists in the library and what's the mtime in it
     let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
+    // TODO: we actually do that twice, a bit wasteful
     let local_mtime = mtime_recursive(&local_path)?;
-    let mtime_found = context
-        .library
-        .local_packages
-        .get(pkg.name.as_ref())
-        .unwrap_or(&0);
-
-    // Same or later mtime, do nothing
-    if *mtime_found >= local_mtime.unix_seconds() {
-        return Ok(());
-    }
 
     // if the mtime we found locally is more recent, we build it
     log::debug!("Building the local package in {}", local_path.display());
@@ -242,7 +229,7 @@ fn install_package(
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
-        Source::Local { .. } => install_local_package(context, pkg, library_dir),
+        Source::Local { .. } => install_local_package(pkg, library_dir),
     }
 }
 
@@ -391,13 +378,14 @@ pub fn sync(
                 .unwrap_or(&0);
 
             // if the mtime we found in the lib is lower than the source folder
-            // remove it from deps seen as we will need to install it and remove the
-            // existing one
+            // remove it from deps_seen as we will need to install it and remove the
+            // existing one from the library
             if *mtime_found < local_mtime.unix_seconds() {
                 deps_seen.remove(dep.name.as_ref());
                 to_remove.insert((dep.name.as_ref().to_string(), false));
                 local_deps.insert(dep.name.as_ref(), false);
             } else {
+                // same mtime or higher: we copy from the library
                 local_deps.insert(dep.name.as_ref(), true);
             }
         } else {

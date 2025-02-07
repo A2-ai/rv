@@ -15,6 +15,7 @@ pub struct Library {
     path: PathBuf,
     pub packages: HashMap<String, Version>,
     /// If we find a local package installed, also read the latest mtime
+    /// Only local packages will have a mtime file
     pub local_packages: HashMap<String, i64>,
     /// The folders exist but we can't find the DESCRIPTION file.
     /// This is likely a broken symlink and we should remove that folder/reinstall it
