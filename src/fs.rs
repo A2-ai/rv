@@ -5,7 +5,6 @@ use std::path::Path;
 use filetime::FileTime;
 use walkdir::WalkDir;
 
-const MTIME_FILE: &str = "rv.lock";
 
 /// Copy the whole content of a folder to another folder
 pub(crate) fn copy_folder(

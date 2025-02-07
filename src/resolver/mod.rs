@@ -45,6 +45,36 @@ impl<'d> QueueItem<'d> {
     }
 }
 
+// Macro to go around borrow errors
+macro_rules! prepare_deps {
+    ($resolved:expr, $deps:expr) => {{
+        let items = $deps
+            .direct
+            .into_iter()
+            .chain($deps.suggests)
+            .map(|p| {
+                let mut i = QueueItem::name_and_parent_only(
+                    Cow::Owned(p.name().to_string()),
+                    $resolved.name.clone(),
+                );
+
+                i.version_requirement = p.version_requirement().map(|x| Cow::Owned(x.clone()));
+
+                for (pkg_name, remote) in $resolved.remotes.values() {
+                    if let Some(n) = pkg_name {
+                        if p.name() == n.as_str() {
+                            i.remote = Some(remote.clone());
+                        }
+                    }
+                }
+                i
+            })
+            .collect();
+
+        ($resolved, items)
+    }};
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Resolver<'d> {
     /// The repositories are stored in the order defined in the config
@@ -91,17 +121,7 @@ impl<'d> Resolver<'d> {
             },
             item.install_suggestions,
         );
-
-        let items = deps
-            .direct
-            .into_iter()
-            .chain(deps.suggests)
-            .map(|p| {
-                QueueItem::name_and_parent_only(Cow::Owned(p.name().to_string()), item.name.clone())
-            })
-            .collect();
-
-        Ok((resolved_dep, items))
+        Ok(prepare_deps!(resolved_dep, deps))
     }
 
     fn lockfile_lookup(
@@ -167,22 +187,7 @@ impl<'d> Resolver<'d> {
                         &package.version.original,
                     ),
                 );
-
-                let items = deps
-                    .direct
-                    .into_iter()
-                    .chain(deps.suggests)
-                    .map(|p| {
-                        let mut i = QueueItem::name_and_parent_only(
-                            Cow::Borrowed(p.name()),
-                            item.name.clone(),
-                        );
-                        i.version_requirement = p.version_requirement().map(Cow::Borrowed);
-                        i
-                    })
-                    .collect();
-
-                return Some((resolved_dep, items));
+                return Some(prepare_deps!(resolved_dep, deps));
             }
         }
 
@@ -228,30 +233,7 @@ impl<'d> Resolver<'d> {
                     item.install_suggestions,
                     status,
                 );
-
-                let items = deps
-                    .direct
-                    .into_iter()
-                    .chain(deps.suggests)
-                    .map(|p| {
-                        let mut i = QueueItem::name_and_parent_only(
-                            Cow::Owned(p.name().to_string()),
-                            item.name.clone(),
-                        );
-                        i.version_requirement =
-                            p.version_requirement().map(|x| Cow::Owned(x.clone()));
-                        for (pkg_name, remote) in resolved_dep.remotes.values() {
-                            if let Some(n) = pkg_name {
-                                if p.name() == n.as_str() {
-                                    i.remote = Some(remote.clone());
-                                }
-                            }
-                        }
-                        i
-                    })
-                    .collect();
-
-                Ok((resolved_dep, items))
+                Ok(prepare_deps!(resolved_dep, deps))
             }
             Err(e) => {
                 Err(format!("Could not clone repository {repo_url} (ref: {git_ref:?}) {e}").into())
@@ -355,7 +337,7 @@ impl<'d> Resolver<'d> {
                             cache,
                         ) {
                             Ok((mut resolved_dep, items)) => {
-                                // TODO: do we want to keep track of the remote string?w
+                                // TODO: do we want to keep track of the remote string?
                                 resolved_dep.from_remote = true;
                                 if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
@@ -417,7 +399,7 @@ impl<'d> Resolver<'d> {
                         }
                     }
                 }
-                Some(ConfigDependency::Local { .. }) => todo!(),
+                Some(ConfigDependency::Local { .. }) => unreachable!("handled beforehand"),
                 Some(ConfigDependency::Git {
                     git,
                     tag,
