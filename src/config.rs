@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -24,10 +25,34 @@ pub struct Repository {
     pub force_source: bool,
 }
 
+impl fmt::Display for Repository {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.force_source {
+            write!(
+                f,
+                r#"alias = "{}", url = "{}", force_source = "{}""#,
+                self.alias,
+                self.url(),
+                self.force_source
+            )
+        } else {
+            write!(f, r#"alias = "{}", url = "{}""#, self.alias, self.url())
+        }
+    }
+}
+
 impl Repository {
     /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {
         self.url.trim_end_matches("/")
+    }
+
+    pub fn new(alias: String, url: String, force_source: bool) -> Self {
+        Self {
+            alias,
+            url,
+            force_source,
+        }
     }
 }
 

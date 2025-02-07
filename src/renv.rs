@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     error::Error,
+    fmt,
     path::{Path, PathBuf},
 };
 
@@ -8,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     package::{deserialize_version, Operator, Version, VersionRequirement},
-    RepositoryDatabase,
+    Repository, RepositoryDatabase,
 };
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -65,7 +66,7 @@ struct RInfo {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct RenvLock {
+pub struct RenvLock {
     r: RInfo,
     packages: HashMap<String, PackageInfo>,
 }
@@ -89,7 +90,7 @@ impl RenvLock {
         })
     }
 
-    fn resolve(
+    pub fn resolve(
         &self,
         repository_database: &[(RepositoryDatabase, bool)],
     ) -> (Vec<ResolvedRenv>, Vec<UnresolvedRenv>) {
@@ -122,6 +123,18 @@ impl RenvLock {
             }
         }
         (resolved, unresolved)
+    }
+
+    pub fn r_version(&self) -> &Version {
+        &self.r.version
+    }
+
+    pub fn repositories(&self) -> Vec<Repository> {
+        self.r
+            .repositories
+            .iter()
+            .map(|r| Repository::new(r.name.to_string(), r.url.to_string(), false))
+            .collect::<Vec<_>>()
     }
 }
 
@@ -244,9 +257,22 @@ fn resolve_local(pkg_info: &PackageInfo) -> Result<PathBuf, Box<dyn Error>> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct ResolvedRenv<'a> {
+pub struct ResolvedRenv<'a> {
     package_info: &'a PackageInfo,
     source: Source<'a>,
+}
+
+impl fmt::Display for ResolvedRenv<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = &self.package_info.package;
+        match &self.source {
+            Source::Repository(r) => write!(f, r#"{{name = "{name}", alias = "{}"}}"#, r.name),
+            Source::GitHub { git, sha } => {
+                write!(f, r#"{{name = "{name}", git = "{git}", sha = "{sha}"}}"#)
+            }
+            Source::Local(path) => write!(f, r#"{{name = "{name}", path = "{}"}}"#, path.display()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -256,9 +282,19 @@ enum Source<'a> {
     Local(PathBuf),
 }
 
-struct UnresolvedRenv<'a> {
+pub struct UnresolvedRenv<'a> {
     package_info: &'a PackageInfo,
     error: Box<dyn Error>,
+}
+
+impl fmt::Display for UnresolvedRenv<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "`{}` could not be resolved due to: {:?}",
+            self.package_info.package, self.error
+        )
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
