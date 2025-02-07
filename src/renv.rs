@@ -266,7 +266,7 @@ impl fmt::Display for ResolvedRenv<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = &self.package_info.package;
         match &self.source {
-            Source::Repository(r) => write!(f, r#"{{name = "{name}", alias = "{}"}}"#, r.name),
+            Source::Repository(r) => write!(f, r#"{{name = "{name}", repository = "{}"}}"#, r.name),
             Source::GitHub { git, sha } => {
                 write!(f, r#"{{name = "{name}", git = "{git}", sha = "{sha}"}}"#)
             }

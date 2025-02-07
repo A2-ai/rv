@@ -30,13 +30,13 @@ impl fmt::Display for Repository {
         if self.force_source {
             write!(
                 f,
-                r#"alias = "{}", url = "{}", force_source = "{}""#,
+                r#"{{alias = "{}", url = "{}", force_source = "{}"}}"#,
                 self.alias,
                 self.url(),
                 self.force_source
             )
         } else {
-            write!(f, r#"alias = "{}", url = "{}""#, self.alias, self.url())
+            write!(f, r#"{{alias = "{}", url = "{}"}}"#, self.alias, self.url())
         }
     }
 }

@@ -1,0 +1,14 @@
+#this config was migrated from src/tests/renv/simple/renv.lock on 2025-02-07 21:01:36
+[project]
+name = "rspm"
+r_version = "4.4"
+
+repositories = [
+    { alias = "RSPM", url = "https://packagemanager.posit.co/cran/latest/" },
+    { alias = "CRAN", url = "https://cran.r-project.org" },
+]
+
+dependencies = [
+    "R6",
+    {name = "renv", repository = "CRAN"}
+]
