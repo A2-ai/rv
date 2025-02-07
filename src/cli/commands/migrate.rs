@@ -1,6 +1,8 @@
-use std::{fmt::format, fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, path::Path};
 
-use crate::{cli::{context::load_databases, DiskCache}, renv::ResolvedRenv, RenvLock, Repository, Version};
+use anyhow::Result;
+
+use crate::{cli::{context::load_databases, DiskCache}, renv::ResolvedRenv, RenvLock, Repository, SystemInfo, Version};
 
 const RENV_CONFIG_TEMPLATE: &str = r#"this config was migrated from %renv_file% on %time%
 [project]
@@ -17,19 +19,19 @@ dependencies = [
 "#;
 
 fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) -> Result<()> {
-    let project_name = renv_file.as_ref().parent().and_then(|p| p.to_str()).unwrap_or("renv migrated project");
-    let renv_lock = RenvLock::parse_renv_lock(renv_file)?;
-    let cache = DiskCache::new(renv_file.r_version, system_info)?;
+    let project_name = &renv_file.as_ref().parent().and_then(|p| p.to_str()).unwrap_or("renv migrated project");
+    let renv_lock = RenvLock::parse_renv_lock(&renv_file)?;
+    let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info())?;
     let databases = load_databases(&renv_lock.repositories(), &cache)?;
     let (resolved, unresolved) = renv_lock.resolve(&databases);
     for u in unresolved {
         eprintln!("{u}");
     }
 
-    let config = render_config(renv_file, project_name, r_version, repositories, resolved_deps);
+    let config = render_config(&renv_file.as_ref().to_string_lossy(), project_name, renv_lock.r_version(), &renv_lock.repositories(), &resolved);
 
     let mut file = File::create(config_file)?;
-    file.write_all(config.bytes())?;
+    file.write_all(config.as_bytes())?;
 
     Ok(())
 }
