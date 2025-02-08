@@ -2,10 +2,15 @@ use std::{io::Write, time::Duration};
 
 use anyhow::{bail, Context, Result};
 
+use crate::timeit;
+
+
 /// Downloads a remote content to the given writer.
 /// Returns the number of bytes written to the writer, 0 for a 404 or an empty 200
 pub fn download<W: Write>(url: &str, writer: &mut W, headers: Vec<(&str, String)>) -> Result<u64> {
-    let mut request = ureq::get(url).timeout(Duration::from_secs(20));
+    log::trace!("starting download of file from {url}");
+    let start_time = std::time::Instant::now();
+    let mut request = ureq::get(url).timeout(Duration::from_secs(200));
     for (key, val) in headers {
         request = request.set(key, &val);
     }
@@ -24,8 +29,16 @@ pub fn download<W: Write>(url: &str, writer: &mut W, headers: Vec<(&str, String)
     };
     // in practice an empty 200 and a 404 will be treated the same
     match resp.status() {
-        200 => std::io::copy(&mut resp.into_reader(), writer)
-            .with_context(|| format!("File at {url} was found but could not be downloaded.")),
+        200 => {
+            let output = match std::io::copy(&mut resp.into_reader(), writer) {
+                Ok(bytes) => Ok(bytes),
+                Err(e) => bail!(
+                    "Failed to write downloaded file to disk: {e} [url: {url}]"
+                ),
+            };
+            log::debug!("downloaded from {} in {:?}", url, start_time.elapsed());
+            output
+        },
         404 => Ok(0),
         _ => bail!(
             "Unexpected HTTP error when downloading file {url} [{}]: {}",
