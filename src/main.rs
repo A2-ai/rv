@@ -15,7 +15,7 @@ pub struct Cli {
     verbose: clap_verbosity_flag::Verbosity,
 
     /// Path to a config file other than rproject.toml in the current directory
-    #[clap(short = 'c', long, default_value = "rproject.toml")]
+    #[clap(short = 'c', long, default_value = "rproject.toml", global = true)]
     pub config_file: PathBuf,
 
     #[clap(subcommand)]
