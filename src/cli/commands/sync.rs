@@ -58,32 +58,23 @@ fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result
 }
 
 fn download_and_install_tarball(
-    repo_server: &RepoServer,
-    pkg: &ResolvedDependency,
-    r_version: &[u32; 2],
-    sysinfo: &SystemInfo,
+    binary_url: Option<&str>,
+    source_url: &str,
+    archive_url: &str,
+    pkg_name: &str,
     pkg_paths: &PackagePaths,
     library_dir: &Path,
 ) -> Result<()> {
-    // If kind is Binary and a potential binary url was found, try to download and install binary
-    let binary_url = repo_server.get_binary_tarball_path(
-        &pkg.name,
-        &pkg.version.original,
-        pkg.path.as_deref(),
-        r_version,
-        sysinfo,
-    );
-    if pkg.kind == PackageType::Binary && binary_url.is_some() {
-        match download_and_untar(&binary_url.unwrap(), &pkg_paths.binary) {
+    // if a binary url is sent, we test if we can download
+    if let Some(binary_url) = binary_url {
+        match download_and_untar(&binary_url, &pkg_paths.binary) {
             Err(e) => log::warn!("Failed to download/untar binary package: {e:?}"),
-            Ok(_) => return install_binary(pkg_paths, library_dir, &pkg.name),
+            Ok(_) => return install_binary(pkg_paths, library_dir, pkg_name),
         }
-    };
+    }
 
     // Otherwise, try installing a source package
     // Also, if failed to download/untar the binary package, try source
-    let source_url =
-        repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
     match download_and_untar(&source_url, &pkg_paths.source) {
         Err(e) => {
             // if the error is that the package cannot be found, try the Archive. Otherwise bail
@@ -93,13 +84,12 @@ fn download_and_install_tarball(
                 bail!(e)
             }
         }
-        Ok(_) => return install_source(pkg_paths, library_dir, &pkg.name),
+        Ok(_) => return install_source(pkg_paths, library_dir, &pkg_name),
     }
 
     // If package cannot be found during download, try the archive
-    let archive_url = repo_server.get_archive_tarball_path(&pkg.name, &pkg.version.original);
     download_and_untar(&archive_url, &pkg_paths.source)?;
-    install_source(pkg_paths, library_dir, &pkg.name)
+    install_source(pkg_paths, library_dir, &pkg_name)
 }
 
 fn install_source(paths: &PackagePaths, library_dir: &Path, pkg_name: &str) -> Result<()> {
@@ -139,13 +129,6 @@ fn install_package_from_repository(
         context
             .cache
             .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
-    let binary_url = repo_server.get_binary_tarball_path(
-        &pkg.name,
-        &pkg.version.original,
-        pkg.path.as_deref(),
-        &context.cache.r_version,
-        &context.cache.system_info,
-    );
 
     if pkg.is_installed() {
         // If we don't have the binary, compile it
@@ -161,11 +144,18 @@ fn install_package_from_repository(
             )?;
         }
     } else {
+        // only determine a binary url if the package kind is Binary. Otherwise, there should be no binary url to pass
+        let binary_url = match pkg.kind {
+            PackageType::Binary => repo_server.get_binary_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref(), &context.cache.r_version, &context.cache.system_info),
+            PackageType::Source => None,
+        };
+        let source_url = repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
+        let archive_url = repo_server.get_archive_tarball_path(&pkg.name, &pkg.version.original);
         download_and_install_tarball(
-            &repo_server,
-            pkg,
-            &context.cache.r_version,
-            &context.cache.system_info,
+            binary_url.as_deref(),
+            &source_url,
+            &archive_url,
+            &pkg.name,
             &pkg_paths,
             library_dir,
         )?;
