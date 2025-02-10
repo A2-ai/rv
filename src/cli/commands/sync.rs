@@ -18,7 +18,9 @@ use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::PackageType;
-use crate::{BuildPlan, BuildStep, Library, RCmd, RCommandLine, RepoServer, ResolvedDependency, SystemInfo};
+use crate::{
+    BuildPlan, BuildStep, Library, RCmd, RCommandLine, RepoServer, ResolvedDependency, SystemInfo,
+};
 use crate::{Git, GitOperations};
 
 fn is_binary_package(path: &Path, name: &str) -> bool {
@@ -62,19 +64,26 @@ fn download_and_install_tarball(
     sysinfo: &SystemInfo,
     pkg_paths: &PackagePaths,
     library_dir: &Path,
-) -> Result<()> {    
+) -> Result<()> {
     // If kind is Binary and a potential binary url was found, try to download and install binary
-    let binary_url = repo_server.get_binary_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref(), r_version, sysinfo);
+    let binary_url = repo_server.get_binary_tarball_path(
+        &pkg.name,
+        &pkg.version.original,
+        pkg.path.as_deref(),
+        r_version,
+        sysinfo,
+    );
     if pkg.kind == PackageType::Binary && binary_url.is_some() {
         match download_and_untar(&binary_url.unwrap(), &pkg_paths.binary) {
             Err(e) => log::warn!("Failed to download/untar binary package: {e:?}"),
-            Ok(_) => return install_binary(pkg_paths, library_dir, &pkg.name)
+            Ok(_) => return install_binary(pkg_paths, library_dir, &pkg.name),
         }
     };
 
     // Otherwise, try installing a source package
     // Also, if failed to download/untar the binary package, try source
-    let source_url = repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
+    let source_url =
+        repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
     match download_and_untar(&source_url, &pkg_paths.source) {
         Err(e) => {
             if e.to_string().contains("Archive not found at") {
@@ -82,8 +91,8 @@ fn download_and_install_tarball(
             } else {
                 bail!(e)
             }
-        },
-        Ok(_) => return install_source(pkg_paths, library_dir, &pkg.name)
+        }
+        Ok(_) => return install_source(pkg_paths, library_dir, &pkg.name),
     }
 
     // If package cannot be found during download, try the archive
@@ -98,11 +107,7 @@ fn install_source(paths: &PackagePaths, library_dir: &Path, pkg_name: &str) -> R
     Ok(())
 }
 
-fn install_binary(
-    paths: &PackagePaths,
-    library_dir: &Path,
-    pkg_name: &str
-) -> Result<()> {
+fn install_binary(paths: &PackagePaths, library_dir: &Path, pkg_name: &str) -> Result<()> {
     // We can't assume the downloaded tarball it's actually compiled, it could be just
     // source files. We have to check first whether what we have is actually binary content.
     if !is_binary_package(&paths.binary, pkg_name) {
@@ -155,7 +160,14 @@ fn install_package_from_repository(
             )?;
         }
     } else {
-        download_and_install_tarball(&repo_server, pkg, &context.cache.r_version, &context.cache.system_info, &pkg_paths, library_dir)?;
+        download_and_install_tarball(
+            &repo_server,
+            pkg,
+            &context.cache.r_version,
+            &context.cache.system_info,
+            &pkg_paths,
+            library_dir,
+        )?;
     }
 
     // And then we always link the binary folder into the staging library
