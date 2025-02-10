@@ -35,8 +35,8 @@ pub enum Command {
     /// Migrate renv to rv
     Migrate {
         #[clap(subcommand)]
-        subcommand: MigrateSubcommand
-    }
+        subcommand: MigrateSubcommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -44,7 +44,7 @@ pub enum MigrateSubcommand {
     Renv {
         #[clap(value_parser)]
         renv_file: PathBuf,
-    }
+    },
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -136,7 +136,9 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Migrate { subcommand: MigrateSubcommand::Renv { renv_file } } => {
+        Command::Migrate {
+            subcommand: MigrateSubcommand::Renv { renv_file },
+        } => {
             migrate_renv(renv_file, cli.config_file)?;
         }
     }

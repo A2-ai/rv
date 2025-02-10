@@ -12,6 +12,25 @@ use crate::{
     Repository, RepositoryDatabase,
 };
 
+// List obtained from the REPL: `rownames(installed.packages(priority="recommended"))`
+const RECOMMENDED_PACKAGES: [&str; 15] = [
+    "boot",
+    "class",
+    "cluster",
+    "codetools",
+    "foreign",
+    "KernSmooth",
+    "lattice",
+    "MASS",
+    "Matrix",
+    "mgcv",
+    "nlme",
+    "nnet",
+    "rpart",
+    "spatial",
+    "survival",
+];
+
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 // as enum since logic to resolve depends on this
@@ -97,14 +116,22 @@ impl RenvLock {
         let mut resolved = Vec::new();
         let mut unresolved = Vec::new();
         for (_, package_info) in &self.packages {
+            // if package is sourced from a repository and is a recommended package, do not attempt to resolve
+            // TODO: add flag to resolve recommended packages
+            if matches!(&package_info.source, RenvSource::Repository) && RECOMMENDED_PACKAGES.contains(&package_info.package.as_str()) {
+                continue;
+            }
+
             let res = match package_info.source {
-                RenvSource::Repository => resolve_repository(
-                    package_info,
-                    &self.r.repositories,
-                    repository_database,
-                    &self.r.version,
-                )
-                .map(|r| Source::Repository(r)),
+                RenvSource::Repository => {
+                    resolve_repository(
+                        package_info,
+                        &self.r.repositories,
+                        repository_database,
+                        &self.r.version,
+                    )
+                    .map(|r| Source::Repository(r))
+                }
                 RenvSource::GitHub => {
                     resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
                 }
@@ -266,11 +293,15 @@ impl fmt::Display for ResolvedRenv<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = &self.package_info.package;
         match &self.source {
-            Source::Repository(r) => write!(f, r#"{{name = "{name}", repository = "{}"}}"#, r.name),
-            Source::GitHub { git, sha } => {
-                write!(f, r#"{{name = "{name}", git = "{git}", sha = "{sha}"}}"#)
+            Source::Repository(r) => {
+                write!(f, r#"{{ name = "{name}", repository = "{}" }}"#, r.name)
             }
-            Source::Local(path) => write!(f, r#"{{name = "{name}", path = "{}"}}"#, path.display()),
+            Source::GitHub { git, sha } => {
+                write!(f, r#"{{ name = "{name}", git = "{git}", sha = "{sha}" }}"#)
+            }
+            Source::Local(path) => {
+                write!(f, r#"{{ name = "{name}", path = "{}" }}"#, path.display())
+            }
         }
     }
 }
