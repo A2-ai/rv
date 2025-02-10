@@ -1,0 +1,6 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+--- unresolved --- 
+dummy [listed in rproject.toml]: "unknown doesn't exist or is not a directory"

@@ -87,6 +87,13 @@ impl ConfigDependency {
         }
     }
 
+    pub fn local_path(&self) -> Option<PathBuf> {
+        match self {
+            ConfigDependency::Local { path, .. } => Some(path.clone()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
         // git: String,
         // // TODO: validate that either commit, branch or tag is set
