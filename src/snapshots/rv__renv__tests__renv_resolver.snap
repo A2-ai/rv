@@ -1,0 +1,10 @@
+---
+source: src/renv.rs
+expression: out
+---
+{ name = "R6", repository = "cran-binary" }
+{ name = "rv.git.pkgA", path = "src/tests/renv/rv.git.pkgA_0.0.0.9000.tar.gz" }
+{ name = "simpar", repository = "gh-pkg-mirror" }
+{ name = "ghqc", git = "https://github.com/a2-ai/ghqc", sha = "55c23eb6a444542dab742d3d37c7b65af7b12e38" }
+--- unresolved --- 
+`slurmtools` could not be resolved due to: "Could not find package in repository"

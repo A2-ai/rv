@@ -331,10 +331,45 @@ pub struct FromJsonFileError {
 
 #[cfg(test)]
 mod tests {
-    use super::RenvLock;
+    use std::fmt;
+
+    use crate::{Repository, RepositoryDatabase, Version};
+
+    use super::{RenvLock, ResolvedRenv, Source};
+
+    fn repository_databases(r_version: &Version, repositories: &[Repository]) -> Vec<(RepositoryDatabase, bool)> {
+        let mut res = Vec::new();
+
+        for r in repositories {
+            let mut repo = RepositoryDatabase::new(&r.alias, &r.url);
+            let path = format!("src/tests/package_files/{}.PACKAGE", &r.alias);
+            let text = std::fs::read_to_string(path).unwrap();
+            if r.alias.contains("binary") {
+                repo.parse_binary(&text, r_version.major_minor());
+            } else {
+                repo.parse_source(&text);
+            }
+            res.push((repo, false));
+        }
+
+        res
+    }
 
     #[test]
     fn test_renv_lock_parse() {
-        let _renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+        let repository_databases = repository_databases(renv_lock.r_version(), &renv_lock.repositories());
+        let (resolved, unresolved) = renv_lock.resolve(&repository_databases);
+        
+        let mut out = String::new();
+        for r in resolved {
+            out.push_str(&format!("{r}\n"));
+        }
+        out.push_str("--- unresolved --- \n");
+        for u in unresolved {
+            out.push_str(&format!("{u}\n"));
+        }
+
+        insta::assert_snapshot!("renv_resolver".to_string(), out);
     }
 }
