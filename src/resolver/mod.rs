@@ -163,7 +163,7 @@ impl<'d> Resolver<'d> {
 
         for (repo, repo_source_only) in self.repositories {
             if let Some(r) = repository {
-                if repo.name != r {
+                if repo.url != r {
                     continue;
                 }
             }
@@ -533,7 +533,7 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&r.name, &format!("http://{}", r.name));
+                let mut repo = RepositoryDatabase::new(&format!("http://{}", r.name));
                 if let Some(p) = r.source {
                     let path = format!("src/tests/package_files/{p}.PACKAGE");
                     let text = std::fs::read_to_string(&path).unwrap();
@@ -549,7 +549,7 @@ mod tests {
             }
             res
         } else {
-            let mut repo = RepositoryDatabase::new("inline", "");
+            let mut repo = RepositoryDatabase::new("");
             repo.parse_source(parts[1]);
             vec![(repo, false)]
         };

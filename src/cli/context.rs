@@ -111,7 +111,7 @@ fn load_databases(
                         fs::remove_file(&p)?;
                     }
                     log::debug!("Need to download PACKAGES file for {}", r.url());
-                    let mut db = RepositoryDatabase::new(&r.alias, &r.url());
+                    let mut db = RepositoryDatabase::new(&r.url());
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
                     let source_url =
