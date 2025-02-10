@@ -86,6 +86,7 @@ fn download_and_install_tarball(
         repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
     match download_and_untar(&source_url, &pkg_paths.source) {
         Err(e) => {
+            // if the error is that the package cannot be found, try the Archive. Otherwise bail
             if e.to_string().contains("Archive not found at") {
                 log::warn!("Failed to download source package: {e:?}")
             } else {
