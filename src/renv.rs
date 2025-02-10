@@ -104,7 +104,7 @@ impl RenvLock {
                     &self.r.version,
                 ),
                 RenvSource::GitHub => {
-                    resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
+                    resolve_github(package_info).map(|(git, sha)| Source::Git { git, sha })
                 }
                 RenvSource::Local => resolve_local(package_info).map(|path| Source::Local(path)),
                 _ => Err("Source is not supported".into()),
@@ -157,7 +157,7 @@ fn resolve_repository<'a>(
     //     "Hash": "13b178e8a0308dede915de93018ab60a"
     //   },
     if let (Some(git), Some(sha)) = (&pkg_info.remote_url, &pkg_info.remote_sha) {
-        return Ok(Source::GitHub { git: git.to_string(), sha: sha.to_string() })
+        return Ok(Source::Git { git: git.to_string(), sha: sha.to_string() })
     }
 
     let version_requirement = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);
@@ -270,7 +270,7 @@ struct ResolvedRenv<'a> {
 #[derive(Debug, Clone, PartialEq)]
 enum Source<'a> {
     Repository(&'a RenvRepository),
-    GitHub { git: String, sha: String },
+    Git { git: String, sha: String },
     Local(PathBuf),
 }
 
