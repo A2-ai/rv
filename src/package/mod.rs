@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::fmt;
-
 use crate::consts::BASE_PACKAGES;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
+use std::path::Path;
 
 mod description;
 mod parser;
@@ -119,12 +119,9 @@ impl Package {
             suggests,
         }
     }
+}
 
-    // pub fn invalid_remotes(&self) -> bool {
-    //     let mut issues = Vec::new();
-    //
-    //     for (original, (name, remote)) in &self.remotes {
-    //
-    //     }
-    // }
+/// Returns whether this folder contains compiled R files
+pub fn is_binary_package(path: impl AsRef<Path>, name: &str) -> bool {
+    path.as_ref().join("R").join(format!("{name}.rdx")).exists()
 }

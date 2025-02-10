@@ -1,0 +1,5 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+fansi=1.0.0 (url(url: https://cran.r-project.org/src/contrib/Archive/fansi/fansi_1.0.0.tar.gz, sha:SOME_SHA), type=source, path='', from_lockfile=false, from_remote=false)

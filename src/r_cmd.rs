@@ -76,6 +76,7 @@ impl RCmd for RCommandLine {
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
+        println!("Building in {:?}", tmp_dir.path());
 
         let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),

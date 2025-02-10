@@ -1,0 +1,9 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    {name = "fansi", url = "https://cran.r-project.org/src/contrib/Archive/fansi/fansi_1.0.0.tar.gz"}
+]
+---
+---

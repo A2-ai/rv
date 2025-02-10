@@ -6,7 +6,7 @@ use fs_err as fs;
 
 use rv::cli::utils::timeit;
 use rv::cli::{sync, CliContext};
-use rv::{Git, Lockfile, ResolvedDependency, Resolver};
+use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -42,12 +42,13 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    // TODO: pass currently installed deps and their version and check whether they need to be installed
+
     let resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
         &Git {},
+        &Http {},
     );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");

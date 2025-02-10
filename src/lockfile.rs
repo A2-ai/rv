@@ -28,6 +28,10 @@ pub enum Source {
         tag: Option<String>,
         branch: Option<String>,
     },
+    Url {
+        url: String,
+        sha: String,
+    },
     Repository {
         repository: String,
     },
@@ -60,6 +64,10 @@ impl Source {
                     table.insert("branch", Value::from(d));
                 }
             }
+            Self::Url { url, sha } => {
+                table.insert("url", Value::from(url));
+                table.insert("sha", Value::from(sha));
+            }
             Self::Repository { repository } => {
                 table.insert("repository", Value::from(repository));
             }
@@ -78,6 +86,7 @@ impl Source {
             Source::Repository { ref repository } => repository.as_str(),
             Source::Local { ref path } => path.to_str().unwrap(),
             Source::Git { ref git, .. } => git.as_str(),
+            Source::Url { ref url, .. } => url.as_str(),
         }
     }
 
@@ -88,15 +97,53 @@ impl Source {
         }
     }
 
+    pub fn url_info(&self) -> (&str, &str) {
+        match self {
+            Source::Url { ref url, ref sha } => (url.as_str(), sha.as_str()),
+            _ => unreachable!("handle other cases"),
+        }
+    }
+
     pub fn is_matching(&self, dep: &ConfigDependency) -> bool {
+        // TODO: verify all that + add tests
         match (self, dep) {
-            (Source::Git { .. }, ConfigDependency::Git { .. }) => true,
+            (
+                Source::Git {
+                    git,
+                    directory,
+                    tag,
+                    branch,
+                    sha,
+                },
+                ConfigDependency::Git {
+                    git: git2,
+                    commit,
+                    directory: directory2,
+                    branch: branch2,
+                    tag: tag2,
+                    ..
+                },
+            ) => {
+                if git != git2 || directory != directory2 || branch != branch2 || tag != tag2 {
+                    return false;
+                }
+                if let Some(sha2) = commit {
+                    if sha2.len() == 7 {
+                        return sha[..7] == *sha2;
+                    } else {
+                        return sha == sha2;
+                    }
+                }
+                true
+            }
+            (Source::Url { url: url1, .. }, ConfigDependency::Url { url: url2, .. }) => {
+                url1 == url2
+            }
             (Source::Local { path: p1 }, ConfigDependency::Local { path: p2, .. }) => p1 == p2,
             (
                 Source::Repository { repository: r1 },
                 ConfigDependency::Detailed { repository: r2, .. },
             ) => Some(r1) == r2.as_ref(),
-            // TODO: verify this
             (Source::Repository { .. }, ConfigDependency::Simple(..)) => true,
             _ => false,
         }
@@ -120,6 +167,9 @@ impl fmt::Display for Source {
             }
             Self::Local { path } => {
                 write!(f, "local(path: {})", path.display())
+            }
+            Self::Url { url, sha } => {
+                write!(f, "url(url: {url}, sha:{sha})")
             }
         }
     }

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,38 +10,18 @@ use crossbeam::{channel, thread};
 use fs_err as fs;
 
 use crate::cli::cache::PackagePaths;
-use crate::cli::utils::untar_package;
-use crate::cli::{http, CliContext};
+use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::mtime_recursive;
 use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
-use crate::package::PackageType;
-use crate::{BuildPlan, BuildStep, Library, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+use crate::package::{is_binary_package, PackageType};
+use crate::{
+    BuildPlan, BuildStep, Cache, Http, HttpDownload, Library, RCmd, RCommandLine, RepoServer,
+    ResolvedDependency,
+};
 use crate::{Git, GitOperations};
-
-fn is_binary_package(path: &Path, name: &str) -> bool {
-    path.join(name)
-        .join("R")
-        .join(format!("{name}.rdx"))
-        .exists()
-}
-
-fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
-    fs::create_dir_all(&destination)?;
-    let mut tarball = Vec::new();
-    let bytes_read = http::download(&url, &mut tarball, vec![])?;
-
-    // TODO: handle 404
-    if bytes_read == 0 {
-        bail!("Archive not found at {url}");
-    }
-
-    untar_package(Cursor::new(tarball), &destination)?;
-
-    Ok(())
-}
 
 fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result<()> {
     let r_cmd = RCommandLine {};
@@ -62,7 +42,7 @@ fn download_and_install_source(
     library_dir: &Path,
     pkg_name: &str,
 ) -> Result<()> {
-    download_and_untar(&url, &paths.source)?;
+    Http {}.download_and_untar(&url, &paths.source, false)?;
     log::debug!("Compiling binary from {}", &paths.source.display());
     RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
@@ -74,8 +54,9 @@ fn download_and_install_binary(
     library_dir: &Path,
     pkg_name: &str,
 ) -> Result<()> {
+    let http = Http {};
     // If we get an error doing the binary download, fall back to source
-    if let Err(e) = download_and_untar(&url, &paths.binary) {
+    if let Err(e) = http.download_and_untar(&url, &paths.source, false) {
         log::warn!("Failed to download/untar binary package: {e:?}");
         return download_and_install_source(url, paths, library_dir, pkg_name);
     }
@@ -215,6 +196,38 @@ fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path) -> Result
     Ok(())
 }
 
+fn install_url_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
+    let (url, sha) = pkg.source.url_info();
+
+    let link_mode = LinkMode::new();
+    let download_path = context
+        .cache
+        .get_url_download_path(url)
+        .join(&sha[..7])
+        .join(pkg.name.as_ref());
+
+    // If we have a binary, copy it since we don't keep cache around for binary URL packages
+    if pkg.kind == PackageType::Binary {
+        log::debug!(
+            "Package from URL in {} is already a binary",
+            download_path.display()
+        );
+        link_mode.link_files(&pkg.name, &download_path, &library_dir)?;
+    } else {
+        log::debug!(
+            "Building the package from URL in {}",
+            download_path.display()
+        );
+        install_via_r(&download_path, library_dir, &library_dir)?;
+    }
+
+    Ok(())
+}
+
 /// Install a package and returns whether it was installed from cache or not
 fn install_package(
     context: &CliContext,
@@ -230,6 +243,7 @@ fn install_package(
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
         Source::Local { .. } => install_local_package(pkg, library_dir),
+        Source::Url { .. } => install_url_package(context, pkg, library_dir),
     }
 }
 
