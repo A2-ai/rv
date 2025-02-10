@@ -5,7 +5,6 @@ use std::path::Path;
 use filetime::FileTime;
 use walkdir::WalkDir;
 
-
 /// Copy the whole content of a folder to another folder
 pub(crate) fn copy_folder(
     from: impl AsRef<Path>,

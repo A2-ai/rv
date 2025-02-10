@@ -94,6 +94,11 @@ impl<'a> RepoServer<'a> {
         }
     }
 
+    pub fn get_archive_tarball_path(&self, name: &str, version: &str) -> String {
+        let file_name = format!("Archive/{}/{}_{}.tar.gz", name, name, version);
+        self.get_source_path(&file_name)
+    }
+
     /// # Get the path to the binary version of the file provided, when available.
     ///
     /// ## Given a CRAN-type repository URL, the location of the file wanted depends on the operating system.

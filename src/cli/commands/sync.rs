@@ -28,15 +28,24 @@ fn is_binary_package(path: &Path, name: &str) -> bool {
         .exists()
 }
 
-fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
-    fs::create_dir_all(&destination)?;
+fn download_tarball(url: &str) -> Result<Vec<u8>> {
     let mut tarball = Vec::new();
     let bytes_read = http::download(&url, &mut tarball, vec![])?;
-
-    // TODO: handle 404
     if bytes_read == 0 {
         bail!("Archive not found at {url}");
     }
+    Ok(tarball)
+}
+
+fn download_and_untar(url: &str, archive_url: &str, destination: &Path) -> Result<()> {
+    fs::create_dir_all(&destination)?;
+    let tarball = download_tarball(url).or_else(|e| {
+        if e.to_string().contains("Archive not found") {
+            download_tarball(archive_url)
+        } else {
+            Err(e)
+        }
+    })?;
 
     untar_package(Cursor::new(tarball), &destination)?;
 
@@ -58,11 +67,12 @@ fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result
 
 fn download_and_install_source(
     url: &str,
+    archive_url: &str,
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
 ) -> Result<()> {
-    download_and_untar(&url, &paths.source)?;
+    download_and_untar(&url, &archive_url, &paths.source)?;
     log::debug!("Compiling binary from {}", &paths.source.display());
     RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
@@ -70,14 +80,15 @@ fn download_and_install_source(
 
 fn download_and_install_binary(
     url: &str,
+    archive_url: &str,
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
 ) -> Result<()> {
     // If we get an error doing the binary download, fall back to source
-    if let Err(e) = download_and_untar(&url, &paths.binary) {
+    if let Err(e) = download_and_untar(&url, archive_url, &paths.binary) {
         log::warn!("Failed to download/untar binary package: {e:?}");
-        return download_and_install_source(url, paths, library_dir, pkg_name);
+        return download_and_install_source(url, archive_url, paths, library_dir, pkg_name);
     }
 
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
@@ -117,6 +128,7 @@ fn install_package_from_repository(
         &context.cache.r_version,
         &context.cache.system_info,
     );
+    let archive_url = &repo_server.get_archive_tarball_path(&pkg.name, &pkg.version.original);
 
     if pkg.is_installed() {
         // If we don't have the binary, compile it
@@ -139,12 +151,13 @@ fn install_package_from_repository(
                     &pkg.version.original,
                     pkg.path.as_deref(),
                 ),
+                &archive_url,
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
             )?;
         } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name)?;
+            download_and_install_binary(&binary_url.unwrap(), &archive_url, &pkg_paths, library_dir, &pkg.name)?;
         }
     }
 
