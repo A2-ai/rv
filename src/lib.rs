@@ -24,7 +24,7 @@ pub use config::{Config, ConfigDependency, Repository};
 pub use git::{Git, GitOperations};
 pub use lockfile::Lockfile;
 pub use package::{Version, VersionRequirement};
-pub use r_cmd::{RCmd, RCommandLine};
+pub use r_cmd::{find_r_version_command, RCmd, RCommandLine};
 pub use repo_path::RepoServer;
 pub use repository::RepositoryDatabase;
 pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};

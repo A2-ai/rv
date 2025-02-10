@@ -3,10 +3,10 @@ use std::path::PathBuf;
 
 use crate::cli::{http, utils::write_err, DiskCache};
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RepoServer,
-    Repository, RepositoryDatabase, SystemInfo, Version,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, timeit, Cache,
+    CacheEntry, Config, RCommandLine, RepoServer, Repository, RepositoryDatabase, SystemInfo,
+    Version,
 };
-use crate::RCommandLine;
 
 use crate::cli::utils::get_os_path;
 use crate::lockfile::Lockfile;
@@ -33,12 +33,8 @@ impl CliContext {
     pub fn new(config_file: &PathBuf) -> Result<Self> {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
-        let r_cmd = RCommandLine::find_r_version_command(&r_version)
+        let r_cmd = find_r_version_command(&r_version)
             .ok_or(anyhow!("Could not find specified version ({r_version})"))?;
-        match &r_cmd.r {
-            Some(r) => log::debug!("Found R at {}", r.display()),
-            None => log::debug!("Found R on the path"),
-        }
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
 
