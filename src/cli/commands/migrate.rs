@@ -81,11 +81,13 @@ fn render_config(
         .collect::<Vec<_>>()
         .join(",\n");
 
-    let time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    // get time. Try to round to seconds, but if error, leave as unrounded
+    let time = jiff::Zoned::now();
+    let time = time.round(jiff::Unit::Second).unwrap_or(time);
 
     RENV_CONFIG_TEMPLATE
         .replace("%renv_file%", renv_file)
-        .replace("%time%", &time)
+        .replace("%time%", &time.to_string())
         .replace("%project_name%", project_name)
         .replace("%r_version%", &r_version.original)
         .replace("%repositories%", &repos)

@@ -8,28 +8,10 @@ use std::{
 use serde::Deserialize;
 
 use crate::{
+    consts::RECOMMENDED_PACKAGES,
     package::{deserialize_version, Operator, Version, VersionRequirement},
     Repository, RepositoryDatabase,
 };
-
-// List obtained from the REPL: `rownames(installed.packages(priority="recommended"))`
-const RECOMMENDED_PACKAGES: [&str; 15] = [
-    "boot",
-    "class",
-    "cluster",
-    "codetools",
-    "foreign",
-    "KernSmooth",
-    "lattice",
-    "MASS",
-    "Matrix",
-    "mgcv",
-    "nlme",
-    "nnet",
-    "rpart",
-    "spatial",
-    "survival",
-];
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -118,20 +100,20 @@ impl RenvLock {
         for package_info in self.packages.values() {
             // if package is sourced from a repository and is a recommended package, do not attempt to resolve
             // TODO: add flag to resolve recommended packages
-            if matches!(&package_info.source, RenvSource::Repository) && RECOMMENDED_PACKAGES.contains(&package_info.package.as_str()) {
+            if matches!(&package_info.source, RenvSource::Repository)
+                && RECOMMENDED_PACKAGES.contains(&package_info.package.as_str())
+            {
                 continue;
             }
 
             let res = match package_info.source {
-                RenvSource::Repository => {
-                    resolve_repository(
-                        package_info,
-                        &self.r.repositories,
-                        repository_database,
-                        &self.r.version,
-                    )
-                    .map(Source::Repository)
-                }
+                RenvSource::Repository => resolve_repository(
+                    package_info,
+                    &self.r.repositories,
+                    repository_database,
+                    &self.r.version,
+                )
+                .map(Source::Repository),
                 RenvSource::GitHub => {
                     resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
                 }
@@ -160,7 +142,11 @@ impl RenvLock {
         self.r
             .repositories
             .iter()
-            .map(|r| Repository::new(r.name.to_string(), r.url.to_string(), false))
+            .map(|r| Repository {
+                alias: r.name.to_string(),
+                url: r.url.to_string(),
+                force_source: false,
+            })
             .collect::<Vec<_>>()
     }
 }
