@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,11 +12,13 @@ use fs_err as fs;
 use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
 use crate::cli::{http, CliContext};
+use crate::consts::LOCAL_MTIME_FILENAME;
+use crate::fs::mtime_recursive;
 use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::PackageType;
-use crate::{BuildPlan, BuildStep, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+use crate::{BuildPlan, BuildStep, Library, RCmd, RCommandLine, RepoServer, ResolvedDependency};
 use crate::{Git, GitOperations};
 
 fn is_binary_package(path: &Path, name: &str) -> bool {
@@ -114,14 +116,14 @@ fn install_package_from_repository(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_server = RepoServer::from_url(pkg.source.repository_url());
+    let repo_server = RepoServer::from_url(pkg.source.source_path());
     let pkg_paths =
         context
             .cache
-            .get_package_paths(pkg.source.repository_url(), &pkg.name, &pkg.version);
+            .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
     let binary_url = repo_server.get_binary_tarball_path(
         &pkg.name,
-        &pkg.version,
+        &pkg.version.original,
         pkg.path.as_deref(),
         &context.cache.r_version,
         &context.cache.system_info,
@@ -144,7 +146,11 @@ fn install_package_from_repository(
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
             download_and_install_source(
-                &repo_server.get_source_tarball_path(&pkg.name, &pkg.version, pkg.path.as_deref()),
+                &repo_server.get_source_tarball_path(
+                    &pkg.name,
+                    &pkg.version.original,
+                    pkg.path.as_deref(),
+                ),
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
@@ -173,7 +179,7 @@ fn install_package_from_git(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_url = pkg.source.repository_url();
+    let repo_url = pkg.source.source_path();
     let sha = pkg.source.git_sha();
     log::debug!("Installing {} from git", pkg.name);
 
@@ -189,7 +195,6 @@ fn install_package_from_git(
             Some(GitReference::Commit(&sha)),
             &pkg_paths.source,
         )?;
-        // TODO: symlink file in cache directory
         log::debug!("Building the repo in {:?}", pkg_paths);
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
@@ -208,6 +213,27 @@ fn install_package_from_git(
     Ok(())
 }
 
+fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
+    // First we check if the package exists in the library and what's the mtime in it
+    let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
+    // TODO: we actually do that twice, a bit wasteful
+    let local_mtime = mtime_recursive(&local_path)?;
+
+    // if the mtime we found locally is more recent, we build it
+    log::debug!("Building the local package in {}", local_path.display());
+    install_via_r(&local_path, library_dir, &library_dir)?;
+
+    // And just write the mtime in the output directory
+    let mut file = fs::File::create(
+        library_dir
+            .join(pkg.name.as_ref())
+            .join(LOCAL_MTIME_FILENAME),
+    )?;
+    file.write_all(local_mtime.unix_seconds().to_string().as_bytes())?;
+
+    Ok(())
+}
+
 /// Install a package and returns whether it was installed from cache or not
 fn install_package(
     context: &CliContext,
@@ -222,24 +248,55 @@ fn install_package(
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
-        Source::Local { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::Local { .. } => install_local_package(pkg, library_dir),
     }
+}
+
+/// If a local package hasn't changed, we copy it from the current library to the staging dir
+fn copy_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+    dry_run: bool,
+) -> Result<()> {
+    if dry_run {
+        return Ok(());
+    }
+
+    log::debug!("Copying package {} from current library", &pkg.name);
+    LinkMode::Copy.link_files(
+        &pkg.name,
+        context.library.path().join(pkg.name.as_ref()),
+        library_dir.join(pkg.name.as_ref()),
+    )?;
+
+    Ok(())
 }
 
 #[derive(Debug)]
 pub struct SyncChange {
     pub name: String,
     pub installed: bool,
+    pub kind: Option<PackageType>,
     pub version: Option<String>,
+    pub source: Option<String>,
     pub timing: Option<Duration>,
 }
 
 impl SyncChange {
-    pub fn installed(name: &str, version: &str, timing: Duration) -> Self {
+    pub fn installed(
+        name: &str,
+        version: &str,
+        source: &str,
+        kind: PackageType,
+        timing: Duration,
+    ) -> Self {
         Self {
             name: name.to_string(),
             installed: true,
+            kind: Some(kind),
             timing: Some(timing),
+            source: Some(source.to_string()),
             version: Some(version.to_string()),
         }
     }
@@ -248,8 +305,31 @@ impl SyncChange {
         Self {
             name: name.to_string(),
             installed: false,
+            kind: None,
             timing: None,
+            source: None,
             version: None,
+        }
+    }
+
+    pub fn print(&self, include_timings: bool) -> String {
+        if self.installed {
+            let mut base = format!(
+                "+ {} ({}, {} from {})",
+                self.name,
+                self.version.as_ref().unwrap(),
+                self.kind.unwrap(),
+                self.source.as_ref().unwrap(),
+            );
+
+            if include_timings {
+                base += &format!(" in {}ms", self.timing.unwrap().as_millis());
+                base
+            } else {
+                base
+            }
+        } else {
+            format!("- {}", self.name)
         }
     }
 }
@@ -273,6 +353,7 @@ impl SyncChange {
 pub fn sync(
     context: &CliContext,
     deps: &[ResolvedDependency],
+    library: &Library,
     dry_run: bool,
 ) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
@@ -280,21 +361,62 @@ pub fn sync(
     let staging_path = context.staging_path();
     let plan = BuildPlan::new(&deps);
     let num_deps_to_install = plan.num_to_install();
-    let deps_to_install = plan.all_dependencies_names();
+    let deps_to_install = plan.all_dependencies();
+    // (name, notify). We do not notify if the package is broken in some ways, otherwise we
+    // do notify.
     let mut to_remove = HashSet::new();
-    let mut deps_seen = 0;
+    let mut deps_seen = HashSet::new();
 
     fs::create_dir_all(&project_library)?;
-    for p in fs::read_dir(&project_library)? {
-        let p = p?.path().canonicalize()?;
-        if p.is_dir() {
-            let dir_name = p.file_name().unwrap().to_string_lossy();
-            if deps_to_install.contains(&*dir_name) {
-                deps_seen += 1;
-            } else {
-                to_remove.insert(dir_name.to_string());
-            }
+
+    for (name, version) in &library.packages {
+        if deps_to_install
+            .get(name.as_str())
+            .map(|v| *v == version)
+            .unwrap_or(false)
+        {
+            deps_seen.insert(name.as_str());
+        } else {
+            to_remove.insert((name.to_string(), true));
         }
+    }
+
+    // (name, whether to copy from current library)
+    let mut local_deps = HashMap::new();
+    // For local deps we also need to check whether the files from the source are newer than what
+    // is installed currently, if that's the case. If the folder exists and is the same as
+    // what we need to build, we will just copy it
+    for dep in deps.iter().filter(|x| x.is_local()) {
+        if deps_seen.contains(dep.name.as_ref()) {
+            let local_path = Path::new(dep.source.source_path());
+            let local_mtime = mtime_recursive(&local_path)?;
+            let mtime_found = context
+                .library
+                .local_packages
+                .get(dep.name.as_ref())
+                .unwrap_or(&0);
+
+            // if the mtime we found in the lib is lower than the source folder
+            // remove it from deps_seen as we will need to install it and remove the
+            // existing one from the library
+            if *mtime_found < local_mtime.unix_seconds() {
+                deps_seen.remove(dep.name.as_ref());
+                to_remove.insert((dep.name.as_ref().to_string(), false));
+                local_deps.insert(dep.name.as_ref(), false);
+            } else {
+                // same mtime or higher: we copy from the library
+                local_deps.insert(dep.name.as_ref(), true);
+            }
+        } else {
+            local_deps.insert(dep.name.as_ref(), false);
+        }
+    }
+    // make it immutable
+    let local_deps = Arc::new(local_deps);
+
+    for name in &library.broken {
+        log::debug!("Package {name} in library is broken");
+        to_remove.insert((name.to_string(), false));
     }
 
     // Clean up at all times, even with a dry run
@@ -302,21 +424,23 @@ pub fn sync(
         fs::remove_dir_all(&staging_path)?;
     }
 
-    for dir_name in to_remove {
+    for (dir_name, notify) in to_remove {
         // Only actually remove the deps if we are not going to rebuild the lib folder
-        if deps_seen == num_deps_to_install {
+        if deps_seen.len() == num_deps_to_install {
             let p = project_library.join(&dir_name);
-            if !dry_run {
+            if !dry_run && notify {
                 log::debug!("Removing {dir_name} from library");
                 fs::remove_dir_all(&p)?;
             }
         }
 
-        sync_changes.push(SyncChange::removed(&dir_name));
+        if notify {
+            sync_changes.push(SyncChange::removed(&dir_name));
+        }
     }
 
     // If we have all the deps we need, exit early
-    if deps_seen == num_deps_to_install {
+    if deps_seen.len() == num_deps_to_install {
         if !dry_run {
             log::debug!("No new dependencies to install");
         }
@@ -386,6 +510,7 @@ pub fn sync(
             let has_errors_clone = Arc::clone(&has_errors);
             let errors_clone = Arc::clone(&errors);
             let s_path = staging_path.as_path();
+            let local_deps_clone = Arc::clone(&local_deps);
 
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
@@ -399,10 +524,24 @@ pub fn sync(
                         }
                     }
                     let start = std::time::Instant::now();
-                    match install_package(&context, dep, s_path, dry_run) {
+                    let install_result = if local_deps_clone
+                        .get(dep.name.as_ref())
+                        .cloned()
+                        .unwrap_or_default()
+                    {
+                        copy_package(&context, dep, s_path, dry_run)
+                    } else {
+                        install_package(&context, dep, s_path, dry_run)
+                    };
+                    match install_result {
                         Ok(_) => {
-                            let sync_change =
-                                SyncChange::installed(&dep.name, &dep.version, start.elapsed());
+                            let sync_change = SyncChange::installed(
+                                &dep.name,
+                                &dep.version.original,
+                                dep.source.source_path(),
+                                dep.kind,
+                                start.elapsed(),
+                            );
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);
                             drop(plan);
@@ -435,7 +574,9 @@ pub fn sync(
                         num_deps_to_install
                     );
                 }
-                sync_changes.push(change);
+                if !deps_seen.contains(change.name.as_str()) {
+                    sync_changes.push(change);
+                }
                 if installed_count.load(Ordering::Relaxed) == num_deps_to_install
                     || has_errors.load(Ordering::Relaxed)
                 {
@@ -464,6 +605,14 @@ pub fn sync(
     }
 
     fs::rename(&staging_path, &project_library)?;
+
+    // Sort all changes by a-z and fall back on installed status for things with the same name
+    sync_changes.sort_unstable_by(
+        |a, b| match a.name.to_lowercase().cmp(&b.name.to_lowercase()) {
+            std::cmp::Ordering::Equal => a.installed.cmp(&b.installed),
+            ordering => ordering,
+        },
+    );
 
     Ok(sync_changes)
 }

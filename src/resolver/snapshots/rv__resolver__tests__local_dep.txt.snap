@@ -1,0 +1,5 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+dummy=0.0.0.9001 (local(path: dummy-pkg), type=source, path='', from_lockfile=false, from_remote=false)

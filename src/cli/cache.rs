@@ -7,7 +7,7 @@ use etcetera::BaseStrategy;
 use fs_err as fs;
 
 use crate::cache::InstallationStatus;
-use crate::cli::utils::get_os_path;
+use crate::cli::utils::get_current_system_path;
 use crate::system_info::SystemInfo;
 use crate::Version;
 use crate::{Cache, CacheEntry};
@@ -91,7 +91,7 @@ impl DiskCache {
         let encoded = encode_repository_url(repo_url);
         self.root
             .join(&encoded)
-            .join(get_os_path(&self.system_info, self.r_version))
+            .join(get_current_system_path(&self.system_info, self.r_version))
     }
 
     /// A database contains both source and binary PACKAGE data

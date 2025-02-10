@@ -87,6 +87,13 @@ impl ConfigDependency {
         }
     }
 
+    pub fn local_path(&self) -> Option<PathBuf> {
+        match self {
+            ConfigDependency::Local { path, .. } => Some(path.clone()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
         // git: String,
         // // TODO: validate that either commit, branch or tag is set
@@ -158,6 +165,7 @@ pub(crate) struct Project {
     /// the following conditions are met:
     /// 1. the package has a version requirement
     /// 2. we can find a package matching that version requirement in a repository
+    ///
     /// If a package doesn't list a version requirement in the DESCRIPTION file, we will ALWAYS
     /// install from the remote.
     #[serde(default)]

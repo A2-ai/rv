@@ -103,8 +103,6 @@ impl<'a> RepoServer<'a> {
     /// Windows binaries are found under `/bin/windows/contrib/<R version major>.<R version minor>`
     ///
     /// ### MacOS
-    /// MacOS binaries are not widely supported for R < 4.0 and are not supported in this tooling.
-    ///
     /// There is a split in the repository structure at R/4.2
     ///
     /// * For R <= 4.2, binaries are found under `/bin/macosx/contrib/4.<R version minor>`
@@ -128,8 +126,8 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        // rv does not support binaries for less than R/4.0
-        if r_version[0] < 4 {
+        // rv does not support binaries for less than R/3.6
+        if r_version < &[3, 6] {
             return None;
         }
 
@@ -190,7 +188,7 @@ impl<'a> RepoServer<'a> {
         sysinfo: &SystemInfo,
     ) -> Option<String> {
         // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.2
-        if r_version[1] <= 2 {
+        if r_version <= &[4, 2] {
             return Some(format!(
                 "{}/bin/macosx/contrib/{}.{}/{file_name}",
                 self.url(),
@@ -237,7 +235,18 @@ impl<'a> RepoServer<'a> {
                 get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
                 Self::extract_snapshot_date(url)?
             ),
-            _ => return None,
+            Self::Other(url) => {
+                //TODO: we cannot expect only snapshot date/latest pattern for other/RV/PRISM in the future
+                // but this unblocks some work right now
+                let snapshot_date = Self::extract_snapshot_date(url)?;
+                let trimmed_url = url.trim_end_matches(snapshot_date).trim_end_matches("/");
+                format!(
+                    "{}/__linux__/{}/{}/src/contrib",
+                    trimmed_url,
+                    get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
+                    snapshot_date
+                )
+            }
         };
 
         // binaries are only returned when query strings are set for the r version
@@ -272,6 +281,20 @@ mod tests {
         let ref_url = format!("{}/src/contrib/test-file", PPM_URL);
         assert_eq!(source_url, ref_url);
     }
+    #[test]
+    fn test_binary_35_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("ubuntu"),
+            Some("x86_64".to_string()),
+            Some("jammy".to_string()),
+            "22.04",
+        );
+        if let None = RepoServer::from_url(PPM_URL).get_binary_path("test-file", &[3, 5], &sysinfo)
+        {
+            assert!(true)
+        }
+    }
+
     #[test]
     fn test_windows_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");

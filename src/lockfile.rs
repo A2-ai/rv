@@ -72,8 +72,8 @@ impl Source {
     }
 
     /// The key to use in the cache: URL for a package repository, git URL for a git repository
-    /// and for local ??? TODO
-    pub fn repository_url(&self) -> &str {
+    /// and for local the actual path
+    pub fn source_path(&self) -> &str {
         match self {
             Source::Repository { ref repository } => repository.as_str(),
             Source::Local { ref path } => path.to_str().unwrap(),
@@ -161,7 +161,7 @@ impl LockedPackage {
     pub fn from_resolved_dep(dep: ResolvedDependency) -> Self {
         Self {
             name: dep.name.into_owned(),
-            version: dep.version.into_owned(),
+            version: dep.version.original.clone(),
             source: dep.source,
             path: dep.path.map(|p| p.into_owned()),
             force_source: dep.force_source,
