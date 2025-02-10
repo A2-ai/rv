@@ -135,7 +135,7 @@ impl RenvLock {
                 RenvSource::GitHub => {
                     resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
                 }
-                RenvSource::Local => resolve_local(package_info).map(|path| Source::Local(path)),
+                RenvSource::Local => resolve_local(package_info).map(Source::Local),
                 _ => Err("Source is not supported".into()),
             };
             match res {
