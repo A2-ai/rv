@@ -73,7 +73,7 @@ struct RenvLock {
 impl RenvLock {
     pub fn parse_renv_lock<P: AsRef<Path>>(path: P) -> Result<Self, FromJsonFileError> {
         let path = path.as_ref();
-        let content = match std::fs::read_to_string(&path) {
+        let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
                 return Err(FromJsonFileError {
@@ -95,7 +95,7 @@ impl RenvLock {
     ) -> (Vec<ResolvedRenv>, Vec<UnresolvedRenv>) {
         let mut resolved = Vec::new();
         let mut unresolved = Vec::new();
-        for (_, package_info) in &self.packages {
+        for package_info in self.packages.values() {
             let res = match package_info.source {
                 RenvSource::Repository => resolve_repository(
                     package_info,
@@ -103,7 +103,7 @@ impl RenvLock {
                     repository_database,
                     &self.r.version,
                 )
-                .map(|r| Source::Repository(r)),
+                .map(Source::Repository),
                 RenvSource::GitHub => {
                     resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
                 }
@@ -147,7 +147,7 @@ fn resolve_repository<'a>(
     // match the repository database with its corresponding repository
     let repo_pairs = repositories
         .iter()
-        .zip(repository_database.into_iter())
+        .zip(repository_database)
         .map(|(repo, (repo_db, force_source))| (repo, repo_db, force_source))
         .collect::<Vec<_>>();
 
