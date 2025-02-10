@@ -5,6 +5,7 @@ use crate::{Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 /// A dependency that we found from any of the sources we can look up to
@@ -34,6 +35,10 @@ impl<'d> ResolvedDependency<'d> {
             PackageType::Source => self.installation_status.source_available(),
             PackageType::Binary => self.installation_status.binary_available(),
         }
+    }
+
+    pub fn is_local(&self) -> bool {
+        matches!(self.source, Source::Local { .. })
     }
 
     /// We found the dependency from the lockfile
@@ -72,7 +77,6 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
-    // TODO: 2 bool not great but maybe ok if it's only used in one place
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &str,
@@ -148,6 +152,40 @@ impl<'d> ResolvedDependency<'d> {
 
         (res, deps)
     }
+
+    pub fn local_package(
+        package: &Package,
+        source: Source,
+        install_suggests: bool,
+    ) -> (Self, InstallationDependencies) {
+        let deps = package.dependencies_to_install(install_suggests);
+        let res = Self {
+            dependencies: deps
+                .direct
+                .iter()
+                .map(|d| Cow::Owned(d.name().to_string()))
+                .collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|s| Cow::Owned(s.name().to_string()))
+                .collect(),
+            kind: PackageType::Source,
+            force_source: true,
+            path: None,
+            from_lockfile: false,
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
+            // We'll handle the installation status later by comparing mtimes
+            installation_status: InstallationStatus::Source,
+            install_suggests,
+            remotes: package.remotes.clone(),
+            from_remote: false,
+        };
+
+        (res, deps)
+    }
 }
 
 impl<'a> fmt::Display for ResolvedDependency<'a> {
@@ -175,6 +213,7 @@ pub struct UnresolvedDependency<'d> {
     // The first parent we encountered requiring that package
     pub(crate) parent: Option<Cow<'d, str>>,
     pub(crate) remote: Option<PackageRemote>,
+    pub(crate) local_path: Option<PathBuf>,
 }
 
 impl<'d> UnresolvedDependency<'d> {

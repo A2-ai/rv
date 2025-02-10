@@ -1385,6 +1385,7 @@ dependencies = [
  "crossbeam",
  "env_logger",
  "etcetera",
+ "filetime",
  "flate2",
  "fs-err",
  "git2",

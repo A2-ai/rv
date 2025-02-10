@@ -133,7 +133,7 @@ pub(crate) fn load_databases(
                         &cache.r_version,
                         &cache.system_info,
                     );
-
+                    log::debug!("checking for binary packages URL: {:?}", binary_url);
                     // we do not know for certain that the Some return of get_binary_path will be a valid url,
                     // but we do know that if it returns None there is not a binary PACKAGES file
                     if let Some(url) = binary_url {

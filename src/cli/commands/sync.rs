@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,6 +12,8 @@ use fs_err as fs;
 use crate::cli::cache::PackagePaths;
 use crate::cli::utils::untar_package;
 use crate::cli::{http, CliContext};
+use crate::consts::LOCAL_MTIME_FILENAME;
+use crate::fs::mtime_recursive;
 use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
@@ -103,12 +105,11 @@ fn install_package_from_repository(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_server = RepoServer::from_url(pkg.source.repository_url());
-    let pkg_paths = context.cache.get_package_paths(
-        pkg.source.repository_url(),
-        &pkg.name,
-        &pkg.version.original,
-    );
+    let repo_server = RepoServer::from_url(pkg.source.source_path());
+    let pkg_paths =
+        context
+            .cache
+            .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
     let binary_url = repo_server.get_binary_tarball_path(
         &pkg.name,
         &pkg.version.original,
@@ -159,7 +160,7 @@ fn install_package_from_git(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_url = pkg.source.repository_url();
+    let repo_url = pkg.source.source_path();
     let sha = pkg.source.git_sha();
     log::debug!("Installing {} from git", pkg.name);
 
@@ -175,7 +176,6 @@ fn install_package_from_git(
             Some(GitReference::Commit(&sha)),
             &pkg_paths.source,
         )?;
-        // TODO: symlink file in cache directory
         log::debug!("Building the repo in {:?}", pkg_paths);
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
@@ -194,6 +194,27 @@ fn install_package_from_git(
     Ok(())
 }
 
+fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
+    // First we check if the package exists in the library and what's the mtime in it
+    let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
+    // TODO: we actually do that twice, a bit wasteful
+    let local_mtime = mtime_recursive(&local_path)?;
+
+    // if the mtime we found locally is more recent, we build it
+    log::debug!("Building the local package in {}", local_path.display());
+    install_via_r(&local_path, library_dir, &library_dir)?;
+
+    // And just write the mtime in the output directory
+    let mut file = fs::File::create(
+        library_dir
+            .join(pkg.name.as_ref())
+            .join(LOCAL_MTIME_FILENAME),
+    )?;
+    file.write_all(local_mtime.unix_seconds().to_string().as_bytes())?;
+
+    Ok(())
+}
+
 /// Install a package and returns whether it was installed from cache or not
 fn install_package(
     context: &CliContext,
@@ -208,8 +229,29 @@ fn install_package(
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
-        Source::Local { .. } => install_package_from_repository(context, pkg, library_dir),
+        Source::Local { .. } => install_local_package(pkg, library_dir),
     }
+}
+
+/// If a local package hasn't changed, we copy it from the current library to the staging dir
+fn copy_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+    dry_run: bool,
+) -> Result<()> {
+    if dry_run {
+        return Ok(());
+    }
+
+    log::debug!("Copying package {} from current library", &pkg.name);
+    LinkMode::Copy.link_files(
+        &pkg.name,
+        context.library.path().join(pkg.name.as_ref()),
+        library_dir.join(pkg.name.as_ref()),
+    )?;
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -307,7 +349,7 @@ pub fn sync(
     let mut deps_seen = HashSet::new();
 
     fs::create_dir_all(&project_library)?;
-    // TODO: handle upgrades here
+
     for (name, version) in &library.packages {
         if deps_to_install
             .get(name.as_str())
@@ -319,6 +361,39 @@ pub fn sync(
             to_remove.insert((name.to_string(), true));
         }
     }
+
+    // (name, whether to copy from current library)
+    let mut local_deps = HashMap::new();
+    // For local deps we also need to check whether the files from the source are newer than what
+    // is installed currently, if that's the case. If the folder exists and is the same as
+    // what we need to build, we will just copy it
+    for dep in deps.iter().filter(|x| x.is_local()) {
+        if deps_seen.contains(dep.name.as_ref()) {
+            let local_path = Path::new(dep.source.source_path());
+            let local_mtime = mtime_recursive(&local_path)?;
+            let mtime_found = context
+                .library
+                .local_packages
+                .get(dep.name.as_ref())
+                .unwrap_or(&0);
+
+            // if the mtime we found in the lib is lower than the source folder
+            // remove it from deps_seen as we will need to install it and remove the
+            // existing one from the library
+            if *mtime_found < local_mtime.unix_seconds() {
+                deps_seen.remove(dep.name.as_ref());
+                to_remove.insert((dep.name.as_ref().to_string(), false));
+                local_deps.insert(dep.name.as_ref(), false);
+            } else {
+                // same mtime or higher: we copy from the library
+                local_deps.insert(dep.name.as_ref(), true);
+            }
+        } else {
+            local_deps.insert(dep.name.as_ref(), false);
+        }
+    }
+    // make it immutable
+    let local_deps = Arc::new(local_deps);
 
     for name in &library.broken {
         log::debug!("Package {name} in library is broken");
@@ -416,6 +491,7 @@ pub fn sync(
             let has_errors_clone = Arc::clone(&has_errors);
             let errors_clone = Arc::clone(&errors);
             let s_path = staging_path.as_path();
+            let local_deps_clone = Arc::clone(&local_deps);
 
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
@@ -429,12 +505,21 @@ pub fn sync(
                         }
                     }
                     let start = std::time::Instant::now();
-                    match install_package(&context, dep, s_path, dry_run) {
+                    let install_result = if local_deps_clone
+                        .get(dep.name.as_ref())
+                        .cloned()
+                        .unwrap_or_default()
+                    {
+                        copy_package(&context, dep, s_path, dry_run)
+                    } else {
+                        install_package(&context, dep, s_path, dry_run)
+                    };
+                    match install_result {
                         Ok(_) => {
                             let sync_change = SyncChange::installed(
                                 &dep.name,
                                 &dep.version.original,
-                                dep.source.repository_url(),
+                                dep.source.source_path(),
                                 dep.kind,
                                 start.elapsed(),
                             );

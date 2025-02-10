@@ -237,7 +237,18 @@ impl<'a> RepoServer<'a> {
                 get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
                 Self::extract_snapshot_date(url)?
             ),
-            _ => return None,
+            Self::Other(url) => {
+                //TODO: we cannot expect only snapshot date/latest pattern for other/RV/PRISM in the future
+                // but this unblocks some work right now
+                let snapshot_date = Self::extract_snapshot_date(url)?;
+                let trimmed_url = url.trim_end_matches(snapshot_date).trim_end_matches("/");
+                format!(
+                    "{}/__linux__/{}/{}/src/contrib",
+                    trimmed_url,
+                    get_distro_name(sysinfo, distro)?, //need to determine if RV will have same binary support/distro names
+                    snapshot_date
+                )
+            }
         };
 
         // binaries are only returned when query strings are set for the r version

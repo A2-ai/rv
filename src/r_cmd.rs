@@ -67,7 +67,7 @@ impl RCmd for RCommandLine {
 
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
-        // Since it's right next to each other, we symlink if possible except on Windows
+        // We symlink if possible except on Windows
         let tmp_dir = tempfile::tempdir().map_err(|e| InstallError {
             source: InstallErrorKind::TempDir(e),
         })?;
