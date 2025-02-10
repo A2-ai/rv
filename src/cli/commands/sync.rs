@@ -78,7 +78,7 @@ fn download_and_install_tarball(
     match download_and_untar(&source_url, &pkg_paths.source) {
         Err(e) => {
             if e.to_string().contains("Archive not found at") {
-                log::warn!("Failed to download source package: {e:?}", &pkg.name, &pkg.version.original)
+                log::warn!("Failed to download source package: {e:?}")
             } else {
                 bail!(e)
             }
