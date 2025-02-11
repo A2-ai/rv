@@ -18,7 +18,7 @@ use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::{is_binary_package, PackageType};
 use crate::{
-    BuildPlan, BuildStep, Cache, Http, HttpDownload, Library, RCmd, RCommandLine, RepoServer,
+    BuildPlan, BuildStep, Http, HttpDownload, Library, RCmd, RCommandLine, RepoServer,
     ResolvedDependency,
 };
 use crate::{Git, GitOperations};
@@ -201,14 +201,11 @@ fn install_url_package(
     pkg: &ResolvedDependency,
     library_dir: &Path,
 ) -> Result<()> {
+    let link_mode = LinkMode::new();
     let (url, sha) = pkg.source.url_info();
 
-    let link_mode = LinkMode::new();
-    let download_path = context
-        .cache
-        .get_url_download_path(url)
-        .join(&sha[..7])
-        .join(pkg.name.as_ref());
+    let pkg_paths = context.cache.get_url_package_paths(url, sha);
+    let download_path = pkg_paths.source.join(pkg.name.as_ref());
 
     // If we have a binary, copy it since we don't keep cache around for binary URL packages
     if pkg.kind == PackageType::Binary {
@@ -216,14 +213,19 @@ fn install_url_package(
             "Package from URL in {} is already a binary",
             download_path.display()
         );
-        link_mode.link_files(&pkg.name, &download_path, &library_dir)?;
+        if !pkg_paths.binary.is_dir() {
+            LinkMode::Copy.link_files(&pkg.name, &pkg_paths.source, &pkg_paths.binary)?;
+        }
     } else {
         log::debug!(
             "Building the package from URL in {}",
             download_path.display()
         );
-        install_via_r(&download_path, library_dir, &library_dir)?;
+        install_via_r(&download_path, library_dir, &pkg_paths.binary)?;
     }
+
+    // And then we always link the binary folder into the staging library
+    link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
 
     Ok(())
 }

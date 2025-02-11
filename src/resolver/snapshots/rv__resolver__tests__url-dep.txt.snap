@@ -2,4 +2,16 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-fansi=1.0.0 (url(url: https://cran.r-project.org/src/contrib/Archive/fansi/fansi_1.0.0.tar.gz, sha:SOME_SHA), type=source, path='', from_lockfile=false, from_remote=false)
+dplyr=1.1.3 (url(url: https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz, sha:SOME_SHA), type=source, path='', from_lockfile=false, from_remote=false)
+--- unresolved --- 
+cli (>= 3.4.0)  [required by: dplyr]
+generics [required by: dplyr]
+glue (>= 1.3.2)  [required by: dplyr]
+lifecycle (>= 1.0.3)  [required by: dplyr]
+magrittr (>= 1.5)  [required by: dplyr]
+pillar (>= 1.9.0)  [required by: dplyr]
+R6 [required by: dplyr]
+rlang (>= 1.1.0)  [required by: dplyr]
+tibble (>= 3.2.0)  [required by: dplyr]
+tidyselect (>= 1.2.0)  [required by: dplyr]
+vctrs (>= 0.6.0)  [required by: dplyr]

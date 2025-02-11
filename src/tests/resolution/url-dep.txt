@@ -1,9 +1,12 @@
 [project]
-name = "test"
+name = "simple"
 r_version = "4.4"
-repositories = []
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/", force_source = true}
+]
 dependencies = [
-    {name = "fansi", url = "https://cran.r-project.org/src/contrib/Archive/fansi/fansi_1.0.0.tar.gz"}
+#    "dplyr"
+    {name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz"}
 ]
 ---
 ---

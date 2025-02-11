@@ -42,7 +42,7 @@ fn get_packages_timeout() -> u64 {
 /// Just a basic base64 without padding
 #[inline]
 fn encode_base64(url: &str) -> String {
-    STANDARD_NO_PAD.encode(url)
+    STANDARD_NO_PAD.encode(url.to_ascii_lowercase())
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +146,13 @@ impl DiskCache {
         let encoded = encode_base64(repo_url);
         self.root.join("git").join("builds").join(encoded).join(sha)
     }
+
+    pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {
+        PackagePaths {
+            source: self.get_url_path(url).join(&sha[..7]),
+            binary: self.get_repo_root_binary_dir(url).join(sha),
+        }
+    }
 }
 
 impl Cache for DiskCache {
@@ -207,10 +214,10 @@ impl Cache for DiskCache {
     }
 
     fn get_git_clone_path(&self, git_url: &str) -> PathBuf {
-        self.get_source_git_package_path(&git_url.to_ascii_lowercase())
+        self.get_source_git_package_path(&git_url)
     }
 
     fn get_url_download_path(&self, url: &str) -> PathBuf {
-        self.get_url_path(&url.to_ascii_lowercase())
+        self.get_url_path(&url)
     }
 }

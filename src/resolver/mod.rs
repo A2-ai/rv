@@ -559,6 +559,7 @@ mod tests {
             &self,
             _: &str,
             _: impl AsRef<Path>,
+            _: bool,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
             Ok((None, "SOME_SHA".to_string()))
         }
@@ -642,7 +643,7 @@ mod tests {
         let url_path = cache.get_url_download_path(url);
         std::fs::create_dir_all(&url_path).unwrap();
         std::fs::copy(
-            "../tests/descriptions/dplyr.DESCRIPTION",
+            "src/tests/descriptions/dplyr.DESCRIPTION",
             url_path.join(DESCRIPTION_FILENAME),
         )
         .unwrap();
