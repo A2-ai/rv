@@ -213,7 +213,7 @@ fn install_package_from_git(
     Ok(())
 }
 
-fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path, r_cmd: &RCommandLine) -> Result<()> {
+fn install_local_package(context: &CliContext, pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
     // First we check if the package exists in the library and what's the mtime in it
     let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
     // TODO: we actually do that twice, a bit wasteful
@@ -221,7 +221,7 @@ fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path, r_cmd: &R
 
     // if the mtime we found locally is more recent, we build it
     log::debug!("Building the local package in {}", local_path.display());
-    install_via_r(&local_path, library_dir, &library_dir, r_cmd)?;
+    install_via_r(&local_path, library_dir, &library_dir, &context.r_cmd)?;
 
     // And just write the mtime in the output directory
     let mut file = fs::File::create(
@@ -248,7 +248,7 @@ fn install_package(
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
-        Source::Local { .. } => install_local_package(pkg, library_dir, &context.r_cmd),
+        Source::Local { .. } => install_local_package(context, pkg, library_dir),
     }
 }
 
