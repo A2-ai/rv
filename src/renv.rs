@@ -359,12 +359,16 @@ mod tests {
     fn test_renv_lock_parse() {
         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
         let repository_databases = repository_databases(renv_lock.r_version(), &renv_lock.repositories());
-        let (resolved, unresolved) = renv_lock.resolve(&repository_databases);
-        
+        let (mut resolved, mut unresolved) = renv_lock.resolve(&repository_databases);
+        // sort by name of package to maintain order for all snapshot test
+        resolved.sort_by_key(|r| r.package_info.package.clone());
+        unresolved.sort_by_key(|u| u.package_info.package.clone());
+
         let mut out = String::new();
         for r in resolved {
             out.push_str(&format!("{r}\n"));
         }
+
         out.push_str("--- unresolved --- \n");
         for u in unresolved {
             out.push_str(&format!("{u}\n"));
