@@ -236,7 +236,7 @@ impl Config {
                     let mut replacement = None;
                     if let Some(alias) = repository {
                         if let Some(repo) = repo_mapping.get(alias.as_str()) {
-                            replacement = Some(repo.url.clone());
+                            replacement = Some(repo.url().to_string());
                         } else {
                             errors.push(format!(
                                 "Dependency {name} is using alias {alias} which is unknown."
