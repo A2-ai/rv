@@ -283,7 +283,7 @@ impl fmt::Display for ResolvedRenv<'_> {
                 write!(f, r#"{{ name = "{name}", repository = "{}" }}"#, r.name)
             }
             Source::GitHub { git, sha } => {
-                write!(f, r#"{{ name = "{name}", git = "{git}", sha = "{sha}" }}"#)
+                write!(f, r#"{{ name = "{name}", git = "{git}", commit = "{sha}" }}"#)
             }
             Source::Local(path) => {
                 write!(f, r#"{{ name = "{name}", path = "{}" }}"#, path.display())
