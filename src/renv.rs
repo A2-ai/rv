@@ -331,17 +331,15 @@ pub struct FromJsonFileError {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt;
-
     use crate::{Repository, RepositoryDatabase, Version};
 
-    use super::{RenvLock, ResolvedRenv, Source};
+    use super::RenvLock;
 
     fn repository_databases(r_version: &Version, repositories: &[Repository]) -> Vec<(RepositoryDatabase, bool)> {
         let mut res = Vec::new();
 
         for r in repositories {
-            let mut repo = RepositoryDatabase::new(&r.alias, &r.url);
+            let mut repo = RepositoryDatabase::new(&r.url);
             let path = format!("src/tests/package_files/{}.PACKAGE", &r.alias);
             let text = std::fs::read_to_string(path).unwrap();
             if r.alias.contains("binary") {
