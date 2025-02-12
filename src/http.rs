@@ -48,7 +48,7 @@ pub fn download<W: Write>(
     writer: &mut W,
     headers: Vec<(&str, String)>,
 ) -> Result<u64, HttpError> {
-    let mut request = ureq::get(url).timeout(Duration::from_secs(20));
+    let mut request = ureq::get(url).timeout(Duration::from_secs(200));
     for (key, val) in headers {
         request = request.set(key, &val);
     }
