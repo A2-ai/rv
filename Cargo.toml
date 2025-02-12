@@ -31,30 +31,30 @@ tempfile = "3"
 git2 = "0.20.0"
 reflink-copy = "0.1"
 log = "0.4"
+filetime = "0.2.25"
+# Handling tarballs from repositories or direct url sources
+flate2 = "1"
+tar = "0.4"
+ureq = "2"
+sha2 = "0.10"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }
 rayon = { version = "1", optional = true }
 anyhow = { version = "1", optional = true }
-ureq = { version = "2", optional = true }
 env_logger = { version = "0.11", optional = true }
 crossbeam = { version = "0.8", optional = true }
 num_cpus = { version = "1", optional = true }
-flate2 = { version = "1", optional = true }
-tar = { version = "0.4", optional = true }
 
 [features]
 cli = [
     "dep:clap",
     "dep:rayon",
     "dep:anyhow",
-    "dep:ureq",
     "dep:clap-verbosity-flag",
     "dep:env_logger",
     "dep:crossbeam",
     "dep:num_cpus",
-    "dep:flate2",
-    "dep:tar",
 ]
 
 [dev-dependencies]

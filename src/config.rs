@@ -61,6 +61,14 @@ pub enum ConfigDependency {
         #[serde(default)]
         install_suggestions: bool,
     },
+    Url {
+        url: String,
+        name: String,
+        #[serde(default)]
+        install_suggestions: bool,
+        #[serde(default)]
+        force_source: bool,
+    },
     Detailed {
         name: String,
         repository: Option<String>,
@@ -78,6 +86,7 @@ impl ConfigDependency {
             ConfigDependency::Detailed { name, .. } => name,
             ConfigDependency::Git { name, .. } => name,
             ConfigDependency::Local { name, .. } => name,
+            ConfigDependency::Url { name, .. } => name,
         }
     }
 
@@ -91,6 +100,13 @@ impl ConfigDependency {
     pub fn r_repository(&self) -> Option<&str> {
         match self {
             ConfigDependency::Detailed { repository, .. } => repository.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn local_path(&self) -> Option<PathBuf> {
+        match self {
+            ConfigDependency::Local { path, .. } => Some(path.clone()),
             _ => None,
         }
     }
@@ -126,12 +142,16 @@ impl ConfigDependency {
             ConfigDependency::Detailed {
                 install_suggestions,
                 ..
-            } => *install_suggestions,
-            ConfigDependency::Local {
+            }
+            | ConfigDependency::Url {
                 install_suggestions,
                 ..
-            } => *install_suggestions,
-            ConfigDependency::Git {
+            }
+            | ConfigDependency::Local {
+                install_suggestions,
+                ..
+            }
+            | ConfigDependency::Git {
                 install_suggestions,
                 ..
             } => *install_suggestions,
@@ -166,6 +186,7 @@ pub(crate) struct Project {
     /// the following conditions are met:
     /// 1. the package has a version requirement
     /// 2. we can find a package matching that version requirement in a repository
+    ///
     /// If a package doesn't list a version requirement in the DESCRIPTION file, we will ALWAYS
     /// install from the remote.
     #[serde(default)]
@@ -232,7 +253,7 @@ impl Config {
                     let mut replacement = None;
                     if let Some(alias) = repository {
                         if let Some(repo) = repo_mapping.get(alias.as_str()) {
-                            replacement = Some(repo.url.clone());
+                            replacement = Some(repo.url().to_string());
                         } else {
                             errors.push(format!(
                                 "Dependency {name} is using alias {alias} which is unknown."

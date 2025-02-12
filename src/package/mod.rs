@@ -1,18 +1,18 @@
-use std::collections::HashMap;
-use std::fmt;
-
 use crate::consts::BASE_PACKAGES;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
+use std::path::Path;
 
 mod description;
 mod parser;
 mod remotes;
 mod version;
 
-pub use description::parse_description_file_in_folder;
+pub use description::{parse_description_file_in_folder, parse_version};
 pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
-pub use version::{deserialize_version, Version, VersionRequirement};
+pub use version::{deserialize_version, Operator, Version, VersionRequirement};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
 pub enum PackageType {
@@ -119,12 +119,9 @@ impl Package {
             suggests,
         }
     }
+}
 
-    // pub fn invalid_remotes(&self) -> bool {
-    //     let mut issues = Vec::new();
-    //
-    //     for (original, (name, remote)) in &self.remotes {
-    //
-    //     }
-    // }
+/// Returns whether this folder contains compiled R files
+pub fn is_binary_package(path: impl AsRef<Path>, name: &str) -> bool {
+    path.as_ref().join("R").join(format!("{name}.rdx")).exists()
 }

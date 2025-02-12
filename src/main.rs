@@ -6,7 +6,7 @@ use fs_err as fs;
 
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, sync, CliContext};
-use rv::{Git, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
+use rv::{Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -15,7 +15,7 @@ pub struct Cli {
     verbose: clap_verbosity_flag::Verbosity,
 
     /// Path to a config file other than rproject.toml in the current directory
-    #[clap(short = 'c', long, default_value = "rproject.toml")]
+    #[clap(short = 'c', long, default_value = "rproject.toml", global = true)]
     pub config_file: PathBuf,
 
     #[clap(subcommand)]
@@ -45,11 +45,13 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
+
     let resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
         &Git {},
+        &Http {},
     );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
@@ -73,7 +75,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, dry_run)
+        sync(&context, &resolved, &context.library, dry_run)
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -92,16 +94,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
             }
 
             for c in changes {
-                if c.installed {
-                    println!(
-                        "+ {} ({}) in {}ms",
-                        c.name,
-                        c.version.unwrap(),
-                        c.timing.unwrap().as_millis()
-                    );
-                } else {
-                    println!("- {}", c.name);
-                }
+                println!("{}", c.print(!dry_run));
             }
             Ok(())
         }

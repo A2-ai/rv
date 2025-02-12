@@ -1,11 +1,13 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt;
-
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
-use crate::VersionRequirement;
+use crate::resolver::QueueItem;
+use crate::{Version, VersionRequirement};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -13,7 +15,7 @@ use crate::VersionRequirement;
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
-    pub(crate) version: Cow<'d, str>,
+    pub(crate) version: Cow<'d, Version>,
     pub(crate) source: Source,
     pub(crate) dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
@@ -36,6 +38,10 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
+    pub fn is_local(&self) -> bool {
+        matches!(self.source, Source::Local { .. })
+    }
+
     /// We found the dependency from the lockfile
     pub fn from_locked_package(
         package: &'d LockedPackage,
@@ -43,7 +49,7 @@ impl<'d> ResolvedDependency<'d> {
     ) -> Self {
         Self {
             name: Cow::Borrowed(&package.name),
-            version: Cow::Borrowed(&package.version),
+            version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
             source: package.source.clone(),
             dependencies: package
                 .dependencies
@@ -72,7 +78,6 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
-    // TODO: 2 bool not great but maybe ok if it's only used in one place
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &str,
@@ -85,7 +90,7 @@ impl<'d> ResolvedDependency<'d> {
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
-            version: Cow::Borrowed(&package.version.original),
+            version: Cow::Borrowed(&package.version),
             source: Source::Repository {
                 repository: repo_url.to_string(),
             },
@@ -138,9 +143,78 @@ impl<'d> ResolvedDependency<'d> {
             path: None,
             from_lockfile: false,
             name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.original.clone()),
+            version: Cow::Owned(package.version.clone()),
             source,
             installation_status,
+            install_suggests,
+            remotes: package.remotes.clone(),
+            from_remote: false,
+        };
+
+        (res, deps)
+    }
+
+    pub fn from_local_package(
+        package: &Package,
+        source: Source,
+        install_suggests: bool,
+    ) -> (Self, InstallationDependencies) {
+        let deps = package.dependencies_to_install(install_suggests);
+        let res = Self {
+            dependencies: deps
+                .direct
+                .iter()
+                .map(|d| Cow::Owned(d.name().to_string()))
+                .collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|s| Cow::Owned(s.name().to_string()))
+                .collect(),
+            kind: PackageType::Source,
+            force_source: true,
+            path: None,
+            from_lockfile: false,
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
+            // We'll handle the installation status later by comparing mtimes
+            installation_status: InstallationStatus::Source,
+            install_suggests,
+            remotes: package.remotes.clone(),
+            from_remote: false,
+        };
+
+        (res, deps)
+    }
+
+    pub fn from_url_package(
+        package: &Package,
+        kind: PackageType,
+        source: Source,
+        install_suggests: bool,
+    ) -> (Self, InstallationDependencies) {
+        let deps = package.dependencies_to_install(install_suggests);
+        let res = Self {
+            dependencies: deps
+                .direct
+                .iter()
+                .map(|d| Cow::Owned(d.name().to_string()))
+                .collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|s| Cow::Owned(s.name().to_string()))
+                .collect(),
+            kind,
+            force_source: false,
+            path: None,
+            from_lockfile: false,
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
+            // We'll handle the installation status later by comparing mtimes
+            installation_status: InstallationStatus::Source,
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
@@ -156,7 +230,7 @@ impl<'a> fmt::Display for ResolvedDependency<'a> {
             f,
             "{}={} ({}, type={}, path='{}', from_lockfile={}, from_remote={})",
             self.name,
-            self.version,
+            self.version.original,
             self.source,
             self.kind,
             self.path.as_deref().unwrap_or(""),
@@ -175,9 +249,38 @@ pub struct UnresolvedDependency<'d> {
     // The first parent we encountered requiring that package
     pub(crate) parent: Option<Cow<'d, str>>,
     pub(crate) remote: Option<PackageRemote>,
+    pub(crate) local_path: Option<PathBuf>,
+    pub(crate) url: Option<String>,
 }
 
 impl<'d> UnresolvedDependency<'d> {
+    pub(crate) fn from_item(item: &QueueItem<'d>) -> Self {
+        Self {
+            name: item.name.clone(),
+            error: None,
+            version_requirement: item.version_requirement.clone(),
+            parent: item.parent.clone(),
+            remote: None,
+            local_path: item.local_path.clone(),
+            url: None,
+        }
+    }
+
+    pub(crate) fn with_error(mut self, err: String) -> Self {
+        self.error = Some(err);
+        self
+    }
+
+    pub(crate) fn with_remote(mut self, remote: PackageRemote) -> Self {
+        self.remote = Some(remote);
+        self
+    }
+
+    pub(crate) fn with_url(mut self, url: &str) -> Self {
+        self.url = Some(url.to_string());
+        self
+    }
+
     pub fn is_listed_in_config(&self) -> bool {
         self.parent.is_none()
     }

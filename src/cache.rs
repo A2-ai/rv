@@ -60,4 +60,7 @@ pub trait Cache {
 
     /// Gets the path to where a git repository should be cloned
     fn get_git_clone_path(&self, repo_url: &str) -> PathBuf;
+
+    /// Gets the path to where a tarball package should be downloaded
+    fn get_url_download_path(&self, url: &str) -> PathBuf;
 }

@@ -1,13 +1,18 @@
 use crate::VersionRequirement;
 use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase, Version};
+
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+use std::path::PathBuf;
 
 mod dependency;
 
 use crate::git::GitReference;
+use crate::http::HttpDownload;
 use crate::lockfile::Source;
-use crate::package::{parse_description_file_in_folder, PackageRemote};
+use crate::package::{
+    is_binary_package, parse_description_file_in_folder, PackageRemote, PackageType,
+};
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -23,7 +28,7 @@ impl<'d> Resolution<'d> {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-struct QueueItem<'d> {
+pub(crate) struct QueueItem<'d> {
     name: Cow<'d, str>,
     dep: Option<&'d ConfigDependency>,
     pub(crate) version_requirement: Option<Cow<'d, VersionRequirement>>,
@@ -31,6 +36,7 @@ struct QueueItem<'d> {
     force_source: bool,
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
+    local_path: Option<PathBuf>,
 }
 
 impl<'d> QueueItem<'d> {
@@ -41,6 +47,36 @@ impl<'d> QueueItem<'d> {
             ..Default::default()
         }
     }
+}
+
+// Macro to go around borrow errors we would get with a normal fn
+macro_rules! prepare_deps {
+    ($resolved:expr, $deps:expr) => {{
+        let items = $deps
+            .direct
+            .into_iter()
+            .chain($deps.suggests)
+            .map(|p| {
+                let mut i = QueueItem::name_and_parent_only(
+                    Cow::Owned(p.name().to_string()),
+                    $resolved.name.clone(),
+                );
+
+                i.version_requirement = p.version_requirement().map(|x| Cow::Owned(x.clone()));
+
+                for (pkg_name, remote) in $resolved.remotes.values() {
+                    if let Some(n) = pkg_name {
+                        if p.name() == n.as_str() {
+                            i.remote = Some(remote.clone());
+                        }
+                    }
+                }
+                i
+            })
+            .collect();
+
+        ($resolved, items)
+    }};
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,6 +104,30 @@ impl<'d> Resolver<'d> {
         }
     }
 
+    fn local_lookup(
+        &self,
+        item: &QueueItem<'d>,
+    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+        let local_path = item.local_path.as_ref().unwrap();
+        if !local_path.exists() || !local_path.is_dir() {
+            return Err(format!(
+                "{} doesn't exist or is not a directory",
+                local_path.display()
+            )
+            .into());
+        }
+
+        let package = parse_description_file_in_folder(local_path)?;
+        let (resolved_dep, deps) = ResolvedDependency::from_local_package(
+            &package,
+            Source::Local {
+                path: local_path.clone(),
+            },
+            item.install_suggestions,
+        );
+        Ok(prepare_deps!(resolved_dep, deps))
+    }
+
     fn lockfile_lookup(
         &self,
         item: &QueueItem<'d>,
@@ -80,7 +140,7 @@ impl<'d> Resolver<'d> {
             let resolved_dep = ResolvedDependency::from_locked_package(
                 package,
                 cache.get_package_installation_status(
-                    package.source.repository_url(),
+                    package.source.source_path(),
                     &package.name,
                     &package.version,
                 ),
@@ -106,7 +166,7 @@ impl<'d> Resolver<'d> {
 
         for (repo, repo_source_only) in self.repositories {
             if let Some(r) = repository {
-                if repo.name != r {
+                if repo.url != r {
                     continue;
                 }
             }
@@ -130,22 +190,7 @@ impl<'d> Resolver<'d> {
                         &package.version.original,
                     ),
                 );
-
-                let items = deps
-                    .direct
-                    .into_iter()
-                    .chain(deps.suggests)
-                    .map(|p| {
-                        let mut i = QueueItem::name_and_parent_only(
-                            Cow::Borrowed(p.name()),
-                            item.name.clone(),
-                        );
-                        i.version_requirement = p.version_requirement().map(Cow::Borrowed);
-                        i
-                    })
-                    .collect();
-
-                return Some((resolved_dep, items));
+                return Some(prepare_deps!(resolved_dep, deps));
             }
         }
 
@@ -191,30 +236,7 @@ impl<'d> Resolver<'d> {
                     item.install_suggestions,
                     status,
                 );
-
-                let items = deps
-                    .direct
-                    .into_iter()
-                    .chain(deps.suggests)
-                    .map(|p| {
-                        let mut i = QueueItem::name_and_parent_only(
-                            Cow::Owned(p.name().to_string()),
-                            item.name.clone(),
-                        );
-                        i.version_requirement =
-                            p.version_requirement().map(|x| Cow::Owned(x.clone()));
-                        for (pkg_name, remote) in resolved_dep.remotes.values() {
-                            if let Some(n) = pkg_name {
-                                if p.name() == n.as_str() {
-                                    i.remote = Some(remote.clone());
-                                }
-                            }
-                        }
-                        i
-                    })
-                    .collect();
-
-                Ok((resolved_dep, items))
+                Ok(prepare_deps!(resolved_dep, deps))
             }
             Err(e) => {
                 Err(format!("Could not clone repository {repo_url} (ref: {git_ref:?}) {e}").into())
@@ -222,13 +244,43 @@ impl<'d> Resolver<'d> {
         }
     }
 
-    /// Tries to find all dependencies from the repos, as well as their install status
+    fn url_lookup(
+        &self,
+        item: &QueueItem<'d>,
+        url: &str,
+        cache: &'d impl Cache,
+        http_downloader: &'d impl HttpDownload,
+    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+        let out_path = cache.get_url_download_path(url);
+        let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true)?;
+
+        let install_path = dir.unwrap_or_else(|| out_path.clone());
+        let package = parse_description_file_in_folder(&install_path)?;
+        let is_binary = is_binary_package(&install_path, &package.name);
+        let (resolved_dep, deps) = ResolvedDependency::from_url_package(
+            &package,
+            if is_binary {
+                PackageType::Binary
+            } else {
+                PackageType::Source
+            },
+            Source::Url {
+                url: url.to_string(),
+                sha,
+            },
+            item.install_suggestions,
+        );
+        Ok(prepare_deps!(resolved_dep, deps))
+    }
+
+    /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
         dependencies: &'d [ConfigDependency],
         prefer_repositories_for: &'d [String],
         cache: &'d impl Cache,
         git_ops: &'d impl GitOperations,
+        http_download: &'d impl HttpDownload,
     ) -> Resolution<'d> {
         let mut result = Resolution::default();
         let mut processed = HashSet::with_capacity(dependencies.len() * 10);
@@ -243,6 +295,7 @@ impl<'d> Resolver<'d> {
                 force_source: d.force_source(),
                 parent: None,
                 remote: None,
+                local_path: d.local_path(),
             })
             .collect();
 
@@ -250,6 +303,22 @@ impl<'d> Resolver<'d> {
             // If we have already found that dependency, skip it
             // TODO: maybe different version req? we can cross that bridge later
             if processed.contains(item.name.as_ref()) {
+                continue;
+            }
+
+            // If we have a local path, we don't need to check anything at all, just the actual path
+            if item.local_path.is_some() {
+                match self.local_lookup(&item) {
+                    Ok((resolved_dep, items)) => {
+                        processed.insert(resolved_dep.name.to_string());
+                        result.found.push(resolved_dep);
+                        queue.extend(items);
+                        continue;
+                    }
+                    Err(e) => result
+                        .failed
+                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e:?}"))),
+                }
                 continue;
             }
 
@@ -269,7 +338,7 @@ impl<'d> Resolver<'d> {
             // We will the remote result around _if_ the item has a version requirement and is in
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
-            // .contains would need to allocate
+            // .contains would need to allocate, so using iter().any() instead
             let can_be_overridden = item.version_requirement.is_some()
                 && prefer_repositories_for
                     .iter()
@@ -294,7 +363,7 @@ impl<'d> Resolver<'d> {
                             cache,
                         ) {
                             Ok((mut resolved_dep, items)) => {
-                                // TODO: do we want to keep track of the remote string?w
+                                // TODO: do we want to keep track of the remote string?
                                 resolved_dep.from_remote = true;
                                 if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
@@ -304,24 +373,20 @@ impl<'d> Resolver<'d> {
                                 }
                             }
                             Err(e) => {
-                                result.failed.push(UnresolvedDependency {
-                                    name: item.name.clone(),
-                                    error: Some(format!("{e:?}")),
-                                    version_requirement: item.version_requirement.clone(),
-                                    parent: item.parent.clone(),
-                                    remote: Some(remote.clone()),
-                                });
+                                result.failed.push(
+                                    UnresolvedDependency::from_item(&item)
+                                        .with_error(format!("{e:?}"))
+                                        .with_remote(remote.clone()),
+                                );
                             }
                         }
                     }
                     _ => {
-                        result.failed.push(UnresolvedDependency {
-                            name: item.name.clone(),
-                            error: Some("Remote not supported".to_string()),
-                            version_requirement: item.version_requirement.clone(),
-                            parent: item.parent.clone(),
-                            remote: Some(remote.clone()),
-                        });
+                        result.failed.push(
+                            UnresolvedDependency::from_item(&item)
+                                .with_error("Remote not supported".to_string())
+                                .with_remote(remote.clone()),
+                        );
                     }
                 }
                 if remote_result.is_none() {
@@ -343,17 +408,26 @@ impl<'d> Resolver<'d> {
                             queue.extend(items);
                         } else {
                             log::debug!("Didn't find {}", item.name);
-                            result.failed.push(UnresolvedDependency {
-                                name: item.name.clone(),
-                                error: None,
-                                version_requirement: item.version_requirement.clone(),
-                                parent: item.parent.clone(),
-                                remote: None,
-                            });
+                            result.failed.push(UnresolvedDependency::from_item(&item));
                         }
                     }
                 }
-                Some(ConfigDependency::Local { .. }) => todo!(),
+                Some(ConfigDependency::Url { url, .. }) => {
+                    match self.url_lookup(&item, url.as_ref(), cache, http_download) {
+                        Ok((resolved_dep, items)) => {
+                            result.found.push(resolved_dep);
+                            queue.extend(items);
+                        }
+                        Err(e) => {
+                            result.failed.push(
+                                UnresolvedDependency::from_item(&item)
+                                    .with_error(format!("{e:?}"))
+                                    .with_url(url.as_str()),
+                            );
+                        }
+                    }
+                }
+                Some(ConfigDependency::Local { .. }) => unreachable!("handled beforehand"),
                 Some(ConfigDependency::Git {
                     git,
                     tag,
@@ -385,13 +459,9 @@ impl<'d> Resolver<'d> {
                             queue.extend(items);
                         }
                         Err(e) => {
-                            result.failed.push(UnresolvedDependency {
-                                name: item.name.clone(),
-                                error: Some(format!("{e:?}")),
-                                version_requirement: item.version_requirement.clone(),
-                                parent: item.parent.clone(),
-                                remote: None,
-                            });
+                            result.failed.push(
+                                UnresolvedDependency::from_item(&item).with_error(format!("{e:?}")),
+                            );
                         }
                     }
                 }
@@ -405,18 +475,22 @@ impl<'d> Resolver<'d> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::InstallationStatus;
-    use crate::config::Config;
-    use crate::consts::DESCRIPTION_FILENAME;
-    use crate::repository::RepositoryDatabase;
-    use crate::CacheEntry;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::str::FromStr;
+
     use base64::engine::general_purpose::STANDARD_NO_PAD;
     use base64::Engine;
     use git2::Error;
     use serde::Deserialize;
-    use std::path::{Path, PathBuf};
-    use std::str::FromStr;
     use tempfile::TempDir;
+
+    use crate::cache::InstallationStatus;
+    use crate::config::Config;
+    use crate::consts::DESCRIPTION_FILENAME;
+    use crate::http::HttpError;
+    use crate::repository::RepositoryDatabase;
+    use crate::CacheEntry;
 
     struct FakeCache {
         cache_dir: TempDir,
@@ -448,6 +522,12 @@ mod tests {
                 .path()
                 .join(STANDARD_NO_PAD.encode(repo_url.to_ascii_lowercase()))
         }
+
+        fn get_url_download_path(&self, url: &str) -> PathBuf {
+            self.cache_dir
+                .path()
+                .join(STANDARD_NO_PAD.encode(url.to_ascii_lowercase()))
+        }
     }
 
     struct FakeGit;
@@ -460,6 +540,28 @@ mod tests {
             destination: impl AsRef<Path>,
         ) -> Result<String, Error> {
             Ok("abc".to_string())
+        }
+    }
+
+    struct FakeHttp;
+
+    impl HttpDownload for FakeHttp {
+        fn download<W: Write>(
+            &self,
+            _: &str,
+            _: &mut W,
+            _: Vec<(&str, String)>,
+        ) -> Result<u64, HttpError> {
+            Ok(0)
+        }
+
+        fn download_and_untar(
+            &self,
+            _: &str,
+            _: impl AsRef<Path>,
+            _: bool,
+        ) -> Result<(Option<PathBuf>, String), HttpError> {
+            Ok((None, "SOME_SHA".to_string()))
         }
     }
 
@@ -486,7 +588,7 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&r.name, &format!("http://{}", r.name));
+                let mut repo = RepositoryDatabase::new(&format!("http://{}", r.name));
                 if let Some(p) = r.source {
                     let path = format!("src/tests/package_files/{p}.PACKAGE");
                     let text = std::fs::read_to_string(&path).unwrap();
@@ -502,7 +604,7 @@ mod tests {
             }
             res
         } else {
-            let mut repo = RepositoryDatabase::new("inline", "");
+            let mut repo = RepositoryDatabase::new("");
             repo.parse_source(parts[1]);
             vec![(repo, false)]
         };
@@ -536,6 +638,16 @@ mod tests {
             .unwrap();
         }
 
+        // And a custom one for url deps
+        let url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz";
+        let url_path = cache.get_url_download_path(url);
+        std::fs::create_dir_all(&url_path).unwrap();
+        std::fs::copy(
+            "src/tests/descriptions/dplyr.DESCRIPTION",
+            url_path.join(DESCRIPTION_FILENAME),
+        )
+        .unwrap();
+
         for path in paths {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
@@ -545,6 +657,7 @@ mod tests {
                 config.prefer_repositories_for(),
                 &cache,
                 &FakeGit {},
+                &FakeHttp {},
             );
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), &resolved);
             // println!("{}", new_lockfile.as_toml_string());

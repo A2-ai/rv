@@ -1,10 +1,6 @@
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use anyhow::Result;
-use flate2::read::GzDecoder;
-use fs_err as fs;
-use tar::Archive;
+use crate::SystemInfo;
 
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     let mut out = format!("{err}");
@@ -18,21 +14,9 @@ pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     out
 }
 
-pub fn untar_package<R: io::Read, T: AsRef<Path>>(reader: R, destination: T) -> Result<()> {
-    let destination = destination.as_ref();
-    fs::create_dir_all(destination)?;
-
-    let tar = GzDecoder::new(reader);
-    let mut archive = Archive::new(tar);
-    archive.unpack(destination)?;
-
-    log::debug!("Successfully extracted archive to {destination:?}");
-    Ok(())
-}
-
-/// Builds the path for binary in the cache and the library based on os info and R version
+/// Builds the path for binary in the cache and the library based on system info and R version
 /// {R_Version}/{arch}/{codename}/
-pub fn get_os_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
+pub fn get_current_system_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
     let mut path = PathBuf::new().join(format!("{}.{}", r_version[0], r_version[1]));
 
     if let Some(arch) = system_info.arch() {
@@ -56,5 +40,4 @@ macro_rules! timeit {
     }};
 }
 
-use crate::SystemInfo;
 pub use timeit;

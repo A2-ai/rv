@@ -1,21 +1,18 @@
 //! CLI context that gets instantiated for a few commands and passed around
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::cli::{http, utils::write_err, DiskCache};
+use crate::cli::{utils::write_err, DiskCache};
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, RepoServer,
-    Repository, RepositoryDatabase, SystemInfo, Version,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, http, timeit, Cache, CacheEntry, Config,
+    Library, RepoServer, Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
-use crate::cli::utils::get_os_path;
+use crate::cli::utils::get_current_system_path;
+use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use anyhow::{bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
-
-const RV_DIR_NAME: &str = "rv";
-const LIBRARY_DIR_NAME: &str = "library";
-const STAGING_DIR_NAME: &str = "staging";
 
 #[derive(Debug)]
 pub struct CliContext {
@@ -23,6 +20,7 @@ pub struct CliContext {
     pub project_dir: PathBuf,
     pub r_version: Version,
     pub cache: DiskCache,
+    pub library: Library,
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
 }
@@ -43,11 +41,18 @@ impl CliContext {
             None
         };
 
+        let mut library = Library::new(
+            &project_dir,
+            get_current_system_path(&cache.system_info, r_version.major_minor()),
+        );
+        library.find_content();
+
         Ok(Self {
             config,
             cache,
             r_version,
             project_dir,
+            library,
             lockfile,
             databases: Vec::new(),
         })
@@ -74,14 +79,8 @@ impl CliContext {
         self.project_dir.join(LOCKFILE_NAME)
     }
 
-    pub fn library_path(&self) -> PathBuf {
-        self.project_dir
-            .join(RV_DIR_NAME)
-            .join(LIBRARY_DIR_NAME)
-            .join(get_os_path(
-                &self.cache.system_info,
-                self.r_version.major_minor(),
-            ))
+    pub fn library_path(&self) -> &Path {
+        self.library.path()
     }
 
     pub fn staging_path(&self) -> PathBuf {
@@ -112,7 +111,7 @@ fn load_databases(
                         fs::remove_file(&p)?;
                     }
                     log::debug!("Need to download PACKAGES file for {}", r.url());
-                    let mut db = RepositoryDatabase::new(&r.alias, &r.url());
+                    let mut db = RepositoryDatabase::new(&r.url());
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
                     let source_url =
@@ -134,7 +133,7 @@ fn load_databases(
                         &cache.r_version,
                         &cache.system_info,
                     );
-
+                    log::debug!("checking for binary packages URL: {:?}", binary_url);
                     // we do not know for certain that the Some return of get_binary_path will be a valid url,
                     // but we do know that if it returns None there is not a binary PACKAGES file
                     if let Some(url) = binary_url {
