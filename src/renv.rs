@@ -102,10 +102,9 @@ impl RenvLock {
                     &self.r.repositories,
                     repository_database,
                     &self.r.version,
-                )
-                .map(Source::Repository),
+                ),
                 RenvSource::GitHub => {
-                    resolve_github(package_info).map(|(git, sha)| Source::GitHub { git, sha })
+                    resolve_github(package_info).map(|(git, sha)| Source::Git { git, sha })
                 }
                 RenvSource::Local => resolve_local(package_info).map(|path| Source::Local(path)),
                 _ => Err("Source is not supported".into()),
@@ -141,7 +140,26 @@ fn resolve_repository<'a>(
     repositories: &'a [RenvRepository],
     repository_database: &[(RepositoryDatabase, bool)],
     r_version: &Version,
-) -> Result<&'a RenvRepository, Box<dyn Error>> {
+) -> Result<Source<'a>, Box<dyn Error>> {
+    // For simplicity, if a package has fields RemoteUrl and RemoteSha, the package will be treated like it is from Git, even though it has source Repository
+    // This is often the case for R-Universe, where it uses Git instead of an archive https://ropensci.org/blog/2022/01/06/runiverse-renv/
+    // Expected RUniverse source package format from renv.lock:
+    // "dvs": {
+    //     "Package": "dvs",
+    //     "Version": "0.0.2.9000",
+    //     "Source": "Repository",
+    //     "Repository": "https://a2-ai.r-universe.dev",
+    //     "RemoteUrl": "https://github.com/a2-ai/dvs",
+    //     "RemoteSha": "02c7ca5614a1f94acb5f2770b11dede062b1de63",
+    //     "Requirements": [
+    //       "rlang"
+    //     ],
+    //     "Hash": "13b178e8a0308dede915de93018ab60a"
+    //   },
+    if let (Some(git), Some(sha)) = (&pkg_info.remote_url, &pkg_info.remote_sha) {
+        return Ok(Source::Git { git: git.to_string(), sha: sha.to_string() })
+    }
+
     let version_requirement = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);
 
     // match the repository database with its corresponding repository
@@ -166,7 +184,7 @@ fn resolve_repository<'a>(
             )
             .is_some()
         {
-            return Ok(repo);
+            return Ok(Source::Repository(repo));
         };
     }
 
@@ -181,7 +199,7 @@ fn resolve_repository<'a>(
                 r_version,
                 *force_source,
             )?;
-            Some(repo)
+            Some(Source::Repository(repo))
         })
         .ok_or("Could not find package in repository".into())
 }
@@ -252,7 +270,7 @@ struct ResolvedRenv<'a> {
 #[derive(Debug, Clone, PartialEq)]
 enum Source<'a> {
     Repository(&'a RenvRepository),
-    GitHub { git: String, sha: String },
+    Git { git: String, sha: String },
     Local(PathBuf),
 }
 
