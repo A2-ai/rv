@@ -96,7 +96,7 @@ fn load_databases(
         .par_iter()
         .map(|r| {
             // 1. Generate path to add to URL to get the src PACKAGE and binary PACKAGE for current OS
-            let entry = cache.get_package_db_entry(&r.url());
+            let entry = cache.get_package_db_entry(&r.alias, &r.url());
             // 2. Check in cache whether we have the database and is not expired
             match entry {
                 CacheEntry::Existing(p) => {
@@ -111,7 +111,7 @@ fn load_databases(
                         fs::remove_file(&p)?;
                     }
                     log::debug!("Need to download PACKAGES file for {}", r.url());
-                    let mut db = RepositoryDatabase::new(&r.url());
+                    let mut db = RepositoryDatabase::new( &r.alias, &r.url());
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
                     let source_url =

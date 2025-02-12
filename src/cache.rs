@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::Formatter;
 use std::path::PathBuf;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CacheEntry {
@@ -43,14 +44,27 @@ impl fmt::Display for InstallationStatus {
     }
 }
 
+#[inline]
+pub(crate) fn encode_path(url: &str, name: Option<&str>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(url.trim().to_ascii_lowercase().as_bytes());
+    let result = format!("{:x}", hasher.finalize());
+    if let Some(n) = name {
+        format!("{}-{}", n.chars().filter(|c| c.is_ascii()).collect::<String>().to_ascii_lowercase(), &result[..10])
+    } else {
+        format!("{}", &result[..10])
+    }
+}
+
 pub trait Cache {
     /// This will either load the database for that repository or return None if we couldn't find
     /// it or it was expired.
-    fn get_package_db_entry(&self, repo_url: &str) -> CacheEntry;
+    fn get_package_db_entry(&self, repo_name: &str, repo_url: &str) -> CacheEntry;
 
     /// Gets the status of a package coming from a package repository in the cache
     fn get_package_installation_status(
         &self,
+        repo_name: Option<&str>,
         repo_url: &str,
         name: &str,
         version: &str,

@@ -122,7 +122,8 @@ mod tests {
             suggests: Vec::new(),
             version: Cow::Owned(Version::from_str("0.1.0").unwrap()),
             source: Source::Repository {
-                repository: "".to_string(),
+                name: "".to_string(),
+                url: "".to_string(),
             },
             install_suggests: false,
             force_source: false,

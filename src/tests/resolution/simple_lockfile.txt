@@ -20,6 +20,6 @@ r_version = "4.4"
 [[packages]]
 name = "R6"
 version = "2.5.1"
-source = { repository = "http://cran" }
+source = { url = "http://cran", name = "cran" }
 force_source = false
 dependencies = []

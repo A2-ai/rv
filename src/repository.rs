@@ -9,6 +9,7 @@ use crate::package::{Version, VersionRequirement};
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {
+    pub(crate) name: String,
     pub(crate) url: String,
     source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
@@ -19,8 +20,9 @@ pub struct RepositoryDatabase {
 }
 
 impl RepositoryDatabase {
-    pub fn new(url: &str) -> Self {
+    pub fn new(name: &str, url: &str) -> Self {
         Self {
+            name: name.to_string(),
             url: url.to_string(),
             ..Default::default()
         }

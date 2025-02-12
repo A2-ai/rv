@@ -137,13 +137,10 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
+            let (name, url) = package.source.cache_key_info();
             let resolved_dep = ResolvedDependency::from_locked_package(
                 package,
-                cache.get_package_installation_status(
-                    package.source.source_path(),
-                    &package.name,
-                    &package.version,
-                ),
+                cache.get_package_installation_status(name, url, &package.name, &package.version),
             );
             let items = package
                 .dependencies
@@ -180,11 +177,13 @@ impl<'d> Resolver<'d> {
             ) {
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
                     package,
+                    &repo.name,
                     &repo.url,
                     package_type,
                     item.install_suggestions,
                     force_source,
                     cache.get_package_installation_status(
+                        Some(&repo.name),
                         &repo.url,
                         &package.name,
                         &package.version.original,
@@ -479,13 +478,11 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
 
-    use base64::engine::general_purpose::STANDARD_NO_PAD;
-    use base64::Engine;
     use git2::Error;
     use serde::Deserialize;
     use tempfile::TempDir;
 
-    use crate::cache::InstallationStatus;
+    use crate::cache::{encode_path, InstallationStatus};
     use crate::config::Config;
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;
@@ -505,11 +502,11 @@ mod tests {
     }
 
     impl Cache for FakeCache {
-        fn get_package_db_entry(&self, _: &str) -> CacheEntry {
+        fn get_package_db_entry(&self, _: &str, _: &str) -> CacheEntry {
             CacheEntry::NotFound(PathBuf::from_str("").unwrap())
         }
 
-        fn get_package_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
+        fn get_package_installation_status(&self, _: Option<&str>, _: &str, _: &str, _: &str) -> InstallationStatus {
             InstallationStatus::Absent
         }
 
@@ -520,13 +517,13 @@ mod tests {
         fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
             self.cache_dir
                 .path()
-                .join(STANDARD_NO_PAD.encode(repo_url.to_ascii_lowercase()))
+                .join(encode_path(repo_url, None))
         }
 
         fn get_url_download_path(&self, url: &str) -> PathBuf {
             self.cache_dir
                 .path()
-                .join(STANDARD_NO_PAD.encode(url.to_ascii_lowercase()))
+                .join(encode_path(url, None))
         }
     }
 
@@ -588,7 +585,7 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&format!("http://{}", r.name));
+                let mut repo = RepositoryDatabase::new(&r.name, &format!("http://{}", r.name));
                 if let Some(p) = r.source {
                     let path = format!("src/tests/package_files/{p}.PACKAGE");
                     let text = std::fs::read_to_string(&path).unwrap();
@@ -604,7 +601,7 @@ mod tests {
             }
             res
         } else {
-            let mut repo = RepositoryDatabase::new("");
+            let mut repo = RepositoryDatabase::new("", "");
             repo.parse_source(parts[1]);
             vec![(repo, false)]
         };

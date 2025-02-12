@@ -33,7 +33,9 @@ pub enum Source {
         sha: String,
     },
     Repository {
-        repository: String,
+        // We keep the repo name in the lockfile to resolve the cache
+        name: String,
+        url: String,
     },
     Local {
         path: PathBuf,
@@ -68,8 +70,9 @@ impl Source {
                 table.insert("url", Value::from(url));
                 table.insert("sha", Value::from(sha));
             }
-            Self::Repository { repository } => {
-                table.insert("repository", Value::from(repository));
+            Self::Repository { name, url } => {
+                table.insert("name", Value::from(name));
+                table.insert("url", Value::from(url));
             }
             Self::Local { path } => {
                 table.insert("path", Value::from(path.display().to_string()));
@@ -83,10 +86,17 @@ impl Source {
     /// and for local the actual path
     pub fn source_path(&self) -> &str {
         match self {
-            Source::Repository { ref repository } => repository.as_str(),
+            Source::Repository { ref url, .. } => url.as_str(),
             Source::Local { ref path } => path.to_str().unwrap(),
             Source::Git { ref git, .. } => git.as_str(),
             Source::Url { ref url, .. } => url.as_str(),
+        }
+    }
+
+    pub fn cache_key_info(&self) -> (Option<&str>, &str) {
+        match self {
+            Source::Repository { ref name, .. } => (Some(name.as_str()), self.source_path()),
+            _ => (None, self.source_path()),
         }
     }
 
@@ -141,7 +151,7 @@ impl Source {
             }
             (Source::Local { path: p1 }, ConfigDependency::Local { path: p2, .. }) => p1 == p2,
             (
-                Source::Repository { repository: r1 },
+                Source::Repository { url: r1, .. },
                 ConfigDependency::Detailed { repository: r2, .. },
             ) => Some(r1) == r2.as_ref(),
             (Source::Repository { .. }, ConfigDependency::Simple(..)) => true,
@@ -162,8 +172,8 @@ impl fmt::Display for Source {
             } => {
                 write!(f, "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?})")
             }
-            Self::Repository { repository } => {
-                write!(f, "repository(url: {repository})")
+            Self::Repository { name, url } => {
+                write!(f, "repository(name: {name}, url: {url})")
             }
             Self::Local { path } => {
                 write!(f, "local(path: {})", path.display())

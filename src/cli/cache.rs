@@ -1,16 +1,15 @@
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
-use etcetera::BaseStrategy;
-use fs_err as fs;
-
-use crate::cache::InstallationStatus;
+use crate::cache::{encode_path, InstallationStatus};
 use crate::cli::utils::get_current_system_path;
 use crate::system_info::SystemInfo;
 use crate::Version;
 use crate::{Cache, CacheEntry};
+use anyhow::{anyhow, Context, Result};
+use etcetera::BaseStrategy;
+use fs_err as fs;
+use sha2::{Digest, Sha256};
 
 /// How long are the package databases cached for
 /// Same default value as PKGCACHE_TIMEOUT:
@@ -37,12 +36,6 @@ fn get_packages_timeout() -> u64 {
     } else {
         PACKAGE_TIMEOUT
     }
-}
-
-/// Just a basic base64 without padding
-#[inline]
-fn encode_base64(url: &str) -> String {
-    STANDARD_NO_PAD.encode(url.to_ascii_lowercase())
 }
 
 #[derive(Debug, Clone)]
@@ -87,8 +80,8 @@ impl DiskCache {
     }
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
-    fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+    fn get_repo_root_binary_dir(&self, repo_name: Option<&str>, repo_url: &str) -> PathBuf {
+        let encoded = encode_path(repo_url, repo_name);
         self.root
             .join(&encoded)
             .join(get_current_system_path(&self.system_info, self.r_version))
@@ -97,67 +90,85 @@ impl DiskCache {
     /// A database contains both source and binary PACKAGE data
     /// Therefore the path to the db file is dependent on the system info and R version
     /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
-    fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
-        let base_path = self.get_repo_root_binary_dir(repo_url);
+    fn get_package_db_path(&self, repo_name: &str, repo_url: &str) -> PathBuf {
+        let base_path = self.get_repo_root_binary_dir(Some(repo_name), repo_url);
         base_path.join(PACKAGE_DB_FILENAME)
     }
 
     /// Gets the folder where a binary package would be located.
     /// The folder may or may not exist depending on whether it's in the cache
-    pub fn get_binary_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
-        self.get_repo_root_binary_dir(repo_url)
+    pub fn get_binary_package_path(
+        &self,
+        repo_name: Option<&str>,
+        repo_url: &str,
+        name: &str,
+        version: &str,
+    ) -> PathBuf {
+        self.get_repo_root_binary_dir(repo_name, repo_url)
             .join(name)
             .join(version)
     }
 
     /// Gets the folder where a source tarball would be located
     /// The folder may or may not exist depending on whether it's in the cache
-    pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+    pub fn get_source_package_path(
+        &self,
+        repo_name: Option<&str>,
+        repo_url: &str,
+        name: &str,
+        version: &str,
+    ) -> PathBuf {
+        let encoded = encode_path(repo_url, repo_name);
         self.root.join(encoded).join("src").join(name).join(version)
     }
 
-    pub fn get_package_paths(&self, repo_url: &str, name: &str, version: &str) -> PackagePaths {
+    pub fn get_package_paths(
+        &self,
+        repo_name: Option<&str>,
+        repo_url: &str,
+        name: &str,
+        version: &str,
+    ) -> PackagePaths {
         PackagePaths {
-            source: self.get_source_package_path(repo_url, name, version),
-            binary: self.get_binary_package_path(repo_url, name, version),
+            source: self.get_source_package_path(repo_name, repo_url, name, version),
+            binary: self.get_binary_package_path(repo_name, repo_url, name, version),
         }
     }
 
     /// We will download them in a separate path, we don't know if we have source or binary
     fn get_url_path(&self, url: &str) -> PathBuf {
-        let encoded = encode_base64(url);
+        let encoded = encode_path(url, None);
         self.root.join("urls").join(encoded)
     }
 
     fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = encode_path(repo_url, None);
         self.root.join("git").join(encoded)
     }
 
     pub fn get_git_package_paths(&self, repo_url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
             source: self.get_source_git_package_path(repo_url),
-            binary: self.get_repo_root_binary_dir(repo_url).join(sha),
+            binary: self.get_repo_root_binary_dir(None, repo_url).join(sha),
         }
     }
 
     pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = encode_path(repo_url, None);
         self.root.join("git").join("builds").join(encoded).join(sha)
     }
 
     pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
             source: self.get_url_path(url).join(&sha[..7]),
-            binary: self.get_repo_root_binary_dir(url).join(sha),
+            binary: self.get_repo_root_binary_dir(None, url).join(sha),
         }
     }
 }
 
 impl Cache for DiskCache {
-    fn get_package_db_entry(&self, repo_url: &str) -> CacheEntry {
-        let path = self.get_package_db_path(repo_url);
+    fn get_package_db_entry(&self, repo_name: &str, repo_url: &str) -> CacheEntry {
+        let path = self.get_package_db_path(repo_name, repo_url);
         if path.exists() {
             let created = path
                 .metadata()
@@ -180,16 +191,17 @@ impl Cache for DiskCache {
 
     fn get_package_installation_status(
         &self,
+        repo_name: Option<&str>,
         repo_url: &str,
         name: &str,
         version: &str,
     ) -> InstallationStatus {
         let source_present = self
-            .get_source_package_path(repo_url, name, version)
+            .get_source_package_path(repo_name, repo_url, name, version)
             .join(name)
             .is_dir();
         let binary_present = self
-            .get_binary_package_path(repo_url, name, version)
+            .get_binary_package_path(repo_name, repo_url, name, version)
             .join(name)
             .is_dir();
 

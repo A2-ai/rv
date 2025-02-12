@@ -80,6 +80,7 @@ impl<'d> ResolvedDependency<'d> {
 
     pub fn from_package_repository(
         package: &'d Package,
+        repo_name: &str,
         repo_url: &str,
         package_type: PackageType,
         install_suggests: bool,
@@ -92,7 +93,8 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Borrowed(&package.name),
             version: Cow::Borrowed(&package.version),
             source: Source::Repository {
-                repository: repo_url.to_string(),
+                name: repo_name.to_string(),
+                url: repo_url.to_string(),
             },
             dependencies: deps
                 .direct
