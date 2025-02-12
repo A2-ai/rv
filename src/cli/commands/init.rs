@@ -9,14 +9,12 @@ const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 const CONFIG_FILENAME: &str = "rproject.toml";
 
-const INITIAL_CONFIG: &str = r#"//
-[project]
-name: "%project_name%"
-r_version: "%r_version%"
+const INITIAL_CONFIG: &str = r#"[project]
+name = "%project_name%"
+r_version = "%r_version%"
 
 # any CRAN-type repository, order matters. Additional ability to force source package installation
 # Example: {alias = "CRAN", url = "https://cran.r-project.org", force_source = true}
-
 repositories = [
 %repositories%
 ]
@@ -27,7 +25,6 @@ repositories = [
     # {name = "dplyr", repository = "CRAN", force_source = true},
     # {name = "dplyr", git = "https://github.com/tidyverse/dplyr.git", tag = "v1.1.4"},
     # {name = "dplyr", path = "/path/to/local/dplyr"},
-
 dependencies = []
 
 "#;
@@ -40,7 +37,7 @@ dependencies = []
 /// - Initialize the config file with the R version and repositories set as options within R
 pub fn init(
     project_directory: impl AsRef<Path>,
-    r_version: &Version,
+    r_version: &[u32; 2],
     repositories: &Vec<Repository>,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
@@ -68,7 +65,7 @@ pub fn init(
 
 fn render_config(
     project_name: &str,
-    r_version: &Version,
+    r_version: &[u32; 2],
     repositories: &Vec<Repository>,
 ) -> String {
     let repos = repositories
@@ -79,7 +76,7 @@ fn render_config(
 
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
-        .replace("%r_version%", &r_version.original)
+        .replace("%r_version%", &format!("{}.{}", r_version[0], r_version[1]))
         .replace("%repositories%", &repos)
 }
 
@@ -191,7 +188,7 @@ mod tests {
             Repository::new("test1".to_string(), "this is test1".to_string(), true),
             Repository::new("test2".to_string(), "this is test2".to_string(), false),
         ];
-        init(&project_directory, &r_version, &repositories).unwrap();
+        init(&project_directory, &r_version.major_minor(), &repositories).unwrap();
         let dir = &project_directory.into_path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());

@@ -132,7 +132,7 @@ fn try_main() -> Result<()> {
             let r_version = RCommandLine {}.version()?;
             // TODO: use cli flag to turn off default repositories (or specify non-default repos)
             let repositories = find_r_repositories()?;
-            init(&project_directory, &r_version, &repositories)?;
+            init(&project_directory, &r_version.major_minor(), &repositories)?;
             println!("rv project successfully initialized at {}", project_directory.display());
         }
         Command::Library => {
