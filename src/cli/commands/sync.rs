@@ -56,14 +56,14 @@ fn download_and_install_binary(
 ) -> Result<()> {
     let http = Http {};
     // If we get an error doing the binary download, fall back to source
-    if let Err(e) = http.download_and_untar(&url, &paths.source, false) {
+    if let Err(e) = http.download_and_untar(&url, &paths.binary, false) {
         log::warn!("Failed to download/untar binary package: {e:?}");
         return download_and_install_source(url, paths, library_dir, pkg_name);
     }
 
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
     // source files. We have to check first whether what we have is actually binary content.
-    if !is_binary_package(&paths.binary, pkg_name) {
+    if !is_binary_package(&paths.binary.join(pkg_name), pkg_name) {
         log::debug!("{pkg_name} was expected as binary, found to be source. Compiling binary for {pkg_name}...");
         // Move it to the source destination if we don't have it already
         if paths.source.is_dir() {
