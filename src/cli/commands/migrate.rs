@@ -33,7 +33,7 @@ pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) 
     // use the repositories and r version from the renv.lock to determine the repository databases
     let renv_lock = RenvLock::parse_renv_lock(&renv_file)?;
     let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info())?;
-    let databases = load_databases(&renv_lock.repositories(), &cache)?;
+    let databases = load_databases(&renv_lock.config_repositories(), &cache)?;
 
     // resolve the renv.lock file to determine the true source of packages
     let (resolved, unresolved) = renv_lock.resolve(&databases);
@@ -49,7 +49,7 @@ pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) 
         &renv_file.as_ref().to_string_lossy(),
         project_name,
         renv_lock.r_version(),
-        &renv_lock.repositories(),
+        &renv_lock.config_repositories(),
         &resolved,
     );
     let mut file = File::create(&config_file)?;

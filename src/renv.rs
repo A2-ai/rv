@@ -100,7 +100,7 @@ impl RenvLock {
         for package_info in self.packages.values() {
             // if package is sourced from a repository and is a recommended package, do not attempt to resolve
             // TODO: add flag to resolve recommended packages
-            if matches!(&package_info.source, RenvSource::Repository)
+            if package_info.source == RenvSource::Repository
                 && RECOMMENDED_PACKAGES.contains(&package_info.package.as_str())
             {
                 continue;
@@ -138,7 +138,7 @@ impl RenvLock {
         &self.r.version
     }
 
-    pub fn repositories(&self) -> Vec<Repository> {
+    pub fn config_repositories(&self) -> Vec<Repository> {
         self.r
             .repositories
             .iter()
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_renv_lock_parse() {
         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
-        let repository_databases = repository_databases(renv_lock.r_version(), &renv_lock.repositories());
+        let repository_databases = repository_databases(renv_lock.r_version(), &renv_lock.config_repositories());
         let (mut resolved, mut unresolved) = renv_lock.resolve(&repository_databases);
         // sort by name of package to maintain order for all snapshot test
         resolved.sort_by_key(|r| r.package_info.package.clone());
