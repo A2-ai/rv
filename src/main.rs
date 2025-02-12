@@ -42,7 +42,7 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum MigrateSubcommand {
     Renv {
-        #[clap(value_parser)]
+        #[clap(value_parser, default_value = "renv.lock")]
         renv_file: PathBuf,
     },
 }
