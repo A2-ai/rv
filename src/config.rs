@@ -70,6 +70,14 @@ pub enum ConfigDependency {
         #[serde(default)]
         install_suggestions: bool,
     },
+    Url {
+        url: String,
+        name: String,
+        #[serde(default)]
+        install_suggestions: bool,
+        #[serde(default)]
+        force_source: bool,
+    },
     Detailed {
         name: String,
         repository: Option<String>,
@@ -87,6 +95,7 @@ impl ConfigDependency {
             ConfigDependency::Detailed { name, .. } => name,
             ConfigDependency::Git { name, .. } => name,
             ConfigDependency::Local { name, .. } => name,
+            ConfigDependency::Url { name, .. } => name,
         }
     }
 
@@ -142,12 +151,16 @@ impl ConfigDependency {
             ConfigDependency::Detailed {
                 install_suggestions,
                 ..
-            } => *install_suggestions,
-            ConfigDependency::Local {
+            }
+            | ConfigDependency::Url {
                 install_suggestions,
                 ..
-            } => *install_suggestions,
-            ConfigDependency::Git {
+            }
+            | ConfigDependency::Local {
+                install_suggestions,
+                ..
+            }
+            | ConfigDependency::Git {
                 install_suggestions,
                 ..
             } => *install_suggestions,

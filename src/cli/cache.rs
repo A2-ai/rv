@@ -41,8 +41,8 @@ fn get_packages_timeout() -> u64 {
 
 /// Just a basic base64 without padding
 #[inline]
-fn encode_repository_url(url: &str) -> String {
-    STANDARD_NO_PAD.encode(url)
+fn encode_base64(url: &str) -> String {
+    STANDARD_NO_PAD.encode(url.to_ascii_lowercase())
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl DiskCache {
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
     fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_repository_url(repo_url);
+        let encoded = encode_base64(repo_url);
         self.root
             .join(&encoded)
             .join(get_current_system_path(&self.system_info, self.r_version))
@@ -113,7 +113,7 @@ impl DiskCache {
     /// Gets the folder where a source tarball would be located
     /// The folder may or may not exist depending on whether it's in the cache
     pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
-        let encoded = encode_repository_url(repo_url);
+        let encoded = encode_base64(repo_url);
         self.root.join(encoded).join("src").join(name).join(version)
     }
 
@@ -124,25 +124,34 @@ impl DiskCache {
         }
     }
 
-    pub fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_repository_url(repo_url);
-        self.root.join("git").join(encoded)
+    /// We will download them in a separate path, we don't know if we have source or binary
+    fn get_url_path(&self, url: &str) -> PathBuf {
+        let encoded = encode_base64(url);
+        self.root.join("urls").join(encoded)
     }
 
-    pub fn get_binary_git_package_path(&self, repo_url: &str, sha: &str) -> PathBuf {
-        self.get_repo_root_binary_dir(repo_url).join(sha)
+    fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
+        let encoded = encode_base64(repo_url);
+        self.root.join("git").join(encoded)
     }
 
     pub fn get_git_package_paths(&self, repo_url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
             source: self.get_source_git_package_path(repo_url),
-            binary: self.get_binary_git_package_path(repo_url, sha),
+            binary: self.get_repo_root_binary_dir(repo_url).join(sha),
         }
     }
 
     pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
-        let encoded = encode_repository_url(repo_url);
+        let encoded = encode_base64(repo_url);
         self.root.join("git").join("builds").join(encoded).join(sha)
+    }
+
+    pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {
+        PackagePaths {
+            source: self.get_url_path(url).join(&sha[..7]),
+            binary: self.get_repo_root_binary_dir(url).join(sha),
+        }
     }
 }
 
@@ -205,6 +214,10 @@ impl Cache for DiskCache {
     }
 
     fn get_git_clone_path(&self, git_url: &str) -> PathBuf {
-        self.get_source_git_package_path(&git_url.to_ascii_lowercase())
+        self.get_source_git_package_path(&git_url)
+    }
+
+    fn get_url_download_path(&self, url: &str) -> PathBuf {
+        self.get_url_path(&url)
     }
 }

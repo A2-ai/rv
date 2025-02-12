@@ -1,0 +1,10 @@
+[project]
+name = "simple"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+]
+dependencies = [
+    #    "dplyr"
+    {name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz"}
+]

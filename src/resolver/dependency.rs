@@ -1,6 +1,7 @@
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
+use crate::resolver::QueueItem;
 use crate::{Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -153,7 +154,7 @@ impl<'d> ResolvedDependency<'d> {
         (res, deps)
     }
 
-    pub fn local_package(
+    pub fn from_local_package(
         package: &Package,
         source: Source,
         install_suggests: bool,
@@ -172,6 +173,41 @@ impl<'d> ResolvedDependency<'d> {
                 .collect(),
             kind: PackageType::Source,
             force_source: true,
+            path: None,
+            from_lockfile: false,
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
+            // We'll handle the installation status later by comparing mtimes
+            installation_status: InstallationStatus::Source,
+            install_suggests,
+            remotes: package.remotes.clone(),
+            from_remote: false,
+        };
+
+        (res, deps)
+    }
+
+    pub fn from_url_package(
+        package: &Package,
+        kind: PackageType,
+        source: Source,
+        install_suggests: bool,
+    ) -> (Self, InstallationDependencies) {
+        let deps = package.dependencies_to_install(install_suggests);
+        let res = Self {
+            dependencies: deps
+                .direct
+                .iter()
+                .map(|d| Cow::Owned(d.name().to_string()))
+                .collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|s| Cow::Owned(s.name().to_string()))
+                .collect(),
+            kind,
+            force_source: false,
             path: None,
             from_lockfile: false,
             name: Cow::Owned(package.name.clone()),
@@ -214,9 +250,37 @@ pub struct UnresolvedDependency<'d> {
     pub(crate) parent: Option<Cow<'d, str>>,
     pub(crate) remote: Option<PackageRemote>,
     pub(crate) local_path: Option<PathBuf>,
+    pub(crate) url: Option<String>,
 }
 
 impl<'d> UnresolvedDependency<'d> {
+    pub(crate) fn from_item(item: &QueueItem<'d>) -> Self {
+        Self {
+            name: item.name.clone(),
+            error: None,
+            version_requirement: item.version_requirement.clone(),
+            parent: item.parent.clone(),
+            remote: None,
+            local_path: item.local_path.clone(),
+            url: None,
+        }
+    }
+
+    pub(crate) fn with_error(mut self, err: String) -> Self {
+        self.error = Some(err);
+        self
+    }
+
+    pub(crate) fn with_remote(mut self, remote: PackageRemote) -> Self {
+        self.remote = Some(remote);
+        self
+    }
+
+    pub(crate) fn with_url(mut self, url: &str) -> Self {
+        self.url = Some(url.to_string());
+        self
+    }
+
     pub fn is_listed_in_config(&self) -> bool {
         self.parent.is_none()
     }
