@@ -86,11 +86,12 @@ fn install_package_from_repository(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let repo_server = RepoServer::from_url(pkg.source.source_path());
+    let (repo_name, repo_url) = pkg.source.cache_key_info();
+    let repo_server = RepoServer::from_url(&repo_url);
     let pkg_paths =
         context
             .cache
-            .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
+            .get_package_paths(repo_name, repo_url, &pkg.name, &pkg.version.original);
     let binary_url = repo_server.get_binary_tarball_path(
         &pkg.name,
         &pkg.version.original,

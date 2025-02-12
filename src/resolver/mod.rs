@@ -137,13 +137,10 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
+            let (name, url) = package.source.cache_key_info();
             let resolved_dep = ResolvedDependency::from_locked_package(
                 package,
-                cache.get_package_installation_status(
-                    package.source.source_path(),
-                    &package.name,
-                    &package.version,
-                ),
+                cache.get_package_installation_status(name, url, &package.name, &package.version),
             );
             let items = package
                 .dependencies
@@ -180,11 +177,13 @@ impl<'d> Resolver<'d> {
             ) {
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
                     package,
+                    &repo.name,
                     &repo.url,
                     package_type,
                     item.install_suggestions,
                     force_source,
                     cache.get_package_installation_status(
+                        Some(&repo.name),
                         &repo.url,
                         &package.name,
                         &package.version.original,

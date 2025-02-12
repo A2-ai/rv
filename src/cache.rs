@@ -46,11 +46,12 @@ impl fmt::Display for InstallationStatus {
 pub trait Cache {
     /// This will either load the database for that repository or return None if we couldn't find
     /// it or it was expired.
-    fn get_package_db_entry(&self, repo_url: &str) -> CacheEntry;
+    fn get_package_db_entry(&self, repo_name: &str, repo_url: &str) -> CacheEntry;
 
     /// Gets the status of a package coming from a package repository in the cache
     fn get_package_installation_status(
         &self,
+        repo_name: Option<&str>,
         repo_url: &str,
         name: &str,
         version: &str,
