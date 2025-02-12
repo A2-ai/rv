@@ -1,10 +1,10 @@
 //! CLI context that gets instantiated for a few commands and passed around
 use std::path::{Path, PathBuf};
 
-use crate::cli::{http, utils::write_err, DiskCache};
+use crate::cli::{utils::write_err, DiskCache};
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, timeit, Cache, CacheEntry, Config, Library,
-    RepoServer, Repository, RepositoryDatabase, SystemInfo, Version,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, http, timeit, Cache, CacheEntry, Config,
+    Library, RepoServer, Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
 use crate::cli::utils::get_current_system_path;

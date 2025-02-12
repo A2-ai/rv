@@ -1,10 +1,6 @@
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use anyhow::Result;
-use flate2::read::GzDecoder;
-use fs_err as fs;
-use tar::Archive;
+use crate::SystemInfo;
 
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     let mut out = format!("{err}");
@@ -16,18 +12,6 @@ pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     }
 
     out
-}
-
-pub fn untar_package<R: io::Read, T: AsRef<Path>>(reader: R, destination: T) -> Result<()> {
-    let destination = destination.as_ref();
-    fs::create_dir_all(destination)?;
-
-    let tar = GzDecoder::new(reader);
-    let mut archive = Archive::new(tar);
-    archive.unpack(destination)?;
-
-    log::debug!("Successfully extracted archive to {destination:?}");
-    Ok(())
 }
 
 /// Builds the path for binary in the cache and the library based on system info and R version
@@ -56,5 +40,4 @@ macro_rules! timeit {
     }};
 }
 
-use crate::SystemInfo;
 pub use timeit;
