@@ -143,7 +143,6 @@ fn install_package_from_git(
     let link_mode = LinkMode::new();
     let repo_url = pkg.source.source_path();
     let sha = pkg.source.git_sha();
-    log::debug!("Installing {} from git", pkg.name);
 
     let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
 
@@ -151,13 +150,12 @@ fn install_package_from_git(
         let git_ops = Git {};
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        log::debug!("Cloning repo if necessary + checkout");
         git_ops.clone_and_checkout(
             repo_url,
             Some(GitReference::Commit(&sha)),
             &pkg_paths.source,
         )?;
-        log::debug!("Building the repo in {:?}", pkg_paths);
+        log::debug!("Building the repo for {}", pkg.name);
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
             Source::Git {
