@@ -2,11 +2,10 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use etcetera::BaseStrategy;
 use fs_err as fs;
 
-use crate::cache::InstallationStatus;
+use crate::cache::{hash_string, InstallationStatus};
 use crate::cli::utils::get_current_system_path;
 use crate::system_info::SystemInfo;
 use crate::Version;
@@ -37,12 +36,6 @@ fn get_packages_timeout() -> u64 {
     } else {
         PACKAGE_TIMEOUT
     }
-}
-
-/// Just a basic base64 without padding
-#[inline]
-fn encode_base64(url: &str) -> String {
-    STANDARD_NO_PAD.encode(url.to_ascii_lowercase())
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +81,7 @@ impl DiskCache {
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
     fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = hash_string(repo_url);
         self.root
             .join(&encoded)
             .join(get_current_system_path(&self.system_info, self.r_version))
@@ -113,7 +106,7 @@ impl DiskCache {
     /// Gets the folder where a source tarball would be located
     /// The folder may or may not exist depending on whether it's in the cache
     pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = hash_string(repo_url);
         self.root.join(encoded).join("src").join(name).join(version)
     }
 
@@ -126,12 +119,12 @@ impl DiskCache {
 
     /// We will download them in a separate path, we don't know if we have source or binary
     fn get_url_path(&self, url: &str) -> PathBuf {
-        let encoded = encode_base64(url);
+        let encoded = hash_string(url);
         self.root.join("urls").join(encoded)
     }
 
     fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = hash_string(repo_url);
         self.root.join("git").join(encoded)
     }
 
@@ -143,7 +136,7 @@ impl DiskCache {
     }
 
     pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = hash_string(repo_url);
         self.root.join("git").join("builds").join(encoded).join(sha)
     }
 

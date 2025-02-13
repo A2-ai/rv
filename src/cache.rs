@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::Formatter;
 use std::path::PathBuf;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CacheEntry {
@@ -41,6 +42,14 @@ impl fmt::Display for InstallationStatus {
         };
         write!(f, "{v}")
     }
+}
+
+/// Equivalent to sha256(input)[:10]
+pub fn hash_string(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.to_ascii_lowercase().as_bytes());
+    let result = format!("{:x}", hasher.finalize());
+    result[..10].to_string()
 }
 
 pub trait Cache {
