@@ -79,14 +79,23 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
                 println!("Nothing to do");
             }
             if !dry_run {
-                let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
-                if let Some(existing_lockfile) = &context.lockfile {
-                    if existing_lockfile != &lockfile {
-                        lockfile.save(context.lockfile_path())?;
-                        log::debug!("Lockfile changed, saving it.");
+                if resolved.is_empty() {
+                    // delete the lockfiles if there are no dependencies
+                    let lockfile_path = context.lockfile_path();
+                    if lockfile_path.exists() {
+                        fs::remove_file(lockfile_path)?;
                     }
                 } else {
-                    lockfile.save(context.lockfile_path())?;
+                    let lockfile =
+                        Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
+                    if let Some(existing_lockfile) = &context.lockfile {
+                        if existing_lockfile != &lockfile {
+                            lockfile.save(context.lockfile_path())?;
+                            log::debug!("Lockfile changed, saving it.");
+                        }
+                    } else {
+                        lockfile.save(context.lockfile_path())?;
+                    }
                 }
             }
 
