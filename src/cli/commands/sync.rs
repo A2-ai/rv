@@ -240,7 +240,7 @@ fn install_url_package(
             "Building the package from URL in {}",
             download_path.display()
         );
-        install_via_r(&download_path, library_dir, &pkg_paths.binary)?;
+        install_via_r(&download_path, library_dir, &pkg_paths.binary, &context.r_cmd)?;
     }
 
     // And then we always link the binary folder into the staging library
