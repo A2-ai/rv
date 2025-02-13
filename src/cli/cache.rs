@@ -50,7 +50,7 @@ pub struct PackagePaths {
 pub struct DiskCache {
     /// The cache root directory.
     /// In practice it will be the OS own cache specific directory + `rv`
-    root: PathBuf,
+    pub root: PathBuf,
     /// R version stored as [major, minor]
     pub r_version: [u32; 2],
     /// The current execution system info: OS, version etc.

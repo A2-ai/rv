@@ -6,7 +6,7 @@ use fs_err as fs;
 
 use rv::cli::utils::timeit;
 use rv::cli::{sync, CliContext};
-use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
+use rv::{hash_string, Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -32,6 +32,8 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Gives information about where the cache is for that project
+    Cache,
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -132,6 +134,14 @@ fn try_main() -> Result<()> {
         }
         Command::Sync => {
             _sync(&cli.config_file, false)?;
+        }
+        Command::Cache => {
+            let context = CliContext::new(&cli.config_file)?;
+            let cache_path = context.cache.root;
+            println!("{}", cache_path.display());
+            for repo in context.config.repositories() {
+                println!("{} ({}) -> {}", repo.alias, repo.url(), hash_string(repo.url()));
+            }
         }
     }
 
