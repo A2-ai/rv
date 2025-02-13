@@ -53,6 +53,14 @@ pub enum ConfigDependency {
         #[serde(default)]
         install_suggestions: bool,
     },
+    Url {
+        url: String,
+        name: String,
+        #[serde(default)]
+        install_suggestions: bool,
+        #[serde(default)]
+        force_source: bool,
+    },
     Detailed {
         name: String,
         repository: Option<String>,
@@ -70,6 +78,7 @@ impl ConfigDependency {
             ConfigDependency::Detailed { name, .. } => name,
             ConfigDependency::Git { name, .. } => name,
             ConfigDependency::Local { name, .. } => name,
+            ConfigDependency::Url { name, .. } => name,
         }
     }
 
@@ -125,12 +134,16 @@ impl ConfigDependency {
             ConfigDependency::Detailed {
                 install_suggestions,
                 ..
-            } => *install_suggestions,
-            ConfigDependency::Local {
+            }
+            | ConfigDependency::Url {
                 install_suggestions,
                 ..
-            } => *install_suggestions,
-            ConfigDependency::Git {
+            }
+            | ConfigDependency::Local {
+                install_suggestions,
+                ..
+            }
+            | ConfigDependency::Git {
                 install_suggestions,
                 ..
             } => *install_suggestions,
@@ -219,7 +232,7 @@ impl Config {
                     let mut replacement = None;
                     if let Some(alias) = repository {
                         if let Some(repo) = repo_mapping.get(alias.as_str()) {
-                            replacement = Some(repo.url.clone());
+                            replacement = Some(repo.url().to_string());
                         } else {
                             errors.push(format!(
                                 "Dependency {name} is using alias {alias} which is unknown."

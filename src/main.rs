@@ -6,7 +6,7 @@ use fs_err as fs;
 
 use rv::cli::utils::timeit;
 use rv::cli::{sync, CliContext};
-use rv::{Git, Lockfile, ResolvedDependency, Resolver};
+use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -15,7 +15,7 @@ pub struct Cli {
     verbose: clap_verbosity_flag::Verbosity,
 
     /// Path to a config file other than rproject.toml in the current directory
-    #[clap(short = 'c', long, default_value = "rproject.toml")]
+    #[clap(short = 'c', long, default_value = "rproject.toml", global = true)]
     pub config_file: PathBuf,
 
     #[clap(subcommand)]
@@ -42,12 +42,13 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         &context.r_version,
         context.lockfile.as_ref(),
     );
-    // TODO: pass currently installed deps and their version and check whether they need to be installed
+
     let resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
         &Git {},
+        &Http {},
     );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
@@ -78,14 +79,23 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
                 println!("Nothing to do");
             }
             if !dry_run {
-                let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
-                if let Some(existing_lockfile) = &context.lockfile {
-                    if existing_lockfile != &lockfile {
-                        lockfile.save(context.lockfile_path())?;
-                        log::debug!("Lockfile changed, saving it.");
+                if resolved.is_empty() {
+                    // delete the lockfiles if there are no dependencies
+                    let lockfile_path = context.lockfile_path();
+                    if lockfile_path.exists() {
+                        fs::remove_file(lockfile_path)?;
                     }
                 } else {
-                    lockfile.save(context.lockfile_path())?;
+                    let lockfile =
+                        Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
+                    if let Some(existing_lockfile) = &context.lockfile {
+                        if existing_lockfile != &lockfile {
+                            lockfile.save(context.lockfile_path())?;
+                            log::debug!("Lockfile changed, saving it.");
+                        }
+                    } else {
+                        lockfile.save(context.lockfile_path())?;
+                    }
                 }
             }
 

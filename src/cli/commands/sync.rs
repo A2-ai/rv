@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,38 +10,18 @@ use crossbeam::{channel, thread};
 use fs_err as fs;
 
 use crate::cli::cache::PackagePaths;
-use crate::cli::utils::untar_package;
-use crate::cli::{http, CliContext};
+use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::mtime_recursive;
 use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
-use crate::package::PackageType;
-use crate::{BuildPlan, BuildStep, Library, RCmd, RCommandLine, RepoServer, ResolvedDependency};
+use crate::package::{is_binary_package, PackageType};
+use crate::{
+    BuildPlan, BuildStep, Http, HttpDownload, Library, RCmd, RCommandLine, RepoServer,
+    ResolvedDependency,
+};
 use crate::{Git, GitOperations};
-
-fn is_binary_package(path: &Path, name: &str) -> bool {
-    path.join(name)
-        .join("R")
-        .join(format!("{name}.rdx"))
-        .exists()
-}
-
-fn download_and_untar(url: &str, destination: &Path) -> Result<()> {
-    fs::create_dir_all(&destination)?;
-    let mut tarball = Vec::new();
-    let bytes_read = http::download(&url, &mut tarball, vec![])?;
-
-    // TODO: handle 404
-    if bytes_read == 0 {
-        bail!("Archive not found at {url}");
-    }
-
-    untar_package(Cursor::new(tarball), &destination)?;
-
-    Ok(())
-}
 
 fn install_via_r(
     source: &Path,
@@ -67,7 +47,7 @@ fn download_and_install_source(
     pkg_name: &str,
     r_cmd: &RCommandLine,
 ) -> Result<()> {
-    download_and_untar(&url, &paths.source)?;
+    Http {}.download_and_untar(&url, &paths.source, false)?;
     log::debug!("Compiling binary from {}", &paths.source.display());
     r_cmd.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
@@ -80,15 +60,16 @@ fn download_and_install_binary(
     pkg_name: &str,
     r_cmd: &RCommandLine,
 ) -> Result<()> {
+    let http = Http {};
     // If we get an error doing the binary download, fall back to source
-    if let Err(e) = download_and_untar(&url, &paths.binary) {
+    if let Err(e) = http.download_and_untar(&url, &paths.binary, false) {
         log::warn!("Failed to download/untar binary package: {e:?}");
         return download_and_install_source(url, paths, library_dir, pkg_name, r_cmd);
     }
 
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
     // source files. We have to check first whether what we have is actually binary content.
-    if !is_binary_package(&paths.binary, pkg_name) {
+    if !is_binary_package(&paths.binary.join(pkg_name), pkg_name) {
         log::debug!("{pkg_name} was expected as binary, found to be source. Compiling binary for {pkg_name}...");
         // Move it to the source destination if we don't have it already
         if paths.source.is_dir() {
@@ -234,6 +215,40 @@ fn install_local_package(context: &CliContext, pkg: &ResolvedDependency, library
     Ok(())
 }
 
+fn install_url_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
+    let link_mode = LinkMode::new();
+    let (url, sha) = pkg.source.url_info();
+
+    let pkg_paths = context.cache.get_url_package_paths(url, sha);
+    let download_path = pkg_paths.source.join(pkg.name.as_ref());
+
+    // If we have a binary, copy it since we don't keep cache around for binary URL packages
+    if pkg.kind == PackageType::Binary {
+        log::debug!(
+            "Package from URL in {} is already a binary",
+            download_path.display()
+        );
+        if !pkg_paths.binary.is_dir() {
+            LinkMode::Copy.link_files(&pkg.name, &pkg_paths.source, &pkg_paths.binary)?;
+        }
+    } else {
+        log::debug!(
+            "Building the package from URL in {}",
+            download_path.display()
+        );
+        install_via_r(&download_path, library_dir, &pkg_paths.binary)?;
+    }
+
+    // And then we always link the binary folder into the staging library
+    link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
+
+    Ok(())
+}
+
 /// Install a package and returns whether it was installed from cache or not
 fn install_package(
     context: &CliContext,
@@ -249,6 +264,7 @@ fn install_package(
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
         Source::Local { .. } => install_local_package(context, pkg, library_dir),
+        Source::Url { .. } => install_url_package(context, pkg, library_dir),
     }
 }
 

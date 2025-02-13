@@ -1,9 +1,9 @@
 //! CLI context that gets instantiated for a few commands and passed around
 use std::path::{Path, PathBuf};
 
-use crate::cli::{http, utils::write_err, DiskCache};
+use crate::cli::{utils::write_err, DiskCache};
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, timeit, Cache,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Cache,
     CacheEntry, Config, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase, 
     SystemInfo, Version,
 };
@@ -116,7 +116,7 @@ fn load_databases(
                         fs::remove_file(&p)?;
                     }
                     log::debug!("Need to download PACKAGES file for {}", r.url());
-                    let mut db = RepositoryDatabase::new(&r.alias, &r.url());
+                    let mut db = RepositoryDatabase::new(&r.url());
                     // download files, parse them and persist to disk
                     let mut source_package = Vec::new();
                     let source_url =
