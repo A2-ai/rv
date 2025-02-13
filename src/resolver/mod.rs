@@ -227,9 +227,7 @@ impl<'d> Resolver<'d> {
                     clone_path
                 };
                 let package = parse_description_file_in_folder(&package_path)?;
-                println!("Repo {repo_url}:{sha}");
                 let status = cache.get_git_installation_status(repo_url, &sha, &package.name);
-                println!("Status for {} {:?}", package.name, status);
 
                 let source = if let Some(dep) = item.dep {
                     dep.as_git_source_with_sha(sha)
