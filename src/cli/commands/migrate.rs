@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{
     cli::{context::load_databases, DiskCache},
-    renv::ResolvedRenv,
+    renv::{ResolvedRenv, UnresolvedRenv},
     RenvLock, Repository, SystemInfo, Version,
 };
 
@@ -22,7 +22,7 @@ dependencies = [
 ]
 "#;
 
-pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) -> Result<()> {
+pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) -> Result<Vec<UnresolvedRenv>> {
     // project name is the parent directory of the renv project
     let project_name = renv_file
         .as_ref()
@@ -37,12 +37,6 @@ pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) 
 
     // resolve the renv.lock file to determine the true source of packages
     let (resolved, unresolved) = renv_lock.resolve(&databases);
-
-    // if the source cannot be determined, we DO NOT error.
-    // This tool is an aide to help migrate most packages, but some manual migration may be needed
-    for u in unresolved {
-        eprintln!("{u}");
-    }
 
     // Write config out to the config file specified in the cli, even if config file is outside of the renv.lock project
     let config = render_config(
@@ -59,7 +53,7 @@ pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) 
         renv_file.as_ref().display(),
         config_file.as_ref().display()
     );
-    Ok(())
+    Ok(unresolved)
 }
 
 fn render_config(
@@ -71,7 +65,18 @@ fn render_config(
 ) -> String {
     let repos = repositories
         .iter()
-        .map(|r| format!("    {r}"))
+        .map(|r| {
+            format!(
+                r#"    {{ alias = "{}", url = "{}"{}}}"#,
+                r.alias,
+                r.url(),
+                if r.force_source {
+                    format!(r#", force_source = true"#)
+                } else {
+                    String::new()
+                }
+            )
+        })
         .collect::<Vec<_>>()
         .join(",\n");
 
@@ -83,7 +88,7 @@ fn render_config(
 
     // get time. Try to round to seconds, but if error, leave as unrounded
     let time = jiff::Zoned::now();
-    let time = time.round(jiff::Unit::Second).unwrap_or(time);
+    let time = time.round(jiff::Unit::Day).unwrap_or(time);
 
     RENV_CONFIG_TEMPLATE
         .replace("%renv_file%", renv_file)

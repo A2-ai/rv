@@ -140,7 +140,10 @@ fn try_main() -> Result<()> {
         Command::Migrate {
             subcommand: MigrateSubcommand::Renv { renv_file },
         } => {
-            migrate_renv(renv_file, cli.config_file)?;
+            let unresolved = migrate_renv(renv_file, cli.config_file)?;
+            for u in unresolved {
+                eprintln!("{u}");
+            }
         }
     }
 

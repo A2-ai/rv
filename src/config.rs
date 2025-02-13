@@ -25,22 +25,6 @@ pub struct Repository {
     pub force_source: bool,
 }
 
-impl fmt::Display for Repository {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            r#"{{ alias = "{}", url = "{}"{} }}"#,
-            self.alias,
-            self.url(),
-            if self.force_source {
-                format!(r#", force_source = "true""#)
-            } else {
-                String::new()
-            }
-        )
-    }
-}
-
 impl Repository {
     /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {

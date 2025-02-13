@@ -125,7 +125,7 @@ impl RenvLock {
                     source,
                 }),
                 Err(error) => unresolved.push(UnresolvedRenv {
-                    package_info,
+                    package_info: package_info.clone(),
                     error,
                 }),
             }
@@ -183,7 +183,10 @@ fn resolve_repository<'a>(
     //     "Hash": "13b178e8a0308dede915de93018ab60a"
     //   },
     if let (Some(git), Some(sha)) = (&pkg_info.remote_url, &pkg_info.remote_sha) {
-        return Ok(Source::Git { git: git.to_string(), sha: sha.to_string() })
+        return Ok(Source::Git {
+            git: git.to_string(),
+            sha: sha.to_string(),
+        });
     }
 
     let version_requirement = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);
@@ -301,7 +304,10 @@ impl fmt::Display for ResolvedRenv<'_> {
                 write!(f, r#"{{ name = "{name}", repository = "{}" }}"#, r.name)
             }
             Source::Git { git, sha } => {
-                write!(f, r#"{{ name = "{name}", git = "{git}", commit = "{sha}" }}"#)
+                write!(
+                    f,
+                    r#"{{ name = "{name}", git = "{git}", commit = "{sha}" }}"#
+                )
             }
             Source::Local(path) => {
                 write!(f, r#"{{ name = "{name}", path = "{}" }}"#, path.display())
@@ -317,12 +323,12 @@ enum Source<'a> {
     Local(PathBuf),
 }
 
-pub struct UnresolvedRenv<'a> {
-    package_info: &'a PackageInfo,
+pub struct UnresolvedRenv {
+    package_info: PackageInfo,
     error: Box<dyn Error>,
 }
 
-impl fmt::Display for UnresolvedRenv<'_> {
+impl fmt::Display for UnresolvedRenv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -353,7 +359,10 @@ mod tests {
 
     use super::RenvLock;
 
-    fn repository_databases(r_version: &Version, repositories: &[Repository]) -> Vec<(RepositoryDatabase, bool)> {
+    fn repository_databases(
+        r_version: &Version,
+        repositories: &[Repository],
+    ) -> Vec<(RepositoryDatabase, bool)> {
         let mut res = Vec::new();
 
         for r in repositories {
@@ -374,7 +383,8 @@ mod tests {
     #[test]
     fn test_renv_lock_parse() {
         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
-        let repository_databases = repository_databases(renv_lock.r_version(), &renv_lock.config_repositories());
+        let repository_databases =
+            repository_databases(renv_lock.r_version(), &renv_lock.config_repositories());
         let (mut resolved, mut unresolved) = renv_lock.resolve(&repository_databases);
         // sort by name of package to maintain order for all snapshot test
         resolved.sort_by_key(|r| r.package_info.package.clone());
