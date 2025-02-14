@@ -141,20 +141,20 @@ fn try_main() -> Result<()> {
             subcommand: MigrateSubcommand::Renv { renv_file },
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
-            for u in &unresolved {
-                eprintln!("{u}");
-            }
             if unresolved.is_empty() {
                 println!("{} was successfully migrated to {}",
                     renv_file.display(),
                     cli.config_file.display()
                 );
             } else {
-                println!("{} was migrated to {} with {} unresolved packages",
+                println!("{} was migrated to {} with {} unresolved packages: ",
                     renv_file.display(),
                     cli.config_file.display(),
                     unresolved.len()
-                )
+                );
+                for u in &unresolved {
+                    eprintln!("    {u}");
+                };
             }
         }
     }
