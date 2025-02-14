@@ -201,11 +201,31 @@ impl Cache for DiskCache {
         }
     }
 
-    fn get_git_installation_status(&self, repo_url: &str, sha: &str) -> InstallationStatus {
-        let paths = self.get_git_package_paths(repo_url, sha);
+    fn get_git_installation_status(
+        &self,
+        git_url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus {
+        let paths = self.get_git_package_paths(git_url, sha);
 
-        // TODO: check if we need to add the name for binary path
-        match (paths.source.is_dir(), paths.binary.is_dir()) {
+        match (paths.source.is_dir(), paths.binary.join(pkg_name).is_dir()) {
+            (true, true) => InstallationStatus::Both,
+            (true, false) => InstallationStatus::Source,
+            (false, true) => InstallationStatus::Binary,
+            (false, false) => InstallationStatus::Absent,
+        }
+    }
+
+    fn get_url_installation_status(
+        &self,
+        url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus {
+        let paths = self.get_url_package_paths(url, sha);
+
+        match (paths.source.is_dir(), paths.binary.join(pkg_name).is_dir()) {
             (true, true) => InstallationStatus::Both,
             (true, false) => InstallationStatus::Source,
             (false, true) => InstallationStatus::Binary,

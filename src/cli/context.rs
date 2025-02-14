@@ -64,12 +64,13 @@ impl CliContext {
     }
 
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
-        if self
+        let can_resolve = self
             .lockfile
             .as_ref()
-            .and_then(|l| Some(!l.can_resolve(self.config.dependencies())))
-            .unwrap_or(true)
-        {
+            .and_then(|l| Some(l.can_resolve(self.config.dependencies())))
+            .unwrap_or(false);
+
+        if !can_resolve {
             self.load_databases()?;
         }
         Ok(())

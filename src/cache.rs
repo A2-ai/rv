@@ -56,7 +56,19 @@ pub trait Cache {
         version: &str,
     ) -> InstallationStatus;
 
-    fn get_git_installation_status(&self, repo_url: &str, sha: &str) -> InstallationStatus;
+    fn get_git_installation_status(
+        &self,
+        git_url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus;
+
+    fn get_url_installation_status(
+        &self,
+        url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus;
 
     /// Gets the path to where a git repository should be cloned
     fn get_git_clone_path(&self, repo_url: &str) -> PathBuf;
