@@ -80,8 +80,8 @@ impl DiskCache {
     }
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
-    fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
-        let encoded = hash_string(repo_url);
+    fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
+        let encoded = hash_string(name);
         self.root
             .join(&encoded)
             .join(get_current_system_path(&self.system_info, self.r_version))
@@ -131,19 +131,19 @@ impl DiskCache {
     pub fn get_git_package_paths(&self, repo_url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
             source: self.get_source_git_package_path(repo_url),
-            binary: self.get_repo_root_binary_dir(repo_url).join(sha),
+            binary: self.get_repo_root_binary_dir(repo_url).join(&sha[..10]),
         }
     }
 
     pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
         let encoded = hash_string(repo_url);
-        self.root.join("git").join("builds").join(encoded).join(sha)
+        self.root.join("git").join("builds").join(encoded).join(&sha[..10])
     }
 
     pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
-            source: self.get_url_path(url).join(&sha[..7]),
-            binary: self.get_repo_root_binary_dir(url).join(sha),
+            source: self.get_url_path(url).join(&sha[..10]),
+            binary: self.get_repo_root_binary_dir(url).join(&sha[..10]),
         }
     }
 }

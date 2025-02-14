@@ -531,15 +531,11 @@ mod tests {
         }
 
         fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
-            self.cache_dir
-                .path()
-                .join(hash_string(repo_url))
+            self.cache_dir.path().join(hash_string(repo_url))
         }
 
         fn get_url_download_path(&self, url: &str) -> PathBuf {
-            self.cache_dir
-                .path()
-                .join(hash_string(url))
+            self.cache_dir.path().join(hash_string(url))
         }
     }
 

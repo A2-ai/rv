@@ -1,7 +1,7 @@
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::fmt::Formatter;
 use std::path::PathBuf;
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CacheEntry {
