@@ -139,8 +139,10 @@ fn load_databases(
                     // but we do know that if it returns None there is not a binary PACKAGES file
                     if let Some(url) = binary_url {
                         let bytes_read = timeit!(
-                            "Downloaded binary PACKAGES",
-                            http::download(&url, &mut binary_package, vec![],)?
+                            format!("Downloaded binary PACKAGES from URL: {url}"),
+                            // we can just set bytes_read to 0 if the download fails
+                            // such that there is no attempt to parse the db below
+                            http::download(&url, &mut binary_package, vec![],).unwrap_or(0)
                         );
                         // but sometimes we might not have a binary PACKAGES file and that's fine.
                         // We only load binary if we found a file

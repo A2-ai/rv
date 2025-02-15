@@ -187,8 +187,8 @@ impl<'a> RepoServer<'a> {
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.2
-        if r_version <= &[4, 2] {
+        // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.1
+        if r_version <= &[4, 1] {
             return Some(format!(
                 "{}/bin/macosx/contrib/{}.{}/{file_name}",
                 self.url(),
