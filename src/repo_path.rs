@@ -306,12 +306,24 @@ mod tests {
     }
 
     #[test]
-    fn test_mac_42_url() {
+    fn test_mac_41_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
+        let source_url = RepoServer::from_url(PPM_URL)
+            .get_binary_path("test-file", &[4, 1], &sysinfo)
+            .unwrap();
+        let ref_url = format!("{}/bin/macosx/contrib/4.1/test-file", PPM_URL);
+        assert_eq!(source_url, ref_url)
+    }
+    #[test]
+    fn test_mac_42_url() {
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arch64".to_string()), None, "");
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 2], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/macosx/contrib/4.2/test-file", PPM_URL);
+        let ref_url = format!(
+            "{}/bin/macosx/big-sur-arch64/contrib/4.2/test-file",
+            PPM_URL
+        );
         assert_eq!(source_url, ref_url)
     }
 
