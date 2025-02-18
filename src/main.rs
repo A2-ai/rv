@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
-use rv::cli::{sync, CacheInfo, CliContext};
+use rv::cli::{migrate_renv, sync, CacheInfo, CliContext};
 use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
@@ -35,6 +35,19 @@ pub enum Command {
     Cache {
         #[clap(short, long)]
         json: bool,
+    },
+    /// Migrate renv to rv
+    Migrate {
+        #[clap(subcommand)]
+        subcommand: MigrateSubcommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MigrateSubcommand {
+    Renv {
+        #[clap(value_parser, default_value = "renv.lock")]
+        renv_file: PathBuf,
     },
 }
 
@@ -147,6 +160,26 @@ fn try_main() -> Result<()> {
                 );
             } else {
                 println!("{info}");
+            }
+        }
+        Command::Migrate {
+            subcommand: MigrateSubcommand::Renv { renv_file },
+        } => {
+            let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
+            if unresolved.is_empty() {
+                println!("{} was successfully migrated to {}",
+                    renv_file.display(),
+                    cli.config_file.display()
+                );
+            } else {
+                println!("{} was migrated to {} with {} unresolved packages: ",
+                    renv_file.display(),
+                    cli.config_file.display(),
+                    unresolved.len()
+                );
+                for u in &unresolved {
+                    eprintln!("    {u}");
+                };
             }
         }
     }

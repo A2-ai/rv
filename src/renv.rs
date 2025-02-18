@@ -1,14 +1,16 @@
 use std::{
     collections::HashMap,
     error::Error,
+    fmt,
     path::{Path, PathBuf},
 };
 
 use serde::Deserialize;
 
 use crate::{
+    consts::RECOMMENDED_PACKAGES,
     package::{deserialize_version, Operator, Version, VersionRequirement},
-    RepositoryDatabase,
+    Repository, RepositoryDatabase,
 };
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -65,7 +67,7 @@ struct RInfo {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct RenvLock {
+pub struct RenvLock {
     r: RInfo,
     packages: HashMap<String, PackageInfo>,
 }
@@ -89,13 +91,21 @@ impl RenvLock {
         })
     }
 
-    fn resolve(
+    pub fn resolve(
         &self,
         repository_database: &[(RepositoryDatabase, bool)],
     ) -> (Vec<ResolvedRenv>, Vec<UnresolvedRenv>) {
         let mut resolved = Vec::new();
         let mut unresolved = Vec::new();
         for package_info in self.packages.values() {
+            // if package is sourced from a repository and is a recommended package, do not attempt to resolve
+            // TODO: add flag to resolve recommended packages
+            if package_info.source == RenvSource::Repository
+                && RECOMMENDED_PACKAGES.contains(&package_info.package.as_str())
+            {
+                continue;
+            }
+
             let res = match package_info.source {
                 RenvSource::Repository => resolve_repository(
                     package_info,
@@ -106,7 +116,7 @@ impl RenvLock {
                 RenvSource::GitHub => {
                     resolve_github(package_info).map(|(git, sha)| Source::Git { git, sha })
                 }
-                RenvSource::Local => resolve_local(package_info).map(|path| Source::Local(path)),
+                RenvSource::Local => resolve_local(package_info).map(Source::Local),
                 _ => Err("Source is not supported".into()),
             };
             match res {
@@ -115,12 +125,28 @@ impl RenvLock {
                     source,
                 }),
                 Err(error) => unresolved.push(UnresolvedRenv {
-                    package_info,
+                    package_info: package_info.clone(),
                     error,
                 }),
             }
         }
         (resolved, unresolved)
+    }
+
+    pub fn r_version(&self) -> &Version {
+        &self.r.version
+    }
+
+    pub fn config_repositories(&self) -> Vec<Repository> {
+        self.r
+            .repositories
+            .iter()
+            .map(|r| Repository {
+                alias: r.name.to_string(),
+                url: r.url.to_string(),
+                force_source: false,
+            })
+            .collect::<Vec<_>>()
     }
 }
 
@@ -265,9 +291,29 @@ fn resolve_local(pkg_info: &PackageInfo) -> Result<PathBuf, Box<dyn Error>> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct ResolvedRenv<'a> {
+pub struct ResolvedRenv<'a> {
     package_info: &'a PackageInfo,
     source: Source<'a>,
+}
+
+impl fmt::Display for ResolvedRenv<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = &self.package_info.package;
+        match &self.source {
+            Source::Repository(r) => {
+                write!(f, r#"{{ name = "{name}", repository = "{}" }}"#, r.name)
+            }
+            Source::Git { git, sha } => {
+                write!(
+                    f,
+                    r#"{{ name = "{name}", git = "{git}", commit = "{sha}" }}"#
+                )
+            }
+            Source::Local(path) => {
+                write!(f, r#"{{ name = "{name}", path = "{}" }}"#, path.display())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -277,9 +323,19 @@ enum Source<'a> {
     Local(PathBuf),
 }
 
-struct UnresolvedRenv<'a> {
-    package_info: &'a PackageInfo,
+pub struct UnresolvedRenv {
+    package_info: PackageInfo,
     error: Box<dyn Error>,
+}
+
+impl fmt::Display for UnresolvedRenv {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "`{}` could not be resolved due to: {:?}",
+            self.package_info.package, self.error
+        )
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -299,10 +355,51 @@ pub struct FromJsonFileError {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Repository, RepositoryDatabase, Version};
+
     use super::RenvLock;
+
+    fn repository_databases(
+        r_version: &Version,
+        repositories: &[Repository],
+    ) -> Vec<(RepositoryDatabase, bool)> {
+        let mut res = Vec::new();
+
+        for r in repositories {
+            let mut repo = RepositoryDatabase::new(&r.url);
+            let path = format!("src/tests/package_files/{}.PACKAGE", &r.alias);
+            let text = std::fs::read_to_string(path).unwrap();
+            if r.alias.contains("binary") {
+                repo.parse_binary(&text, r_version.major_minor());
+            } else {
+                repo.parse_source(&text);
+            }
+            res.push((repo, false));
+        }
+
+        res
+    }
 
     #[test]
     fn test_renv_lock_parse() {
-        let _renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+        let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
+        let repository_databases =
+            repository_databases(renv_lock.r_version(), &renv_lock.config_repositories());
+        let (mut resolved, mut unresolved) = renv_lock.resolve(&repository_databases);
+        // sort by name of package to maintain order for all snapshot test
+        resolved.sort_by_key(|r| r.package_info.package.clone());
+        unresolved.sort_by_key(|u| u.package_info.package.clone());
+
+        let mut out = String::new();
+        for r in resolved {
+            out.push_str(&format!("{r}\n"));
+        }
+
+        out.push_str("--- unresolved --- \n");
+        for u in unresolved {
+            out.push_str(&format!("{u}\n"));
+        }
+
+        insta::assert_snapshot!("renv_resolver".to_string(), out);
     }
 }

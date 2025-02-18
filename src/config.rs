@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -19,7 +20,7 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    url: String,
+    pub(crate) url: String,
     #[serde(default)]
     pub force_source: bool,
 }
