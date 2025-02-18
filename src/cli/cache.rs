@@ -137,7 +137,11 @@ impl DiskCache {
 
     pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
         let encoded = hash_string(repo_url);
-        self.root.join("git").join("builds").join(encoded).join(&sha[..10])
+        self.root
+            .join("git")
+            .join("builds")
+            .join(encoded)
+            .join(&sha[..10])
     }
 
     pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {

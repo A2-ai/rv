@@ -3,11 +3,13 @@ use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase
 
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+use std::fs;
 use std::path::PathBuf;
 
 mod dependency;
 
 use crate::cache::InstallationStatus;
+use crate::fs::untar_archive;
 use crate::git::GitReference;
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
@@ -114,15 +116,25 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
-        if !local_path.exists() || !local_path.is_dir() {
+
+        let package = if local_path.is_file() {
+            // We have a file, it should be a tarball. TODO: Extract it to tmpdir for now
+            // even though we might have to extract again in sync?
+            // TODO: keep the sha of the tar in the lockfile?
+            let tempdir = tempfile::tempdir()?;
+            let path = untar_archive(fs::read(&local_path)?.as_slice(), tempdir.path())?;
+            parse_description_file_in_folder(path.unwrap_or_else(|| local_path.clone()))?
+        } else if local_path.is_dir() {
+            // we have a folder
+            parse_description_file_in_folder(local_path)?
+        } else {
             return Err(format!(
-                "{} doesn't exist or is not a directory",
+                "{} doesn't exist or is not a directory/tarball",
                 local_path.display()
             )
             .into());
-        }
+        };
 
-        let package = parse_description_file_in_folder(local_path)?;
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
             Source::Local {
@@ -318,7 +330,9 @@ impl<'d> Resolver<'d> {
                 parent: None,
                 remote: None,
                 local_path: d.local_path(),
-                matching_in_lockfile: self.lockfile.and_then(|l| Some(l.get_package(d.name(), Some(d)).is_some())),
+                matching_in_lockfile: self
+                    .lockfile
+                    .and_then(|l| Some(l.get_package(d.name(), Some(d)).is_some())),
             })
             .collect();
 
