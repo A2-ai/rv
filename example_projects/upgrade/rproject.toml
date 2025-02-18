@@ -1,0 +1,19 @@
+[project]
+# Note: do not update the lockfile from this project since we're testing whether an upgrade
+# (eg with the new- repos) will pick up all the news dependencies
+name = "upgrade"
+r_version = "4.4"
+
+repositories = [
+    { alias = "gh-pkg-mirror", url = "https://a2-ai.github.io/gh-pkg-mirror/2024-02-22" },
+    { alias = "RSPM", url = "https://packagemanager.posit.co/cran/2024-02-22" },
+    { alias = "new-mirror", url = "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04" },
+    { alias = "new-rspm", url = "https://packagemanager.posit.co/cran/2024-12-04" },
+]
+
+dependencies = [
+    {name = "pmplots", repository = "new-mirror"},
+    "pmtables",
+    "bbr",
+    {name = "ggplot2", repository = "new-rspm"},
+]
