@@ -1,0 +1,10 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "dplyr", force_source = false },
+]
+---
+repos = [{name = "cran", binary = "cran-binary", source = "posit-src", force_source = true}]
+---

@@ -59,7 +59,7 @@ pub enum ConfigDependency {
         #[serde(default)]
         install_suggestions: bool,
         #[serde(default)]
-        force_source: bool,
+        force_source: Option<bool>,
     },
     Detailed {
         name: String,
@@ -67,7 +67,7 @@ pub enum ConfigDependency {
         #[serde(default)]
         install_suggestions: bool,
         #[serde(default)]
-        force_source: bool,
+        force_source: Option<bool>,
     },
 }
 
@@ -82,10 +82,10 @@ impl ConfigDependency {
         }
     }
 
-    pub fn force_source(&self) -> bool {
+    pub fn force_source(&self) -> Option<bool> {
         match self {
             ConfigDependency::Detailed { force_source, .. } => *force_source,
-            _ => false,
+            _ => None,
         }
     }
 

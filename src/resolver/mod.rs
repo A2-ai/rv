@@ -34,7 +34,7 @@ pub(crate) struct QueueItem<'d> {
     dep: Option<&'d ConfigDependency>,
     pub(crate) version_requirement: Option<Cow<'d, VersionRequirement>>,
     install_suggestions: bool,
-    force_source: bool,
+    force_source: Option<bool>,
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
     local_path: Option<PathBuf>,
@@ -180,7 +180,11 @@ impl<'d> Resolver<'d> {
                     continue;
                 }
             }
-            let force_source = item.force_source || *repo_source_only;
+            let force_source = if let Some(source) = item.force_source {
+                source
+            } else {
+                *repo_source_only
+            };
 
             if let Some((package, package_type)) = repo.find_package(
                 item.name.as_ref(),
