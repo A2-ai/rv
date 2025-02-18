@@ -191,10 +191,12 @@ fn try_main() -> Result<()> {
         Command::Activate => {
             let dir = std::env::current_dir()?;
             activate(dir)?;
+            println!("rv activated");
         }
         Command::Deactivate => {
             let dir = std::env::current_dir()?;
             deactivate(dir)?;
+            println!("rv deactivated");
         }
     }
 
