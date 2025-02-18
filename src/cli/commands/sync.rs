@@ -130,7 +130,13 @@ fn install_package_from_repository(
         }
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
-            download_and_install_source(&source_url, &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
+            download_and_install_source(
+                &source_url,
+                &pkg_paths,
+                library_dir,
+                &pkg.name,
+                &context.r_cmd,
+            )?;
         } else {
             download_and_install_binary(
                 &binary_url.unwrap(),
@@ -187,7 +193,11 @@ fn install_package_from_git(
     Ok(())
 }
 
-fn install_local_package(context: &CliContext, pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
+fn install_local_package(
+    context: &CliContext,
+    pkg: &ResolvedDependency,
+    library_dir: &Path,
+) -> Result<()> {
     // First we check if the package exists in the library and what's the mtime in it
     let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
     // TODO: we actually do that twice, a bit wasteful
@@ -233,7 +243,12 @@ fn install_url_package(
             "Building the package from URL in {}",
             download_path.display()
         );
-        install_via_r(&download_path, library_dir, &pkg_paths.binary, &context.r_cmd)?;
+        install_via_r(
+            &download_path,
+            library_dir,
+            &pkg_paths.binary,
+            &context.r_cmd,
+        )?;
     }
 
     // And then we always link the binary folder into the staging library

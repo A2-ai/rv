@@ -1,6 +1,7 @@
 mod build_plan;
 mod cache;
 mod config;
+mod config_edit;
 mod fs;
 mod git;
 mod http;
