@@ -38,6 +38,9 @@ pub(crate) struct QueueItem<'d> {
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
     local_path: Option<PathBuf>,
+    // Only for top level dependencies. Checks whether the config dependency is matching
+    // what we have in the lockfile, we have one.
+    matching_in_lockfile: Option<bool>,
 }
 
 impl<'d> QueueItem<'d> {
@@ -52,7 +55,7 @@ impl<'d> QueueItem<'d> {
 
 // Macro to go around borrow errors we would get with a normal fn
 macro_rules! prepare_deps {
-    ($resolved:expr, $deps:expr) => {{
+    ($resolved:expr, $deps:expr, $matching_in_lockfile:expr) => {{
         let items = $deps
             .direct
             .into_iter()
@@ -64,6 +67,7 @@ macro_rules! prepare_deps {
                 );
 
                 i.version_requirement = p.version_requirement().map(|x| Cow::Owned(x.clone()));
+                i.matching_in_lockfile = $matching_in_lockfile;
 
                 for (pkg_name, remote) in $resolved.remotes.values() {
                     if let Some(n) = pkg_name {
@@ -126,7 +130,7 @@ impl<'d> Resolver<'d> {
             },
             item.install_suggestions,
         );
-        Ok(prepare_deps!(resolved_dep, deps))
+        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
     fn lockfile_lookup(
@@ -134,6 +138,13 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
         cache: &'d impl Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+        // If the dependency is not matching, do not even look at the lockfile
+        if let Some(matching) = item.matching_in_lockfile {
+            if !matching {
+                return None;
+            }
+        }
+
         if let Some(package) = self
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
@@ -200,7 +211,7 @@ impl<'d> Resolver<'d> {
                         &package.version.original,
                     ),
                 );
-                return Some(prepare_deps!(resolved_dep, deps));
+                return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
             }
         }
 
@@ -247,7 +258,7 @@ impl<'d> Resolver<'d> {
                     item.install_suggestions,
                     status,
                 );
-                Ok(prepare_deps!(resolved_dep, deps))
+                Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
             }
             Err(e) => {
                 Err(format!("Could not clone repository {repo_url} (ref: {git_ref:?}) {e}").into())
@@ -281,7 +292,7 @@ impl<'d> Resolver<'d> {
             },
             item.install_suggestions,
         );
-        Ok(prepare_deps!(resolved_dep, deps))
+        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
     /// Tries to find all dependencies from the repos, as well as their installation status
@@ -307,6 +318,7 @@ impl<'d> Resolver<'d> {
                 parent: None,
                 remote: None,
                 local_path: d.local_path(),
+                matching_in_lockfile: self.lockfile.and_then(|l| Some(l.get_package(d.name(), Some(d)).is_some())),
             })
             .collect();
 
