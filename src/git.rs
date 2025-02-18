@@ -69,6 +69,7 @@ fn clone_repository(
         // Only fetch if we can't find the reference
         if let Some(reference) = &git_ref {
             if !can_find_reference(&repo, reference.reference()) {
+                log::debug!("Repo {url} found in cache but reference not found, fetching.");
                 let remote_name = repo
                     .remotes()?
                     .get(0)
@@ -81,6 +82,7 @@ fn clone_repository(
 
         repo
     } else {
+        log::debug!("Repo {url} not found in cache. Cloning.");
         let mut builder = git2::build::RepoBuilder::new();
 
         if let Some(GitReference::Branch(b)) = &git_ref {
@@ -123,24 +125,3 @@ impl GitOperations for Git {
         clone_repository(url, git_ref, destination)
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn can_clone() {
-//         let url = "https://github.com/A2-ai/scicalc";
-//         let tag = "v0.1.1";
-//         let commit = "8fd417a477f8e1df6e4dc7923eca55c9b758df58";
-//         let branch = "rd2md";
-//
-//         let sha_found = clone_repository(url, GitReference::Branch(branch), "from_branch").unwrap();
-//         println!("Branch {sha_found:?}");
-//         let sha_found = clone_repository(url, GitReference::Tag(tag), "from_tag").unwrap();
-//         println!("Tag {sha_found:?}");
-//         let sha_found = clone_repository(url, GitReference::Commit(commit), "from_commit").unwrap();
-//         println!("Commit {sha_found:?}");
-//         assert!(false);
-//     }
-// }

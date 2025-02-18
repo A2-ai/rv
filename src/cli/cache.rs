@@ -2,11 +2,10 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use etcetera::BaseStrategy;
 use fs_err as fs;
 
-use crate::cache::InstallationStatus;
+use crate::cache::{hash_string, InstallationStatus};
 use crate::cli::utils::get_current_system_path;
 use crate::system_info::SystemInfo;
 use crate::Version;
@@ -39,12 +38,6 @@ fn get_packages_timeout() -> u64 {
     }
 }
 
-/// Just a basic base64 without padding
-#[inline]
-fn encode_base64(url: &str) -> String {
-    STANDARD_NO_PAD.encode(url.to_ascii_lowercase())
-}
-
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
     pub binary: PathBuf,
@@ -57,7 +50,7 @@ pub struct PackagePaths {
 pub struct DiskCache {
     /// The cache root directory.
     /// In practice it will be the OS own cache specific directory + `rv`
-    root: PathBuf,
+    pub root: PathBuf,
     /// R version stored as [major, minor]
     pub r_version: [u32; 2],
     /// The current execution system info: OS, version etc.
@@ -87,8 +80,8 @@ impl DiskCache {
     }
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
-    fn get_repo_root_binary_dir(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+    fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
+        let encoded = hash_string(name);
         self.root
             .join(&encoded)
             .join(get_current_system_path(&self.system_info, self.r_version))
@@ -113,7 +106,7 @@ impl DiskCache {
     /// Gets the folder where a source tarball would be located
     /// The folder may or may not exist depending on whether it's in the cache
     pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = hash_string(repo_url);
         self.root.join(encoded).join("src").join(name).join(version)
     }
 
@@ -126,31 +119,31 @@ impl DiskCache {
 
     /// We will download them in a separate path, we don't know if we have source or binary
     fn get_url_path(&self, url: &str) -> PathBuf {
-        let encoded = encode_base64(url);
+        let encoded = hash_string(url);
         self.root.join("urls").join(encoded)
     }
 
     fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
+        let encoded = hash_string(repo_url);
         self.root.join("git").join(encoded)
     }
 
     pub fn get_git_package_paths(&self, repo_url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
             source: self.get_source_git_package_path(repo_url),
-            binary: self.get_repo_root_binary_dir(repo_url).join(sha),
+            binary: self.get_repo_root_binary_dir(repo_url).join(&sha[..10]),
         }
     }
 
     pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
-        let encoded = encode_base64(repo_url);
-        self.root.join("git").join("builds").join(encoded).join(sha)
+        let encoded = hash_string(repo_url);
+        self.root.join("git").join("builds").join(encoded).join(&sha[..10])
     }
 
     pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {
         PackagePaths {
-            source: self.get_url_path(url).join(&sha[..7]),
-            binary: self.get_repo_root_binary_dir(url).join(sha),
+            source: self.get_url_path(url).join(&sha[..10]),
+            binary: self.get_repo_root_binary_dir(url).join(&sha[..10]),
         }
     }
 }
@@ -201,11 +194,31 @@ impl Cache for DiskCache {
         }
     }
 
-    fn get_git_installation_status(&self, repo_url: &str, sha: &str) -> InstallationStatus {
-        let paths = self.get_git_package_paths(repo_url, sha);
+    fn get_git_installation_status(
+        &self,
+        git_url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus {
+        let paths = self.get_git_package_paths(git_url, sha);
 
-        // TODO: check if we need to add the name for binary path
-        match (paths.source.is_dir(), paths.binary.is_dir()) {
+        match (paths.source.is_dir(), paths.binary.join(pkg_name).is_dir()) {
+            (true, true) => InstallationStatus::Both,
+            (true, false) => InstallationStatus::Source,
+            (false, true) => InstallationStatus::Binary,
+            (false, false) => InstallationStatus::Absent,
+        }
+    }
+
+    fn get_url_installation_status(
+        &self,
+        url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus {
+        let paths = self.get_url_package_paths(url, sha);
+
+        match (paths.source.is_dir(), paths.binary.join(pkg_name).is_dir()) {
             (true, true) => InstallationStatus::Both,
             (true, false) => InstallationStatus::Source,
             (false, true) => InstallationStatus::Binary,

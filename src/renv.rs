@@ -157,7 +157,10 @@ fn resolve_repository<'a>(
     //     "Hash": "13b178e8a0308dede915de93018ab60a"
     //   },
     if let (Some(git), Some(sha)) = (&pkg_info.remote_url, &pkg_info.remote_sha) {
-        return Ok(Source::Git { git: git.to_string(), sha: sha.to_string() })
+        return Ok(Source::Git {
+            git: git.to_string(),
+            sha: sha.to_string(),
+        });
     }
 
     let version_requirement = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);

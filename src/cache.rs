@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::fmt::Formatter;
 use std::path::PathBuf;
@@ -43,6 +44,14 @@ impl fmt::Display for InstallationStatus {
     }
 }
 
+/// Equivalent to sha256(input)[:10]
+pub fn hash_string(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.to_ascii_lowercase().as_bytes());
+    let result = format!("{:x}", hasher.finalize());
+    result[..10].to_string()
+}
+
 pub trait Cache {
     /// This will either load the database for that repository or return None if we couldn't find
     /// it or it was expired.
@@ -56,7 +65,19 @@ pub trait Cache {
         version: &str,
     ) -> InstallationStatus;
 
-    fn get_git_installation_status(&self, repo_url: &str, sha: &str) -> InstallationStatus;
+    fn get_git_installation_status(
+        &self,
+        git_url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus;
+
+    fn get_url_installation_status(
+        &self,
+        url: &str,
+        sha: &str,
+        pkg_name: &str,
+    ) -> InstallationStatus;
 
     /// Gets the path to where a git repository should be cloned
     fn get_git_clone_path(&self, repo_url: &str) -> PathBuf;

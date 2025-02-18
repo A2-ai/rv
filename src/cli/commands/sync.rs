@@ -55,6 +55,7 @@ fn download_and_install_source(
 
 fn download_and_install_binary(
     url: &str,
+    source_url: &str,
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
@@ -63,8 +64,8 @@ fn download_and_install_binary(
     let http = Http {};
     // If we get an error doing the binary download, fall back to source
     if let Err(e) = http.download_and_untar(&url, &paths.binary, false) {
-        log::warn!("Failed to download/untar binary package: {e:?}");
-        return download_and_install_source(url, paths, library_dir, pkg_name, r_cmd);
+        log::warn!("Failed to download/untar binary package from {url}: {e:?}, falling back to {source_url}");
+        return download_and_install_source(source_url, paths, library_dir, pkg_name, r_cmd);
     }
 
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
@@ -102,6 +103,9 @@ fn install_package_from_repository(
         context
             .cache
             .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
+
+    let source_url =
+        repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
     let binary_url = repo_server.get_binary_tarball_path(
         &pkg.name,
         &pkg.version.original,
@@ -126,25 +130,18 @@ fn install_package_from_repository(
         }
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
-            download_and_install_source(
-                &repo_server.get_source_tarball_path(
-                    &pkg.name,
-                    &pkg.version.original,
-                    pkg.path.as_deref(),
-                ),
+            download_and_install_source(&source_url, &pkg_paths, library_dir, &pkg.name)?;
+        } else {
+            download_and_install_binary(
+                &binary_url.unwrap(),
+                &source_url,
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
                 &context.r_cmd,
             )?;
         } else {
-            download_and_install_binary(
-                &binary_url.unwrap(),
-                &pkg_paths,
-                library_dir,
-                &pkg.name,
-                &context.r_cmd,
-            )?;
+            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
         }
     }
 
@@ -162,7 +159,6 @@ fn install_package_from_git(
     let link_mode = LinkMode::new();
     let repo_url = pkg.source.source_path();
     let sha = pkg.source.git_sha();
-    log::debug!("Installing {} from git", pkg.name);
 
     let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
 
@@ -170,13 +166,12 @@ fn install_package_from_git(
         let git_ops = Git {};
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        log::debug!("Cloning repo if necessary + checkout");
         git_ops.clone_and_checkout(
             repo_url,
             Some(GitReference::Commit(&sha)),
             &pkg_paths.source,
         )?;
-        log::debug!("Building the repo in {:?}", pkg_paths);
+        log::debug!("Building the repo for {}", pkg.name);
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
             Source::Git {
