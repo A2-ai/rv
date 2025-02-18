@@ -23,8 +23,12 @@ use crate::{
 };
 use crate::{Git, GitOperations};
 
-fn install_via_r(source: &Path, library_dir: &Path, binary_dir: &Path) -> Result<()> {
-    let r_cmd = RCommandLine {};
+fn install_via_r(
+    source: &Path,
+    library_dir: &Path,
+    binary_dir: &Path,
+    r_cmd: &RCommandLine,
+) -> Result<()> {
     if let Err(e) = r_cmd.install(source, library_dir, binary_dir) {
         // Do not leave empty binary dir if some install failed otherwise later install
         // would fail
@@ -41,24 +45,27 @@ fn download_and_install_source(
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
+    r_cmd: &RCommandLine,
 ) -> Result<()> {
     Http {}.download_and_untar(&url, &paths.source, false)?;
     log::debug!("Compiling binary from {}", &paths.source.display());
-    RCommandLine {}.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
+    r_cmd.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
     Ok(())
 }
 
 fn download_and_install_binary(
     url: &str,
+    source_url: &str,
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
+    r_cmd: &RCommandLine,
 ) -> Result<()> {
     let http = Http {};
     // If we get an error doing the binary download, fall back to source
     if let Err(e) = http.download_and_untar(&url, &paths.binary, false) {
-        log::warn!("Failed to download/untar binary package: {e:?}");
-        return download_and_install_source(url, paths, library_dir, pkg_name);
+        log::warn!("Failed to download/untar binary package from {url}: {e:?}, falling back to {source_url}");
+        return download_and_install_source(source_url, paths, library_dir, pkg_name, r_cmd);
     }
 
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
@@ -74,7 +81,12 @@ fn download_and_install_binary(
         }
 
         // And install it to the binary path
-        install_via_r(&paths.source.join(pkg_name), library_dir, &paths.binary)?;
+        install_via_r(
+            &paths.source.join(pkg_name),
+            library_dir,
+            &paths.binary,
+            r_cmd,
+        )?;
     }
 
     Ok(())
@@ -91,6 +103,9 @@ fn install_package_from_repository(
         context
             .cache
             .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
+
+    let source_url =
+        repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
     let binary_url = repo_server.get_binary_tarball_path(
         &pkg.name,
         &pkg.version.original,
@@ -110,22 +125,21 @@ fn install_package_from_repository(
                 &pkg_paths.source.join(pkg.name.as_ref()),
                 library_dir,
                 &pkg_paths.binary,
+                &context.r_cmd,
             )?;
         }
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
-            download_and_install_source(
-                &repo_server.get_source_tarball_path(
-                    &pkg.name,
-                    &pkg.version.original,
-                    pkg.path.as_deref(),
-                ),
+            download_and_install_source(&source_url, &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
+        } else {
+            download_and_install_binary(
+                &binary_url.unwrap(),
+                &source_url,
                 &pkg_paths,
                 library_dir,
                 &pkg.name,
+                &context.r_cmd,
             )?;
-        } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name)?;
         }
     }
 
@@ -143,7 +157,6 @@ fn install_package_from_git(
     let link_mode = LinkMode::new();
     let repo_url = pkg.source.source_path();
     let sha = pkg.source.git_sha();
-    log::debug!("Installing {} from git", pkg.name);
 
     let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
 
@@ -151,13 +164,12 @@ fn install_package_from_git(
         let git_ops = Git {};
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        log::debug!("Cloning repo if necessary + checkout");
         git_ops.clone_and_checkout(
             repo_url,
             Some(GitReference::Commit(&sha)),
             &pkg_paths.source,
         )?;
-        log::debug!("Building the repo in {:?}", pkg_paths);
+        log::debug!("Building the repo for {}", pkg.name);
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
             Source::Git {
@@ -166,7 +178,7 @@ fn install_package_from_git(
             } => pkg_paths.source.join(&dir),
             _ => pkg_paths.source,
         };
-        install_via_r(&source_path, library_dir, &pkg_paths.binary)?;
+        install_via_r(&source_path, library_dir, &pkg_paths.binary, &context.r_cmd)?;
     }
 
     // And then we always link the binary folder into the staging library
@@ -175,7 +187,7 @@ fn install_package_from_git(
     Ok(())
 }
 
-fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
+fn install_local_package(context: &CliContext, pkg: &ResolvedDependency, library_dir: &Path) -> Result<()> {
     // First we check if the package exists in the library and what's the mtime in it
     let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
     // TODO: we actually do that twice, a bit wasteful
@@ -183,7 +195,7 @@ fn install_local_package(pkg: &ResolvedDependency, library_dir: &Path) -> Result
 
     // if the mtime we found locally is more recent, we build it
     log::debug!("Building the local package in {}", local_path.display());
-    install_via_r(&local_path, library_dir, &library_dir)?;
+    install_via_r(&local_path, library_dir, &library_dir, &context.r_cmd)?;
 
     // And just write the mtime in the output directory
     let mut file = fs::File::create(
@@ -221,7 +233,7 @@ fn install_url_package(
             "Building the package from URL in {}",
             download_path.display()
         );
-        install_via_r(&download_path, library_dir, &pkg_paths.binary)?;
+        install_via_r(&download_path, library_dir, &pkg_paths.binary, &context.r_cmd)?;
     }
 
     // And then we always link the binary folder into the staging library
@@ -244,7 +256,7 @@ fn install_package(
     match pkg.source {
         Source::Repository { .. } => install_package_from_repository(context, pkg, library_dir),
         Source::Git { .. } => install_package_from_git(context, pkg, library_dir),
-        Source::Local { .. } => install_local_package(pkg, library_dir),
+        Source::Local { .. } => install_local_package(context, pkg, library_dir),
         Source::Url { .. } => install_url_package(context, pkg, library_dir),
     }
 }

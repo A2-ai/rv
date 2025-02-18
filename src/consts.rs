@@ -27,3 +27,22 @@ pub(crate) const BASE_PACKAGES: [&str; 14] = [
     "tools",
     "utils",
 ];
+
+// List obtained from the REPL: `rownames(installed.packages(priority="recommended"))`
+pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
+    "boot",
+    "class",
+    "cluster",
+    "codetools",
+    "foreign",
+    "KernSmooth",
+    "lattice",
+    "MASS",
+    "Matrix",
+    "mgcv",
+    "nlme",
+    "nnet",
+    "rpart",
+    "spatial",
+    "survival",
+];

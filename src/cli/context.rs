@@ -3,14 +3,15 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::{utils::write_err, DiskCache};
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, http, timeit, Cache, CacheEntry, Config,
-    Library, RepoServer, Repository, RepositoryDatabase, SystemInfo, Version,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Cache,
+    CacheEntry, Config, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase, 
+    SystemInfo, Version,
 };
 
 use crate::cli::utils::get_current_system_path;
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
 
@@ -23,12 +24,15 @@ pub struct CliContext {
     pub library: Library,
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
+    pub r_cmd: RCommandLine,
 }
 
 impl CliContext {
     pub fn new(config_file: &PathBuf) -> Result<Self> {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
+        let r_cmd = find_r_version_command(&r_version)
+            .ok_or(anyhow!("Could not find specified version ({r_version})"))?;
 
         let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
 
@@ -55,6 +59,7 @@ impl CliContext {
             library,
             lockfile,
             databases: Vec::new(),
+            r_cmd,
         })
     }
 
@@ -64,12 +69,13 @@ impl CliContext {
     }
 
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
-        if self
+        let can_resolve = self
             .lockfile
             .as_ref()
-            .and_then(|l| Some(!l.can_resolve(self.config.dependencies())))
-            .unwrap_or(true)
-        {
+            .and_then(|l| Some(l.can_resolve(self.config.dependencies())))
+            .unwrap_or(false);
+
+        if !can_resolve {
             self.load_databases()?;
         }
         Ok(())
@@ -88,7 +94,7 @@ impl CliContext {
     }
 }
 
-fn load_databases(
+pub(crate) fn load_databases(
     repositories: &[Repository],
     cache: &DiskCache,
 ) -> Result<Vec<(RepositoryDatabase, bool)>> {
@@ -138,8 +144,10 @@ fn load_databases(
                     // but we do know that if it returns None there is not a binary PACKAGES file
                     if let Some(url) = binary_url {
                         let bytes_read = timeit!(
-                            "Downloaded binary PACKAGES",
-                            http::download(&url, &mut binary_package, vec![],)?
+                            format!("Downloaded binary PACKAGES from URL: {url}"),
+                            // we can just set bytes_read to 0 if the download fails
+                            // such that there is no attempt to parse the db below
+                            http::download(&url, &mut binary_package, vec![],).unwrap_or(0)
                         );
                         // but sometimes we might not have a binary PACKAGES file and that's fine.
                         // We only load binary if we found a file

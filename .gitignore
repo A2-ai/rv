@@ -4,3 +4,5 @@ out
 src/tests/RCMD/
 example_projects/*/rv
 from*/
+.DS_Store
+

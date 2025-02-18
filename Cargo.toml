@@ -15,15 +15,11 @@ regex = "1"
 etcetera = "0.8.0"
 # Sets some spec like data in the cache dir
 cachedir = "0.3"
-# We base64 encode repo URLs for use as cache dir
-base64 = "0.22"
 # To get the OS name, version etc
 os_info = "3.9.1"
 # We use bincode to serialize package databases to disk
 bincode = "1"
 thiserror = "2"
-# We use url to parse the repository url for linux binaries and queries
-url = "2.5.4"
 fs-err = "3"
 walkdir = "2"
 os_pipe = "1"
@@ -45,6 +41,7 @@ anyhow = { version = "1", optional = true }
 env_logger = { version = "0.11", optional = true }
 crossbeam = { version = "0.8", optional = true }
 num_cpus = { version = "1", optional = true }
+jiff = { version = "0.1", optional = true }
 
 [features]
 cli = [
@@ -55,6 +52,7 @@ cli = [
     "dep:env_logger",
     "dep:crossbeam",
     "dep:num_cpus",
+    "dep:jiff",
 ]
 
 [dev-dependencies]

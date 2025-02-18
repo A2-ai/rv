@@ -4,6 +4,5 @@ mod context;
 pub mod utils;
 
 pub use cache::DiskCache;
-pub use commands::sync;
-pub use commands::{find_r_repositories, init};
+pub use commands::{find_r_repositories, init, migrate_renv, sync, CacheInfo};
 pub use context::CliContext;
