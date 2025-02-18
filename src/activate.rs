@@ -39,11 +39,11 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
 
     // if the .Rprofile does not exist, the directory is already "deactivated"
     if !file_name.exists() {
-        return Ok(())
+        return Ok(());
     }
 
     let (content, mut file) = read_file(file_name)?;
-    
+
     // if the .Rprofile does not contain the activate source string, the directory is already "deactivated"
     if !content.contains(&source_activate_file_string()) {
         return Ok(());
@@ -132,4 +132,3 @@ pub enum ActivateErrorKind {
     NotDir(PathBuf),
     Io(std::io::Error),
 }
-
