@@ -59,6 +59,13 @@ impl Version {
     pub fn major_minor(&self) -> [u32; 2] {
         [self.parts[0], self.parts[1]]
     }
+
+    /// Determines if the called version matches in the input version based on the number of specified elements in the called version
+    /// i.e. 4.4 = 4.4.1, but 4.4.2 != 4.4.1
+    pub(crate) fn hazy_match(&self, version: &Version) -> bool {
+        let num_specified = self.original.replace("-", ".").split('.').count();
+        self.parts[..num_specified] == version.parts[..num_specified]
+    }
 }
 
 impl FromStr for Version {
