@@ -48,11 +48,6 @@ pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) 
     );
     let mut file = File::create(&config_file)?;
     file.write_all(config.as_bytes())?;
-    println!(
-        "{} was successfully migrated to {}",
-        renv_file.as_ref().display(),
-        config_file.as_ref().display()
-    );
     Ok(unresolved)
 }
 
