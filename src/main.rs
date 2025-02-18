@@ -3,9 +3,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use fs_err as fs;
-
 use rv::cli::utils::timeit;
-use rv::cli::{sync, CliContext};
+use rv::cli::{sync, CacheInfo, CliContext};
 use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
@@ -32,6 +31,11 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Gives information about where the cache is for that project
+    Cache {
+        #[clap(short, long)]
+        json: bool,
+    },
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -132,6 +136,18 @@ fn try_main() -> Result<()> {
         }
         Command::Sync => {
             _sync(&cli.config_file, false)?;
+        }
+        Command::Cache { json } => {
+            let context = CliContext::new(&cli.config_file)?;
+            let info = CacheInfo::new(&context, resolve_dependencies(&context));
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&info).expect("valid json")
+                );
+            } else {
+                println!("{info}");
+            }
         }
     }
 

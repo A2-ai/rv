@@ -1335,7 +1335,6 @@ name = "rv"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
  "bincode",
  "cachedir",
  "clap",
@@ -1365,7 +1364,6 @@ dependencies = [
  "toml",
  "toml_edit",
  "ureq",
- "url",
  "walkdir",
 ]
 

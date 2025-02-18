@@ -490,13 +490,11 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
 
-    use base64::engine::general_purpose::STANDARD_NO_PAD;
-    use base64::Engine;
     use git2::Error;
     use serde::Deserialize;
     use tempfile::TempDir;
 
-    use crate::cache::InstallationStatus;
+    use crate::cache::{hash_string, InstallationStatus};
     use crate::config::Config;
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;
@@ -533,15 +531,11 @@ mod tests {
         }
 
         fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
-            self.cache_dir
-                .path()
-                .join(STANDARD_NO_PAD.encode(repo_url.to_ascii_lowercase()))
+            self.cache_dir.path().join(hash_string(repo_url))
         }
 
         fn get_url_download_path(&self, url: &str) -> PathBuf {
-            self.cache_dir
-                .path()
-                .join(STANDARD_NO_PAD.encode(url.to_ascii_lowercase()))
+            self.cache_dir.path().join(hash_string(url))
         }
     }
 
