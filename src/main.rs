@@ -3,9 +3,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use fs_err as fs;
-
 use rv::cli::utils::timeit;
-use rv::cli::{migrate_renv, sync, CliContext};
+use rv::cli::{migrate_renv, sync, CacheInfo, CliContext};
 use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
@@ -32,6 +31,11 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Gives information about where the cache is for that project
+    Cache {
+        #[clap(short, long)]
+        json: bool,
+    },
     /// Migrate renv to rv
     Migrate {
         #[clap(subcommand)]
@@ -92,14 +96,23 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
                 println!("Nothing to do");
             }
             if !dry_run {
-                let lockfile = Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
-                if let Some(existing_lockfile) = &context.lockfile {
-                    if existing_lockfile != &lockfile {
-                        lockfile.save(context.lockfile_path())?;
-                        log::debug!("Lockfile changed, saving it.");
+                if resolved.is_empty() {
+                    // delete the lockfiles if there are no dependencies
+                    let lockfile_path = context.lockfile_path();
+                    if lockfile_path.exists() {
+                        fs::remove_file(lockfile_path)?;
                     }
                 } else {
-                    lockfile.save(context.lockfile_path())?;
+                    let lockfile =
+                        Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
+                    if let Some(existing_lockfile) = &context.lockfile {
+                        if existing_lockfile != &lockfile {
+                            lockfile.save(context.lockfile_path())?;
+                            log::debug!("Lockfile changed, saving it.");
+                        }
+                    } else {
+                        lockfile.save(context.lockfile_path())?;
+                    }
                 }
             }
 
@@ -136,6 +149,18 @@ fn try_main() -> Result<()> {
         }
         Command::Sync => {
             _sync(&cli.config_file, false)?;
+        }
+        Command::Cache { json } => {
+            let context = CliContext::new(&cli.config_file)?;
+            let info = CacheInfo::new(&context, resolve_dependencies(&context));
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&info).expect("valid json")
+                );
+            } else {
+                println!("{info}");
+            }
         }
         Command::Migrate {
             subcommand: MigrateSubcommand::Renv { renv_file },

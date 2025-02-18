@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 mod dependency;
 
+use crate::cache::InstallationStatus;
 use crate::git::GitReference;
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
@@ -137,14 +138,23 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
-            let resolved_dep = ResolvedDependency::from_locked_package(
-                package,
-                cache.get_package_installation_status(
-                    package.source.source_path(),
+            let installation_status = match &package.source {
+                Source::Git { git, sha, .. } => {
+                    cache.get_git_installation_status(&git, &sha, &package.name)
+                }
+                Source::Url { url, sha } => {
+                    cache.get_url_installation_status(&url, &sha, &package.name)
+                }
+                Source::Repository { ref repository } => cache.get_package_installation_status(
+                    repository.as_str(),
                     &package.name,
                     &package.version,
                 ),
-            );
+                // TODO: handle local
+                Source::Local { .. } => InstallationStatus::Absent,
+            };
+            let resolved_dep =
+                ResolvedDependency::from_locked_package(package, installation_status);
             let items = package
                 .dependencies
                 .iter()
@@ -217,7 +227,8 @@ impl<'d> Resolver<'d> {
                     clone_path
                 };
                 let package = parse_description_file_in_folder(&package_path)?;
-                let status = cache.get_git_installation_status(repo_url, &sha);
+                let status = cache.get_git_installation_status(repo_url, &sha, &package.name);
+
                 let source = if let Some(dep) = item.dep {
                     dep.as_git_source_with_sha(sha)
                 } else {
@@ -479,13 +490,11 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
 
-    use base64::engine::general_purpose::STANDARD_NO_PAD;
-    use base64::Engine;
     use git2::Error;
     use serde::Deserialize;
     use tempfile::TempDir;
 
-    use crate::cache::InstallationStatus;
+    use crate::cache::{hash_string, InstallationStatus};
     use crate::config::Config;
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;
@@ -513,20 +522,20 @@ mod tests {
             InstallationStatus::Absent
         }
 
-        fn get_git_installation_status(&self, _: &str, _: &str) -> InstallationStatus {
+        fn get_git_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
+            InstallationStatus::Absent
+        }
+
+        fn get_url_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
             InstallationStatus::Absent
         }
 
         fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
-            self.cache_dir
-                .path()
-                .join(STANDARD_NO_PAD.encode(repo_url.to_ascii_lowercase()))
+            self.cache_dir.path().join(hash_string(repo_url))
         }
 
         fn get_url_download_path(&self, url: &str) -> PathBuf {
-            self.cache_dir
-                .path()
-                .join(STANDARD_NO_PAD.encode(url.to_ascii_lowercase()))
+            self.cache_dir.path().join(hash_string(url))
         }
     }
 
