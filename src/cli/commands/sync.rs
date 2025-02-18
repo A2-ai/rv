@@ -130,7 +130,7 @@ fn install_package_from_repository(
         }
     } else {
         if pkg.kind == PackageType::Source || binary_url.is_none() {
-            download_and_install_source(&source_url, &pkg_paths, library_dir, &pkg.name)?;
+            download_and_install_source(&source_url, &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
         } else {
             download_and_install_binary(
                 &binary_url.unwrap(),
@@ -140,8 +140,6 @@ fn install_package_from_repository(
                 &pkg.name,
                 &context.r_cmd,
             )?;
-        } else {
-            download_and_install_binary(&binary_url.unwrap(), &pkg_paths, library_dir, &pkg.name, &context.r_cmd)?;
         }
     }
 
