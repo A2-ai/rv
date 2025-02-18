@@ -148,7 +148,7 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
             // TODO: use cli flag for non-default r_version
-            let r_version = RCommandLine {}.version()?;
+            let r_version = RCommandLine {r: None}.version()?;
             // TODO: use cli flag to turn off default repositories (or specify non-default repos)
             let repositories = find_r_repositories()?;
             init(&project_directory, &r_version.major_minor(), &repositories)?;
