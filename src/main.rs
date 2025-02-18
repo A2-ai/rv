@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{migrate_renv, sync, CacheInfo, CliContext};
-use rv::{activate, Git, Http, Lockfile, ResolvedDependency, Resolver};
+use rv::{activate, deactivate, Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -42,7 +42,9 @@ pub enum Command {
         subcommand: MigrateSubcommand,
     },
     /// Activate a previously initialized rv project
-    Activate
+    Activate,
+    /// Deactivate an rv project
+    Deactivate,
 }
 
 #[derive(Debug, Subcommand)]
@@ -169,24 +171,30 @@ fn try_main() -> Result<()> {
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
             if unresolved.is_empty() {
-                println!("{} was successfully migrated to {}",
+                println!(
+                    "{} was successfully migrated to {}",
                     renv_file.display(),
                     cli.config_file.display()
                 );
             } else {
-                println!("{} was migrated to {} with {} unresolved packages: ",
+                println!(
+                    "{} was migrated to {} with {} unresolved packages: ",
                     renv_file.display(),
                     cli.config_file.display(),
                     unresolved.len()
                 );
                 for u in &unresolved {
                     eprintln!("    {u}");
-                };
+                }
             }
         }
         Command::Activate => {
             let dir = std::env::current_dir()?;
             activate(dir)?;
+        }
+        Command::Deactivate => {
+            let dir = std::env::current_dir()?;
+            deactivate(dir)?;
         }
     }
 

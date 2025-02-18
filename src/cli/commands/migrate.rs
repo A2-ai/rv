@@ -22,7 +22,10 @@ dependencies = [
 ]
 "#;
 
-pub fn migrate_renv(renv_file: impl AsRef<Path>, config_file: impl AsRef<Path>) -> Result<Vec<UnresolvedRenv>> {
+pub fn migrate_renv(
+    renv_file: impl AsRef<Path>,
+    config_file: impl AsRef<Path>,
+) -> Result<Vec<UnresolvedRenv>> {
     // project name is the parent directory of the renv project
     let project_name = renv_file
         .as_ref()

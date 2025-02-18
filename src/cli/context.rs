@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::{utils::write_err, DiskCache};
 use crate::{
     consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Cache,
-    CacheEntry, Config, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase, 
+    CacheEntry, Config, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase,
     SystemInfo, Version,
 };
 
