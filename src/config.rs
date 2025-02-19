@@ -30,6 +30,14 @@ impl Repository {
     pub fn url(&self) -> &str {
         self.url.trim_end_matches("/")
     }
+
+    pub fn new(alias: String, url: String, force_source: bool) -> Self {
+        Self {
+            alias,
+            url,
+            force_source,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -193,6 +201,19 @@ pub struct Config {
 }
 
 impl Config {
+    pub(crate) fn set_required_fields(
+        &mut self,
+        name: String,
+        r_version: Version,
+        repositories: Vec<Repository>,
+        dependencies: Vec<ConfigDependency>,
+    ) {
+        self.project.name = name;
+        self.project.r_version = r_version;
+        self.project.repositories = repositories;
+        self.project.dependencies = dependencies;
+    }
+
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
         let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,

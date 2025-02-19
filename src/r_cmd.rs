@@ -51,7 +51,7 @@ pub trait RCmd {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RCommandLine {
     /// specifies the path to the R executable on the system. None indicates using "R" on the $PATH
-    pub(crate) r: Option<PathBuf>,
+    pub r: Option<PathBuf>,
 }
 
 pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
