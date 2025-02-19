@@ -5,7 +5,9 @@ use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
-use rv::{activate, deactivate, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
+use rv::{
+    activate, deactivate, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
+};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]

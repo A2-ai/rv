@@ -25,25 +25,32 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
 
     let rprofile_path = dir.join(".Rprofile");
     if !rprofile_path.exists() {
-        write(&rprofile_path, format!("{}\n", activation_string()))
-            .map_err(|e| ActivateError { source: ActivateErrorKind::Io(e) })?;
+        write(&rprofile_path, format!("{}\n", activation_string())).map_err(|e| ActivateError {
+            source: ActivateErrorKind::Io(e),
+        })?;
     };
 
-    let content = read_to_string(&rprofile_path)
-        .map_err(|e| ActivateError{ source: ActivateErrorKind::Io(e) })?;
+    let content = read_to_string(&rprofile_path).map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(e),
+    })?;
 
     if content.contains(&activation_string()) {
-        return Ok(())
+        return Ok(());
     }
 
-    let mut file = OpenOptions::new().append(true).open(&rprofile_path)
-        .map_err(|e| ActivateError{ source: ActivateErrorKind::Io(e) })?;
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(&rprofile_path)
+        .map_err(|e| ActivateError {
+            source: ActivateErrorKind::Io(e),
+        })?;
 
-    writeln!(file, "{}", activation_string())
-        .map_err(|e| ActivateError{ source: ActivateErrorKind::Io(e) })?;
+    writeln!(file, "{}", activation_string()).map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(e),
+    })?;
 
     write_activate_file(dir)?;
-    
+
     Ok(())
 }
 
@@ -55,8 +62,9 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         return Ok(());
     }
 
-    let content = read_to_string(&rprofile_path)
-        .map_err(|e| ActivateError { source: ActivateErrorKind::Io(e) })?;
+    let content = read_to_string(&rprofile_path).map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(e),
+    })?;
 
     let new_content = content
         .lines()
@@ -64,8 +72,9 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    write(&rprofile_path, new_content)
-        .map_err(|e| ActivateError { source: ActivateErrorKind::Io(e) })?;
+    write(&rprofile_path, new_content).map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(e),
+    })?;
 
     Ok(())
 }
@@ -91,10 +100,9 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     }
 
     // Write the content of activate file
-    write(activate_file_name, content)
-        .map_err(|e| ActivateError {
-            source: ActivateErrorKind::Io(e),
-        })?;
+    write(activate_file_name, content).map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(e),
+    })?;
     Ok(())
 }
 
