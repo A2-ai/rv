@@ -126,11 +126,12 @@ pub enum ActivateErrorKind {
     Io(std::io::Error),
 }
 
+#[cfg(test)]
 mod tests {
     use super::{activate, ACTIVATE_FILE_NAME};
 
     #[test]
-    fn tester() {
+    fn test_activation() {
         let tmp_dir = tempfile::tempdir().unwrap();
         activate(&tmp_dir).unwrap();
         assert!(tmp_dir.path().join(ACTIVATE_FILE_NAME).exists());
