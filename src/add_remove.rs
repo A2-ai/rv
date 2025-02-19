@@ -4,6 +4,8 @@ use fs_err::write;
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, Value};
 
+/// Add simple dependencies to the config file
+/// Currently, additional configuration specificity must be added directly in the file
 pub fn add_dependencies(
     config_file: impl AsRef<Path>,
     deps: Vec<String>,
@@ -11,6 +13,7 @@ pub fn add_dependencies(
     config_edit(config_file, deps, add_fxn)
 }
 
+/// Remove dependencies from the config file
 pub fn remove_dependencies(
     config_file: impl AsRef<Path>,
     deps: Vec<String>,
@@ -28,6 +31,7 @@ fn config_edit<F>(
 where
     F: Fn(&mut Array, Vec<String>),
 {
+    // Read the configuration file into a DocumentMut for toml editing
     let config_file = config_file.as_ref();
     let config_content = fs::read_to_string(&config_file).map_err(|e| ConfigEditError {
         path: config_file.into(),
@@ -41,6 +45,7 @@ where
             source: ConfigEditErrorKind::Parse(e),
         })?;
 
+    // Configuration is behind a project table
     let project_table = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())
@@ -49,6 +54,7 @@ where
             source: ConfigEditErrorKind::NoField("project".to_string()),
         })?;
 
+    // Extract the dependencies field and remove any suffix decor on the last element
     let project_dependencies = project_table
         .get_mut("dependencies")
         .and_then(|item| item.as_array_mut())
@@ -56,16 +62,18 @@ where
             path: config_file.into(),
             source: ConfigEditErrorKind::NoField("dependencies".to_string()),
         })?;
-
     if let Some(last) = project_dependencies.iter_mut().last() {
         last.decor_mut().set_suffix("");
     }
 
+    // Edit the dependencies field to either add or remove the dependencies contained in `deps`
     edit_fxn(project_dependencies, deps);
 
+    // Set a trailing new line and comma for the last element for proper formatting
     project_dependencies.set_trailing("\n");
     project_dependencies.set_trailing_comma(true);
 
+    // write back out the file
     write(config_file, doc.to_string()).map_err(|e| ConfigEditError {
         path: config_file.into(),
         source: ConfigEditErrorKind::Io(e),
@@ -75,10 +83,12 @@ where
 }
 
 fn add_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
+    // collect the names of all of the dependencies
     let config_dep_names = config_deps
         .iter()
         .filter_map(|v| get_dependency_name(v))
         .collect::<Vec<_>>();
+    // Determine if the dep to add is in the config, if not add it
     for d in add_deps {
         if !config_dep_names.contains(&d) {
             config_deps.push(Value::String(Formatted::new(d)));
@@ -90,10 +100,11 @@ fn add_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
     }
 }
 
-fn remove_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
+fn remove_fxn(config_deps: &mut Array, remove_deps: Vec<String>) {
+    // retain config_deps that do not match any of the deps to remove
     config_deps.retain(|v| {
         if let Some(name) = get_dependency_name(v) {
-            !add_deps.contains(&name)
+            !remove_deps.contains(&name)
         } else {
             true
         }
@@ -101,6 +112,7 @@ fn remove_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
 }
 
 fn get_dependency_name(value: &Value) -> Option<String> {
+    // Our dependencies are currently only formatted as basic Strings and InlineTable
     match value {
         Value::String(s) => Some(s.value().to_string()),
         Value::InlineTable(t) => t
