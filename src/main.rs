@@ -185,7 +185,7 @@ fn try_main() -> Result<()> {
             if sync {
                 _sync(&cli.config_file, false)?;
             } else if plan {
-                _sync(&cli.config_file, false)?;
+                _sync(&cli.config_file, true)?;
             }
         }
         Command::Remove {
@@ -200,7 +200,7 @@ fn try_main() -> Result<()> {
             if sync {
                 _sync(&cli.config_file, false)?;
             } else if plan {
-                _sync(&cli.config_file, false)?;
+                _sync(&cli.config_file, true)?;
             }
         }
         Command::Cache { json } => {

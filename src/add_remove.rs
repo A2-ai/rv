@@ -135,7 +135,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn tester() {
+    fn add_remove() {
         let content = read_to_string("src/tests/valid_config/all_fields.toml").unwrap();
         let mut out = String::new();
         let tmp_dir = tempdir().unwrap();
