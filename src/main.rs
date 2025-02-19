@@ -5,7 +5,9 @@ use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{migrate_renv, sync, CacheInfo, CliContext};
-use rv::{add_dependencies, remove_dependencies, Git, Http, Lockfile, ResolvedDependency, Resolver};
+use rv::{
+    add_dependencies, remove_dependencies, Git, Http, Lockfile, ResolvedDependency, Resolver,
+};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -171,7 +173,14 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Add { options: DependencyEditOptions { dependencies, sync, plan } } => {
+        Command::Add {
+            options:
+                DependencyEditOptions {
+                    dependencies,
+                    sync,
+                    plan,
+                },
+        } => {
             add_dependencies(&cli.config_file, dependencies)?;
             if sync {
                 _sync(&cli.config_file, false)?;
@@ -179,7 +188,14 @@ fn try_main() -> Result<()> {
                 _sync(&cli.config_file, false)?;
             }
         }
-        Command::Remove { options: DependencyEditOptions { dependencies, sync, plan } } => {
+        Command::Remove {
+            options:
+                DependencyEditOptions {
+                    dependencies,
+                    sync,
+                    plan,
+                },
+        } => {
             remove_dependencies(&cli.config_file, dependencies)?;
             if sync {
                 _sync(&cli.config_file, false)?;
