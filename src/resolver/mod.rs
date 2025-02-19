@@ -3,11 +3,13 @@ use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase
 
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+use std::fs;
 use std::path::PathBuf;
 
 mod dependency;
 
 use crate::cache::InstallationStatus;
+use crate::fs::untar_archive;
 use crate::git::GitReference;
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
@@ -34,10 +36,13 @@ pub(crate) struct QueueItem<'d> {
     dep: Option<&'d ConfigDependency>,
     pub(crate) version_requirement: Option<Cow<'d, VersionRequirement>>,
     install_suggestions: bool,
-    force_source: bool,
+    force_source: Option<bool>,
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
     local_path: Option<PathBuf>,
+    // Only for top level dependencies. Checks whether the config dependency is matching
+    // what we have in the lockfile, we have one.
+    matching_in_lockfile: Option<bool>,
 }
 
 impl<'d> QueueItem<'d> {
@@ -52,7 +57,7 @@ impl<'d> QueueItem<'d> {
 
 // Macro to go around borrow errors we would get with a normal fn
 macro_rules! prepare_deps {
-    ($resolved:expr, $deps:expr) => {{
+    ($resolved:expr, $deps:expr, $matching_in_lockfile:expr) => {{
         let items = $deps
             .direct
             .into_iter()
@@ -64,6 +69,7 @@ macro_rules! prepare_deps {
                 );
 
                 i.version_requirement = p.version_requirement().map(|x| Cow::Owned(x.clone()));
+                i.matching_in_lockfile = $matching_in_lockfile;
 
                 for (pkg_name, remote) in $resolved.remotes.values() {
                     if let Some(n) = pkg_name {
@@ -110,15 +116,25 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
-        if !local_path.exists() || !local_path.is_dir() {
+
+        let package = if local_path.is_file() {
+            // We have a file, it should be a tarball. TODO: Extract it to tmpdir for now
+            // even though we might have to extract again in sync?
+            // TODO: keep the sha of the tar in the lockfile?
+            let tempdir = tempfile::tempdir()?;
+            let path = untar_archive(fs::read(&local_path)?.as_slice(), tempdir.path())?;
+            parse_description_file_in_folder(path.unwrap_or_else(|| local_path.clone()))?
+        } else if local_path.is_dir() {
+            // we have a folder
+            parse_description_file_in_folder(local_path)?
+        } else {
             return Err(format!(
-                "{} doesn't exist or is not a directory",
+                "{} doesn't exist or is not a directory/tarball",
                 local_path.display()
             )
             .into());
-        }
+        };
 
-        let package = parse_description_file_in_folder(local_path)?;
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
             Source::Local {
@@ -126,7 +142,7 @@ impl<'d> Resolver<'d> {
             },
             item.install_suggestions,
         );
-        Ok(prepare_deps!(resolved_dep, deps))
+        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
     fn lockfile_lookup(
@@ -134,6 +150,13 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
         cache: &'d impl Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+        // If the dependency is not matching, do not even look at the lockfile
+        if let Some(matching) = item.matching_in_lockfile {
+            if !matching {
+                return None;
+            }
+        }
+
         if let Some(package) = self
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
@@ -180,7 +203,11 @@ impl<'d> Resolver<'d> {
                     continue;
                 }
             }
-            let force_source = item.force_source || *repo_source_only;
+            let force_source = if let Some(source) = item.force_source {
+                source
+            } else {
+                *repo_source_only
+            };
 
             if let Some((package, package_type)) = repo.find_package(
                 item.name.as_ref(),
@@ -200,7 +227,7 @@ impl<'d> Resolver<'d> {
                         &package.version.original,
                     ),
                 );
-                return Some(prepare_deps!(resolved_dep, deps));
+                return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
             }
         }
 
@@ -247,7 +274,7 @@ impl<'d> Resolver<'d> {
                     item.install_suggestions,
                     status,
                 );
-                Ok(prepare_deps!(resolved_dep, deps))
+                Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
             }
             Err(e) => {
                 Err(format!("Could not clone repository {repo_url} (ref: {git_ref:?}) {e}").into())
@@ -281,7 +308,7 @@ impl<'d> Resolver<'d> {
             },
             item.install_suggestions,
         );
-        Ok(prepare_deps!(resolved_dep, deps))
+        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
     /// Tries to find all dependencies from the repos, as well as their installation status
@@ -307,6 +334,9 @@ impl<'d> Resolver<'d> {
                 parent: None,
                 remote: None,
                 local_path: d.local_path(),
+                matching_in_lockfile: self
+                    .lockfile
+                    .and_then(|l| Some(l.get_package(d.name(), Some(d)).is_some())),
             })
             .collect();
 

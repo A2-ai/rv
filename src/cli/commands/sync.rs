@@ -12,7 +12,7 @@ use fs_err as fs;
 use crate::cli::cache::PackagePaths;
 use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
-use crate::fs::mtime_recursive;
+use crate::fs::{mtime_recursive, untar_archive};
 use crate::git::GitReference;
 use crate::link::LinkMode;
 use crate::lockfile::Source;
@@ -200,20 +200,45 @@ fn install_local_package(
 ) -> Result<()> {
     // First we check if the package exists in the library and what's the mtime in it
     let local_path = Path::new(pkg.source.source_path()).canonicalize()?;
-    // TODO: we actually do that twice, a bit wasteful
-    let local_mtime = mtime_recursive(&local_path)?;
+    let tempdir = tempfile::tempdir()?;
 
-    // if the mtime we found locally is more recent, we build it
-    log::debug!("Building the local package in {}", local_path.display());
-    install_via_r(&local_path, library_dir, &library_dir, &context.r_cmd)?;
+    // TODO: use the file sha somehow?
+    let actual_path = if local_path.is_file() {
+        // TODO: we're already doing that in resolve, that's wasteful
+        let path = untar_archive(std::fs::read(&local_path)?.as_slice(), tempdir.path())?;
+        path.unwrap_or_else(|| local_path.clone())
+    } else {
+        local_path.clone()
+    };
 
-    // And just write the mtime in the output directory
-    let mut file = fs::File::create(
-        library_dir
-            .join(pkg.name.as_ref())
-            .join(LOCAL_MTIME_FILENAME),
-    )?;
-    file.write_all(local_mtime.unix_seconds().to_string().as_bytes())?;
+    if is_binary_package(&actual_path, pkg.name.as_ref()) {
+        // We just copy without to the library
+        log::debug!(
+            "Local package in {} is a binary package",
+            actual_path.display()
+        );
+        LinkMode::Copy.link_files(
+            pkg.name.as_ref(),
+            actual_path,
+            library_dir.join(pkg.name.as_ref()),
+        )?;
+    } else {
+        log::debug!("Building the local package in {}", actual_path.display());
+        install_via_r(&actual_path, library_dir, &library_dir, &context.r_cmd)?;
+    }
+
+    // If it's a dir, save the dir mtime
+    if local_path.is_file() {
+        let local_mtime = mtime_recursive(&local_path)?;
+
+        // And just write the mtime in the output directory
+        let mut file = fs::File::create(
+            library_dir
+                .join(pkg.name.as_ref())
+                .join(LOCAL_MTIME_FILENAME),
+        )?;
+        file.write_all(local_mtime.unix_seconds().to_string().as_bytes())?;
+    }
 
     Ok(())
 }
