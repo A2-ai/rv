@@ -33,13 +33,13 @@ pub enum Command {
     Sync,
     /// Add dependencies to the project
     Add {
-        #[clap(value_parser)]
-        dependencies: Vec<String>,
+        #[clap(flatten)]
+        options: DependencyEditOptions,
     },
     /// Remove dependencies from the project
     Remove {
-        #[clap(value_parser)]
-        dependencies: Vec<String>,
+        #[clap(flatten)]
+        options: DependencyEditOptions,
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -59,6 +59,17 @@ pub enum MigrateSubcommand {
         #[clap(value_parser, default_value = "renv.lock")]
         renv_file: PathBuf,
     },
+}
+#[derive(Debug, Parser)]
+pub struct DependencyEditOptions {
+    #[clap(value_parser)]
+    dependencies: Vec<String>,
+
+    #[clap(long, conflicts_with = "plan")]
+    sync: bool,
+
+    #[clap(long, conflicts_with = "sync")]
+    plan: bool,
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -160,11 +171,21 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Add { dependencies } => {
+        Command::Add { options: DependencyEditOptions { dependencies, sync, plan } } => {
             add_dependencies(&cli.config_file, dependencies)?;
+            if sync {
+                _sync(&cli.config_file, false)?;
+            } else if plan {
+                _sync(&cli.config_file, false)?;
+            }
         }
-        Command::Remove { dependencies } => {
+        Command::Remove { options: DependencyEditOptions { dependencies, sync, plan } } => {
             remove_dependencies(&cli.config_file, dependencies)?;
+            if sync {
+                _sync(&cli.config_file, false)?;
+            } else if plan {
+                _sync(&cli.config_file, false)?;
+            }
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
