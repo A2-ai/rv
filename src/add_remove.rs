@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use std::fs;
-use toml_edit::{Array, DocumentMut, Formatted, Item, Value};
+use toml_edit::{Array, DocumentMut, Formatted, Value};
 
 fn add(deps: Vec<String>, config_file: impl AsRef<Path>) -> Result<(), ConfigEditError> {
     let config_file = config_file.as_ref();
@@ -17,55 +17,55 @@ fn add(deps: Vec<String>, config_file: impl AsRef<Path>) -> Result<(), ConfigEdi
             source: ConfigEditErrorKind::Parse(e),
         })?;
 
-    let table = doc
+    let project_table = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())
-        .ok_or(ConfigEditError{
+        .ok_or(ConfigEditError {
             path: config_file.into(),
-            source: ConfigEditErrorKind::NoField("project".to_string())
+            source: ConfigEditErrorKind::NoField("project".to_string()),
         })?;
 
-    let dependencies = table.get_mut("dependencies")
+    let project_dependencies = project_table
+        .get_mut("dependencies")
         .and_then(|item| item.as_array_mut())
-        .ok_or(ConfigEditError{
+        .ok_or(ConfigEditError {
             path: config_file.into(),
-            source: ConfigEditErrorKind::NoField("dependencies".to_string())
+            source: ConfigEditErrorKind::NoField("dependencies".to_string()),
         })?;
-    let tmp = dependencies.decor_mut();
-    tmp.set_suffix(String::new());
 
+    if let Some(last) = project_dependencies.iter_mut().last() {
+        last.decor_mut().set_suffix("");
+    }
+
+    let project_repo_dep_names = repository_dependencies(project_dependencies);
     for d in deps {
-        if !is_elem_of_array(&dependencies, &d) {
-            let mut value = Value::String(Formatted::new(d));
-            let decor = value.decor_mut();
-            decor.set_prefix("    ");
-            dependencies.push(value);
+        if !project_repo_dep_names.contains(&d) {
+            project_dependencies.push(Value::String(Formatted::new(d)));
+            if let Some(last) = project_dependencies.iter_mut().last() {
+                last.decor_mut().set_prefix("\n    ");
+            }
         }
     }
-    println!("{}", doc.to_string());
+
     Ok(())
 }
 
-fn is_elem_of_array(arr: &Array, elem: &str) -> bool {
-    for a in arr {
-        match a {
-            Value::String(s) => {
-                return s.value() == elem
-            },
+fn repository_dependencies(arr: &Array) -> Vec<String> {
+    arr
+        .iter()
+        .filter_map(|v| match v {
+            Value::String(s) => Some(s.value().to_string()),
             Value::InlineTable(t) => {
-                if !t.contains_key("repository") {
-                    continue;
+                let name = t.get("name");
+                if let Some(Value::String(s)) = name {
+                    Some(s.value().to_string())
+                } else {
+                    None
                 }
-                if let Some(Value::String(s)) = t.get("name")
-                {
-                    return s.value() == elem
-                }
-                
-            }
-            _ => continue
-        }
-    }
-    false
+            },
+            _ => None
+        })
+        .collect::<Vec<_>>()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -89,8 +89,8 @@ mod tests {
     #[test]
     fn tester() {
         super::add(
-            vec!["dplyr".to_string()],
-            "example_projects/rspm-cran/rproject.toml",
+            vec!["test_pkg".to_string()],
+            "example_projects/simple/rproject.toml",
         )
         .unwrap();
     }
