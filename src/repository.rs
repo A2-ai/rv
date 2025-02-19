@@ -9,7 +9,7 @@ use crate::package::{Version, VersionRequirement};
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {
-    pub(crate) url: String,
+    pub url: String,
     source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
@@ -24,6 +24,14 @@ impl RepositoryDatabase {
             url: url.to_string(),
             ..Default::default()
         }
+    }
+
+    // (source, binary)
+    pub fn get_packages_count(&self, r_version: [u32; 2]) -> (usize, usize) {
+        (
+            self.source_packages.len(),
+            self.binary_packages.get(&r_version).map_or(0, |x| x.len()),
+        )
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {

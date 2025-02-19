@@ -27,7 +27,7 @@ pub use git::{Git, GitOperations};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::Lockfile;
-pub use package::{is_binary_package, Version, VersionRequirement};
+pub use package::{is_binary_package, Version, VersionRequirement, PackageType};
 pub use r_cmd::{find_r_version_command, RCmd, RCommandLine};
 pub use renv::RenvLock;
 pub use repo_path::RepoServer;

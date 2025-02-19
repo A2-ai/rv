@@ -331,6 +331,7 @@ pub struct SyncChange {
     pub version: Option<String>,
     pub source: Option<String>,
     pub timing: Option<Duration>,
+    pub from_cache: Option<bool>,
 }
 
 impl SyncChange {
@@ -340,6 +341,7 @@ impl SyncChange {
         source: &str,
         kind: PackageType,
         timing: Duration,
+        from_cache: bool,
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -348,6 +350,7 @@ impl SyncChange {
             timing: Some(timing),
             source: Some(source.to_string()),
             version: Some(version.to_string()),
+            from_cache: Some(from_cache),
         }
     }
 
@@ -359,6 +362,7 @@ impl SyncChange {
             timing: None,
             source: None,
             version: None,
+            from_cache: None,
         }
     }
 
@@ -614,6 +618,7 @@ pub fn sync(
                                 dep.source.source_path(),
                                 dep.kind,
                                 start.elapsed(),
+                                dep.is_installed(),
                             );
                             let mut plan = plan.lock().unwrap();
                             plan.mark_installed(&dep.name);

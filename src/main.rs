@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
-use rv::{Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver};
+use rv::{Git, Http, Lockfile, PackageType, RCmd, RCommandLine, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -31,12 +31,21 @@ pub enum Command {
     /// Returns the path for the library for the current project/system
     Library,
     /// Dry run of what sync would do
-    Plan,
+    Plan {
+        #[clap(short, long)]
+        /// Include a summary of the system and repositories
+        include_summary: bool,
+    },
     /// Replaces the library with exactly what is in the lock file
-    Sync,
+    Sync {
+        #[clap(short, long)]
+        /// Include a summary of the system and repositories
+        include_summary: bool,
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
+        /// Output the data in JSON format
         json: bool,
     },
     /// Migrate renv to rv
@@ -81,7 +90,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
+fn _sync(config_file: &PathBuf, dry_run: bool, include_summary: bool, has_logs_enabled: bool) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
@@ -119,9 +128,59 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result
                 }
             }
 
+            let mut source_installed = vec![];
+            let mut binary_installed = vec![];
             for c in changes {
+                if c.installed {
+                    match c.kind.unwrap() {
+                        PackageType::Source => source_installed.push(c.from_cache.unwrap_or_default()),
+                        PackageType::Binary => binary_installed.push(c.from_cache.unwrap_or_default()),
+                    }
+                }
                 println!("{}", c.print(!dry_run));
             }
+
+            // Add an empty line to separate from the deps
+            if !source_installed.is_empty() || !binary_installed.is_empty() {
+                println!();
+            }
+
+            if !source_installed.is_empty() {
+                println!("Installed {} packages from source ({} from cache)", source_installed.len(), source_installed.iter().filter(|x| **x).count());
+            }
+            if !binary_installed.is_empty() {
+                println!("Installed {} binary packages ({} from cache)", binary_installed.len(), binary_installed.iter().filter(|x| **x).count());
+            }
+
+            // ## System information
+            // R version in path: 4.2.0 (different from declared in rproject.toml: 4.4.1)
+            // OS: {os}
+            // Arch: {arch}
+            //
+            // ## Repositories
+            // https://cran.r-project.org/: 26012 source packages, 17090 binary packages
+            // And now the summary
+            if include_summary {
+                println!("\n== Summary ==");
+                println!("System: {}{}, R {}", context.cache.system_info.os_family(), if let Some(arch) = context.cache.system_info.arch() {
+                    format!(" ({arch})")
+                } else { String::new() }, context.r_version.original);
+
+
+                if !context.databases.is_empty() {
+                    println!("Repositories");
+
+                    for (db, _) in &context.databases {
+                        let (source_count, binary_count) =
+                            db.get_packages_count(context.r_version.major_minor());
+                        println!(
+                            "  {}: {source_count} source packages, {binary_count} binary packages",
+                            db.url
+                        );
+                    }
+                }
+            }
+
             Ok(())
         }
         Err(e) => {
@@ -162,11 +221,11 @@ fn try_main() -> Result<()> {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
         }
-        Command::Plan => {
-            _sync(&cli.config_file, true, cli.verbose.is_present())?;
+        Command::Plan { include_summary } => {
+            _sync(&cli.config_file, true, include_summary, cli.verbose.is_present())?;
         }
-        Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present())?;
+        Command::Sync { include_summary } => {
+            _sync(&cli.config_file, false, include_summary,cli.verbose.is_present())?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
