@@ -139,6 +139,7 @@ fn try_main() -> Result<()> {
         .filter_level(cli.verbose.log_level_filter())
         .filter(Some("ureq"), log::LevelFilter::Off)
         .filter(Some("rustls"), log::LevelFilter::Off)
+        .filter(Some("os_info"), log::LevelFilter::Off)
         .init();
 
     match cli.command {
@@ -148,11 +149,14 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
             // TODO: use cli flag for non-default r_version
-            let r_version = RCommandLine {r: None}.version()?;
+            let r_version = RCommandLine { r: None }.version()?;
             // TODO: use cli flag to turn off default repositories (or specify non-default repos)
             let repositories = find_r_repositories()?;
             init(&project_directory, &r_version.major_minor(), &repositories)?;
-            println!("rv project successfully initialized at {}", project_directory.display());
+            println!(
+                "rv project successfully initialized at {}",
+                project_directory.display()
+            );
         }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
@@ -181,19 +185,21 @@ fn try_main() -> Result<()> {
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
             if unresolved.is_empty() {
-                println!("{} was successfully migrated to {}",
+                println!(
+                    "{} was successfully migrated to {}",
                     renv_file.display(),
                     cli.config_file.display()
                 );
             } else {
-                println!("{} was migrated to {} with {} unresolved packages: ",
+                println!(
+                    "{} was migrated to {} with {} unresolved packages: ",
                     renv_file.display(),
                     cli.config_file.display(),
                     unresolved.len()
                 );
                 for u in &unresolved {
                     eprintln!("    {u}");
-                };
+                }
             }
         }
     }

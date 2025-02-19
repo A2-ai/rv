@@ -1,8 +1,11 @@
 use std::{
-    fs::File, io::{Read, Write}, path::Path, process::Command
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+    process::Command,
 };
 
-use crate::{Repository, Version};
+use crate::Repository;
 
 const GITIGNORE_CONTENT: &str = "library/\nstaging/\n";
 const GITIGNORE_PATH: &str = "rv/.gitignore";
@@ -51,15 +54,13 @@ pub fn init(
 
     let config = render_config(&project_name, &r_version, &repositories);
 
-    let mut file = File::create(proj_dir.join(CONFIG_FILENAME))
-        .map_err(|e| InitError {
-            source: InitErrorKind::Io(e)
-        })?;
+    let mut file = File::create(proj_dir.join(CONFIG_FILENAME)).map_err(|e| InitError {
+        source: InitErrorKind::Io(e),
+    })?;
 
-    file.write_all(config.as_bytes())
-        .map_err(|e| InitError{
-            source: InitErrorKind::Io(e)
-        })?;
+    file.write_all(config.as_bytes()).map_err(|e| InitError {
+        source: InitErrorKind::Io(e),
+    })?;
     Ok(())
 }
 
@@ -169,11 +170,12 @@ pub enum InitErrorKind {
     CommandFailed(String),
 }
 
+#[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
     use crate::{
-        cli::commands::init::{GITIGNORE_PATH, LIBRARY_PATH, CONFIG_FILENAME},
+        cli::commands::init::{CONFIG_FILENAME, GITIGNORE_PATH, LIBRARY_PATH},
         Repository, Version,
     };
 
