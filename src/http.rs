@@ -3,10 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{io, io::Write, time::Duration};
 
-use flate2::read::GzDecoder;
-use fs_err as fs;
+use crate::fs::untar_archive;
 use sha2::{Digest, Sha256};
-use tar::Archive;
 
 // A writer that returns the sha256 hash at the end
 struct ShaWriter<W: Write> {
@@ -179,30 +177,13 @@ impl HttpDownload for Http {
         let (inner, sha) = writer.finish();
 
         let final_dest = if use_sha_in_path {
-            destination.join(&sha[..7])
+            destination.join(&sha[..10])
         } else {
             destination.to_path_buf()
         };
-        fs::create_dir_all(&final_dest).map_err(|e| HttpError::from_io(url, e))?;
 
-        let tar = GzDecoder::new(Cursor::new(inner));
-        let mut archive = Archive::new(tar);
-        archive.unpack(&final_dest).map_err(|e| HttpError {
-            url: url.to_string(),
-            source: HttpErrorKind::Io(e),
-        })?;
-
-        let dir: Option<PathBuf> = fs::read_dir(&final_dest)
-            .map_err(|e| HttpError::from_io(url, e))?
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                if entry.file_type().ok()?.is_dir() {
-                    Some(entry.path())
-                } else {
-                    None
-                }
-            })
-            .next();
+        let dir = untar_archive(Cursor::new(inner), &final_dest)
+            .map_err(|e| HttpError::from_io(url, e))?;
 
         log::debug!(
             "Successfully extracted archive to {} (in sub folder: {:?})",

@@ -1,8 +1,12 @@
-use std::fs;
+use fs_err as fs;
 use std::fs::Metadata;
-use std::path::Path;
+use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
 
 use filetime::FileTime;
+use flate2::read::GzDecoder;
+use sha2::{Digest, Sha256};
+use tar::Archive;
 use walkdir::WalkDir;
 
 /// Copy the whole content of a folder to another folder
@@ -101,4 +105,42 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
         .max() // or_else handles the case where there are no files in the directory.
         .unwrap_or_else(|| FileTime::from_last_modification_time(&meta));
     Ok(max_mtime)
+}
+
+/// Untars an archive in the given destination folder, returning a path to the first folder in what
+/// was extracted since R tarballs are (always?) a folder
+pub(crate) fn untar_archive<R: Read>(
+    reader: R,
+    dest: impl AsRef<Path>,
+) -> Result<Option<PathBuf>, std::io::Error> {
+    let dest = dest.as_ref();
+    fs::create_dir_all(&dest)?;
+
+    let tar = GzDecoder::new(reader);
+    let mut archive = Archive::new(tar);
+    archive.unpack(&dest)?;
+
+    let dir: Option<PathBuf> = fs::read_dir(&dest)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            if entry.file_type().ok()?.is_dir() {
+                Some(entry.path())
+            } else {
+                None
+            }
+        })
+        .next();
+
+    Ok(dir)
+}
+
+pub(crate) fn hash_file(path: impl AsRef<Path>) -> Result<String, std::io::Error> {
+    let mut hasher = Sha256::new();
+    let file = fs::File::open(path.as_ref())?;
+    let mut reader = BufReader::new(file);
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer)?;
+    hasher.update(&buffer);
+    let hash = hasher.finalize();
+    Ok(format!("{hash:x}"))
 }

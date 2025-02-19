@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
-use rv::cli::{migrate_renv, sync, CacheInfo, CliContext};
+use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    add_dependencies, remove_dependencies, Git, Http, Lockfile, ResolvedDependency, Resolver,
+    add_dependencies, remove_dependencies, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
 };
 
 #[derive(Parser)]
@@ -26,7 +26,10 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Creates a new rv project
-    Init,
+    Init {
+        #[clap(value_parser)]
+        project_directory: PathBuf,
+    },
     /// Returns the path for the library for the current project/system
     Library,
     /// Dry run of what sync would do
@@ -159,10 +162,25 @@ fn try_main() -> Result<()> {
         .filter_level(cli.verbose.log_level_filter())
         .filter(Some("ureq"), log::LevelFilter::Off)
         .filter(Some("rustls"), log::LevelFilter::Off)
+        .filter(Some("os_info"), log::LevelFilter::Off)
         .init();
 
     match cli.command {
-        Command::Init => todo!("implement init"),
+        Command::Init { project_directory } => {
+            if project_directory.exists() {
+                println!("{} already exists", project_directory.display());
+                return Ok(());
+            }
+            // TODO: use cli flag for non-default r_version
+            let r_version = RCommandLine { r: None }.version()?;
+            // TODO: use cli flag to turn off default repositories (or specify non-default repos)
+            let repositories = find_r_repositories()?;
+            init(&project_directory, &r_version.major_minor(), &repositories)?;
+            println!(
+                "rv project successfully initialized at {}",
+                project_directory.display()
+            );
+        }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
