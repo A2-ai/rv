@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{migrate_renv, sync, CacheInfo, CliContext};
-use rv::{Git, Http, Lockfile, ResolvedDependency, Resolver};
+use rv::{add_dependencies, remove_dependencies, Git, Http, Lockfile, ResolvedDependency, Resolver};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -31,6 +31,16 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Add dependencies to the project
+    Add {
+        #[clap(value_parser)]
+        dependencies: Vec<String>,
+    },
+    /// Remove dependencies from the project
+    Remove {
+        #[clap(value_parser)]
+        dependencies: Vec<String>,
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
@@ -149,6 +159,12 @@ fn try_main() -> Result<()> {
         }
         Command::Sync => {
             _sync(&cli.config_file, false)?;
+        }
+        Command::Add { dependencies } => {
+            add_dependencies(&cli.config_file, dependencies)?;
+        }
+        Command::Remove { dependencies } => {
+            remove_dependencies(&cli.config_file, dependencies)?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
