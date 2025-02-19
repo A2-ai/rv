@@ -23,6 +23,8 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         });
     }
 
+    write_activate_file(dir)?;
+
     let rprofile_path = dir.join(".Rprofile");
     if !rprofile_path.exists() {
         write(&rprofile_path, format!("{}\n", activation_string())).map_err(|e| ActivateError {
@@ -44,12 +46,10 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         .map_err(|e| ActivateError {
             source: ActivateErrorKind::Io(e),
         })?;
-
+    println!("file created");
     writeln!(file, "{}", activation_string()).map_err(|e| ActivateError {
         source: ActivateErrorKind::Io(e),
     })?;
-
-    write_activate_file(dir)?;
 
     Ok(())
 }
@@ -94,6 +94,11 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = &dir.join(ACTIVATE_FILE_NAME);
+    if let Some(parent) = activate_file_name.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| ActivateError {
+            source: ActivateErrorKind::Io(e),
+        })?;
+    }
     let activate_content = read_to_string(activate_file_name).unwrap_or_default();
     if content == activate_content {
         return Ok(());
@@ -119,4 +124,16 @@ pub enum ActivateErrorKind {
     #[error("{0} is not a directory")]
     NotDir(PathBuf),
     Io(std::io::Error),
+}
+
+mod tests {
+    use super::{activate, ACTIVATE_FILE_NAME};
+
+    #[test]
+    fn tester() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        activate(&tmp_dir).unwrap();
+        assert!(tmp_dir.path().join(ACTIVATE_FILE_NAME).exists());
+        assert!(tmp_dir.path().join(".Rprofile").exists());
+    }
 }
