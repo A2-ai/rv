@@ -103,11 +103,14 @@ impl<'a> RepoServer<'a> {
     /// Windows binaries are found under `/bin/windows/contrib/<R version major>.<R version minor>`
     ///
     /// ### MacOS
-    /// There is a split in the repository structure at R/4.2
+    /// There is an inflection point in the repository structure at R/4.2
     ///
-    /// * For R <= 4.2, binaries are found under `/bin/macosx/contrib/4.<R version minor>`
+    /// * For R < 4.2, binaries are only supported for x86_64 processors and are found under `/bin/macosx/contrib/4.<R version minor>`
+    /// 
+    /// * For R = 4.2, binaries for x86_64 processors are found under `/bin/macosx/contrib/4.<R version minor>`.
+    ///     binaries for arm64 processors are found under `/bin/macosx/big-sur-arm64/4.<R version minor>`
     ///
-    /// * For R > 4.2, binaries are found under `/bin/macosx/big-sur-<arch>/4.<R version minor>`
+    /// * For R > 4.2, binaries are for both processors are found under `/bin/macosx/big-sur-<arch>/4.<R version minor>`
     ///
     /// Currently, the Mac version is hard coded to Big Sur. Earlier versions are archived for earlier versions of R,
     /// but are not supported in this tooling. Later versions (sequoia) are also not yet differentiated
@@ -181,14 +184,39 @@ impl<'a> RepoServer<'a> {
         )
     }
 
+    /// CRAN-type repositories have had to adapt to the introduction of the Mac arm64 processors
+    /// For x86_64 processors, a split in the path to the binaries occurred at R/4.2:
+    /// * R <= 4.2, the path is `/bin/macosx/contrib/4.<R minor version>`
+    /// * R > 4.2, the path is `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
+    /// 
+    /// This split occurred to mirror the new path pattern for arm64 processors.
+    /// The path to the binaries built for arm64 binaries is `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
+    /// While CRAN itself only started supporting arm64 binaries at R/4.2, many repositories (including PPM) support binaries for older versions
     fn get_mac_url(
         &self,
         file_name: &str,
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
     ) -> Option<String> {
-        // CRAN-type repositories change the path in which Mac binaries are hosted after R/4.1
-        if r_version <= &[4, 1] {
+        // If the system architecture cannot be determined, Mac binaries are not supported
+        let arch = match sysinfo.arch() {
+            Some(a) => a,
+            None => return None,
+        };
+
+        // If the processor is arm64, binaries will only be found on this path
+        // CRAN does not officially support arm64 binaries until R/4.2, but other repositories may (i.e. PPM does)
+        if arch == "arm64" {
+            return Some(format!(
+                "{}/bin/macosx/big-sur-{arch}/contrib/{}.{}/{file_name}",
+                self.url(),
+                r_version[0],
+                r_version[1]
+            ))
+        }
+
+        // For x86_64, the path in which binaries are found switches after R/4.2
+        if r_version <= &[4, 2] {
             return Some(format!(
                 "{}/bin/macosx/contrib/{}.{}/{file_name}",
                 self.url(),
@@ -197,18 +225,12 @@ impl<'a> RepoServer<'a> {
             ));
         }
 
-        // The new Mac binary path for R >= 4.3 includes the architecture as well as the MacOS version.
-        // Currently, the MacOS version on CRAN-type repositories is hardcoded to be big-sur
-        if let Some(arch) = sysinfo.arch() {
-            return Some(format!(
-                "{}/bin/macosx/big-sur-{arch}/contrib/{}.{}/{file_name}",
-                self.url(),
-                r_version[0],
-                r_version[1]
-            ));
-        }
-
-        None
+        Some(format!(
+            "{}/bin/macosx/big-sur-{arch}/contrib/{}.{}/{file_name}",
+            self.url(),
+            r_version[0],
+            r_version[1]
+        ))
     }
 
     fn get_linux_url(
