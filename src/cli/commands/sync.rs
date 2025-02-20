@@ -8,6 +8,7 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use crossbeam::{channel, thread};
 use fs_err as fs;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::cli::cache::PackagePaths;
 use crate::cli::CliContext;
@@ -404,6 +405,7 @@ pub fn sync(
     deps: &[ResolvedDependency],
     library: &Library,
     dry_run: bool,
+    show_progress_bar: bool,
 ) -> Result<Vec<SyncChange>> {
     let mut sync_changes = Vec::new();
     let project_library = context.library_path();
@@ -502,6 +504,12 @@ pub fn sync(
     // We can't use references from the BuildPlan since we borrow mutably from it so we
     // create a lookup table for resolved deps by name and use those references across channels.
     let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (&d.name, d)).collect();
+
+    let pb_style =
+        ProgressStyle::with_template("[{elapsed_precise}] {bar:60} {pos:>7}/{len:7}\n{msg}")
+            .unwrap();
+    let pb = Arc::new(ProgressBar::new(plan.full_deps.len() as u64));
+    pb.set_style(pb_style.clone());
     let plan = Arc::new(Mutex::new(plan));
 
     let (ready_sender, ready_receiver) = channel::unbounded();
@@ -548,6 +556,7 @@ pub fn sync(
             }
             drop(ready_sender_clone);
         });
+        let installing = Arc::new(Mutex::new(HashSet::new()));
 
         // Our worker threads that will actually perform the installation
         // TODO: make this overridable
@@ -560,13 +569,22 @@ pub fn sync(
             let errors_clone = Arc::clone(&errors);
             let s_path = staging_path.as_path();
             let local_deps_clone = Arc::clone(&local_deps);
+            let pb_clone = Arc::clone(&pb);
+            let installing_clone = Arc::clone(&installing);
 
             s.spawn(move |_| {
                 while let Ok(dep) = ready_receiver.recv() {
                     if has_errors_clone.load(Ordering::Relaxed) {
                         break;
                     }
+                    installing_clone.lock().unwrap().insert(dep.name.clone());
                     if !dry_run {
+                        if show_progress_bar {
+                            pb_clone.set_message(format!(
+                                "Installing {:?}",
+                                installing_clone.lock().unwrap()
+                            ));
+                        }
                         match dep.kind {
                             PackageType::Source => log::debug!("Installing {} (source)", dep.name),
                             PackageType::Binary => log::debug!("Installing {} (binary)", dep.name),
@@ -615,6 +633,7 @@ pub fn sync(
             // timeout is necessary to avoid deadlock
             if let Ok(change) = done_receiver.recv_timeout(Duration::from_millis(1)) {
                 installed_count.fetch_add(1, Ordering::Relaxed);
+                installing.lock().unwrap().remove(change.name.as_str());
                 if !dry_run {
                     log::debug!(
                         "Completed installing {} ({}/{})",
@@ -622,6 +641,9 @@ pub fn sync(
                         installed_count.load(Ordering::Relaxed),
                         num_deps_to_install
                     );
+                    if show_progress_bar {
+                        pb.inc(1);
+                    }
                 }
                 if !deps_seen.contains(change.name.as_str()) {
                     sync_changes.push(change);
@@ -638,6 +660,8 @@ pub fn sync(
         drop(ready_sender);
     })
     .expect("threads to not panic");
+
+    pb.finish_and_clear();
 
     if has_errors.load(Ordering::Relaxed) {
         let err = errors.lock().unwrap();
