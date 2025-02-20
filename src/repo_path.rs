@@ -103,14 +103,12 @@ impl<'a> RepoServer<'a> {
     /// Windows binaries are found under `/bin/windows/contrib/<R version major>.<R version minor>`
     ///
     /// ### MacOS
-    /// There is an inflection point in the repository structure at R/4.2
-    ///
-    /// * For R < 4.2, binaries are only supported for x86_64 processors and are found under `/bin/macosx/contrib/4.<R version minor>`
+    /// Binaries for arm64 processors are found under `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
     /// 
-    /// * For R = 4.2, binaries for x86_64 processors are found under `/bin/macosx/contrib/4.<R version minor>`.
-    ///     binaries for arm64 processors are found under `/bin/macosx/big-sur-arm64/4.<R version minor>`
-    ///
-    /// * For R > 4.2, binaries are for both processors are found under `/bin/macosx/big-sur-<arch>/4.<R version minor>`
+    /// Binaries for x86_64 processors are found under different paths depending on the R version
+    /// * For R <= 4.2, binaries are found under `/bin/macosx/contrib/4.<R minor version>`
+    /// 
+    /// * For R > 4.2, binaries are found under `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
     ///
     /// Currently, the Mac version is hard coded to Big Sur. Earlier versions are archived for earlier versions of R,
     /// but are not supported in this tooling. Later versions (sequoia) are also not yet differentiated
@@ -328,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mac_41_url() {
+    fn test_mac_x86_64_r41_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 1], &sysinfo)
@@ -337,26 +335,36 @@ mod tests {
         assert_eq!(source_url, ref_url)
     }
     #[test]
-    fn test_mac_42_url() {
-        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arch64".to_string()), None, "");
+    fn test_mac_arm64_r41_url() {
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arm64".to_string()), None, "");
         let source_url = RepoServer::from_url(PPM_URL)
-            .get_binary_path("test-file", &[4, 2], &sysinfo)
+            .get_binary_path("test-file", &[4, 1], &sysinfo)
             .unwrap();
         let ref_url = format!(
-            "{}/bin/macosx/big-sur-arch64/contrib/4.2/test-file",
+            "{}/bin/macosx/big-sur-arm64/contrib/4.1/test-file",
             PPM_URL
         );
         assert_eq!(source_url, ref_url)
     }
 
     #[test]
-    fn test_mac_44_url() {
-        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arch64".to_string()), None, "");
+    fn test_mac_x86_64_r44_url() {
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
+        let source_url = RepoServer::from_url(PPM_URL)
+            .get_binary_path("test-file", &[4, 4], &sysinfo)
+            .unwrap();
+        let ref_url = format!("{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file", PPM_URL);
+        assert_eq!(source_url, ref_url)
+    }
+
+    #[test]
+    fn test_mac_arm64_r44_url() {
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arm64".to_string()), None, "");
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
         let ref_url = format!(
-            "{}/bin/macosx/big-sur-arch64/contrib/4.4/test-file",
+            "{}/bin/macosx/big-sur-arm64/contrib/4.4/test-file",
             PPM_URL
         );
         assert_eq!(source_url, ref_url)
