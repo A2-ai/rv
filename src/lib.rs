@@ -1,3 +1,4 @@
+mod activate;
 mod build_plan;
 mod cache;
 mod config;
@@ -20,6 +21,7 @@ pub mod cli;
 
 pub mod consts;
 
+pub use activate::{activate, deactivate};
 pub use build_plan::{BuildPlan, BuildStep};
 pub use cache::{hash_string, Cache, CacheEntry};
 pub use config::{Config, ConfigDependency, Repository};
