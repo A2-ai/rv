@@ -6,7 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    Changes, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
+    add_packages, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver
 };
 
 #[derive(Parser)]
@@ -36,16 +36,10 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
-    /// Modify dependencies of the project
-    Dependencies{
-        #[clap(short='a', long="add", num_args = 1..,)]
-        add: Vec<String>,
-        #[clap(short='r', long = "remove", num_args = 1..,)]
-        remove: Vec<String>,
-        #[clap(long, conflicts_with = "sync")]
-        plan: bool,
-        #[clap(long, conflicts_with = "plan")]
-        sync: bool
+    /// Add to a simple package to a repository
+    Add {
+        #[clap(subcommand)]
+        subcommand: AddSubcommand,
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -57,6 +51,18 @@ pub enum Command {
         #[clap(subcommand)]
         subcommand: MigrateSubcommand,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AddSubcommand {
+    Pkg {
+        #[clap(value_parser, default_value = "renv.lock")]
+        packages: Vec<String>,
+        #[clap(long)]
+        plan: bool,
+        #[clap(long)]
+        sync: bool,
+    }
 }
    
 
@@ -182,15 +188,13 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Dependencies{add, remove, plan, sync} => {
-            Changes::new(add, remove)
-                .edit_config(&cli.config_file)?;
+        Command::Add{subcommand: AddSubcommand::Pkg { packages, plan, sync }} => {
+            add_packages(packages, &cli.config_file)?;
             if plan {
                 _sync(&cli.config_file, true)?;
             }
             if sync {
                 _sync(&cli.config_file, false)?;
-
             }
         }
         Command::Cache { json } => {
