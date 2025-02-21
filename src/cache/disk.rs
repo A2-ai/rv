@@ -1,42 +1,14 @@
+use std::error::Error;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Result};
-use etcetera::BaseStrategy;
 use fs_err as fs;
 
-use crate::cache::{hash_string, InstallationStatus};
-use crate::cli::utils::get_current_system_path;
-use crate::system_info::SystemInfo;
-use crate::Version;
-use crate::{Cache, CacheEntry};
-
-/// How long are the package databases cached for
-/// Same default value as PKGCACHE_TIMEOUT:
-/// https://github.com/r-lib/pkgcache?tab=readme-ov-file#package-environment-variables
-const PACKAGE_TIMEOUT: u64 = 60 * 60;
-const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
-const PACKAGE_DB_FILENAME: &str = "packages.bin";
-
-fn get_user_cache_dir() -> Option<PathBuf> {
-    etcetera::base_strategy::choose_base_strategy()
-        .ok()
-        .map(|dirs| dirs.cache_dir().join("rv"))
-}
-
-#[inline]
-fn get_packages_timeout() -> u64 {
-    if let Ok(v) = std::env::var(PACKAGE_TIMEOUT_ENV_VAR_NAME) {
-        if let Ok(v2) = v.parse() {
-            v2
-        } else {
-            // If the variable doesn't parse into a valid number, return the default one
-            PACKAGE_TIMEOUT
-        }
-    } else {
-        PACKAGE_TIMEOUT
-    }
-}
+use crate::cache::utils::{
+    get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
+};
+use crate::cache::InstallationStatus;
+use crate::{Cache, CacheEntry, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
@@ -65,11 +37,18 @@ pub struct DiskCache {
 
 impl DiskCache {
     /// Instantiate our cache abstraction.
-    pub fn new(r_version: &Version, system_info: SystemInfo) -> Result<Self> {
-        let root =
-            get_user_cache_dir().ok_or_else(|| anyhow!("Could not get user cache directory"))?;
+    pub fn new(
+        r_version: &Version,
+        system_info: SystemInfo,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let root = match get_user_cache_dir() {
+            Some(path) => path,
+            None => return Err("Could not find user cache directory".into()),
+        };
         fs::create_dir_all(&root)?;
-        cachedir::ensure_tag(&root).context("Failed to create CACHEDIR.TAG")?;
+        if let Err(e) = cachedir::ensure_tag(&root) {
+            return Err(format!("Failed to create CACHEDIR.TAG: {e}").into());
+        }
 
         Ok(Self {
             root,
@@ -92,7 +71,7 @@ impl DiskCache {
     /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
     fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
         let base_path = self.get_repo_root_binary_dir(repo_url);
-        base_path.join(PACKAGE_DB_FILENAME)
+        base_path.join(crate::consts::PACKAGE_DB_FILENAME)
     }
 
     /// Gets the folder where a binary package would be located.

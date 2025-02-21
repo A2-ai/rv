@@ -1,11 +1,11 @@
 //! CLI context that gets instantiated for a few commands and passed around
 use std::path::{Path, PathBuf};
 
-use crate::cli::{utils::write_err, DiskCache};
+use crate::cli::utils::write_err;
 use crate::{
     consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Cache,
-    CacheEntry, Config, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase,
-    SystemInfo, Version,
+    CacheEntry, Config, DiskCache, Library, RCommandLine, RepoServer, Repository,
+    RepositoryDatabase, SystemInfo, Version,
 };
 
 use crate::cli::utils::get_current_system_path;
@@ -34,7 +34,10 @@ impl CliContext {
         let r_cmd = find_r_version_command(&r_version)
             .ok_or(anyhow!("Could not find specified version ({r_version})"))?;
 
-        let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
+        let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
+            Ok(c) => c,
+            Err(e) => return Err(anyhow!(e)),
+        };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;

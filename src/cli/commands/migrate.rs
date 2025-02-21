@@ -1,11 +1,11 @@
 use std::{fs::File, io::Write, path::Path};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::{
-    cli::{context::load_databases, DiskCache},
+    cli::context::load_databases,
     renv::{ResolvedRenv, UnresolvedRenv},
-    RenvLock, Repository, SystemInfo, Version,
+    DiskCache, RenvLock, Repository, SystemInfo, Version,
 };
 
 const RENV_CONFIG_TEMPLATE: &str = r#"# this config was migrated from %renv_file% on %time%
@@ -35,7 +35,10 @@ pub fn migrate_renv(
 
     // use the repositories and r version from the renv.lock to determine the repository databases
     let renv_lock = RenvLock::parse_renv_lock(&renv_file)?;
-    let cache = DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info())?;
+    let cache = match DiskCache::new(renv_lock.r_version(), SystemInfo::from_os_info()) {
+        Ok(c) => c,
+        Err(e) => return Err(anyhow!(e)),
+    };
     let databases = load_databases(&renv_lock.config_repositories(), &cache)?;
 
     // resolve the renv.lock file to determine the true source of packages

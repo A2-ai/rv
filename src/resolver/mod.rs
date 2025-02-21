@@ -524,7 +524,7 @@ mod tests {
     use serde::Deserialize;
     use tempfile::TempDir;
 
-    use crate::cache::{hash_string, InstallationStatus};
+    use crate::cache::{utils::hash_string, InstallationStatus};
     use crate::config::Config;
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;

@@ -10,7 +10,6 @@ use crossbeam::{channel, thread};
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::cli::cache::PackagePaths;
 use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::{mtime_recursive, untar_archive};
@@ -19,8 +18,8 @@ use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::{is_binary_package, PackageType};
 use crate::{
-    BuildPlan, BuildStep, Http, HttpDownload, Library, RCmd, RCommandLine, RepoServer,
-    ResolvedDependency,
+    BuildPlan, BuildStep, Http, HttpDownload, Library, PackagePaths, RCmd, RCommandLine,
+    RepoServer, ResolvedDependency,
 };
 use crate::{Git, GitOperations};
 
