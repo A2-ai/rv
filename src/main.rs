@@ -92,7 +92,13 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, &context.library, dry_run, !has_logs_enabled)
+        sync(
+            &context,
+            &resolved,
+            &context.library,
+            dry_run,
+            !has_logs_enabled
+        )
     ) {
         Ok(changes) => {
             if changes.is_empty() {

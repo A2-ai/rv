@@ -574,9 +574,9 @@ mod tests {
     impl GitOperations for FakeGit {
         fn clone_and_checkout(
             &self,
-            url: &str,
-            git_ref: Option<GitReference<'_>>,
-            destination: impl AsRef<Path>,
+            _: &str,
+            _: Option<GitReference<'_>>,
+            _: impl AsRef<Path>,
         ) -> Result<String, Error> {
             Ok("abc".to_string())
         }
