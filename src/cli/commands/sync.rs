@@ -508,8 +508,14 @@ pub fn sync(
     let pb_style =
         ProgressStyle::with_template("[{elapsed_precise}] {bar:60} {pos:>7}/{len:7}\n{msg}")
             .unwrap();
-    let pb = Arc::new(ProgressBar::new(plan.full_deps.len() as u64));
-    pb.set_style(pb_style.clone());
+    let pb = if show_progress_bar {
+        let pb = ProgressBar::new(plan.full_deps.len() as u64);
+        pb.set_style(pb_style.clone());
+        pb.enable_steady_tick(Duration::from_secs(1));
+        Arc::new(pb)
+    } else {
+        Arc::new(ProgressBar::new(0))
+    };
     let plan = Arc::new(Mutex::new(plan));
 
     let (ready_sender, ready_receiver) = channel::unbounded();
