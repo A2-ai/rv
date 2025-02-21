@@ -33,9 +33,15 @@ pub enum Command {
     /// Returns the path for the library for the current project/system
     Library,
     /// Dry run of what sync would do
-    Plan,
+    Plan {
+        #[clap(short, long)]
+        upgrade: bool
+    },
     /// Replaces the library with exactly what is in the lock file
-    Sync,
+    Sync {
+        #[clap(short, long)]
+        upgrade: bool
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
@@ -87,8 +93,11 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
+fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, upgrade: bool) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
+    if upgrade {
+        context.lockfile = None;
+    }
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
 
@@ -168,11 +177,11 @@ fn try_main() -> Result<()> {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
         }
-        Command::Plan => {
-            _sync(&cli.config_file, true, cli.verbose.is_present())?;
+        Command::Plan { upgrade } => {
+            _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
-        Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present())?;
+        Command::Sync { upgrade }=> {
+            _sync(&cli.config_file, false, cli.verbose.is_present(), upgrade)?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
