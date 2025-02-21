@@ -4,85 +4,81 @@ use fs_err::write;
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, Value};
 
-/// Add simple dependencies to the config file
-/// Currently, additional configuration specificity must be added directly in the file
-pub fn add_dependencies(
-    config_file: impl AsRef<Path>,
-    deps: Vec<String>,
-) -> Result<(), ConfigEditError> {
-    config_edit(config_file, deps, add_fxn)
+pub struct Changes {
+    add: Vec<String>,
+    remove: Vec<String>,
 }
 
-/// Remove dependencies from the config file
-pub fn remove_dependencies(
-    config_file: impl AsRef<Path>,
-    deps: Vec<String>,
-) -> Result<(), ConfigEditError> {
-    config_edit(config_file, deps, remove_fxn)
-}
+impl Changes {
+    pub fn new(add: Vec<String>, remove: Vec<String>) -> Self {
+        Self {
+            add,
+            remove
+        }
+    }
 
-// add and remove are almost completely the same except for the mutation of the dependency array.
-// Thus one function calling different mutation functions instead of two functions calling many shared functions
-fn config_edit<F>(
-    config_file: impl AsRef<Path>,
-    deps: Vec<String>,
-    edit_fxn: F,
-) -> Result<(), ConfigEditError>
-where
-    F: Fn(&mut Array, Vec<String>),
-{
-    // Read the configuration file into a DocumentMut for toml editing
-    let config_file = config_file.as_ref();
-    let config_content = fs::read_to_string(&config_file).map_err(|e| ConfigEditError {
-        path: config_file.into(),
-        source: ConfigEditErrorKind::Io(e),
-    })?;
-
-    let mut doc = config_content
-        .parse::<DocumentMut>()
-        .map_err(|e| ConfigEditError {
+    pub fn edit_config(&self, config_file: impl AsRef<Path>) -> Result<(), ConfigEditError> {
+        // Read the configuration file into a DocumentMut for toml editing
+        let config_file = config_file.as_ref();
+        let config_content = fs::read_to_string(&config_file).map_err(|e| ConfigEditError {
             path: config_file.into(),
-            source: ConfigEditErrorKind::Parse(e),
+            source: ConfigEditErrorKind::Io(e),
         })?;
 
-    // Configuration is behind a project table
-    let project_table = doc
+        let mut doc = config_content
+            .parse::<DocumentMut>()
+            .map_err(|e| ConfigEditError {
+                path: config_file.into(),
+                source: ConfigEditErrorKind::Parse(e),
+            })?;
+
+        // get the dependencies array
+        let config_deps = get_mut_array(&mut doc, config_file)?;
+
+        // add/remove the dependencies from the dependencies array
+        add_fxn(config_deps, &self.add);
+        remove_fxn(config_deps, &self.remove);
+
+        // Set a trailing new line and comma for the last element for proper formatting
+        config_deps.set_trailing("\n");
+        config_deps.set_trailing_comma(true);
+
+        // write back out the file
+        write(config_file, doc.to_string()).map_err(|e| ConfigEditError {
+            path: config_file.into(),
+            source: ConfigEditErrorKind::Io(e),
+        })?;
+
+        Ok(())
+    }
+}
+
+fn get_mut_array<'a>(doc: &'a mut DocumentMut, config_file: impl AsRef<Path>) -> Result<&'a mut Array, ConfigEditError> {
+    let config_file = config_file.as_ref();
+    // config arrays are behind the "project" table
+    let table = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())
         .ok_or(ConfigEditError {
             path: config_file.into(),
             source: ConfigEditErrorKind::NoField("project".to_string()),
         })?;
-
-    // Extract the dependencies field and remove any suffix decor on the last element
-    let project_dependencies = project_table
+    // get the array indexed by the array name
+    let deps = table
         .get_mut("dependencies")
         .and_then(|item| item.as_array_mut())
         .ok_or(ConfigEditError {
             path: config_file.into(),
             source: ConfigEditErrorKind::NoField("dependencies".to_string()),
         })?;
-    if let Some(last) = project_dependencies.iter_mut().last() {
+    // remove formatting on the last element as we will re-add
+    if let Some(last) = deps.iter_mut().last() {
         last.decor_mut().set_suffix("");
     }
-
-    // Edit the dependencies field to either add or remove the dependencies contained in `deps`
-    edit_fxn(project_dependencies, deps);
-
-    // Set a trailing new line and comma for the last element for proper formatting
-    project_dependencies.set_trailing("\n");
-    project_dependencies.set_trailing_comma(true);
-
-    // write back out the file
-    write(config_file, doc.to_string()).map_err(|e| ConfigEditError {
-        path: config_file.into(),
-        source: ConfigEditErrorKind::Io(e),
-    })?;
-
-    Ok(())
+    Ok(deps)
 }
 
-fn add_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
+fn add_fxn(config_deps: &mut Array, add_deps: &Vec<String>) {
     // collect the names of all of the dependencies
     let config_dep_names = config_deps
         .iter()
@@ -90,8 +86,8 @@ fn add_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
         .collect::<Vec<_>>();
     // Determine if the dep to add is in the config, if not add it
     for d in add_deps {
-        if !config_dep_names.contains(&d) {
-            config_deps.push(Value::String(Formatted::new(d)));
+        if !config_dep_names.contains(d) {
+            config_deps.push(Value::String(Formatted::new(d.to_string())));
             // Couldn't format value before pushing, so adding formatting after its added
             if let Some(last) = config_deps.iter_mut().last() {
                 last.decor_mut().set_prefix("\n    ");
@@ -100,7 +96,7 @@ fn add_fxn(config_deps: &mut Array, add_deps: Vec<String>) {
     }
 }
 
-fn remove_fxn(config_deps: &mut Array, remove_deps: Vec<String>) {
+fn remove_fxn(config_deps: &mut Array, remove_deps: &Vec<String>) {
     // retain config_deps that do not match any of the deps to remove
     config_deps.retain(|v| {
         if let Some(name) = get_dependency_name(v) {
@@ -140,6 +136,7 @@ pub enum ConfigEditErrorKind {
     NoField(String),
 }
 
+#[cfg(test)]
 mod tests {
     use std::path::Path;
 
@@ -153,24 +150,22 @@ mod tests {
         let tmp_dir = tempdir().unwrap();
         let config_file = tmp_dir.path().join("rproject.toml");
         write(&config_file, content).unwrap();
-        super::add_dependencies(
-            &config_file,
-            vec!["test_pkg".to_string(), "dplyr".to_string()],
-        )
-        .unwrap();
-        out.push_str("===ADDED==========");
+
+        let changes = super::Changes::new(vec!["pkg1".to_string(), "pkg2".to_string()], Vec::new());
+        changes.edit_config(&config_file).unwrap();
+        out.push_str("===ADD==========");
         out.push_str(&read_to_string(&config_file).unwrap());
-        super::remove_dependencies(
-            &config_file,
-            vec![
-                "test_pkg".to_string(),
-                "dplyr".to_string(),
-                "renv".to_string(),
-            ],
-        )
-        .unwrap();
-        out.push_str("===REMOVED==========");
+        
+        let changes = super::Changes::new(Vec::new(), vec!["dplyr".to_string()]);
+        changes.edit_config(&config_file).unwrap();
+        out.push_str("===REMOVE==========");
         out.push_str(&read_to_string(&config_file).unwrap());
+
+        let changes = super::Changes::new(vec!["dplyr".to_string()], vec!["pkg1".to_string(), "pkg2".to_string()]);
+        changes.edit_config(&config_file).unwrap();
+        out.push_str("===REVERT==========");
+        out.push_str(&read_to_string(&config_file).unwrap());
+
         insta::assert_snapshot!("add_remove", out);
     }
 }

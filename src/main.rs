@@ -6,7 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    add_dependencies, remove_dependencies, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
+    Changes, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
 };
 
 #[derive(Parser)]
@@ -36,15 +36,16 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
-    /// Add dependencies to the project
-    Add {
-        #[clap(flatten)]
-        options: DependencyEditOptions,
-    },
-    /// Remove dependencies from the project
-    Remove {
-        #[clap(flatten)]
-        options: DependencyEditOptions,
+    /// Modify dependencies of the project
+    Dependencies {
+        #[clap(short = 'a', long)]
+        add: Vec<String>,
+        #[clap(short = 'r', long)]
+        remove: Vec<String>,
+        #[clap(long)]
+        plan: bool,
+        #[clap(long)]
+        sync: bool,
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -64,17 +65,6 @@ pub enum MigrateSubcommand {
         #[clap(value_parser, default_value = "renv.lock")]
         renv_file: PathBuf,
     },
-}
-#[derive(Debug, Parser)]
-pub struct DependencyEditOptions {
-    #[clap(value_parser)]
-    dependencies: Vec<String>,
-
-    #[clap(long, conflicts_with = "plan")]
-    sync: bool,
-
-    #[clap(long, conflicts_with = "sync")]
-    plan: bool,
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -191,35 +181,16 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Add {
-            options:
-                DependencyEditOptions {
-                    dependencies,
-                    sync,
-                    plan,
-                },
-        } => {
-            add_dependencies(&cli.config_file, dependencies)?;
-            if sync {
-                _sync(&cli.config_file, false)?;
-            } else if plan {
+        Command::Dependencies { add, remove, plan, sync } => {
+            Changes::new(add, remove)
+                .edit_config(&cli.config_file)?;
+            if plan {
                 _sync(&cli.config_file, true)?;
             }
-        }
-        Command::Remove {
-            options:
-                DependencyEditOptions {
-                    dependencies,
-                    sync,
-                    plan,
-                },
-        } => {
-            remove_dependencies(&cli.config_file, dependencies)?;
             if sync {
                 _sync(&cli.config_file, false)?;
-            } else if plan {
-                _sync(&cli.config_file, true)?;
             }
+
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;

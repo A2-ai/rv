@@ -21,7 +21,7 @@ pub mod cli;
 
 pub mod consts;
 
-pub use add_remove::{add_dependencies, remove_dependencies};
+pub use add_remove::Changes;
 pub use build_plan::{BuildPlan, BuildStep};
 pub use cache::{hash_string, Cache, CacheEntry};
 pub use config::{Config, ConfigDependency, Repository};
