@@ -81,7 +81,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
+fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
@@ -92,7 +92,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, &context.library, dry_run)
+        sync(&context, &resolved, &context.library, dry_run, !has_logs_enabled)
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -163,10 +163,10 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan => {
-            _sync(&cli.config_file, true)?;
+            _sync(&cli.config_file, true, cli.verbose.is_present())?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false)?;
+            _sync(&cli.config_file, false, cli.verbose.is_present())?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
