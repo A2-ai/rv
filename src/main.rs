@@ -90,7 +90,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool, include_summary: bool, has_logs_enabled: bool) -> Result<()> {
+fn _sync(
+    config_file: &PathBuf,
+    dry_run: bool,
+    include_summary: bool,
+    has_logs_enabled: bool,
+) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
@@ -101,7 +106,13 @@ fn _sync(config_file: &PathBuf, dry_run: bool, include_summary: bool, has_logs_e
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, &context.library, dry_run, !has_logs_enabled)
+        sync(
+            &context,
+            &resolved,
+            &context.library,
+            dry_run,
+            !has_logs_enabled
+        )
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -133,8 +144,12 @@ fn _sync(config_file: &PathBuf, dry_run: bool, include_summary: bool, has_logs_e
             for c in changes {
                 if c.installed {
                     match c.kind.unwrap() {
-                        PackageType::Source => source_installed.push(c.from_cache.unwrap_or_default()),
-                        PackageType::Binary => binary_installed.push(c.from_cache.unwrap_or_default()),
+                        PackageType::Source => {
+                            source_installed.push(c.from_cache.unwrap_or_default())
+                        }
+                        PackageType::Binary => {
+                            binary_installed.push(c.from_cache.unwrap_or_default())
+                        }
                     }
                 }
                 println!("{}", c.print(!dry_run));
@@ -146,10 +161,18 @@ fn _sync(config_file: &PathBuf, dry_run: bool, include_summary: bool, has_logs_e
             }
 
             if !source_installed.is_empty() {
-                println!("Installed {} packages from source ({} from cache)", source_installed.len(), source_installed.iter().filter(|x| **x).count());
+                println!(
+                    "Installed {} packages from source ({} from cache)",
+                    source_installed.len(),
+                    source_installed.iter().filter(|x| **x).count()
+                );
             }
             if !binary_installed.is_empty() {
-                println!("Installed {} binary packages ({} from cache)", binary_installed.len(), binary_installed.iter().filter(|x| **x).count());
+                println!(
+                    "Installed {} binary packages ({} from cache)",
+                    binary_installed.len(),
+                    binary_installed.iter().filter(|x| **x).count()
+                );
             }
 
             // ## System information
@@ -162,10 +185,16 @@ fn _sync(config_file: &PathBuf, dry_run: bool, include_summary: bool, has_logs_e
             // And now the summary
             if include_summary {
                 println!("\n== Summary ==");
-                println!("System: {}{}, R {}", context.cache.system_info.os_family(), if let Some(arch) = context.cache.system_info.arch() {
-                    format!(" ({arch})")
-                } else { String::new() }, context.r_version.original);
-
+                println!(
+                    "System: {}{}, R {}",
+                    context.cache.system_info.os_family(),
+                    if let Some(arch) = context.cache.system_info.arch() {
+                        format!(" ({arch})")
+                    } else {
+                        String::new()
+                    },
+                    context.r_version.original
+                );
 
                 if !context.databases.is_empty() {
                     println!("Repositories");
@@ -222,10 +251,20 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan { include_summary } => {
-            _sync(&cli.config_file, true, include_summary, cli.verbose.is_present())?;
+            _sync(
+                &cli.config_file,
+                true,
+                include_summary,
+                cli.verbose.is_present(),
+            )?;
         }
         Command::Sync { include_summary } => {
-            _sync(&cli.config_file, false, include_summary,cli.verbose.is_present())?;
+            _sync(
+                &cli.config_file,
+                false,
+                include_summary,
+                cli.verbose.is_present(),
+            )?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
