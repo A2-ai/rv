@@ -37,15 +37,15 @@ pub enum Command {
     /// Replaces the library with exactly what is in the lock file
     Sync,
     /// Modify dependencies of the project
-    Dependencies {
-        #[clap(short = 'a', long)]
+    Dependencies{
+        #[clap(short='a', long="add", num_args = 1..,)]
         add: Vec<String>,
-        #[clap(short = 'r', long)]
+        #[clap(short='r', long = "remove", num_args = 1..,)]
         remove: Vec<String>,
-        #[clap(long)]
+        #[clap(long, conflicts_with = "sync")]
         plan: bool,
-        #[clap(long)]
-        sync: bool,
+        #[clap(long, conflicts_with = "plan")]
+        sync: bool
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -58,6 +58,7 @@ pub enum Command {
         subcommand: MigrateSubcommand,
     },
 }
+   
 
 #[derive(Debug, Subcommand)]
 pub enum MigrateSubcommand {
@@ -181,7 +182,7 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Dependencies { add, remove, plan, sync } => {
+        Command::Dependencies{add, remove, plan, sync} => {
             Changes::new(add, remove)
                 .edit_config(&cli.config_file)?;
             if plan {
@@ -189,8 +190,8 @@ fn try_main() -> Result<()> {
             }
             if sync {
                 _sync(&cli.config_file, false)?;
-            }
 
+            }
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
