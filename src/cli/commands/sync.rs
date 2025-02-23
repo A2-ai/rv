@@ -86,7 +86,7 @@ fn download_and_install_package(
         match res {
             Err(e) => {
                 if !e.is_not_found() {
-                    return Err(e.into())
+                    return Err(e.into());
                 }
                 log::warn!("Binary package not found at {binary_url}");
             }
@@ -99,7 +99,7 @@ fn download_and_install_package(
     match res {
         Err(e) => {
             if !e.is_not_found() {
-                return Err(e.into())
+                return Err(e.into());
             }
             log::warn!("Source package not found at {source_url}")
         }
