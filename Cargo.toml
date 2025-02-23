@@ -43,6 +43,7 @@ crossbeam = { version = "0.8", optional = true }
 num_cpus = { version = "1", optional = true }
 jiff = { version = "0.1", optional = true }
 indicatif = { version = "0.17", optional = true }
+zip = "2.2.2"
 
 [features]
 cli = [

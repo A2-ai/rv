@@ -1,6 +1,6 @@
 use fs_err as fs;
 use std::fs::Metadata;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use filetime::FileTime;
@@ -107,6 +107,42 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
     Ok(max_mtime)
 }
 
+enum ArchiveFormat {
+    Zip,
+    TarGz,
+}
+
+impl ArchiveFormat {
+    fn detect<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<Self> {
+        // TODO: consider if we should actually try to also check if its a tar.gz
+        // and if neither of them actually fail. For now will use the Result
+        // signature to give us this option, but for now, it'll never fail
+        let buf = reader.fill_buf()?;
+        Ok(
+            if buf.len() >= 4 && buf.starts_with(&[0x50, 0x4b, 0x03, 0x04]) {
+                Self::Zip
+            } else {
+                Self::TarGz
+            },
+        )
+    }
+
+    fn extract<R: Read>(self, mut reader: BufReader<R>, dest: &Path) -> std::io::Result<()> {
+        match self {
+            Self::Zip => {
+                let mut buffer = Vec::new();
+                reader.read_to_end(&mut buffer)?;
+                let cursor = std::io::Cursor::new(buffer);
+                Ok(zip::read::ZipArchive::new(cursor)?.extract(dest)?)
+            }
+            Self::TarGz => {
+                let tar = GzDecoder::new(reader);
+                Archive::new(tar).unpack(dest)
+            }
+        }
+    }
+}
+
 /// Untars an archive in the given destination folder, returning a path to the first folder in what
 /// was extracted since R tarballs are (always?) a folder
 pub(crate) fn untar_archive<R: Read>(
@@ -114,13 +150,13 @@ pub(crate) fn untar_archive<R: Read>(
     dest: impl AsRef<Path>,
 ) -> Result<Option<PathBuf>, std::io::Error> {
     let dest = dest.as_ref();
-    fs::create_dir_all(&dest)?;
+    fs::create_dir_all(dest)?;
 
-    let tar = GzDecoder::new(reader);
-    let mut archive = Archive::new(tar);
-    archive.unpack(&dest)?;
+    let mut buf_reader = BufReader::new(reader);
+    let format = ArchiveFormat::detect(&mut buf_reader)?;
+    format.extract(buf_reader, dest)?;
 
-    let dir: Option<PathBuf> = fs::read_dir(&dest)?
+    let dir = fs::read_dir(dest)?
         .filter_map(|entry| {
             let entry = entry.ok()?;
             if entry.file_type().ok()?.is_dir() {
