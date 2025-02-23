@@ -84,26 +84,24 @@ fn download_and_install_package(
     if let Some(binary_url) = binary_url {
         let res = Http {}.download_and_untar(binary_url, &paths.binary, false);
         match res {
-            Err(HttpError {
-                url,
-                source: HttpErrorKind::Http(response),
-            }) if response == 404 => {
-                log::warn!("Could not download binary from {url}");
+            Err(e) => {
+                if !e.is_not_found() {
+                    return Err(e.into())
+                }
+                log::warn!("Binary package not found at {binary_url}");
             }
-            Err(e) => return Err(e.into()),
             Ok(_) => return install_binary(paths, library_dir, pkg_name, r_cmd),
         }
     }
 
     let res = Http {}.download_and_untar(source_url, &paths.source, false);
     match res {
-        Err(HttpError {
-            url,
-            source: HttpErrorKind::Http(response),
-        }) if response == 404 => {
-            log::warn!("Could not download source from {url}");
+        Err(e) => {
+            if !e.is_not_found() {
+                return Err(e.into())
+            }
+            log::warn!("Source package not found at {source_url}")
         }
-        Err(e) => return Err(e.into()),
         Ok(_) => {
             return install_via_r(
                 &paths.source.join(pkg_name),
