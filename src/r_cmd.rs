@@ -133,9 +133,14 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = match &self.r {
-            Some(r) => Command::new(r),
-            None => Command::new("R"),
+        let mut command = if let Some(r) = &self.r {
+            Command::new(r.clone())
+        } else {
+            if cfg!(windows) {
+                Command::new(PathBuf::from("R.bat"))
+            } else {
+                Command::new(PathBuf::from("R"))
+            }
         };
         command
             .arg("CMD")
@@ -195,13 +200,29 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(&self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+        let mut uses_bat = false;
+        let r_cmd: PathBuf = if let Some(r) = &self.r {
+            r.clone()
+        } else {
+            if cfg!(windows) {
+                uses_bat = true;
+                PathBuf::from("R.bat")
+            } else {
+                PathBuf::from("R")
+            }
+        };
+        let output = Command::new(r_cmd)
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
                 source: VersionErrorKind::Io(e),
             })?;
-        let stdout = std::str::from_utf8(&output.stdout).map_err(|e| VersionError {
+        let output_bytes = if uses_bat {
+            &output.stderr
+        } else {
+            &output.stdout
+        };
+        let stdout = std::str::from_utf8(output_bytes).map_err(|e| VersionError {
             source: VersionErrorKind::Utf8(e),
         })?;
         if let Some(v) = find_r_version(stdout) {
