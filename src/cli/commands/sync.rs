@@ -15,7 +15,6 @@ use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::{mtime_recursive, untar_archive};
 use crate::git::GitReference;
-use crate::http::{HttpError, HttpErrorKind};
 use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::{is_binary_package, PackageType};
@@ -73,7 +72,7 @@ fn install_binary(
 }
 
 fn download_and_install_package(
-    binary_url: Option<&str>,
+    binary_url: Option<&str>, //binary url should only be Some if PackageType is Binary. Filtering should occur before fxn call
     source_url: &str,
     archive_url: &str,
     paths: &PackagePaths,
@@ -81,6 +80,7 @@ fn download_and_install_package(
     pkg_name: &str,
     r_cmd: &RCommandLine,
 ) -> Result<()> {
+    // try to install binary. If not found, try source. All other errors are returned
     if let Some(binary_url) = binary_url {
         let res = Http {}.download_and_untar(binary_url, &paths.binary, false);
         match res {
@@ -94,6 +94,7 @@ fn download_and_install_package(
         }
     }
 
+    // try to install source, If not found, try archive. All other errors are returned
     let res = Http {}.download_and_untar(source_url, &paths.source, false);
     match res {
         Err(e) => {
@@ -112,6 +113,7 @@ fn download_and_install_package(
         }
     }
 
+    // try archive as last resort
     let _ = Http {}.download_and_untar(archive_url, &paths.source, false)?;
     install_via_r(
         &paths.source.join(pkg_name),
