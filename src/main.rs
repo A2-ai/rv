@@ -6,7 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    add_packages, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver
+    activate, deactivate, add_packages, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
 };
 
 #[derive(Parser)]
@@ -55,20 +55,11 @@ pub enum Command {
         #[clap(subcommand)]
         subcommand: MigrateSubcommand,
     },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum AddSubcommand {
-    Pkg {
-        #[clap(value_parser, default_value = "renv.lock")]
-        packages: Vec<String>,
-        #[clap(long)]
-        plan: bool,
-        #[clap(long)]
-        sync: bool,
-    }
-}
-   
+    /// Activate a previously initialized rv project
+    Activate,
+    /// Deactivate an rv project
+    Deactivate,
+}  
 
 #[derive(Debug, Subcommand)]
 pub enum MigrateSubcommand {
@@ -105,7 +96,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
+fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
@@ -116,7 +107,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool) -> Result<()> {
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, &context.library, dry_run)
+        sync(&context, &resolved, &context.library, dry_run, !has_logs_enabled)
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -187,17 +178,17 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan => {
-            _sync(&cli.config_file, true)?;
+            _sync(&cli.config_file, true, cli.verbose.is_present())?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false)?;
+            _sync(&cli.config_file, false, cli.verbose.is_present())?;
         }
         Command::Add{packages, plan, no_sync} => {
             add_packages(packages, &cli.config_file)?;
             if plan {
-                _sync(&cli.config_file, true)?;
+                _sync(&cli.config_file, true, cli.verbose.is_present())?;
             } else if !no_sync {
-                _sync(&cli.config_file, false)?;
+                _sync(&cli.config_file, false, cli.verbose.is_present())?;
             }
         }
         Command::Cache { json } => {
@@ -233,6 +224,16 @@ fn try_main() -> Result<()> {
                     eprintln!("    {u}");
                 }
             }
+        }
+        Command::Activate => {
+            let dir = std::env::current_dir()?;
+            activate(dir)?;
+            println!("rv activated");
+        }
+        Command::Deactivate => {
+            let dir = std::env::current_dir()?;
+            deactivate(dir)?;
+            println!("rv deactivated");
         }
     }
 

@@ -46,3 +46,50 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
     "spatial",
     "survival",
 ];
+
+pub(crate) const GLOBAL_ACTIVATE_FILE_CONTENT: &str = r#"local({
+	owd <- getwd()
+	setwd("~")
+	on.exit({
+	   setwd(owd)
+	})
+	rv_lib <- system2("rv", "library", stdout = TRUE)
+	# this might not yet exist, so we'll normalize it but not force it to exist
+	# and we create it below as needed
+	rv_lib <- normalizePath(rv_lib, mustWork = FALSE)
+	if (!is.null(attr(rv_lib, "status"))) {
+		# if system2 fails it'll add a status attribute with the error code
+		warning("failed to run rv library, check your console for messages")
+	} else {
+		if (!dir.exists(rv_lib)) {
+			message("creating rv library: ", rv_lib)
+			dir.create(rv_lib, recursive = TRUE)
+		}
+		.libPaths(rv_lib, include.site = FALSE)
+	}
+})
+if (interactive()) {
+	message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
+}
+"#;
+
+pub(crate) const PROJECT_ACTIVATE_FILE_CONTENT: &str = r#"local({
+	rv_lib <- system2("rv", "library", stdout = TRUE)
+	# this might not yet exist, so we'll normalize it but not force it to exist
+	# and we create it below as needed
+	rv_lib <- normalizePath(rv_lib, mustWork = FALSE)
+	if (!is.null(attr(rv_lib, "status"))) {
+		# if system2 fails it'll add a status attribute with the error code
+		warning("failed to run rv library, check your console for messages")
+	} else {
+		if (!dir.exists(rv_lib)) {
+			message("creating rv library: ", rv_lib)
+			dir.create(rv_lib, recursive = TRUE)
+		}
+		.libPaths(rv_lib, include.site = FALSE)
+	}
+})
+if (interactive()) {
+	message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
+}
+"#;

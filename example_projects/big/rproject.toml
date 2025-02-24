@@ -1,4 +1,6 @@
+[project]
 name = "big"
+r_version = "4.4"
 repositories = [
     { alias = "RSPM", url = "https://packagemanager.posit.co/cran/2024-12-16/" },
 ]
