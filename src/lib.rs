@@ -21,11 +21,7 @@ pub mod cli;
 pub mod consts;
 
 pub use build_plan::{BuildPlan, BuildStep};
-pub use cache::{
-    disk::{DiskCache, PackagePaths},
-    utils::hash_string,
-    Cache, CacheEntry,
-};
+pub use cache::{utils::hash_string, DiskCache, PackagePaths};
 pub use config::{Config, ConfigDependency, Repository};
 pub use git::{Git, GitOperations};
 pub use http::{Http, HttpDownload};

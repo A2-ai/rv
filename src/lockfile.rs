@@ -79,6 +79,10 @@ impl Source {
         table
     }
 
+    pub fn is_git_or_url(&self) -> bool {
+        matches!(self, Source::Git { .. } | Source::Url { .. })
+    }
+
     /// The key to use in the cache: URL for a package repository, git URL for a git repository
     /// and for local the actual path
     pub fn source_path(&self) -> &str {
@@ -93,13 +97,6 @@ impl Source {
     pub fn git_sha(&self) -> &str {
         match self {
             Source::Git { ref sha, .. } => sha.as_str(),
-            _ => unreachable!("handle other cases"),
-        }
-    }
-
-    pub fn url_info(&self) -> (&str, &str) {
-        match self {
-            Source::Url { ref url, ref sha } => (url.as_str(), sha.as_str()),
             _ => unreachable!("handle other cases"),
         }
     }

@@ -1,5 +1,5 @@
 use crate::VersionRequirement;
-use crate::{Cache, ConfigDependency, GitOperations, Lockfile, RepositoryDatabase, Version};
+use crate::{ConfigDependency, DiskCache, GitOperations, Lockfile, RepositoryDatabase, Version};
 
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
@@ -8,7 +8,6 @@ use std::path::PathBuf;
 
 mod dependency;
 
-use crate::cache::InstallationStatus;
 use crate::fs::untar_archive;
 use crate::git::GitReference;
 use crate::http::HttpDownload;
@@ -148,7 +147,7 @@ impl<'d> Resolver<'d> {
     fn lockfile_lookup(
         &self,
         item: &QueueItem<'d>,
-        cache: &'d impl Cache,
+        cache: &'d DiskCache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         // If the dependency is not matching, do not even look at the lockfile
         if let Some(matching) = item.matching_in_lockfile {
@@ -161,21 +160,8 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
-            let installation_status = match &package.source {
-                Source::Git { git, sha, .. } => {
-                    cache.get_git_installation_status(&git, &sha, &package.name)
-                }
-                Source::Url { url, sha } => {
-                    cache.get_url_installation_status(&url, &sha, &package.name)
-                }
-                Source::Repository { ref repository } => cache.get_package_installation_status(
-                    repository.as_str(),
-                    &package.name,
-                    &package.version,
-                ),
-                // TODO: handle local
-                Source::Local { .. } => InstallationStatus::Absent,
-            };
+            let installation_status =
+                cache.get_installation_status(&item.name, &package.version, &package.source);
             let resolved_dep =
                 ResolvedDependency::from_locked_package(package, installation_status);
             let items = package
@@ -193,7 +179,7 @@ impl<'d> Resolver<'d> {
     fn repositories_lookup(
         &self,
         item: &QueueItem<'d>,
-        cache: &'d impl Cache,
+        cache: &'d DiskCache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
@@ -221,10 +207,12 @@ impl<'d> Resolver<'d> {
                     package_type,
                     item.install_suggestions,
                     force_source,
-                    cache.get_package_installation_status(
-                        &repo.url,
+                    cache.get_installation_status(
                         &package.name,
                         &package.version.original,
+                        &Source::Repository {
+                            repository: repo.url.clone(),
+                        },
                     ),
                 );
                 return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
@@ -241,7 +229,7 @@ impl<'d> Resolver<'d> {
         directory: Option<&str>,
         git_ref: Option<GitReference>,
         git_ops: &'d impl GitOperations,
-        cache: &'d impl Cache,
+        cache: &'d DiskCache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         log::debug!("Cloning {repo_url} with ref {git_ref:?}");
         let clone_path = cache.get_git_clone_path(repo_url);
@@ -254,7 +242,6 @@ impl<'d> Resolver<'d> {
                     clone_path
                 };
                 let package = parse_description_file_in_folder(&package_path)?;
-                let status = cache.get_git_installation_status(repo_url, &sha, &package.name);
 
                 let source = if let Some(dep) = item.dep {
                     dep.as_git_source_with_sha(sha)
@@ -268,6 +255,8 @@ impl<'d> Resolver<'d> {
                         branch: None,
                     }
                 };
+                let status =
+                    cache.get_installation_status(repo_url, &package.version.original, &source);
                 let (resolved_dep, deps) = ResolvedDependency::from_git_package(
                     &package,
                     source,
@@ -286,7 +275,7 @@ impl<'d> Resolver<'d> {
         &self,
         item: &QueueItem<'d>,
         url: &str,
-        cache: &'d impl Cache,
+        cache: &'d DiskCache,
         http_downloader: &'d impl HttpDownload,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let out_path = cache.get_url_download_path(url);
@@ -316,7 +305,7 @@ impl<'d> Resolver<'d> {
         &self,
         dependencies: &'d [ConfigDependency],
         prefer_repositories_for: &'d [String],
-        cache: &'d impl Cache,
+        cache: &'d DiskCache,
         git_ops: &'d impl GitOperations,
         http_download: &'d impl HttpDownload,
     ) -> Resolution<'d> {
@@ -524,12 +513,11 @@ mod tests {
     use serde::Deserialize;
     use tempfile::TempDir;
 
-    use crate::cache::{utils::hash_string, InstallationStatus};
     use crate::config::Config;
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;
     use crate::repository::RepositoryDatabase;
-    use crate::{CacheEntry, DiskCache, SystemInfo};
+    use crate::{DiskCache, SystemInfo};
 
     struct FakeGit;
 

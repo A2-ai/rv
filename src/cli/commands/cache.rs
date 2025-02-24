@@ -77,17 +77,19 @@ impl CacheInfo {
         let mut url_paths = Vec::new();
 
         for d in resolved {
+            if !d.source.is_git_or_url() {
+                continue;
+            }
+            let paths = context.cache.get_package_paths(&d.source, None, None);
             match d.source {
-                Source::Git { git, sha, .. } => {
-                    let paths = context.cache.get_git_package_paths(&git, &sha);
+                Source::Git { git, .. } => {
                     git_paths.push(CacheUrlInfo {
                         url: git,
                         source_path: paths.source,
                         binary_path: paths.binary,
                     });
                 }
-                Source::Url { url, sha, .. } => {
-                    let paths = context.cache.get_url_package_paths(&url, &sha);
+                Source::Url { url, .. } => {
                     url_paths.push(CacheUrlInfo {
                         url,
                         source_path: paths.source,

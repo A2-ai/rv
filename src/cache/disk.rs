@@ -1,4 +1,6 @@
 use std::error::Error;
+use std::fmt;
+use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -7,13 +9,47 @@ use fs_err as fs;
 use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
-use crate::cache::InstallationStatus;
-use crate::{Cache, CacheEntry, SystemInfo, Version};
+use crate::lockfile::Source;
+use crate::{SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
     pub binary: PathBuf,
     pub source: PathBuf,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum InstallationStatus {
+    Source,
+    Binary,
+    Both,
+    Absent,
+}
+
+impl InstallationStatus {
+    pub fn available(&self) -> bool {
+        *self != InstallationStatus::Absent
+    }
+
+    pub fn binary_available(&self) -> bool {
+        matches!(self, InstallationStatus::Binary | InstallationStatus::Both)
+    }
+
+    pub fn source_available(&self) -> bool {
+        matches!(self, InstallationStatus::Source | InstallationStatus::Both)
+    }
+}
+
+impl fmt::Display for InstallationStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let v = match self {
+            InstallationStatus::Source => "source",
+            InstallationStatus::Binary => "binary",
+            InstallationStatus::Both => "source and binary",
+            InstallationStatus::Absent => "absent",
+        };
+        write!(f, "{v}")
+    }
 }
 
 /// This cache doesn't load anything, it just gets paths to cached objects.
@@ -84,7 +120,7 @@ impl DiskCache {
 
     /// Gets the folder where a binary package would be located.
     /// The folder may or may not exist depending on whether it's in the cache
-    pub fn get_binary_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
+    fn get_binary_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
         self.get_repo_root_binary_dir(repo_url)
             .join(name)
             .join(version)
@@ -92,55 +128,25 @@ impl DiskCache {
 
     /// Gets the folder where a source tarball would be located
     /// The folder may or may not exist depending on whether it's in the cache
-    pub fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
+    fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
         let encoded = hash_string(repo_url);
         self.root.join(encoded).join("src").join(name).join(version)
     }
 
-    pub fn get_package_paths(&self, repo_url: &str, name: &str, version: &str) -> PackagePaths {
-        PackagePaths {
-            source: self.get_source_package_path(repo_url, name, version),
-            binary: self.get_binary_package_path(repo_url, name, version),
-        }
-    }
-
     /// We will download them in a separate path, we don't know if we have source or binary
-    fn get_url_path(&self, url: &str) -> PathBuf {
+    pub fn get_url_download_path(&self, url: &str) -> PathBuf {
         let encoded = hash_string(url);
         self.root.join("urls").join(encoded)
     }
 
-    fn get_source_git_package_path(&self, repo_url: &str) -> PathBuf {
+    pub fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
         let encoded = hash_string(repo_url);
         self.root.join("git").join(encoded)
     }
 
-    pub fn get_git_package_paths(&self, repo_url: &str, sha: &str) -> PackagePaths {
-        PackagePaths {
-            source: self.get_source_git_package_path(repo_url),
-            binary: self.get_repo_root_binary_dir(repo_url).join(&sha[..10]),
-        }
-    }
-
-    pub fn get_git_build_path(&self, repo_url: &str, sha: &str) -> PathBuf {
-        let encoded = hash_string(repo_url);
-        self.root
-            .join("git")
-            .join("builds")
-            .join(encoded)
-            .join(&sha[..10])
-    }
-
-    pub fn get_url_package_paths(&self, url: &str, sha: &str) -> PackagePaths {
-        PackagePaths {
-            source: self.get_url_path(url).join(&sha[..10]),
-            binary: self.get_repo_root_binary_dir(url).join(&sha[..10]),
-        }
-    }
-}
-
-impl Cache for DiskCache {
-    fn get_package_db_entry(&self, repo_url: &str) -> CacheEntry {
+    /// Search the cache for the related package db file.
+    /// If it's not found or the entry is too old, the bool param will be false
+    pub fn get_package_db_entry(&self, repo_url: &str) -> (PathBuf, bool) {
         let path = self.get_package_db_path(repo_url);
         if path.exists() {
             let created = path
@@ -153,75 +159,72 @@ impl Cache for DiskCache {
             return if now.duration_since(created).unwrap_or_default().as_secs()
                 > self.packages_timeout
             {
-                CacheEntry::Expired(path)
+                (path, false)
             } else {
-                CacheEntry::Existing(path)
+                (path, true)
             };
         }
 
-        CacheEntry::NotFound(path)
+        (path, false)
     }
 
-    fn get_package_installation_status(
+    pub fn get_package_paths(
         &self,
-        repo_url: &str,
-        name: &str,
+        source: &Source,
+        pkg_name: Option<&str>,
+        version: Option<&str>,
+    ) -> PackagePaths {
+        match source {
+            Source::Git { git, sha, .. } => PackagePaths {
+                source: self.get_git_clone_path(git),
+                binary: self.get_repo_root_binary_dir(git).join(&sha[..10]),
+            },
+            Source::Url { url, sha } => PackagePaths {
+                source: self.get_url_download_path(url).join(&sha[..10]),
+                binary: self.get_repo_root_binary_dir(url).join(&sha[..10]),
+            },
+            Source::Repository { repository } => PackagePaths {
+                source: self.get_source_package_path(
+                    repository,
+                    pkg_name.unwrap(),
+                    version.unwrap(),
+                ),
+                binary: self.get_binary_package_path(
+                    repository,
+                    pkg_name.unwrap(),
+                    version.unwrap(),
+                ),
+            },
+            Source::Local { .. } => unreachable!("Not used for local paths"),
+        }
+    }
+
+    /// Finds where a package is present in the cache depending on its source.
+    /// The version param is only used when the source is a repository
+    pub fn get_installation_status(
+        &self,
+        pkg_name: &str,
         version: &str,
+        source: &Source,
     ) -> InstallationStatus {
-        let source_present = self
-            .get_source_package_path(repo_url, name, version)
-            .join(name)
-            .is_dir();
-        let binary_present = self
-            .get_binary_package_path(repo_url, name, version)
-            .join(name)
-            .is_dir();
+        let (source_path, binary_path) = match source {
+            Source::Git { .. } | Source::Url { .. } => {
+                let paths = self.get_package_paths(source, None, None);
+                (paths.source, paths.binary.join(pkg_name))
+            }
+            Source::Repository { .. } => {
+                let paths = self.get_package_paths(source, Some(pkg_name), Some(version));
+                (paths.source.join(pkg_name), paths.binary.join(pkg_name))
+            }
+            // TODO: can we cache local somehow?
+            Source::Local { .. } => return InstallationStatus::Absent,
+        };
 
-        match (source_present, binary_present) {
+        match (source_path.is_dir(), binary_path.is_dir()) {
             (true, true) => InstallationStatus::Both,
             (true, false) => InstallationStatus::Source,
             (false, true) => InstallationStatus::Binary,
             (false, false) => InstallationStatus::Absent,
         }
-    }
-
-    fn get_git_installation_status(
-        &self,
-        git_url: &str,
-        sha: &str,
-        pkg_name: &str,
-    ) -> InstallationStatus {
-        let paths = self.get_git_package_paths(git_url, sha);
-
-        match (paths.source.is_dir(), paths.binary.join(pkg_name).is_dir()) {
-            (true, true) => InstallationStatus::Both,
-            (true, false) => InstallationStatus::Source,
-            (false, true) => InstallationStatus::Binary,
-            (false, false) => InstallationStatus::Absent,
-        }
-    }
-
-    fn get_url_installation_status(
-        &self,
-        url: &str,
-        sha: &str,
-        pkg_name: &str,
-    ) -> InstallationStatus {
-        let paths = self.get_url_package_paths(url, sha);
-
-        match (paths.source.is_dir(), paths.binary.join(pkg_name).is_dir()) {
-            (true, true) => InstallationStatus::Both,
-            (true, false) => InstallationStatus::Source,
-            (false, true) => InstallationStatus::Binary,
-            (false, false) => InstallationStatus::Absent,
-        }
-    }
-
-    fn get_git_clone_path(&self, git_url: &str) -> PathBuf {
-        self.get_source_git_package_path(&git_url)
-    }
-
-    fn get_url_download_path(&self, url: &str) -> PathBuf {
-        self.get_url_path(&url)
     }
 }
