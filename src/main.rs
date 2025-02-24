@@ -38,14 +38,16 @@ pub enum Command {
         upgrade: bool
     },
     /// Replaces the library with exactly what is in the lock file
-    Sync {
-        #[clap(short, long)]
-        upgrade: bool
-    },
+    Sync,
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
         json: bool,
+    },
+    /// Upgrade packages to the latest versions available
+    Upgrade {
+        #[clap(long)]
+        dry_run: bool,
     },
     /// Migrate renv to rv
     Migrate {
@@ -95,10 +97,10 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
 
 fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, upgrade: bool) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
+    context.load_databases_if_needed()?;
     if upgrade {
         context.lockfile = None;
     }
-    context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
 
     match timeit!(
@@ -180,8 +182,13 @@ fn try_main() -> Result<()> {
         Command::Plan { upgrade } => {
             _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
-        Command::Sync { upgrade }=> {
-            _sync(&cli.config_file, false, cli.verbose.is_present(), upgrade)?;
+        Command::Sync => {
+            _sync(&cli.config_file, false, cli.verbose.is_present(), false)?;
+        }
+        Command::Upgrade{
+            dry_run,
+        } => {
+            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), true)?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
