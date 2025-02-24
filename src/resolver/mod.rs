@@ -529,45 +529,7 @@ mod tests {
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;
     use crate::repository::RepositoryDatabase;
-    use crate::CacheEntry;
-
-    struct FakeCache {
-        cache_dir: TempDir,
-    }
-
-    impl FakeCache {
-        pub fn new() -> Self {
-            Self {
-                cache_dir: tempfile::tempdir().unwrap(),
-            }
-        }
-    }
-
-    impl Cache for FakeCache {
-        fn get_package_db_entry(&self, _: &str) -> CacheEntry {
-            CacheEntry::NotFound(PathBuf::from_str("").unwrap())
-        }
-
-        fn get_package_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
-            InstallationStatus::Absent
-        }
-
-        fn get_git_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
-            InstallationStatus::Absent
-        }
-
-        fn get_url_installation_status(&self, _: &str, _: &str, _: &str) -> InstallationStatus {
-            InstallationStatus::Absent
-        }
-
-        fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
-            self.cache_dir.path().join(hash_string(repo_url))
-        }
-
-        fn get_url_download_path(&self, url: &str) -> PathBuf {
-            self.cache_dir.path().join(hash_string(url))
-        }
-    }
+    use crate::{CacheEntry, DiskCache, SystemInfo};
 
     struct FakeGit;
 
@@ -578,7 +540,7 @@ mod tests {
             _: Option<GitReference<'_>>,
             _: impl AsRef<Path>,
         ) -> Result<String, Error> {
-            Ok("abc".to_string())
+            Ok("somethinglikeasha".to_string())
         }
     }
 
@@ -656,10 +618,15 @@ mod tests {
         (config, r_version, repositories, lockfile)
     }
 
-    #[test]
-    fn resolving() {
-        let paths = std::fs::read_dir("src/tests/resolution/").unwrap();
-        let cache = FakeCache::new();
+    fn setup_cache(r_version: &Version) -> (TempDir, DiskCache) {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let cache = DiskCache::new_in_dir(
+            r_version,
+            SystemInfo::from_os_info(),
+            cache_dir.path().to_path_buf(),
+        )
+        .unwrap();
+
         // Add the DESCRIPTION file for git deps
         let remotes = vec![
             ("gsm", "https://github.com/Gilead-BioStats/gsm"),
@@ -669,8 +636,8 @@ mod tests {
 
         for (dep, url) in &remotes {
             let cache_path = cache.get_git_clone_path(url);
-            std::fs::create_dir_all(&cache_path).unwrap();
-            std::fs::copy(
+            fs::create_dir_all(&cache_path).unwrap();
+            fs::copy(
                 &format!("src/tests/descriptions/{dep}.DESCRIPTION"),
                 cache_path.join(DESCRIPTION_FILENAME),
             )
@@ -680,16 +647,24 @@ mod tests {
         // And a custom one for url deps
         let url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz";
         let url_path = cache.get_url_download_path(url);
-        std::fs::create_dir_all(&url_path).unwrap();
-        std::fs::copy(
+        fs::create_dir_all(&url_path).unwrap();
+        fs::copy(
             "src/tests/descriptions/dplyr.DESCRIPTION",
             url_path.join(DESCRIPTION_FILENAME),
         )
         .unwrap();
 
+        (cache_dir, cache)
+    }
+
+    #[test]
+    fn resolving() {
+        let paths = std::fs::read_dir("src/tests/resolution/").unwrap();
+
         for path in paths {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
+            let (_cache_dir, cache) = setup_cache(&r_version);
             let resolver = Resolver::new(&repositories, &r_version, Some(&lockfile));
             let resolution = resolver.resolve(
                 &config.dependencies(),

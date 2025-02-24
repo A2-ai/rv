@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use fs_err as fs;
@@ -50,8 +50,16 @@ impl DiskCache {
             return Err(format!("Failed to create CACHEDIR.TAG: {e}").into());
         }
 
+        Self::new_in_dir(r_version, system_info, root)
+    }
+
+    pub(crate) fn new_in_dir(
+        r_version: &Version,
+        system_info: SystemInfo,
+        root: impl AsRef<Path>,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(Self {
-            root,
+            root: root.as_ref().to_path_buf(),
             system_info,
             r_version: r_version.major_minor(),
             packages_timeout: get_packages_timeout(),
