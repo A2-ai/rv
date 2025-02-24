@@ -46,6 +46,8 @@ pub enum Command {
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
+        #[clap(value_parser)]
+        packages: Vec<String>, 
         #[clap(long)]
         dry_run: bool,
     },
@@ -95,11 +97,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, upgrade: bool) -> Result<()> {
+
+fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, upgrade: Option<Vec<&str>>) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
-    if upgrade {
-        context.lockfile = None;
+    if let Some(deps_to_upgrade) = upgrade {
+        context.edit_lockfile_for_upgrade(deps_to_upgrade);
     }
     let resolved = resolve_dependencies(&context);
 
@@ -180,15 +183,21 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan { upgrade } => {
+            let upgrade = match upgrade {
+                true => Some(Vec::new()),
+                false => None,
+            };
             _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present(), false)?;
+            _sync(&cli.config_file, false, cli.verbose.is_present(), None)?;
         }
         Command::Upgrade{
+            packages,
             dry_run,
         } => {
-            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), true)?;
+            let upgrade = Some(packages.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), upgrade)?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
