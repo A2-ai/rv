@@ -28,7 +28,9 @@ repositories = [
     # {name = "dplyr", repository = "CRAN", force_source = true},
     # {name = "dplyr", git = "https://github.com/tidyverse/dplyr.git", tag = "v1.1.4"},
     # {name = "dplyr", path = "/path/to/local/dplyr"},
-dependencies = []
+dependencies = [
+%dependencies%
+]
 
 "#;
 
@@ -42,6 +44,7 @@ pub fn init(
     project_directory: impl AsRef<Path>,
     r_version: &[u32; 2],
     repositories: &Vec<Repository>,
+    dependencies: &Vec<String>,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     create_library_structure(proj_dir)?;
@@ -52,7 +55,7 @@ pub fn init(
         .map(|x| x.to_string_lossy().to_string())
         .unwrap_or("my rv project".to_string());
 
-    let config = render_config(&project_name, &r_version, &repositories);
+    let config = render_config(&project_name, &r_version, &repositories, dependencies);
 
     let mut file = File::create(proj_dir.join(CONFIG_FILENAME)).map_err(|e| InitError {
         source: InitErrorKind::Io(e),
@@ -68,6 +71,7 @@ fn render_config(
     project_name: &str,
     r_version: &[u32; 2],
     repositories: &Vec<Repository>,
+    dependencies: &Vec<String>,
 ) -> String {
     let repos = repositories
         .iter()
@@ -75,10 +79,17 @@ fn render_config(
         .collect::<Vec<_>>()
         .join("\n");
 
+    let deps = dependencies
+        .iter()
+        .map(|d| format!(r#"    "{d}","#))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
         .replace("%r_version%", &format!("{}.{}", r_version[0], r_version[1]))
         .replace("%repositories%", &repos)
+        .replace("%dependencies%", &deps)
 }
 
 pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
@@ -190,7 +201,8 @@ mod tests {
             Repository::new("test1".to_string(), "this is test1".to_string(), true),
             Repository::new("test2".to_string(), "this is test2".to_string(), false),
         ];
-        init(&project_directory, &r_version.major_minor(), &repositories).unwrap();
+        let dependencies = vec!["dplyr".to_string()];
+        init(&project_directory, &r_version.major_minor(), &repositories, &dependencies).unwrap();
         let dir = &project_directory.into_path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());

@@ -33,6 +33,8 @@ pub enum Command {
         r_version: Option<String>,
         #[clap(long)]
         no_repositories: bool,
+        #[clap(long, value_parser, num_args = 1..)]
+        add: Vec<String>,
     },
     /// Returns the path for the library for the current project/system
     Library,
@@ -153,7 +155,7 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init { project_directory , r_version, no_repositories} => {
+        Command::Init { project_directory , r_version, no_repositories, add} => {
             if project_directory.exists() {
                 println!("{} already exists", project_directory.display());
                 return Ok(());
@@ -173,7 +175,7 @@ fn try_main() -> Result<()> {
                 false => find_r_repositories()?
             };
 
-            init(&project_directory, &r_version.major_minor(), &repositories)?;
+            init(&project_directory, &r_version.major_minor(), &repositories, &add)?;
             activate(&project_directory)?;
             println!(
                 "rv project successfully initialized at {}",
