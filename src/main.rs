@@ -36,10 +36,14 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
-    /// Add to a simple package to a repository
+    /// Add to a simple package to the project and sync
     Add {
-        #[clap(subcommand)]
-        subcommand: AddSubcommand,
+        #[clap(value_parser)]
+        packages: Vec<String>,
+        #[clap(long)]
+        plan: bool,
+        #[clap(long)]
+        no_sync: bool,
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -188,12 +192,11 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false)?;
         }
-        Command::Add{subcommand: AddSubcommand::Pkg { packages, plan, sync }} => {
+        Command::Add{packages, plan, no_sync} => {
             add_packages(packages, &cli.config_file)?;
             if plan {
                 _sync(&cli.config_file, true)?;
-            }
-            if sync {
+            } else if !no_sync {
                 _sync(&cli.config_file, false)?;
             }
         }
