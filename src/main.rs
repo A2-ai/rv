@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
@@ -169,10 +169,7 @@ fn try_main() -> Result<()> {
             add,
         } => {
             let r_version = if let Some(r) = r_version {
-                match r.parse::<Version>() {
-                    Ok(v) => v,
-                    Err(_) => bail!("R version specified could not be parsed as a valid version"),
-                }
+                r.parse::<Version>().map_err(|_| anyhow!("R version specified could not be parsed as a valid version"))?
             } else {
                 RCommandLine { r: None }.version()?
             };
