@@ -81,11 +81,9 @@ impl CliContext {
         Ok(())
     }
 
-    pub fn edit_lockfile_for_upgrade(&mut self, deps_to_upgrade: Vec<&str>) {
-        if deps_to_upgrade.is_empty() {
-            self.lockfile = None;
-        } else if let Some(lockfile) = &mut self.lockfile {
-            lockfile.remove_packages(deps_to_upgrade);
+    pub fn edit_lockfile_for_upgrade(&mut self, deps_to_upgrade: Vec<String>) {
+        if let Some(lockfile) = &mut self.lockfile {
+            lockfile.remove_packages(deps_to_upgrade, None);
         }
     }
 

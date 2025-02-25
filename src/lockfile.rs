@@ -378,8 +378,13 @@ impl Lockfile {
         None
     }
 
-    pub fn remove_packages(&mut self, packages: Vec<&str>) {
-        self.packages.retain(|p| !packages.contains(&p.name.as_str()));
+    pub fn remove_packages(&mut self, packages: Vec<String>, dep: Option<&ConfigDependency>) {
+        // for name in packages {
+        //     let clone = self.clone();
+        //     let tree = clone.get_package_tree(&name, dep);
+        //     self.packages.retain(|p| !tree.contains(p.name.as_str()));
+        // }
+        self.packages.retain(|p| packages.contains(&p.name));
     }
 
     /// Returns the full dependency tree (including itself) for a given package

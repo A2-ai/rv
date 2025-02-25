@@ -70,6 +70,13 @@ pub enum MigrateSubcommand {
     },
 }
 
+#[derive(Debug, Clone)]
+enum SyncMode {
+    Default,
+    PartialUpgrade(Vec<String>),
+    FullUpgrade,
+}
+
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
@@ -98,11 +105,13 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
 }
 
 
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, upgrade: Option<Vec<&str>>) -> Result<()> {
+fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, sync_mode: SyncMode) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
-    if let Some(deps_to_upgrade) = upgrade {
-        context.edit_lockfile_for_upgrade(deps_to_upgrade);
+    match sync_mode {
+        SyncMode::Default => (),
+        SyncMode::PartialUpgrade(deps_to_upgrade) => context.edit_lockfile_for_upgrade(deps_to_upgrade),
+        SyncMode::FullUpgrade => context.lockfile = None,
     }
     let resolved = resolve_dependencies(&context);
 
@@ -184,19 +193,22 @@ fn try_main() -> Result<()> {
         }
         Command::Plan { upgrade } => {
             let upgrade = match upgrade {
-                true => Some(Vec::new()),
-                false => None,
+                true => SyncMode::FullUpgrade,
+                false => SyncMode::Default,
             };
             _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present(), None)?;
+            _sync(&cli.config_file, false, cli.verbose.is_present(), SyncMode::Default)?;
         }
         Command::Upgrade{
             packages,
             dry_run,
         } => {
-            let upgrade = Some(packages.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            let upgrade = match packages.is_empty() {
+                true => SyncMode::FullUpgrade,
+                false => SyncMode::PartialUpgrade(packages),
+            };
             _sync(&cli.config_file, dry_run, cli.verbose.is_present(), upgrade)?;
         }
         Command::Cache { json } => {
