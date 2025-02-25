@@ -19,9 +19,24 @@ pub fn add_packages(packages: Vec<String>, config_file: impl AsRef<Path>) -> Res
         })?;
 
     // get the dependencies array
-    let config_deps = get_mut_array(&mut doc, config_file)?;
+    let config_deps = get_mut_array(&mut doc);
 
-    add_fxn(config_deps, &packages);
+    // collect the names of all of the dependencies
+    let config_dep_names = config_deps
+        .iter()
+        .filter_map(|v| get_dependency_name(v))
+        .collect::<Vec<_>>();
+
+    // Determine if the dep to add is in the config, if not add it
+    for d in packages {
+        if !config_dep_names.contains(&d) {
+            config_deps.push(Value::String(Formatted::new(d)));
+            // Couldn't format value before pushing, so adding formatting after its added
+            if let Some(last) = config_deps.iter_mut().last() {
+                last.decor_mut().set_prefix("\n    ");
+            }
+        }
+    }
 
     // Set a trailing new line and comma for the last element for proper formatting
     config_deps.set_trailing("\n");
@@ -36,58 +51,24 @@ pub fn add_packages(packages: Vec<String>, config_file: impl AsRef<Path>) -> Res
     Ok(())
 }
 
-fn get_mut_array<'a>(doc: &'a mut DocumentMut, config_file: impl AsRef<Path>) -> Result<&'a mut Array, AddError> {
-    let config_file = config_file.as_ref();
+fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
     // config arrays are behind the "project" table
     let table = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())
-        .ok_or(AddError {
-            path: config_file.into(),
-            source: AddErrorKind::NoField("project".to_string()),
-        })?;
-    // get the array indexed by the array name
+        .unwrap();
+    // get the array or insert it if it does not exist
     let deps = table
-        .get_mut("dependencies")
-        .and_then(|item| item.as_array_mut())
-        .ok_or(AddError {
-            path: config_file.into(),
-            source: AddErrorKind::NoField("dependencies".to_string()),
-        })?;
+        .entry("dependencies")
+        .or_insert_with(|| Array::new().into())
+        .as_array_mut()
+        .unwrap();
+    
     // remove formatting on the last element as we will re-add
     if let Some(last) = deps.iter_mut().last() {
         last.decor_mut().set_suffix("");
     }
-    Ok(deps)
-}
-
-fn add_fxn(config_deps: &mut Array, add_deps: &Vec<String>) {
-    // collect the names of all of the dependencies
-    let config_dep_names = config_deps
-        .iter()
-        .filter_map(|v| get_dependency_name(v))
-        .collect::<Vec<_>>();
-    // Determine if the dep to add is in the config, if not add it
-    for d in add_deps {
-        if !config_dep_names.contains(d) {
-            config_deps.push(Value::String(Formatted::new(d.to_string())));
-            // Couldn't format value before pushing, so adding formatting after its added
-            if let Some(last) = config_deps.iter_mut().last() {
-                last.decor_mut().set_prefix("\n    ");
-            }
-        }
-    }
-}
-
-fn remove_fxn(config_deps: &mut Array, remove_deps: &Vec<String>) {
-    // retain config_deps that do not match any of the deps to remove
-    config_deps.retain(|v| {
-        if let Some(name) = get_dependency_name(v) {
-            !remove_deps.contains(&name)
-        } else {
-            true
-        }
-    });
+    deps
 }
 
 fn get_dependency_name(value: &Value) -> Option<String> {
@@ -115,14 +96,10 @@ pub struct AddError {
 pub enum AddErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml_edit::TomlError),
-    #[error("Could not find required field {0}")]
-    NoField(String),
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use fs_err::{read_to_string, write};
     use tempfile::tempdir;
 

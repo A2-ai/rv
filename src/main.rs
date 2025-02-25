@@ -6,7 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    activate, deactivate, add_packages, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
+    activate, add_packages, deactivate, Config, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver
 };
 
 #[derive(Parser)]
@@ -184,6 +184,8 @@ fn try_main() -> Result<()> {
             _sync(&cli.config_file, false, cli.verbose.is_present())?;
         }
         Command::Add{packages, plan, no_sync} => {
+            // load config to verify structure is valid
+            let _ = Config::from_file(&cli.config_file)?;
             add_packages(packages, &cli.config_file)?;
             if plan {
                 _sync(&cli.config_file, true, cli.verbose.is_present())?;
