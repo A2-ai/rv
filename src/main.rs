@@ -6,7 +6,8 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    activate, deactivate, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver, Version,
+    activate, deactivate, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
+    Version,
 };
 
 #[derive(Parser)]
@@ -29,7 +30,7 @@ pub enum Command {
     Init {
         #[clap(value_parser, default_value = ".")]
         project_directory: PathBuf,
-        #[clap(short='r', long)]
+        #[clap(short = 'r', long)]
         r_version: Option<String>,
         #[clap(long)]
         no_repositories: bool,
@@ -104,7 +105,13 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result
         } else {
             "Synced dependencies"
         },
-        sync(&context, &resolved, &context.library, dry_run, !has_logs_enabled)
+        sync(
+            &context,
+            &resolved,
+            &context.library,
+            dry_run,
+            !has_logs_enabled
+        )
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -155,7 +162,12 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init { project_directory , r_version, no_repositories, add} => {
+        Command::Init {
+            project_directory,
+            r_version,
+            no_repositories,
+            add,
+        } => {
             let r_version = if let Some(r) = r_version {
                 match r.parse::<Version>() {
                     Ok(v) => v,
@@ -167,9 +179,14 @@ fn try_main() -> Result<()> {
 
             let repositories = match no_repositories {
                 true => Vec::new(),
-                false => find_r_repositories()?
+                false => find_r_repositories()?,
             };
-            init(&project_directory, &r_version.major_minor(), &repositories, &add)?;
+            init(
+                &project_directory,
+                &r_version.major_minor(),
+                &repositories,
+                &add,
+            )?;
             activate(&project_directory)?;
             println!(
                 "rv project successfully initialized at {}",

@@ -39,7 +39,7 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
 
     let new_content = format!("{}\n{}", activation_string(), content);
     write(rprofile_path, new_content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e)
+        source: ActivateErrorKind::Io(e),
     })?;
 
     Ok(())
@@ -72,7 +72,7 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
 
 fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     let dir = dir.as_ref().canonicalize().map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e)
+        source: ActivateErrorKind::Io(e),
     })?;
 
     // Determine if the content of the activate file is for global or project specific activation

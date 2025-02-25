@@ -53,7 +53,7 @@ pub fn init(
     let project_name = proj_dir
         .canonicalize()
         .map_err(|e| InitError {
-            source: InitErrorKind::Io(e)
+            source: InitErrorKind::Io(e),
         })?
         .iter()
         .last()
@@ -150,7 +150,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
 fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     let lib_dir = project_directory.as_ref().join(LIBRARY_PATH);
     if lib_dir.is_dir() {
-        return Ok(())
+        return Ok(());
     }
     std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH)).map_err(|e| InitError {
         source: InitErrorKind::Io(e),
@@ -211,7 +211,13 @@ mod tests {
             Repository::new("test2".to_string(), "this is test2".to_string(), false),
         ];
         let dependencies = vec!["dplyr".to_string()];
-        init(&project_directory, &r_version.major_minor(), &repositories, &dependencies).unwrap();
+        init(
+            &project_directory,
+            &r_version.major_minor(),
+            &repositories,
+            &dependencies,
+        )
+        .unwrap();
         let dir = &project_directory.into_path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
