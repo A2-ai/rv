@@ -70,6 +70,13 @@ pub(crate) const GLOBAL_ACTIVATE_FILE_CONTENT: &str = r#"local({
 })
 if (interactive()) {
 	message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
+	
+	# Ensure the R version matches for rv and the console
+	rv_r_version <- sub(".*rv/library/([0-9]+\\.[0-9]+).*", "\\1", .libPaths()[1])
+	console_r_version <- sub(".*([0-9]+\\.[0-9]+)\\..*", "\\1", R.Version()$version.string)
+	if (rv_r_version != console_r_version) {
+		message(sprintf("\nWARNING: R version detected by rv (%s) does not match system version (%s)", rv_r_version, console_r_version))
+	}
 }
 "#;
 
@@ -91,5 +98,12 @@ pub(crate) const PROJECT_ACTIVATE_FILE_CONTENT: &str = r#"local({
 })
 if (interactive()) {
 	message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
+
+	# Ensure the R version matches for rv and the console
+	rv_r_version <- sub(".*rv/library/([0-9]+\\.[0-9]+).*", "\\1", .libPaths()[1])
+	console_r_version <- sub(".*([0-9]+\\.[0-9]+)\\..*", "\\1", R.Version()$version.string)
+	if (rv_r_version != console_r_version) {
+		message(sprintf("\nWARNING: R version detected by rv (%s) does not match system version (%s)", rv_r_version, console_r_version))
+	}
 }
 "#;

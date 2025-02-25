@@ -40,6 +40,7 @@ dependencies = [
 ///     - If a library directory exists, init will not create a new one or remove any of the installed packages
 /// - Creating a .gitignore file within the rv subdirectory to prevent upload of installed packages to git
 /// - Initialize the config file with the R version and repositories set as options within R
+/// - Activate the project by setting the libPaths to the rv library
 pub fn init(
     project_directory: impl AsRef<Path>,
     r_version: &[u32; 2],
@@ -50,6 +51,10 @@ pub fn init(
     create_library_structure(proj_dir)?;
     create_gitignore(proj_dir)?;
     let project_name = proj_dir
+        .canonicalize()
+        .map_err(|e| InitError {
+            source: InitErrorKind::Io(e)
+        })?
         .iter()
         .last()
         .map(|x| x.to_string_lossy().to_string())
@@ -143,6 +148,10 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
 }
 
 fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+    let lib_dir = project_directory.as_ref().join(LIBRARY_PATH);
+    if lib_dir.is_dir() {
+        return Ok(())
+    }
     std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH)).map_err(|e| InitError {
         source: InitErrorKind::Io(e),
     })
@@ -190,7 +199,7 @@ mod tests {
         Repository, Version,
     };
 
-    use super::{find_r_repositories, init};
+    use super::init;
     use tempfile::tempdir;
 
     #[test]

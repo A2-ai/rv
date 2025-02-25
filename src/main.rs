@@ -27,7 +27,7 @@ pub struct Cli {
 pub enum Command {
     /// Creates a new rv project
     Init {
-        #[clap(value_parser)]
+        #[clap(value_parser, default_value = ".")]
         project_directory: PathBuf,
         #[clap(short='r', long)]
         r_version: Option<String>,
@@ -156,11 +156,6 @@ fn try_main() -> Result<()> {
 
     match cli.command {
         Command::Init { project_directory , r_version, no_repositories, add} => {
-            if project_directory.exists() {
-                println!("{} already exists", project_directory.display());
-                return Ok(());
-            }
-
             let r_version = if let Some(r) = r_version {
                 match r.parse::<Version>() {
                     Ok(v) => v,
@@ -174,7 +169,6 @@ fn try_main() -> Result<()> {
                 true => Vec::new(),
                 false => find_r_repositories()?
             };
-
             init(&project_directory, &r_version.major_minor(), &repositories, &add)?;
             activate(&project_directory)?;
             println!(
