@@ -31,7 +31,7 @@ filetime = "0.2.25"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"
-ureq = "2"
+ureq = "3"
 sha2 = "0.10"
 
 clap = { version = "4", features = ["derive"], optional = true }
@@ -41,7 +41,7 @@ anyhow = { version = "1", optional = true }
 env_logger = { version = "0.11", optional = true }
 crossbeam = { version = "0.8", optional = true }
 num_cpus = { version = "1", optional = true }
-jiff = { version = "0.1", optional = true }
+jiff = { version = "0.2", optional = true }
 indicatif = { version = "0.17", optional = true }
 
 [features]

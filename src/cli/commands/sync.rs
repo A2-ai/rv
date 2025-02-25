@@ -10,7 +10,6 @@ use crossbeam::{channel, thread};
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::cli::cache::PackagePaths;
 use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::{mtime_recursive, untar_archive};
@@ -19,8 +18,8 @@ use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::{is_binary_package, PackageType};
 use crate::{
-    BuildPlan, BuildStep, Http, HttpDownload, Library, RCmd, RCommandLine, RepoServer,
-    ResolvedDependency,
+    BuildPlan, BuildStep, Http, HttpDownload, Library, PackagePaths, RCmd, RCommandLine,
+    RepoServer, ResolvedDependency,
 };
 use crate::{Git, GitOperations};
 
@@ -103,7 +102,7 @@ fn install_package_from_repository(
     let pkg_paths =
         context
             .cache
-            .get_package_paths(pkg.source.source_path(), &pkg.name, &pkg.version.original);
+            .get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
 
     let source_url =
         repo_server.get_source_tarball_path(&pkg.name, &pkg.version.original, pkg.path.as_deref());
@@ -165,7 +164,7 @@ fn install_package_from_git(
     let repo_url = pkg.source.source_path();
     let sha = pkg.source.git_sha();
 
-    let pkg_paths = context.cache.get_git_package_paths(repo_url, sha);
+    let pkg_paths = context.cache.get_package_paths(&pkg.source, None, None);
 
     if !pkg.installation_status.binary_available() {
         let git_ops = Git {};
@@ -250,9 +249,8 @@ fn install_url_package(
     library_dir: &Path,
 ) -> Result<()> {
     let link_mode = LinkMode::new();
-    let (url, sha) = pkg.source.url_info();
 
-    let pkg_paths = context.cache.get_url_package_paths(url, sha);
+    let pkg_paths = context.cache.get_package_paths(&pkg.source, None, None);
     let download_path = pkg_paths.source.join(pkg.name.as_ref());
 
     // If we have a binary, copy it since we don't keep cache around for binary URL packages

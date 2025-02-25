@@ -1,11 +1,11 @@
 //! CLI context that gets instantiated for a few commands and passed around
 use std::path::{Path, PathBuf};
 
-use crate::cli::{utils::write_err, DiskCache};
+use crate::cli::utils::write_err;
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Cache,
-    CacheEntry, Config, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase,
-    SystemInfo, Version,
+    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Config,
+    DiskCache, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase, SystemInfo,
+    Version,
 };
 
 use crate::cli::utils::get_current_system_path;
@@ -34,7 +34,10 @@ impl CliContext {
         let r_cmd = find_r_version_command(&r_version)
             .ok_or(anyhow!("Could not find specified version ({r_version})"))?;
 
-        let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
+        let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
+            Ok(c) => c,
+            Err(e) => return Err(anyhow!(e)),
+        };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
@@ -102,70 +105,65 @@ pub(crate) fn load_databases(
         .par_iter()
         .map(|r| {
             // 1. Generate path to add to URL to get the src PACKAGE and binary PACKAGE for current OS
-            let entry = cache.get_package_db_entry(&r.url());
+            let (path, exists) = cache.get_package_db_entry(&r.url());
             // 2. Check in cache whether we have the database and is not expired
-            match entry {
-                CacheEntry::Existing(p) => {
-                    // load the archive
-                    let db = RepositoryDatabase::load(&p)?;
-                    log::debug!("Loaded packages db from {p:?}");
-                    Ok((db, r.force_source))
+            if exists {
+                // load the archive
+                let db = RepositoryDatabase::load(&path)?;
+                log::debug!("Loaded packages db from {path:?}");
+                Ok((db, r.force_source))
+            } else {
+                // Make sure to remove the file if it exists - it's expired
+                if path.exists() {
+                    fs::remove_file(&path)?;
                 }
-                CacheEntry::NotFound(p) | CacheEntry::Expired(p) => {
-                    // Make sure to remove the file if it exists - it's expired
-                    if p.exists() {
-                        fs::remove_file(&p)?;
-                    }
-                    log::debug!("Need to download PACKAGES file for {}", r.url());
-                    let mut db = RepositoryDatabase::new(&r.url());
-                    // download files, parse them and persist to disk
-                    let mut source_package = Vec::new();
-                    let source_url =
-                        RepoServer::from_url(r.url()).get_source_path(PACKAGE_FILENAME);
+                log::debug!("Need to download PACKAGES file for {}", r.url());
+                let mut db = RepositoryDatabase::new(&r.url());
+                // download files, parse them and persist to disk
+                let mut source_package = Vec::new();
+                let source_url = RepoServer::from_url(r.url()).get_source_path(PACKAGE_FILENAME);
+                let bytes_read = timeit!(
+                    "Downloaded source PACKAGES",
+                    http::download(&source_url, &mut source_package, Vec::new())?
+                );
+                // We should ALWAYS has a PACKAGES file for source
+                if bytes_read == 0 {
+                    bail!("File at {source_url} was not found");
+                }
+                // UNSAFE: we trust the PACKAGES data to be valid UTF-8
+                db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
+
+                let mut binary_package = Vec::new();
+                let binary_url = RepoServer::from_url(r.url()).get_binary_path(
+                    PACKAGE_FILENAME,
+                    &cache.r_version,
+                    &cache.system_info,
+                );
+                log::debug!("checking for binary packages URL: {:?}", binary_url);
+                // we do not know for certain that the Some return of get_binary_path will be a valid url,
+                // but we do know that if it returns None there is not a binary PACKAGES file
+                if let Some(url) = binary_url {
                     let bytes_read = timeit!(
-                        "Downloaded source PACKAGES",
-                        http::download(&source_url, &mut source_package, Vec::new())?
+                        format!("Downloaded binary PACKAGES from URL: {url}"),
+                        // we can just set bytes_read to 0 if the download fails
+                        // such that there is no attempt to parse the db below
+                        http::download(&url, &mut binary_package, vec![],).unwrap_or(0)
                     );
-                    // We should ALWAYS has a PACKAGES file for source
-                    if bytes_read == 0 {
-                        bail!("File at {source_url} was not found");
-                    }
-                    // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                    db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
-
-                    let mut binary_package = Vec::new();
-                    let binary_url = RepoServer::from_url(r.url()).get_binary_path(
-                        PACKAGE_FILENAME,
-                        &cache.r_version,
-                        &cache.system_info,
-                    );
-                    log::debug!("checking for binary packages URL: {:?}", binary_url);
-                    // we do not know for certain that the Some return of get_binary_path will be a valid url,
-                    // but we do know that if it returns None there is not a binary PACKAGES file
-                    if let Some(url) = binary_url {
-                        let bytes_read = timeit!(
-                            format!("Downloaded binary PACKAGES from URL: {url}"),
-                            // we can just set bytes_read to 0 if the download fails
-                            // such that there is no attempt to parse the db below
-                            http::download(&url, &mut binary_package, vec![],).unwrap_or(0)
+                    // but sometimes we might not have a binary PACKAGES file and that's fine.
+                    // We only load binary if we found a file
+                    if bytes_read > 0 {
+                        // UNSAFE: we trust the PACKAGES data to be valid UTF-8
+                        db.parse_binary(
+                            unsafe { std::str::from_utf8_unchecked(&binary_package) },
+                            cache.r_version.clone(),
                         );
-                        // but sometimes we might not have a binary PACKAGES file and that's fine.
-                        // We only load binary if we found a file
-                        if bytes_read > 0 {
-                            // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                            db.parse_binary(
-                                unsafe { std::str::from_utf8_unchecked(&binary_package) },
-                                cache.r_version.clone(),
-                            );
-                        }
                     }
-
-                    db.persist(&p)?;
-                    log::debug!("Saving packages db at {p:?}");
-                    Ok((db, r.force_source))
                 }
+
+                db.persist(&path)?;
+                log::debug!("Saving packages db at {path:?}");
+                Ok((db, r.force_source))
             }
-            // 3. Fetch the PACKAGE files if needed and build the database + persist to disk
         })
         .collect();
 

@@ -1,10 +1,11 @@
-use std::io::Cursor;
+use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{io, io::Write, time::Duration};
 
 use crate::fs::untar_archive;
 use sha2::{Digest, Sha256};
+use ureq::http::{HeaderName, HeaderValue};
 
 // A writer that returns the sha256 hash at the end
 struct ShaWriter<W: Write> {
@@ -46,34 +47,29 @@ pub fn download<W: Write>(
     writer: &mut W,
     headers: Vec<(&str, String)>,
 ) -> Result<u64, HttpError> {
-    let mut request = ureq::get(url).timeout(Duration::from_secs(200));
-    for (key, val) in headers {
-        request = request.set(key, &val);
+    let mut request_builder = ureq::get(url);
+
+    {
+        let req_headers = request_builder.headers_mut().unwrap();
+        for (key, val) in headers {
+            req_headers.insert(
+                HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                HeaderValue::from_str(val.as_str()).expect("Invalid header value"),
+            );
+        }
     }
+
+    let request = request_builder
+        .config()
+        .timeout_global(Some(Duration::from_secs(200)))
+        .build();
     log::trace!("Starting download of file from {url}");
     let start_time = Instant::now();
-    let og_resp = request.call();
 
-    let resp = match og_resp {
-        Ok(r) => r,
-        Err(e) => {
-            match e {
-                // if the server returns an actual status code, we can get the response
-                // to the later matcher
-                ureq::Error::Status(_, resp) => resp,
-                _ => {
-                    return Err(HttpError {
-                        url: url.to_string(),
-                        source: HttpErrorKind::Ureq(Box::new(e)),
-                    })
-                }
-            }
-        }
-    };
-
-    match resp.status() {
-        200 => {
-            let out = std::io::copy(&mut resp.into_reader(), writer).map_err(|e| HttpError {
+    match request.call() {
+        Ok(mut res) => {
+            let mut reader = BufReader::new(res.body_mut().with_config().reader());
+            let out = std::io::copy(&mut reader, writer).map_err(|e| HttpError {
                 url: url.to_string(),
                 source: HttpErrorKind::Io(e),
             });
@@ -83,10 +79,20 @@ pub fn download<W: Write>(
             );
             out
         }
-        _ => Err(HttpError {
-            url: url.to_string(),
-            source: HttpErrorKind::Http(resp.status()),
-        }),
+        Err(e) => {
+            match e {
+                // if the server returns an actual status code, we can get the response
+                // to the later matcher
+                ureq::Error::StatusCode(code) => Err(HttpError {
+                    url: url.to_string(),
+                    source: HttpErrorKind::Http(code),
+                }),
+                _ => Err(HttpError {
+                    url: url.to_string(),
+                    source: HttpErrorKind::Ureq(Box::new(e)),
+                }),
+            }
+        }
     }
 }
 
