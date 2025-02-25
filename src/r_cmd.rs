@@ -5,7 +5,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use crate::link::{LinkError, LinkMode};
+use crate::sync::{LinkError, LinkMode};
 use crate::Version;
 use regex::Regex;
 

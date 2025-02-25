@@ -14,9 +14,9 @@ use crate::cli::CliContext;
 use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::{mtime_recursive, untar_archive};
 use crate::git::GitReference;
-use crate::link::LinkMode;
 use crate::lockfile::Source;
 use crate::package::{is_binary_package, PackageType};
+use crate::sync::LinkMode;
 use crate::{
     BuildPlan, BuildStep, Http, HttpDownload, Library, PackagePaths, RCmd, RCommandLine,
     RepoServer, ResolvedDependency,

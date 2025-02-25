@@ -104,10 +104,10 @@ impl<'a> RepoServer<'a> {
     ///
     /// ### MacOS
     /// Binaries for arm64 processors are found under `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
-    /// 
+    ///
     /// Binaries for x86_64 processors are found under different paths depending on the R version
     /// * For R <= 4.2, binaries are found under `/bin/macosx/contrib/4.<R minor version>`
-    /// 
+    ///
     /// * For R > 4.2, binaries are found under `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
     ///
     /// Currently, the Mac version is hard coded to Big Sur. Earlier versions are archived for earlier versions of R,
@@ -186,7 +186,7 @@ impl<'a> RepoServer<'a> {
     /// For x86_64 processors, a split in the path to the binaries occurred at R/4.2:
     /// * R <= 4.2, the path is `/bin/macosx/contrib/4.<R minor version>`
     /// * R > 4.2, the path is `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
-    /// 
+    ///
     /// This split occurred to mirror the new path pattern for arm64 processors.
     /// The path to the binaries built for arm64 binaries is `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
     /// While CRAN itself only started supporting arm64 binaries at R/4.2, many repositories (including PPM) support binaries for older versions
@@ -210,7 +210,7 @@ impl<'a> RepoServer<'a> {
                 self.url(),
                 r_version[0],
                 r_version[1]
-            ))
+            ));
         }
 
         // For x86_64, the path in which binaries are found switches after R/4.2
@@ -340,10 +340,7 @@ mod tests {
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 1], &sysinfo)
             .unwrap();
-        let ref_url = format!(
-            "{}/bin/macosx/big-sur-arm64/contrib/4.1/test-file",
-            PPM_URL
-        );
+        let ref_url = format!("{}/bin/macosx/big-sur-arm64/contrib/4.1/test-file", PPM_URL);
         assert_eq!(source_url, ref_url)
     }
 
@@ -353,7 +350,10 @@ mod tests {
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file", PPM_URL);
+        let ref_url = format!(
+            "{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file",
+            PPM_URL
+        );
         assert_eq!(source_url, ref_url)
     }
 
@@ -363,10 +363,7 @@ mod tests {
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
-        let ref_url = format!(
-            "{}/bin/macosx/big-sur-arm64/contrib/4.4/test-file",
-            PPM_URL
-        );
+        let ref_url = format!("{}/bin/macosx/big-sur-arm64/contrib/4.4/test-file", PPM_URL);
         assert_eq!(source_url, ref_url)
     }
 
