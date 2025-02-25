@@ -15,5 +15,4 @@ dependencies = [
     {name = "pmplots", repository = "new-mirror"},
     "pmtables",
     "bbr",
-    {name = "ggplot2", repository = "new-rspm"},
 ]
