@@ -173,6 +173,19 @@ impl<'a> RepoServer<'a> {
         self.get_source_path(&file_name)
     }
 
+    pub fn get_tarball_urls(
+        &self,
+        name: &str,
+        version: &str,
+        path: Option<&str>,
+        r_version: &[u32; 2],
+        sysinfo: &SystemInfo,
+    ) -> (String, Option<String>) {
+        let source = self.get_source_tarball_path(name, version, path);
+        let binary = self.get_binary_tarball_path(name, version, path, r_version, sysinfo);
+        (source, binary)
+    }
+
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {
         format!(
             "{}/bin/windows/contrib/{}.{}/{file_name}",

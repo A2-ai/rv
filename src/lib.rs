@@ -33,5 +33,5 @@ pub use renv::RenvLock;
 pub use repo_path::RepoServer;
 pub use repository::RepositoryDatabase;
 pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};
-pub use sync::{BuildPlan, BuildStep};
+pub use sync::{BuildPlan, BuildStep, SyncHandler};
 pub use system_info::{OsType, SystemInfo};

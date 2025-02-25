@@ -19,7 +19,7 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
-pub trait RCmd {
+pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
     fn install(
         &self,
@@ -165,6 +165,12 @@ impl RCmd for RCommandLine {
         let status = handle.wait().unwrap();
 
         if !status.success() {
+            // Always delete the destination is an error happend
+            if destination.as_ref().is_dir() {
+                // We ignore that error intentionally since we want to keep the one from CLI
+                let _ = fs::remove_dir_all(destination.as_ref());
+            }
+
             return Err(InstallError {
                 source: InstallErrorKind::InstallationFailed(output),
             });
