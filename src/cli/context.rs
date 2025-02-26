@@ -8,7 +8,6 @@ use crate::{
     SystemInfo, Version,
 };
 
-use crate::cli::utils::get_current_system_path;
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use anyhow::{anyhow, bail, Result};
@@ -50,7 +49,8 @@ impl CliContext {
 
         let mut library = Library::new(
             &project_dir,
-            get_current_system_path(&cache.system_info, r_version.major_minor()),
+            &cache.system_info,
+            r_version.major_minor(),
         );
         library.find_content();
 
