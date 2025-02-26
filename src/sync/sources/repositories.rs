@@ -9,7 +9,9 @@ use crate::http::Http;
 use crate::package::PackageType;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
-use crate::{is_binary_package, DiskCache, HttpDownload, RCmd, RepoServer, ResolvedDependency};
+use crate::{
+    get_tarball_urls, is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency,
+};
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
@@ -42,14 +44,8 @@ pub(crate) fn install_package(
                 pkg.version.original
             );
 
-            let repo_server = RepoServer::from_url(pkg.source.source_path());
-            let (source_url, binary_url) = repo_server.get_tarball_urls(
-                &pkg.name,
-                &pkg.version.original,
-                pkg.path.as_deref(),
-                &cache.r_version,
-                &cache.system_info,
-            );
+            let (source_url, binary_url) =
+                get_tarball_urls(&pkg, &cache.r_version, &cache.system_info);
             let http = Http {};
 
             let download_and_install_source = || -> Result<(), SyncError> {

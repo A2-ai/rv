@@ -1,4 +1,5 @@
-use crate::{OsType, SystemInfo};
+use crate::consts::PACKAGE_FILENAME;
+use crate::{OsType, ResolvedDependency, SystemInfo};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -57,7 +58,7 @@ fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
 /// CRAN-type repositories behave under a set of rules, but some known repositories have different nuanced behavior
 /// Unless otherwise noted, each repository is assumed to have MacOS and Windows binaries for at least R > 4.0
 #[derive(Debug)]
-pub enum RepoServer<'a> {
+enum RepoServer<'a> {
     /// Posit Package Manager (PPM) has linux binaries for various distributions and has immutable snapshots.
     /// Of note, [PPM does NOT support binaries for Bioconductor]. Therefore we consider this variant the CRAN PPM Repo Server.
     ///
@@ -78,7 +79,7 @@ pub enum RepoServer<'a> {
 
 impl<'a> RepoServer<'a> {
     /// Convert a url to a variant of the enum
-    pub fn from_url(url: &'a str) -> Self {
+    fn from_url(url: &'a str) -> Self {
         if url.contains(POSIT_PACKAGE_MANAGER_BASE_URL) {
             Self::PositPackageManager(url)
         } else if url.contains(RV_BASE_URL) {
@@ -121,7 +122,7 @@ impl<'a> RepoServer<'a> {
     /// * In order to provide the correct binary for the R version and system architecture, both servers use query strings or the form `r_version=<R version major>.<R version minor>` and `arch=<system arch>`
     ///
     /// Thus the full path segment is `__linux__/<distribution codename>/<snapshot date>/src/contrib/<file name>?r_version=<R version major>.<R version minor>&arch=<system arch>`
-    pub fn get_binary_path(
+    fn get_binary_path(
         &self,
         file_name: &str,
         r_version: &[u32; 2],
@@ -140,7 +141,7 @@ impl<'a> RepoServer<'a> {
         }
     }
 
-    pub fn get_binary_tarball_path(
+    fn get_binary_tarball_path(
         &self,
         name: &str,
         version: &str,
@@ -158,12 +159,12 @@ impl<'a> RepoServer<'a> {
         self.get_binary_path(&file_name, r_version, sysinfo)
     }
 
-    pub fn get_source_path(&self, file_name: &str) -> String {
+    fn get_source_path(&self, file_name: &str) -> String {
         let url = self.url();
         format!("{url}/src/contrib/{file_name}")
     }
 
-    pub fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
+    fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
         let p = if let Some(p2) = path {
             format!("{p2}/")
         } else {
@@ -173,7 +174,7 @@ impl<'a> RepoServer<'a> {
         self.get_source_path(&file_name)
     }
 
-    pub fn get_tarball_urls(
+    fn get_tarball_urls(
         &self,
         name: &str,
         version: &str,
@@ -301,6 +302,35 @@ impl<'a> RepoServer<'a> {
             .and_then(|c| c.get(0))
             .map(|x| x.as_str())
     }
+}
+
+pub fn get_tarball_urls(
+    dep: &ResolvedDependency,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> (String, Option<String>) {
+    let repo_server = RepoServer::from_url(dep.source.source_path());
+    repo_server.get_tarball_urls(
+        &dep.name,
+        &dep.version.original,
+        dep.path.as_deref(),
+        r_version,
+        sysinfo,
+    )
+}
+
+/// Gets the source/binary url for the given filename, usually PACKAGES
+/// Use `get_tarball_urls` if you want to get the package tarballs URLs
+pub fn get_package_file_urls(
+    url: &str,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> (String, Option<String>) {
+    let repo_server = RepoServer::from_url(url);
+    (
+        repo_server.get_source_path(PACKAGE_FILENAME),
+        repo_server.get_binary_path(PACKAGE_FILENAME, r_version, sysinfo),
+    )
 }
 
 #[cfg(test)]
