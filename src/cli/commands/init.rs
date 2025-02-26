@@ -43,9 +43,9 @@ dependencies = [
 /// - Activate the project by setting the libPaths to the rv library
 pub fn init(
     project_directory: impl AsRef<Path>,
-    r_version: &[u32; 2],
-    repositories: &Vec<Repository>,
-    dependencies: &Vec<String>,
+    r_version: &str,
+    repositories: &[Repository],
+    dependencies: &[String],
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     create_library_structure(proj_dir)?;
@@ -74,9 +74,9 @@ pub fn init(
 
 fn render_config(
     project_name: &str,
-    r_version: &[u32; 2],
-    repositories: &Vec<Repository>,
-    dependencies: &Vec<String>,
+    r_version: &str,
+    repositories: &[Repository],
+    dependencies: &[String],
 ) -> String {
     let repos = repositories
         .iter()
@@ -92,7 +92,7 @@ fn render_config(
 
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
-        .replace("%r_version%", &format!("{}.{}", r_version[0], r_version[1]))
+        .replace("%r_version%", r_version)
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
 }
@@ -213,7 +213,7 @@ mod tests {
         let dependencies = vec!["dplyr".to_string()];
         init(
             &project_directory,
-            &r_version.major_minor(),
+            &r_version.original,
             &repositories,
             &dependencies,
         )

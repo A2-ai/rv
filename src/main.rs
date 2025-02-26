@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
@@ -169,21 +169,23 @@ fn try_main() -> Result<()> {
             add,
         } => {
             let r_version = if let Some(r) = r_version {
-                r.parse::<Version>().map_err(|_| anyhow!("R version specified could not be parsed as a valid version"))?
+                // Make sure input is a valid version format. NOT checking if it is a valid R version on system in init
+                if r.parse::<Version>().is_err() {
+                    bail!("R version specified could not be parsed as a valid version")
+                }
+                r
             } else {
-                RCommandLine { r: None }.version()?
+                // if r version is not provided, get the major.minor of the R version on the path
+                let [major, minor] = RCommandLine { r: None }.version()?.major_minor();
+                format!("{major}.{minor}")
             };
 
-            let repositories = match no_repositories {
-                true => Vec::new(),
-                false => find_r_repositories()?,
+            let repositories = if no_repositories {
+                Vec::new()
+            } else {
+                find_r_repositories()?
             };
-            init(
-                &project_directory,
-                &r_version.major_minor(),
-                &repositories,
-                &add,
-            )?;
+            init(&project_directory, &r_version, &repositories, &add)?;
             activate(&project_directory)?;
             println!(
                 "rv project successfully initialized at {}",
