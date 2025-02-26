@@ -1,8 +1,6 @@
 [project]
 # Note: do not update the lockfile from this project since we're testing whether an upgrade
 # (eg with the new- repos) will pick up all the news dependencies
-# `rv sync` should fail to resolve all dependencies
-# `rv upgrade` and `rv upgrade pmplots` should pass
 name = "package-upgrade"
 r_version = "4.4"
 
@@ -17,4 +15,5 @@ dependencies = [
     {name = "pmplots", repository = "new-mirror"},
     "pmtables",
     "bbr",
+    {name = "ggplot2", repository = "new-rspm"},
 ]
