@@ -40,34 +40,12 @@ fn install_via_r(
     Ok(())
 }
 
-fn download_and_install_source(
-    url: &str,
+fn install_binary(
     paths: &PackagePaths,
     library_dir: &Path,
     pkg_name: &str,
     r_cmd: &RCommandLine,
 ) -> Result<()> {
-    Http {}.download_and_untar(&url, &paths.source, false)?;
-    log::debug!("Compiling binary from {}", &paths.source.display());
-    r_cmd.install(paths.source.join(pkg_name), library_dir, &paths.binary)?;
-    Ok(())
-}
-
-fn download_and_install_binary(
-    url: &str,
-    source_url: &str,
-    paths: &PackagePaths,
-    library_dir: &Path,
-    pkg_name: &str,
-    r_cmd: &RCommandLine,
-) -> Result<()> {
-    let http = Http {};
-    // If we get an error doing the binary download, fall back to source
-    if let Err(e) = http.download_and_untar(&url, &paths.binary, false) {
-        log::warn!("Failed to download/untar binary package from {url}: {e:?}, falling back to {source_url}");
-        return download_and_install_source(source_url, paths, library_dir, pkg_name, r_cmd);
-    }
-
     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
     // source files. We have to check first whether what we have is actually binary content.
     if !is_binary_package(&paths.binary.join(pkg_name), pkg_name) {
@@ -88,6 +66,60 @@ fn download_and_install_binary(
             r_cmd,
         )?;
     }
+
+    Ok(())
+}
+
+fn download_and_install_package(
+    binary_url: Option<&str>, //binary url should only be Some if PackageType is Binary. Filtering should occur before fxn call
+    source_url: &str,
+    archive_url: &str,
+    paths: &PackagePaths,
+    library_dir: &Path,
+    pkg_name: &str,
+    r_cmd: &RCommandLine,
+) -> Result<()> {
+    // try to install binary. If not found, try source. All other errors are returned
+    if let Some(binary_url) = binary_url {
+        let res = Http {}.download_and_untar(binary_url, &paths.binary, false);
+        match res {
+            Err(e) => {
+                if !e.is_not_found() {
+                    return Err(e.into());
+                }
+                log::warn!("Binary package not found at {binary_url}");
+            }
+            Ok(_) => return install_binary(paths, library_dir, pkg_name, r_cmd),
+        }
+    }
+
+    // try to install source, If not found, try archive. All other errors are returned
+    let res = Http {}.download_and_untar(source_url, &paths.source, false);
+    match res {
+        Err(e) => {
+            if !e.is_not_found() {
+                return Err(e.into());
+            }
+            log::warn!("Source package not found at {source_url}")
+        }
+        Ok(_) => {
+            return install_via_r(
+                &paths.source.join(pkg_name),
+                library_dir,
+                &paths.binary,
+                r_cmd,
+            )
+        }
+    }
+
+    // try archive as last resort
+    let _ = Http {}.download_and_untar(archive_url, &paths.source, false)?;
+    install_via_r(
+        &paths.source.join(pkg_name),
+        library_dir,
+        &paths.binary,
+        r_cmd,
+    )?;
 
     Ok(())
 }
@@ -113,6 +145,7 @@ fn install_package_from_repository(
         &context.cache.r_version,
         &context.cache.system_info,
     );
+    let archive_url = repo_server.get_archive_tarball_path(&pkg.name, &pkg.version.original);
 
     if pkg.is_installed() {
         // If we don't have the binary, compile it
@@ -129,24 +162,19 @@ fn install_package_from_repository(
             )?;
         }
     } else {
-        if pkg.kind == PackageType::Source || binary_url.is_none() {
-            download_and_install_source(
-                &source_url,
-                &pkg_paths,
-                library_dir,
-                &pkg.name,
-                &context.r_cmd,
-            )?;
-        } else {
-            download_and_install_binary(
-                &binary_url.unwrap(),
-                &source_url,
-                &pkg_paths,
-                library_dir,
-                &pkg.name,
-                &context.r_cmd,
-            )?;
-        }
+        let binary_url = match pkg.kind {
+            PackageType::Binary => binary_url,
+            PackageType::Source => None,
+        };
+        download_and_install_package(
+            binary_url.as_deref(),
+            &source_url,
+            &archive_url,
+            &pkg_paths,
+            library_dir,
+            &pkg.name,
+            &context.r_cmd,
+        )?;
     }
 
     // And then we always link the binary folder into the staging library
