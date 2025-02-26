@@ -2,7 +2,7 @@ name: ci
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 jobs:
@@ -11,22 +11,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        build: [msrv, stable, macos, win-msvc]
+        build: [linux, macos, windows]
         include:
-          - build: msrv
-            os: ubuntu-latest
-            rust: 1.81.0
-          - build: stable
+          - build: linux
             os: ubuntu-latest
             rust: stable
           - build: macos
             os: macOS-latest
             rust: stable
-          - build: win-msvc
-            os: windows-2019
+          - build: windows
+            os: windows-2022
             rust: stable
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
@@ -39,3 +36,36 @@ jobs:
           cargo check --all-features
       - name: run tests
         run: cargo test --all-features
+
+  integration:
+    name: integration-test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: stable
+          - build: macos
+            os: macOS-latest
+            rust: stable
+          - build: windows
+            os: windows-2022
+            rust: stable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Build System Info
+        run: rustc --version
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.2'
+      - name: build binary
+        run: |
+          cargo build --all-features --release
+      - name: run rv sync on all example projects
+        run: python .github/scripts/integration.py
