@@ -378,15 +378,6 @@ impl Lockfile {
         None
     }
 
-    pub fn remove_packages(&mut self, packages: Vec<String>, dep: Option<&ConfigDependency>) {
-        for name in packages {
-            let clone = self.clone();
-            let tree = clone.get_package_tree(&name, dep);
-            self.packages.retain(|p| !tree.contains(p.name.as_str()));
-        }
-        // self.packages.retain(|p| packages.contains(&p.name));
-    }
-
     /// Returns the full dependency tree (including itself) for a given package
     /// If the return set is empty, it means the package with the given name was not found.
     /// The lockfile has been validated after loading it so all the deps should be present in it.

@@ -46,8 +46,6 @@ pub enum Command {
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
-        #[clap(value_parser)]
-        packages: Vec<String>, 
         #[clap(long)]
         dry_run: bool,
     },
@@ -73,8 +71,8 @@ pub enum MigrateSubcommand {
 #[derive(Debug, Clone)]
 enum SyncMode {
     Default,
-    PartialUpgrade(Vec<String>),
     FullUpgrade,
+    // TODO: PartialUpgrade -- allow user to specify packages to upgrade
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -110,7 +108,6 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, sync_mode
     context.load_databases_if_needed()?;
     match sync_mode {
         SyncMode::Default => (),
-        SyncMode::PartialUpgrade(deps_to_upgrade) => context.edit_lockfile_for_upgrade(deps_to_upgrade),
         SyncMode::FullUpgrade => context.lockfile = None,
     }
     let resolved = resolve_dependencies(&context);
@@ -192,9 +189,10 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan { upgrade } => {
-            let upgrade = match upgrade {
-                true => SyncMode::FullUpgrade,
-                false => SyncMode::Default,
+            let upgrade = if upgrade {
+                SyncMode::FullUpgrade
+            } else {
+                SyncMode::Default
             };
             _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
@@ -202,14 +200,9 @@ fn try_main() -> Result<()> {
             _sync(&cli.config_file, false, cli.verbose.is_present(), SyncMode::Default)?;
         }
         Command::Upgrade{
-            packages,
             dry_run,
         } => {
-            let upgrade = match packages.is_empty() {
-                true => SyncMode::FullUpgrade,
-                false => SyncMode::PartialUpgrade(packages),
-            };
-            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), upgrade)?;
+            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), SyncMode::FullUpgrade)?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
