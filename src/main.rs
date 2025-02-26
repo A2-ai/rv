@@ -2,11 +2,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use fs_err as fs;
+use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
 use rv::{
-    activate, add_packages, deactivate, Config, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver
+    activate, add_packages, deactivate, read_and_verify_config, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver
 };
 
 #[derive(Parser)]
@@ -185,8 +185,9 @@ fn try_main() -> Result<()> {
         }
         Command::Add{packages, plan, no_sync} => {
             // load config to verify structure is valid
-            let _ = Config::from_file(&cli.config_file)?;
-            add_packages(packages, &cli.config_file)?;
+            let mut doc = read_and_verify_config(&cli.config_file)?;
+            add_packages(&mut doc, packages)?;
+            write(&cli.config_file, doc.to_string())?;
             if plan {
                 _sync(&cli.config_file, true, cli.verbose.is_present())?;
             } else if !no_sync {

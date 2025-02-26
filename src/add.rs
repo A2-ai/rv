@@ -1,30 +1,38 @@
 use std::path::Path;
 
-use fs_err::write;
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, Value};
 
-pub fn add_packages(packages: Vec<String>, config_file: impl AsRef<Path>) -> Result<(), AddError> {
+use crate::{config::ConfigLoadError, Config};
+
+pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
     let config_file = config_file.as_ref();
+    let _ = Config::from_file(config_file).map_err(|e| AddError{
+        path: config_file.into(),
+        source: AddErrorKind::ConfigLoad(e)
+    })?;
     let config_content = fs::read_to_string(&config_file).map_err(|e| AddError {
         path: config_file.into(),
         source: AddErrorKind::Io(e),
     })?;
 
-    let mut doc = config_content
+    config_content
         .parse::<DocumentMut>()
         .map_err(|e| AddError {
             path: config_file.into(),
             source: AddErrorKind::Parse(e),
-        })?;
+        })
+}
 
+pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
     // get the dependencies array
-    let config_deps = get_mut_array(&mut doc);
+    let config_deps = get_mut_array(config_doc);
 
     // collect the names of all of the dependencies
     let config_dep_names = config_deps
         .iter()
         .filter_map(|v| get_dependency_name(v))
+        .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
         .collect::<Vec<_>>();
 
     // Determine if the dep to add is in the config, if not add it
@@ -41,12 +49,6 @@ pub fn add_packages(packages: Vec<String>, config_file: impl AsRef<Path>) -> Res
     // Set a trailing new line and comma for the last element for proper formatting
     config_deps.set_trailing("\n");
     config_deps.set_trailing_comma(true);
-
-    // write back out the file
-    write(config_file, doc.to_string()).map_err(|e| AddError {
-        path: config_file.into(),
-        source: AddErrorKind::Io(e),
-    })?;
 
     Ok(())
 }
@@ -71,14 +73,13 @@ fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
     deps
 }
 
-fn get_dependency_name(value: &Value) -> Option<String> {
+fn get_dependency_name(value: &Value) -> Option<&str> {
     // Our dependencies are currently only formatted as basic Strings and InlineTable
     match value {
-        Value::String(s) => Some(s.value().to_string()),
+        Value::String(s) => Some(s.value().as_str()),
         Value::InlineTable(t) => t
             .get("name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .and_then(|v| v.as_str()),
         _ => None,
     }
 }
@@ -96,22 +97,18 @@ pub struct AddError {
 pub enum AddErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml_edit::TomlError),
+    ConfigLoad(#[from] ConfigLoadError),
 }
 
 #[cfg(test)]
 mod tests {
-    use fs_err::{read_to_string, write};
-    use tempfile::tempdir;
-
-    use crate::add_packages;
+    use crate::{add_packages, read_and_verify_config};
 
     #[test]
     fn add_remove() {
-        let content = read_to_string("src/tests/valid_config/all_fields.toml").unwrap();
-        let tmp_dir = tempdir().unwrap();
-        let config_file = tmp_dir.path().join("rproject.toml");
-        write(&config_file, content).unwrap();
-        add_packages(vec!["pkg1".to_string(), "pkg2".to_string()], &config_file).unwrap();
-        insta::assert_snapshot!("add_remove", read_to_string(&config_file).unwrap());
+        let config_file = "src/tests/valid_config/all_fields.toml";
+        let mut doc = read_and_verify_config(&config_file).unwrap();
+        add_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]).unwrap();
+        insta::assert_snapshot!("add_remove", doc.to_string());
     }
 }
