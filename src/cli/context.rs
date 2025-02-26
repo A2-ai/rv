@@ -3,12 +3,10 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::utils::write_err;
 use crate::{
-    consts::LOCKFILE_NAME, consts::PACKAGE_FILENAME, find_r_version_command, http, timeit, Config,
-    DiskCache, Library, RCommandLine, RepoServer, Repository, RepositoryDatabase, SystemInfo,
-    Version,
+    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
+    DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
-use crate::cli::utils::get_current_system_path;
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use anyhow::{anyhow, bail, Result};
@@ -48,10 +46,7 @@ impl CliContext {
             None
         };
 
-        let mut library = Library::new(
-            &project_dir,
-            get_current_system_path(&cache.system_info, r_version.major_minor()),
-        );
+        let mut library = Library::new(&project_dir, &cache.system_info, r_version.major_minor());
         library.find_content();
 
         Ok(Self {
@@ -121,7 +116,8 @@ pub(crate) fn load_databases(
                 let mut db = RepositoryDatabase::new(&r.url());
                 // download files, parse them and persist to disk
                 let mut source_package = Vec::new();
-                let source_url = RepoServer::from_url(r.url()).get_source_path(PACKAGE_FILENAME);
+                let (source_url, binary_url) =
+                    get_package_file_urls(r.url(), &cache.r_version, &cache.system_info);
                 let bytes_read = timeit!(
                     "Downloaded source PACKAGES",
                     http::download(&source_url, &mut source_package, Vec::new())?
@@ -134,11 +130,6 @@ pub(crate) fn load_databases(
                 db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
                 let mut binary_package = Vec::new();
-                let binary_url = RepoServer::from_url(r.url()).get_binary_path(
-                    PACKAGE_FILENAME,
-                    &cache.r_version,
-                    &cache.system_info,
-                );
                 log::debug!("checking for binary packages URL: {:?}", binary_url);
                 // we do not know for certain that the Some return of get_binary_path will be a valid url,
                 // but we do know that if it returns None there is not a binary PACKAGES file

@@ -224,7 +224,7 @@ impl<'d> ResolvedDependency<'d> {
     }
 }
 
-impl<'a> fmt::Display for ResolvedDependency<'a> {
+impl fmt::Display for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -286,7 +286,7 @@ impl<'d> UnresolvedDependency<'d> {
     }
 }
 
-impl<'a> fmt::Display for UnresolvedDependency<'a> {
+impl fmt::Display for UnresolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,

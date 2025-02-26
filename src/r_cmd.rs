@@ -5,7 +5,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use crate::link::{LinkError, LinkMode};
+use crate::sync::{LinkError, LinkMode};
 use crate::Version;
 use regex::Regex;
 
@@ -19,7 +19,7 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
-pub trait RCmd {
+pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
     fn install(
         &self,
@@ -56,7 +56,7 @@ pub struct RCommandLine {
 
 pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
     // Give preference to the R version on the $PATH
-    if does_r_cmd_match_version(&RCommandLine { r: None }, &r_version) {
+    if does_r_cmd_match_version(&RCommandLine { r: None }, r_version) {
         log::debug!("R {r_version} found on the path");
         return Some(RCommandLine { r: None });
     }
@@ -70,12 +70,11 @@ pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
     // returns an RCommandLine struct with the path to the executable if found
     let r_cmd = fs::read_dir(opt_r)
         .ok()?
-        .into_iter()
         .filter_map(Result::ok)
         .map(|p| p.path().join("bin/R"))
         .filter(|p| p.exists())
         .map(|r| RCommandLine { r: Some(r) })
-        .find(|r_cmd| does_r_cmd_match_version(&r_cmd, &r_version))?;
+        .find(|r_cmd| does_r_cmd_match_version(r_cmd, r_version))?;
 
     log::debug!(
         "R {r_version} found at {}",
@@ -165,6 +164,12 @@ impl RCmd for RCommandLine {
         let status = handle.wait().unwrap();
 
         if !status.success() {
+            // Always delete the destination is an error happend
+            if destination.as_ref().is_dir() {
+                // We ignore that error intentionally since we want to keep the one from CLI
+                let _ = fs::remove_dir_all(destination.as_ref());
+            }
+
             return Err(InstallError {
                 source: InstallErrorKind::InstallationFailed(output),
             });
@@ -195,7 +200,7 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(&self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {

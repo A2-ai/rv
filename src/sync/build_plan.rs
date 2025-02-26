@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn can_get_install_plan2() {
+    fn can_get_install_plan() {
         let deps = vec![
             get_resolved_dep("C", vec!["E"]),
             get_resolved_dep("D", vec!["F"]),

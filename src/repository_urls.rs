@@ -1,4 +1,5 @@
-use crate::{OsType, SystemInfo};
+use crate::consts::PACKAGE_FILENAME;
+use crate::{OsType, ResolvedDependency, SystemInfo};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -57,7 +58,7 @@ fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
 /// CRAN-type repositories behave under a set of rules, but some known repositories have different nuanced behavior
 /// Unless otherwise noted, each repository is assumed to have MacOS and Windows binaries for at least R > 4.0
 #[derive(Debug)]
-pub enum RepoServer<'a> {
+enum RepoServer<'a> {
     /// Posit Package Manager (PPM) has linux binaries for various distributions and has immutable snapshots.
     /// Of note, [PPM does NOT support binaries for Bioconductor]. Therefore we consider this variant the CRAN PPM Repo Server.
     ///
@@ -78,7 +79,7 @@ pub enum RepoServer<'a> {
 
 impl<'a> RepoServer<'a> {
     /// Convert a url to a variant of the enum
-    pub fn from_url(url: &'a str) -> Self {
+    fn from_url(url: &'a str) -> Self {
         if url.contains(POSIT_PACKAGE_MANAGER_BASE_URL) {
             Self::PositPackageManager(url)
         } else if url.contains(RV_BASE_URL) {
@@ -104,10 +105,10 @@ impl<'a> RepoServer<'a> {
     ///
     /// ### MacOS
     /// Binaries for arm64 processors are found under `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
-    /// 
+    ///
     /// Binaries for x86_64 processors are found under different paths depending on the R version
     /// * For R <= 4.2, binaries are found under `/bin/macosx/contrib/4.<R minor version>`
-    /// 
+    ///
     /// * For R > 4.2, binaries are found under `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
     ///
     /// Currently, the Mac version is hard coded to Big Sur. Earlier versions are archived for earlier versions of R,
@@ -121,7 +122,7 @@ impl<'a> RepoServer<'a> {
     /// * In order to provide the correct binary for the R version and system architecture, both servers use query strings or the form `r_version=<R version major>.<R version minor>` and `arch=<system arch>`
     ///
     /// Thus the full path segment is `__linux__/<distribution codename>/<snapshot date>/src/contrib/<file name>?r_version=<R version major>.<R version minor>&arch=<system arch>`
-    pub fn get_binary_path(
+    fn get_binary_path(
         &self,
         file_name: &str,
         r_version: &[u32; 2],
@@ -140,7 +141,7 @@ impl<'a> RepoServer<'a> {
         }
     }
 
-    pub fn get_binary_tarball_path(
+    fn get_binary_tarball_path(
         &self,
         name: &str,
         version: &str,
@@ -158,12 +159,12 @@ impl<'a> RepoServer<'a> {
         self.get_binary_path(&file_name, r_version, sysinfo)
     }
 
-    pub fn get_source_path(&self, file_name: &str) -> String {
+    fn get_source_path(&self, file_name: &str) -> String {
         let url = self.url();
         format!("{url}/src/contrib/{file_name}")
     }
 
-    pub fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
+    fn get_source_tarball_path(&self, name: &str, version: &str, path: Option<&str>) -> String {
         let p = if let Some(p2) = path {
             format!("{p2}/")
         } else {
@@ -171,6 +172,19 @@ impl<'a> RepoServer<'a> {
         };
         let file_name = format!("{p}{name}_{version}.tar.gz");
         self.get_source_path(&file_name)
+    }
+
+    fn get_tarball_urls(
+        &self,
+        name: &str,
+        version: &str,
+        path: Option<&str>,
+        r_version: &[u32; 2],
+        sysinfo: &SystemInfo,
+    ) -> (String, Option<String>) {
+        let source = self.get_source_tarball_path(name, version, path);
+        let binary = self.get_binary_tarball_path(name, version, path, r_version, sysinfo);
+        (source, binary)
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {
@@ -186,7 +200,7 @@ impl<'a> RepoServer<'a> {
     /// For x86_64 processors, a split in the path to the binaries occurred at R/4.2:
     /// * R <= 4.2, the path is `/bin/macosx/contrib/4.<R minor version>`
     /// * R > 4.2, the path is `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
-    /// 
+    ///
     /// This split occurred to mirror the new path pattern for arm64 processors.
     /// The path to the binaries built for arm64 binaries is `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
     /// While CRAN itself only started supporting arm64 binaries at R/4.2, many repositories (including PPM) support binaries for older versions
@@ -197,10 +211,7 @@ impl<'a> RepoServer<'a> {
         sysinfo: &SystemInfo,
     ) -> Option<String> {
         // If the system architecture cannot be determined, Mac binaries are not supported
-        let arch = match sysinfo.arch() {
-            Some(a) => a,
-            None => return None,
-        };
+        let arch = sysinfo.arch()?;
 
         // If the processor is arm64, binaries will only be found on this path
         // CRAN does not officially support arm64 binaries until R/4.2, but other repositories may (i.e. PPM does)
@@ -210,7 +221,7 @@ impl<'a> RepoServer<'a> {
                 self.url(),
                 r_version[0],
                 r_version[1]
-            ))
+            ));
         }
 
         // For x86_64, the path in which binaries are found switches after R/4.2
@@ -290,6 +301,35 @@ impl<'a> RepoServer<'a> {
     }
 }
 
+pub fn get_tarball_urls(
+    dep: &ResolvedDependency,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> (String, Option<String>) {
+    let repo_server = RepoServer::from_url(dep.source.source_path());
+    repo_server.get_tarball_urls(
+        &dep.name,
+        &dep.version.original,
+        dep.path.as_deref(),
+        r_version,
+        sysinfo,
+    )
+}
+
+/// Gets the source/binary url for the given filename, usually PACKAGES
+/// Use `get_tarball_urls` if you want to get the package tarballs URLs
+pub fn get_package_file_urls(
+    url: &str,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> (String, Option<String>) {
+    let repo_server = RepoServer::from_url(url);
+    (
+        repo_server.get_source_path(PACKAGE_FILENAME),
+        repo_server.get_binary_path(PACKAGE_FILENAME, r_version, sysinfo),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,10 +380,7 @@ mod tests {
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 1], &sysinfo)
             .unwrap();
-        let ref_url = format!(
-            "{}/bin/macosx/big-sur-arm64/contrib/4.1/test-file",
-            PPM_URL
-        );
+        let ref_url = format!("{}/bin/macosx/big-sur-arm64/contrib/4.1/test-file", PPM_URL);
         assert_eq!(source_url, ref_url)
     }
 
@@ -353,7 +390,10 @@ mod tests {
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
-        let ref_url = format!("{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file", PPM_URL);
+        let ref_url = format!(
+            "{}/bin/macosx/big-sur-x86_64/contrib/4.4/test-file",
+            PPM_URL
+        );
         assert_eq!(source_url, ref_url)
     }
 
@@ -363,10 +403,7 @@ mod tests {
         let source_url = RepoServer::from_url(PPM_URL)
             .get_binary_path("test-file", &[4, 4], &sysinfo)
             .unwrap();
-        let ref_url = format!(
-            "{}/bin/macosx/big-sur-arm64/contrib/4.4/test-file",
-            PPM_URL
-        );
+        let ref_url = format!("{}/bin/macosx/big-sur-arm64/contrib/4.4/test-file", PPM_URL);
         assert_eq!(source_url, ref_url)
     }
 
