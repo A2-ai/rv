@@ -23,7 +23,7 @@ pub struct Resolution<'d> {
     pub failed: Vec<UnresolvedDependency<'d>>,
 }
 
-impl<'d> Resolution<'d> {
+impl Resolution<'_> {
     pub fn is_success(&self) -> bool {
         self.failed.is_empty()
     }
@@ -121,7 +121,7 @@ impl<'d> Resolver<'d> {
             // even though we might have to extract again in sync?
             // TODO: keep the sha of the tar in the lockfile?
             let tempdir = tempfile::tempdir()?;
-            let path = untar_archive(fs::read(&local_path)?.as_slice(), tempdir.path())?;
+            let path = untar_archive(fs::read(local_path)?.as_slice(), tempdir.path())?;
             parse_description_file_in_folder(path.unwrap_or_else(|| local_path.clone()))?
         } else if local_path.is_dir() {
             // we have a folder
@@ -324,8 +324,7 @@ impl<'d> Resolver<'d> {
                 remote: None,
                 local_path: d.local_path(),
                 matching_in_lockfile: self
-                    .lockfile
-                    .and_then(|l| Some(l.get_package(d.name(), Some(d)).is_some())),
+                    .lockfile.map(|l| l.get_package(d.name(), Some(d)).is_some()),
             })
             .collect();
 

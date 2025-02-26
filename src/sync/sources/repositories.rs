@@ -45,7 +45,7 @@ pub(crate) fn install_package(
             );
 
             let (source_url, binary_url) =
-                get_tarball_urls(&pkg, &cache.r_version, &cache.system_info);
+                get_tarball_urls(pkg, &cache.r_version, &cache.system_info);
             let http = Http {};
 
             let download_and_install_source = || -> Result<(), SyncError> {
@@ -72,7 +72,7 @@ pub(crate) fn install_package(
                     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
                     // source files. We have to check first whether what we have is actually binary content.
                     if !is_binary_package(
-                        &pkg_paths.binary.join(pkg.name.as_ref()),
+                        pkg_paths.binary.join(pkg.name.as_ref()),
                         pkg.name.as_ref(),
                     ) {
                         log::debug!("{} was expected as binary, found to be source.", pkg.name);
@@ -92,7 +92,7 @@ pub(crate) fn install_package(
     }
 
     // And then we always link the binary folder into the staging library
-    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
+    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dir)?;
 
     Ok(())
 }

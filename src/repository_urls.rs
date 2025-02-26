@@ -211,10 +211,7 @@ impl<'a> RepoServer<'a> {
         sysinfo: &SystemInfo,
     ) -> Option<String> {
         // If the system architecture cannot be determined, Mac binaries are not supported
-        let arch = match sysinfo.arch() {
-            Some(a) => a,
-            None => return None,
-        };
+        let arch = sysinfo.arch()?;
 
         // If the processor is arm64, binaries will only be found on this path
         // CRAN does not officially support arm64 binaries until R/4.2, but other repositories may (i.e. PPM does)

@@ -114,13 +114,13 @@ pub(crate) fn untar_archive<R: Read>(
     dest: impl AsRef<Path>,
 ) -> Result<Option<PathBuf>, std::io::Error> {
     let dest = dest.as_ref();
-    fs::create_dir_all(&dest)?;
+    fs::create_dir_all(dest)?;
 
     let tar = GzDecoder::new(reader);
     let mut archive = Archive::new(tar);
-    archive.unpack(&dest)?;
+    archive.unpack(dest)?;
 
-    let dir: Option<PathBuf> = fs::read_dir(&dest)?
+    let dir: Option<PathBuf> = fs::read_dir(dest)?
         .filter_map(|entry| {
             let entry = entry.ok()?;
             if entry.file_type().ok()?.is_dir() {

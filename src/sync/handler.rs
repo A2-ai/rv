@@ -76,16 +76,16 @@ impl<'a> SyncHandler<'a> {
 
         match dep.source {
             Source::Repository { .. } => {
-                sources::repositories::install_package(&dep, &self.staging_path, &self.cache, r_cmd)
+                sources::repositories::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
             Source::Git { .. } => {
-                sources::git::install_package(&dep, &self.staging_path, &self.cache, r_cmd, &Git {})
+                sources::git::install_package(dep, &self.staging_path, self.cache, r_cmd, &Git {})
             }
             Source::Local { .. } => {
-                sources::local::install_package(&dep, &self.staging_path, &self.cache, r_cmd)
+                sources::local::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
             Source::Url { .. } => {
-                sources::url::install_package(&dep, &self.staging_path, &self.cache, r_cmd)
+                sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
         }
     }
@@ -102,14 +102,14 @@ impl<'a> SyncHandler<'a> {
 
         let mut sync_changes = Vec::new();
 
-        let plan = BuildPlan::new(&deps);
+        let plan = BuildPlan::new(deps);
         let num_deps_to_install = plan.num_to_install();
         let deps_to_install = plan.all_dependencies();
         // (name, notify). We do not notify if the package is broken in some ways.
         let mut to_remove = HashSet::new();
         let mut deps_seen = HashSet::new();
 
-        fs::create_dir_all(&self.library.path())?;
+        fs::create_dir_all(self.library.path())?;
 
         // Check which package we already have installed at the right version and which ones
         // are not present in the resolved deps (eg installed some other way)
@@ -134,7 +134,7 @@ impl<'a> SyncHandler<'a> {
         for dep in deps.iter().filter(|x| x.is_local()) {
             if deps_seen.contains(dep.name.as_ref()) {
                 let local_path = Path::new(dep.source.source_path());
-                let local_mtime = mtime_recursive(&local_path)?;
+                let local_mtime = mtime_recursive(local_path)?;
                 let mtime_found = self
                     .library
                     .local_packages
@@ -367,10 +367,10 @@ impl<'a> SyncHandler<'a> {
 
         // If we are there, it means we are successful. Replace the project lib by the staging dir
         if self.library.path().is_dir() {
-            fs::remove_dir_all(&self.library.path())?;
+            fs::remove_dir_all(self.library.path())?;
         }
 
-        fs::rename(&self.staging_path, &self.library.path())?;
+        fs::rename(&self.staging_path, self.library.path())?;
 
         // Sort all changes by a-z and fall back on installed status for things with the same name
         sync_changes.sort_unstable_by(|a, b| {

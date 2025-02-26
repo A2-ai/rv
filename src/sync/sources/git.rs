@@ -1,41 +1,3 @@
-// fn install_package_from_git(
-//     context: &CliContext,
-//     pkg: &ResolvedDependency,
-//     library_dir: &Path,
-// ) -> Result<()> {
-//     let link_mode = LinkMode::new();
-//     let repo_url = pkg.source.source_path();
-//     let sha = pkg.source.git_sha();
-//
-//     let pkg_paths = context.cache.get_package_paths(&pkg.source, None, None);
-//
-//     if !pkg.installation_status.binary_available() {
-//         let git_ops = Git {};
-//         // TODO: this won't work if multiple projects are trying to checkout different refs
-//         // on the same user at the same time
-//         git_ops.clone_and_checkout(
-//             repo_url,
-//             Some(GitReference::Commit(&sha)),
-//             &pkg_paths.source,
-//         )?;
-//         log::debug!("Building the repo for {}", pkg.name);
-//         // If we have a directory, don't forget to set it before building it
-//         let source_path = match &pkg.source {
-//             Source::Git {
-//                 directory: Some(dir),
-//                 ..
-//             } => pkg_paths.source.join(&dir),
-//             _ => pkg_paths.source,
-//         };
-//         install_via_r(&source_path, library_dir, &pkg_paths.binary, &context.r_cmd)?;
-//     }
-//
-//     // And then we always link the binary folder into the staging library
-//     link_mode.link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
-//
-//     Ok(())
-// }
-
 use std::path::Path;
 
 use crate::git::GitReference;
@@ -64,7 +26,7 @@ pub(crate) fn install_package(
         // on the same user at the same time
         git_ops.clone_and_checkout(
             repo_url,
-            Some(GitReference::Commit(&sha)),
+            Some(GitReference::Commit(sha)),
             &pkg_paths.source,
         )?;
         // If we have a directory, don't forget to set it before building it
@@ -72,7 +34,7 @@ pub(crate) fn install_package(
             Source::Git {
                 directory: Some(dir),
                 ..
-            } => pkg_paths.source.join(&dir),
+            } => pkg_paths.source.join(dir),
             _ => pkg_paths.source,
         };
 
@@ -80,6 +42,6 @@ pub(crate) fn install_package(
     }
 
     // And then we always link the binary folder into the staging library
-    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, &library_dir)?;
+    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dir)?;
     Ok(())
 }
