@@ -324,7 +324,8 @@ impl<'d> Resolver<'d> {
                 remote: None,
                 local_path: d.local_path(),
                 matching_in_lockfile: self
-                    .lockfile.map(|l| l.get_package(d.name(), Some(d)).is_some()),
+                    .lockfile
+                    .map(|l| l.get_package(d.name(), Some(d)).is_some()),
             })
             .collect();
 

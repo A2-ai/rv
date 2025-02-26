@@ -8,7 +8,6 @@ use crate::package::parse_version;
 use crate::{SystemInfo, Version};
 use fs_err as fs;
 
-
 /// Builds the path for binary in the cache and the library based on system info and R version
 /// {R_Version}/{arch}/{codename}/
 fn get_current_system_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
@@ -23,7 +22,6 @@ fn get_current_system_path(system_info: &SystemInfo, r_version: [u32; 2]) -> Pat
 
     path
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Library {
@@ -41,7 +39,11 @@ pub struct Library {
 }
 
 impl Library {
-    pub fn new(project_dir: impl AsRef<Path>, system_info: &SystemInfo, r_version: [u32; 2]) -> Library {
+    pub fn new(
+        project_dir: impl AsRef<Path>,
+        system_info: &SystemInfo,
+        r_version: [u32; 2],
+    ) -> Library {
         let system_path = get_current_system_path(system_info, r_version);
         let path = project_dir
             .as_ref()

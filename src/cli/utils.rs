@@ -1,7 +1,3 @@
-use std::path::PathBuf;
-
-use crate::SystemInfo;
-
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     let mut out = format!("{err}");
 

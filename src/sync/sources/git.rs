@@ -24,11 +24,7 @@ pub(crate) fn install_package(
 
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        git_ops.clone_and_checkout(
-            repo_url,
-            Some(GitReference::Commit(sha)),
-            &pkg_paths.source,
-        )?;
+        git_ops.clone_and_checkout(repo_url, Some(GitReference::Commit(sha)), &pkg_paths.source)?;
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
             Source::Git {

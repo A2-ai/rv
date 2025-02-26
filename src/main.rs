@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err as fs;
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, migrate_renv, CacheInfo, CliContext};
+use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
-    SyncHandler,
+    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
+    Resolver, SyncHandler,
 };
 
 #[derive(Parser)]
@@ -187,7 +187,11 @@ fn try_main() -> Result<()> {
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
-            let info = CacheInfo::new(&context, resolve_dependencies(&context));
+            let info = CacheInfo::new(
+                &context.config,
+                &context.cache,
+                resolve_dependencies(&context),
+            );
             if json {
                 println!(
                     "{}",

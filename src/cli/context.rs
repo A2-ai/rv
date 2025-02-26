@@ -3,9 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::utils::write_err;
 use crate::{
-    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls,
-    http, timeit, Config, DiskCache, Library, RCommandLine, Repository, RepositoryDatabase,
-    SystemInfo, Version,
+    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
+    DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
 };
 
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
@@ -47,11 +46,7 @@ impl CliContext {
             None
         };
 
-        let mut library = Library::new(
-            &project_dir,
-            &cache.system_info,
-            r_version.major_minor(),
-        );
+        let mut library = Library::new(&project_dir, &cache.system_info, r_version.major_minor());
         library.find_content();
 
         Ok(Self {
