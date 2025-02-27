@@ -13,7 +13,7 @@ def run_examples():
         subfolder_path = os.path.join(PARENT_FOLDER, subfolder, "rproject.toml")
         print(f"Processing example: {subfolder_path}")
 
-        command = ["./target/release/rv", "sync", "--config-file", subfolder_path, "-vvv"]
+        command = ["./target/release/rv", "plan", "--config-file", subfolder_path, "-vvv"]
         result = subprocess.run(command, capture_output=True, text=True)
         print(result.stdout)
         print(result.stderr)
