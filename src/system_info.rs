@@ -3,9 +3,10 @@
 //! to the library/CLI.
 //! Instead, we encode the data we care about in an enum that can easily be shared
 use os_info::{Type, Version};
+use serde::{Deserialize, Serialize};
 
 /// For R we only care about Windows, MacOS and Linux
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
 pub enum OsType {
     Windows,
     MacOs,
@@ -33,7 +34,7 @@ impl OsType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct SystemInfo {
     pub os_type: OsType,
     // AFAIK we need that for ubuntu distrib name for posit binaries

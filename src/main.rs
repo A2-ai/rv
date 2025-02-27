@@ -6,8 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
-    Resolver, SyncHandler,
+    activate, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler
 };
 
 #[derive(Parser)]
@@ -37,6 +36,11 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Provide infomration about the project
+    Info {
+        #[clap(short, long)]
+        json: bool,
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
@@ -221,6 +225,19 @@ fn try_main() -> Result<()> {
                 for u in &unresolved {
                     eprintln!("    {u}");
                 }
+            }
+        }
+        Command::Info { json } => {
+            let context = CliContext::new(&cli.config_file)?;
+            let resolved = resolve_dependencies(&context);
+            let info = ProjectInfo::new(&context.lockfile, &context.cache, &context.r_version, &context.library, &context.databases, &resolved);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&info).expect("valid json")
+                );
+            } else {
+                println!("{info}");
             }
         }
         Command::Activate => {
