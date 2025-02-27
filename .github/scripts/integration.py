@@ -1,5 +1,7 @@
 import os
 import subprocess
+import sys
+print(sys.path)
 
 PARENT_FOLDER = "example_projects"
 
