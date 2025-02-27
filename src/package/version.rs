@@ -42,7 +42,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
@@ -121,6 +121,15 @@ where
     match Version::from_str(&v) {
         Ok(v) => Ok(v),
         Err(_) => Err(serde::de::Error::custom("Invalid version number")),
+    }
+}
+
+impl<'a> Serialize for Version {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
 }
 

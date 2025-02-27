@@ -6,8 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
-    Resolver, SyncHandler,
+    activate, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler
 };
 
 #[derive(Parser)]
@@ -39,6 +38,11 @@ pub enum Command {
     Sync,
     /// Gives information about where the cache is for that project
     Cache {
+        #[clap(short, long)]
+        json: bool,
+    },
+    /// Information regarding the current project
+    Info {
         #[clap(short, long)]
         json: bool,
     },
@@ -184,6 +188,18 @@ fn try_main() -> Result<()> {
         }
         Command::Sync => {
             _sync(&cli.config_file, false, cli.verbose.is_present())?;
+        }
+        Command::Info { json } => {
+            let context = CliContext::new(&cli.config_file)?;
+            let info = ProjectInfo::new(&context.r_version);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&info).expect("valid json")
+                );
+            } else {
+                println!("{info}");
+            }
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
