@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, path::Path};
+use std::{collections::HashMap, fmt, hash::Hash, path::Path};
 
 use serde::{Serialize, Deserialize};
 
@@ -47,9 +47,9 @@ impl fmt::Display for ProjectInfo<'_> {
             self.r_version,
         )?;
 
-        write!(f, "== Dependencies ==\n{}", self.dep_info)?;
+        write!(f, "\n== Dependencies ==\n{}", self.dep_info)?;
 
-        write!(f, "== Repositories ==\n{}", self.remote_info)?;
+        write!(f, "\n== Repositories ==\n{}", self.remote_info)?;
 
         Ok(())
     }
@@ -99,6 +99,7 @@ impl<'a> DependencyInfo<'a> {
         };
 
 
+
         // difference between the number of packages in the library and the number of packages installed represents the number of packages to remove
         let to_remove = library.packages.len() - installed.values().map(|(s, b)| s + b).sum::<usize>();
 
@@ -120,7 +121,7 @@ impl<'a> DependencyInfo<'a> {
 
 impl fmt::Display for DependencyInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Installed: {}/{}\n{}{}", 
+        write!(f, "Installed: {}/{}\n{}{}\n", 
             self.installed.values().map(|(s, b)| s + b).sum::<usize>(), 
             self.total,
             if self.to_remove != 0 {
@@ -134,6 +135,7 @@ impl fmt::Display for DependencyInfo<'_> {
             }
         )?;
 
+        write!(f, "Package Sources (Installed/To Install):\n")?;
         Ok(())
     }
 }

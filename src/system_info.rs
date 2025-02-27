@@ -3,7 +3,7 @@
 //! to the library/CLI.
 //! Instead, we encode the data we care about in an enum that can easily be shared
 use os_info::{Type, Version};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// For R we only care about Windows, MacOS and Linux
 #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
