@@ -1,8 +1,8 @@
-use std::{collections::HashMap, fmt, hash::Hash, path::Path};
+use std::{collections::{HashMap, HashSet}, fmt, path::Path};
 
 use serde::{Serialize, Deserialize};
 
-use crate::{cache::InstallationStatus, lockfile::Source, DiskCache, Library, Lockfile, RepositoryDatabase, ResolvedDependency, SystemInfo, Version};
+use crate::{cache::InstallationStatus, lockfile::Source, package::PackageType, DiskCache, Library, Lockfile, RepositoryDatabase, ResolvedDependency, SystemInfo, Version, VersionRequirement};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectInfo<'a> {
@@ -27,6 +27,8 @@ impl<'a> ProjectInfo<'a> {
             cache,
             library,
             resolved_dependencies,
+            &repository_databases,
+            r_version,
         );
         let remote_info: RemoteInfo = RemoteInfo::new(&r_version.major_minor(), repository_databases);
 
@@ -47,7 +49,7 @@ impl fmt::Display for ProjectInfo<'_> {
             self.r_version,
         )?;
 
-        write!(f, "\n== Dependencies ==\n{}", self.dep_info)?;
+        write!(f, "\n== Dependencies (Installed/Total)==\n{}", self.dep_info)?;
 
         write!(f, "\n== Repositories ==\n{}", self.remote_info)?;
 
@@ -59,11 +61,67 @@ impl fmt::Display for ProjectInfo<'_> {
 struct DependencyInfo<'a> {
     path: &'a Path,
     total: usize,
-    installed: HashMap<&'a Source, (usize, usize)>,
-    to_install: HashMap<&'a Source, (usize, usize)>,
-    in_cache: HashMap<&'a Source, usize>,
+    counts: HashMap<&'a Source, (SourceCounts, SourceCounts)>, 
     to_remove: usize,
     non_locked: NonLockedCount,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+struct SourceCounts {
+    total: usize,
+    installed: usize,
+    in_cache: usize,
+}
+
+impl SourceCounts {
+    fn update(&mut self, dep_status: DependencyStatus) {
+        match dep_status {
+            DependencyStatus::InCache => {
+                self.in_cache += 1;
+                self.total += 1;
+            },
+            DependencyStatus::Installed => {
+                self.total += 1;
+                self.installed += 1
+            },
+            DependencyStatus::NotInstalled => self.total += 1,
+        }
+    }
+}
+
+enum DependencyStatus {
+    InCache,
+    Installed,
+    NotInstalled,
+}
+
+fn update_counts<'a>(
+    counts: &mut HashMap<&'a Source, (SourceCounts, SourceCounts)>,
+    resolved_dep: &'a ResolvedDependency,
+    dep_status: DependencyStatus,
+    is_binary: bool
+) {
+    let (source_counts, binary_counts) = counts.entry(&resolved_dep.source).or_insert((SourceCounts::default(), SourceCounts::default()));
+    if is_binary {
+        binary_counts.update(dep_status);
+    } else {
+        source_counts.update(dep_status);
+    }
+}
+
+fn is_package_from_binary(resolved_dep: &ResolvedDependency, repo_dbs: &[(RepositoryDatabase, bool)], r_version: &Version) -> bool {
+    if let Source::Repository { repository } = &resolved_dep.source {
+        if let Some((repo_db, force_source)) = repo_dbs.iter().find(|(db, _)| &db.url == repository) {
+            let version_requirement = Some(VersionRequirement::new(resolved_dep.version.as_ref().clone(), crate::package::Operator::Equal));
+            repo_db.find_package(&resolved_dep.name, version_requirement.as_ref(), r_version, *force_source)
+                .map(|(_, pkg_type)| pkg_type == PackageType::Binary)
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        false
+    }
 }
 
 impl<'a> DependencyInfo<'a> {
@@ -73,48 +131,56 @@ impl<'a> DependencyInfo<'a> {
         cache: &'a DiskCache,
         library: &'a Library,
         resolved_dependencies: &'a [ResolvedDependency],
+        repo_dbs: &[(RepositoryDatabase, bool)],
+        r_version: &Version,
     ) -> Self {
-        let mut installed = HashMap::new();
-        let mut to_install = HashMap::new();
-        let mut in_cache = HashMap::new();
-        let mut non_locked = 0usize;
+        let mut counts = HashMap::new();
+        let mut non_locked = 0;
+        let mut to_remove = 0;
+        let mut lib_clone = library.packages.keys().map(|s| s.to_string()).collect::<HashSet<String>>();
 
         for r in resolved_dependencies {
+            let is_binary = is_package_from_binary(r, repo_dbs, r_version);
             if library.contains_package(&r.name, Some(&r.version)) {
-                if let Some(lock) = lockfile {
-                    if lock.get_package(&r.name, None).is_some() {
-                        update_hash(&mut installed, r);
-                    } else {
-                        non_locked += 1;
-                    }
-                } else {
-                    update_hash(&mut installed, r);
-                }
+                lib_clone.remove(r.name.as_ref());
+                update_counts(&mut counts, &r, DependencyStatus::Installed, is_binary);
             } else {
                 match cache.get_installation_status(&r.name, &r.version.original, &r.source) {
-                    InstallationStatus::Absent => update_hash(&mut to_install, &r),
-                    _ => { in_cache.entry(&r.source).and_modify(|v| *v += 1).or_insert(1); },
+                    // If the package is in the cache as a binary, we want to record it as a binary, no matter if the resolved dependency is from source or binary
+                    // This is because we want to use this as a way to convey to the user the performance costs to perform the installation
+                    InstallationStatus::Both | InstallationStatus::Binary => update_counts(&mut counts, &r, DependencyStatus::InCache, true),
+                    // We only want to say a source package is in the cache if the resolved dependency is from source.
+                    // If the dep is supposed to be from binary, we prefer to download a binary rather than build our own
+                    InstallationStatus::Source if !is_binary => update_counts(&mut counts, &r, DependencyStatus::InCache, false),
+                    _ => update_counts(&mut counts, &r, DependencyStatus::NotInstalled, is_binary),
                 }
             }
         };
 
+        for name in lib_clone {
+            if let Some(lock) = lockfile {
+                if lock.get_package(&name, None).is_some() {
+                    to_remove += 1;
+                } else {
+                    non_locked += 1;
+                }
+            } else {
+                to_remove += 1;
+            }
+        }
 
-
-        // difference between the number of packages in the library and the number of packages installed represents the number of packages to remove
-        let to_remove = library.packages.len() - installed.values().map(|(s, b)| s + b).sum::<usize>();
+        let non_locked = if lockfile.is_none() {
+            NonLockedCount::NoLockfile
+        } else {
+            NonLockedCount::Lockfile(non_locked)
+        };
 
         Self {
             path: library_dir,
             total: resolved_dependencies.len(),
-            installed,
-            to_install,
-            in_cache,
+            counts,
             to_remove,
-            non_locked: if lockfile.is_none() {
-                NonLockedCount::NoLockfile
-            } else {
-                NonLockedCount::Lockfile(non_locked)
-            }
+            non_locked,
         }
     }
 }
@@ -122,7 +188,7 @@ impl<'a> DependencyInfo<'a> {
 impl fmt::Display for DependencyInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Installed: {}/{}\n{}{}\n", 
-            self.installed.values().map(|(s, b)| s + b).sum::<usize>(), 
+            self.counts.values().map(|(s, b)| s.installed + b.installed).sum::<usize>(), 
             self.total,
             if self.to_remove != 0 {
                 format!("To remove: {}\n", self.to_remove)
@@ -130,21 +196,57 @@ impl fmt::Display for DependencyInfo<'_> {
                 String::new()
             },
             match self.non_locked {
-                NonLockedCount::Lockfile(n) if n != 0 => format!("Non-locked packages: {n}\n"),
+                NonLockedCount::Lockfile(n) if n != 0 => format!("Packages not within lockfile: {n}\n"),
                 _ => String::new(),
             }
         )?;
 
-        write!(f, "Package Sources (Installed/To Install):\n")?;
-        Ok(())
-    }
-}
+        write!(f, "Package Sources:\n")?;
+        let mut install_needed = false;
+        for (s, (source_counts, binary_counts)) in self.counts.iter() {
+            if source_counts.total != source_counts.installed && binary_counts.total != binary_counts.installed {
+                install_needed = true;
+            }
+            write!(f, "  {}: {}{}\n", s, 
+                if binary_counts.total != 0 {
+                    format!("{}/{} binary packages", binary_counts.installed, binary_counts.total)
+                } else {
+                    String::new()
+                },
+                if source_counts.total != 0 {
+                    format!("{}{}/{} source packages", if binary_counts.total != 0 { ", "} else { "" }, source_counts.installed, source_counts.total)
+                } else {
+                    String::new()
+                }
+            )?;
+        }
 
-fn update_hash<'a>(map: &mut HashMap<&'a Source, (usize, usize)>, resolved_dep: &'a ResolvedDependency) {
-    if resolved_dep.is_binary() {
-        map.entry(&resolved_dep.source).and_modify(|(s, _)| *s += 1).or_insert((1, 0));
-    } else {
-        map.entry(&resolved_dep.source).and_modify(|(_, b)| *b += 1).or_insert((0, 1));
+        if !install_needed {
+            return Ok(());
+        }
+        write!(f, "\nInstallation Summary:\n")?;
+        for (s, (source_counts, binary_counts)) in self.counts.iter() {
+            let binary_diff = binary_counts.total - binary_counts.installed;
+            let source_diff = source_counts.total - source_counts.installed;
+            if binary_diff == 0 && source_diff == 0 {
+                continue;
+            }
+            write!(f, "  {}: {}{} present in cache\n", s,
+                if binary_diff != 0 {
+                    format!("{}/{} binary packages", binary_counts.in_cache, binary_diff)
+                } else {
+                    String::new()
+                },
+                if source_counts.total != 0 {
+                    format!("{}{}/{} source packages", if binary_diff != 0 { ", "} else { "" }, source_counts.in_cache, source_diff)
+                } else {
+                    String::new()
+                }
+            )?;
+        }
+
+
+        Ok(())
     }
 }
 

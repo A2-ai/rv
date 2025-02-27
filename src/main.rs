@@ -228,7 +228,8 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Info { json } => {
-            let context = CliContext::new(&cli.config_file)?;
+            let mut context = CliContext::new(&cli.config_file)?;
+            context.load_databases()?;
             let resolved = resolve_dependencies(&context);
             let info = ProjectInfo::new(&context.lockfile, &context.cache, &context.r_version, &context.library, &context.databases, &resolved);
             if json {

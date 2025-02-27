@@ -42,10 +42,6 @@ impl<'d> ResolvedDependency<'d> {
         matches!(self.source, Source::Local { .. })
     }
 
-    pub fn is_binary(&self) -> bool {
-        matches!(self.kind, PackageType::Binary)
-    }
-
     /// We found the dependency from the lockfile
     pub fn from_locked_package(
         package: &'d LockedPackage,
