@@ -1,0 +1,20 @@
+[project]
+name = "example"
+r_version = "4.3"
+
+repositories = []
+
+dependencies = [
+ "mrgsolve",
+ "rmarkdown",
+ "tidyverse",
+ "here",
+ "flextable",
+  "sessioninfo",
+  "devtools",
+  "arrow",
+  "janitor"
+ ]
+ ---
+ repos = [{name = "posit", source = "posit-src", force_source = false}]
+ ---
