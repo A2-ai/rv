@@ -6,7 +6,8 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler
+    activate, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine,
+    ResolvedDependency, Resolver, SyncHandler,
 };
 
 #[derive(Parser)]
@@ -231,7 +232,15 @@ fn try_main() -> Result<()> {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);
-            let info = ProjectInfo::new(&context.lockfile, &context.cache, &context.r_version, &context.library, &context.databases, &resolved);
+            let info = ProjectInfo::new(
+                &context.lockfile,
+                &context.cache,
+                &context.r_version,
+                &context.library,
+                &context.databases,
+                &resolved,
+                &context.config.repositories(),
+            );
             if json {
                 println!(
                     "{}",
