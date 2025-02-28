@@ -20,7 +20,7 @@ fn find_r_version(output: &str) -> Option<Version> {
 }
 
 #[inline]
-fn get_r_default_path() -> PathBuf{
+fn get_r_default_path() -> PathBuf {
     if cfg!(windows) {
         PathBuf::from("R.exe")
     } else {
@@ -214,7 +214,12 @@ impl RCmd for RCommandLine {
             })?;
 
         // R.bat on Windows will write to stderr rather than stdout for some reasons
-        let stdout = std::str::from_utf8(if cfg!(windows) {&output.stderr} else { &output.stdout }).map_err(|e| VersionError {
+        let stdout = std::str::from_utf8(if cfg!(windows) {
+            &output.stderr
+        } else {
+            &output.stdout
+        })
+        .map_err(|e| VersionError {
             source: VersionErrorKind::Utf8(e),
         })?;
         if let Some(v) = find_r_version(stdout) {

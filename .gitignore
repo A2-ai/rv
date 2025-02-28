@@ -3,6 +3,6 @@
 out
 src/tests/RCMD/
 example_projects/*/rv
+example_projects/*/rv.lock
 from*/
 .DS_Store
-
