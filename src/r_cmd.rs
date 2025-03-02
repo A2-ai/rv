@@ -151,10 +151,13 @@ impl RCmd for RCommandLine {
                 destination.as_ref().to_string_lossy()
             ))
             .arg("--use-vanilla")
+            .arg("--strip")
+            .arg("--strip-lib")
             .arg(tmp_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library)
             .env("R_LIBS_USER", &library)
+            .env("_R_SHLIB_STRIP_", "true")
             .stdout(writer)
             .stderr(writer_clone);
 
