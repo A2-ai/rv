@@ -28,8 +28,8 @@ repositories = [
 # top level packages to install
 dependencies = [
     "dplyr",
-    { name = "ggplot2", install_suggestions: true}
+    { name = "ggplot2", install_suggestions = true}
 ]
 ```
 
-Running `rv plan` will detail what is needed to synchronize 
+Running `rv sync` will synchronize the library, lock file, and configuration file by installing `dplyr`, `ggplot2`, any dependencies those packages require, and the suggested packages for `ggplot2`. Running `rv plan` will give you a preview of what `rv sync` will do.
