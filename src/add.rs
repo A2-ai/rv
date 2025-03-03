@@ -7,21 +7,13 @@ use crate::{config::ConfigLoadError, Config};
 
 pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
     let config_file = config_file.as_ref();
-    let _ = Config::from_file(config_file).map_err(|e| AddError{
+    let _ = Config::from_file(config_file).map_err(|e| AddError {
         path: config_file.into(),
-        source: AddErrorKind::ConfigLoad(e)
+        source: AddErrorKind::ConfigLoad(e),
     })?;
-    let config_content = fs::read_to_string(&config_file).map_err(|e| AddError {
-        path: config_file.into(),
-        source: AddErrorKind::Io(e),
-    })?;
+    let config_content = fs::read_to_string(&config_file).unwrap(); // Verified config could be loaded above
 
-    config_content
-        .parse::<DocumentMut>()
-        .map_err(|e| AddError {
-            path: config_file.into(),
-            source: AddErrorKind::Parse(e),
-        })
+    Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
 
 pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
@@ -31,7 +23,13 @@ pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Resu
     // collect the names of all of the dependencies
     let config_dep_names = config_deps
         .iter()
-        .filter_map(|v| get_dependency_name(v))
+        .filter_map(|v| {
+            match v {
+                Value::String(s) => Some(s.value().as_str()),
+                Value::InlineTable(t) => t.get("name").and_then(|v| v.as_str()),
+                _ => None,
+            }
+        })
         .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
         .collect::<Vec<_>>();
 
@@ -54,34 +52,21 @@ pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Resu
 }
 
 fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
-    // config arrays are behind the "project" table
-    let table = doc
+    // the dependnecies array is behind the project table
+    let deps = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())
-        .unwrap();
-    // get the array or insert it if it does not exist
-    let deps = table
+        .unwrap()
         .entry("dependencies")
         .or_insert_with(|| Array::new().into())
         .as_array_mut()
         .unwrap();
-    
+
     // remove formatting on the last element as we will re-add
     if let Some(last) = deps.iter_mut().last() {
         last.decor_mut().set_suffix("");
     }
     deps
-}
-
-fn get_dependency_name(value: &Value) -> Option<&str> {
-    // Our dependencies are currently only formatted as basic Strings and InlineTable
-    match value {
-        Value::String(s) => Some(s.value().as_str()),
-        Value::InlineTable(t) => t
-            .get("name")
-            .and_then(|v| v.as_str()),
-        _ => None,
-    }
 }
 
 #[derive(Debug, thiserror::Error)]

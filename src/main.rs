@@ -6,8 +6,8 @@ use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
-    Resolver, SyncHandler,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Git, Http, Lockfile,
+    RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
 };
 
 #[derive(Parser)]
@@ -37,13 +37,15 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
-    /// Add to a simple package to the project and sync
+    /// Add a simple package to the project and sync
     Add {
         #[clap(value_parser)]
         packages: Vec<String>,
         #[clap(long)]
+        /// Dry run of what sync would do
         plan: bool,
         #[clap(long)]
+        /// Do not automatically sync
         no_sync: bool,
     },
     /// Gives information about where the cache is for that project
@@ -60,7 +62,7 @@ pub enum Command {
     Activate,
     /// Deactivate an rv project
     Deactivate,
-}  
+}
 
 #[derive(Debug, Subcommand)]
 pub enum MigrateSubcommand {
@@ -194,7 +196,11 @@ fn try_main() -> Result<()> {
         Command::Sync => {
             _sync(&cli.config_file, false, cli.verbose.is_present())?;
         }
-        Command::Add{packages, plan, no_sync} => {
+        Command::Add {
+            packages,
+            plan,
+            no_sync,
+        } => {
             // load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
             add_packages(&mut doc, packages)?;
