@@ -7,7 +7,11 @@ use std::{
 use serde::Serialize;
 
 use crate::{
-    cache::InstallationStatus, lockfile::Source, package::{Operator, PackageType}, DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo, Version, VersionRequirement
+    cache::InstallationStatus,
+    lockfile::Source,
+    package::{Operator, PackageType},
+    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
+    Version, VersionRequirement,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,6 +28,7 @@ impl<'a> ProjectInfo<'a> {
         resolved_deps: &'a [ResolvedDependency],
         repositories: &'a [Repository],
         repo_dbs: &'a [(RepositoryDatabase, bool)],
+        // R version from config to allow for patch specificity in which cache does not allow
         r_version: &'a Version,
         cache: &'a DiskCache,
         lockfile: Option<&'a Lockfile>,
@@ -31,7 +36,15 @@ impl<'a> ProjectInfo<'a> {
         Self {
             r_version,
             system_info: &cache.system_info,
-            dependency_info: DependencyInfo::new(library, resolved_deps, repositories, repo_dbs, r_version, cache, lockfile),
+            dependency_info: DependencyInfo::new(
+                library,
+                resolved_deps,
+                repositories,
+                repo_dbs,
+                r_version,
+                cache,
+                lockfile,
+            ),
             remote_info: RemoteInfo::new(repositories, repo_dbs, &r_version.major_minor()),
         }
     }
@@ -40,7 +53,7 @@ impl<'a> ProjectInfo<'a> {
 impl fmt::Display for ProjectInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
-            f, 
+            f,
             "OS: {}{}\nR Version: {}\n\n",
             self.system_info.os_family(),
             if let Some(arch) = self.system_info.arch() {
@@ -60,11 +73,15 @@ impl fmt::Display for ProjectInfo<'_> {
 // TODO: Expand with git + url information
 #[derive(Debug, Clone, Serialize)]
 struct RemoteInfo<'a> {
-    repositories: HashMap<String, (&'a str, usize, usize)>
+    repositories: HashMap<String, (&'a str, usize, usize)>,
 }
 
 impl<'a> RemoteInfo<'a> {
-    fn new(repos: &'a [Repository], repo_dbs: &'a [(RepositoryDatabase, bool)], r_version: &[u32; 2]) -> Self {
+    fn new(
+        repos: &'a [Repository],
+        repo_dbs: &'a [(RepositoryDatabase, bool)],
+        r_version: &[u32; 2],
+    ) -> Self {
         let mut repositories = HashMap::new();
         for (repo_db, _) in repo_dbs {
             let bin_count = repo_db.get_binary_count(r_version);
@@ -73,16 +90,17 @@ impl<'a> RemoteInfo<'a> {
             repositories.insert(id, (repo_db.url.as_str(), bin_count, src_count));
         }
 
-        Self {
-            repositories
-        }
+        Self { repositories }
     }
 }
 
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (alias, (url, bin_count, src_count)) in &self.repositories {
-            write!(f, "{alias} ({url}): {bin_count} binary packages, {src_count} source packages\n")?;
+            write!(
+                f,
+                "{alias} ({url}): {bin_count} binary packages, {src_count} source packages\n"
+            )?;
         }
         Ok(())
     }
@@ -123,7 +141,9 @@ impl<'a> DependencyInfo<'a> {
             lib_pkgs.remove(r.name.as_ref());
             let mut dep_sum = DependencySummary::new(r, library, repo_dbs, r_version, cache);
             // if the package was found in the library, but not in the lockfile, we consider it not locked and is missing
-            if !is_in_lock(r.name.as_ref(), lockfile) && dep_sum.status == DependencyStatus::Installed{
+            if !is_in_lock(r.name.as_ref(), lockfile)
+                && dep_sum.status == DependencyStatus::Installed
+            {
                 dep_sum.status = DependencyStatus::Missing;
                 non_locked.insert(r.name.to_string());
                 continue;
@@ -188,12 +208,21 @@ impl fmt::Display for DependencyInfo<'_> {
                 "  {}: {}{}{}\n",
                 s,
                 when_non_zero(
-                    &format!("{}/{} binary packages", counts.installed_bin, counts.total_bin),
+                    &format!(
+                        "{}/{} binary packages",
+                        counts.installed_bin, counts.total_bin
+                    ),
                     counts.total_bin
                 ),
-                when_non_zero(", ", (counts.total_bin != 0 && counts.total_src != 0) as usize),
                 when_non_zero(
-                    &format!("{}/{} source packages", counts.installed_src, counts.total_src),
+                    ", ",
+                    (counts.total_bin != 0 && counts.total_src != 0) as usize
+                ),
+                when_non_zero(
+                    &format!(
+                        "{}/{} source packages",
+                        counts.installed_src, counts.total_src
+                    ),
                     counts.total_src
                 ),
             ));
@@ -206,27 +235,38 @@ impl fmt::Display for DependencyInfo<'_> {
                 when_non_zero(
                     &format!(
                         "{}/{} in cache{}",
-                        counts.in_cache, 
+                        counts.in_cache,
                         counts.to_install,
-                        when_non_zero(&format!(" ({} to compile)", counts.in_cache_to_compile), counts.in_cache_to_compile)
+                        when_non_zero(
+                            &format!(" ({} to compile)", counts.in_cache_to_compile),
+                            counts.in_cache_to_compile
+                        )
                     ),
                     counts.in_cache
                 ),
-                when_non_zero(", ", (counts.in_cache != 0 && counts.to_download != 0) as usize),
+                when_non_zero(
+                    ", ",
+                    (counts.in_cache != 0 && counts.to_download != 0) as usize
+                ),
                 when_non_zero(
                     &format!(
                         "{}/{} to download{}",
-                        counts.to_download, 
+                        counts.to_download,
                         counts.to_install,
-                        when_non_zero(&format!(" ({} to compile)", counts.to_download_to_compile), counts.to_download_to_compile)
+                        when_non_zero(
+                            &format!(" ({} to compile)", counts.to_download_to_compile),
+                            counts.to_download_to_compile
+                        )
                     ),
                     counts.to_download
                 )
             ));
-
         }
         write!(f, "{pkg_source}")?;
-        write!(f, "{install_summary}")?;
+        // If there are no packages to install from any of the sources, install_summary will never be edited and there is no reason to print
+        if install_summary != String::from("\nInstallation Summary: \n") {
+            write!(f, "{install_summary}")?;
+        }
 
         Ok(())
     }
@@ -234,9 +274,13 @@ impl fmt::Display for DependencyInfo<'_> {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 enum DependencyStatus {
+    // If the package is in the library
     Installed,
+    // If the package has a binary in the cache
     InCache,
+    // If a src package has a src in the cache (but not a binary)
     ToCompile,
+    // If a package is not in the cache
     Missing,
 }
 
@@ -255,8 +299,10 @@ impl<'a> DependencySummary<'a> {
         r_version: &Version,
         cache: &DiskCache,
     ) -> Self {
+        // determine if the dependency can come as a binary
         let is_binary = is_binary_package(resolved_dep, repo_dbs, r_version);
 
+        // If the package is within the library, immediately return saying it is installed
         if library.contains_package(&resolved_dep.name, Some(&resolved_dep.version)) {
             return Self {
                 _name: &resolved_dep.name,
@@ -292,10 +338,10 @@ struct Counts {
     total_src: usize,
     installed_bin: usize,
     installed_src: usize,
-    to_install: usize,
-    in_cache: usize,
+    to_install: usize, // total - installed (for binaries and src)
+    in_cache: usize,   // all packages in cache, even if compilation required
     in_cache_to_compile: usize,
-    to_download: usize,
+    to_download: usize, // all packages to download, even if compilation required
     to_download_to_compile: usize,
 }
 
@@ -314,6 +360,7 @@ impl Counts {
         };
 
         for dep in dep_vec {
+            // Some fields on Counts are dependent on if the dep is from binary or not
             if dep.is_binary {
                 counts.total_bin += 1;
                 if let DependencyStatus::Installed = dep.status {
@@ -332,6 +379,7 @@ impl Counts {
                     _ => (),
                 }
             }
+            // Other fields are updated agnostic to if the dep is from binary or not
             counts.to_install += 1;
             match dep.status {
                 DependencyStatus::InCache => counts.in_cache += 1,
@@ -386,6 +434,11 @@ fn is_binary_package(
         .unwrap_or(false)
 }
 
+// dependency sources are ID'd by the following
+// - repositories: alias in the config. Defaults to the url if no alias found
+// - git: repository url
+// - local: path to local package
+// - url: package url
 fn get_dep_id(dep: &ResolvedDependency, repos: &[Repository]) -> String {
     match &dep.source {
         Source::Repository { repository } => get_repository_alias(&repository, repos),
@@ -400,5 +453,5 @@ fn get_repository_alias(r: &str, repos: &[Repository]) -> String {
         .iter()
         .find(|repo| repo.url() == r)
         .map(|repo| repo.alias.to_string())
-        .unwrap_or(r.to_string()) 
+        .unwrap_or(r.to_string())
 }
