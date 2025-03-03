@@ -2,7 +2,7 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-gsm.app=2.3.0.9000 (git(url: https://github.com/Gilead-BioStats/gsm.app, sha: abc, directory: None, tag: Some("v2.3.0"), branch: None), type=source, path='', from_lockfile=false, from_remote=false)
+gsm.app=2.3.0.9000 (git(url: https://github.com/Gilead-BioStats/gsm.app, sha: somethinglikeasha, directory: None, tag: Some("v2.3.0"), branch: None), type=source, path='', from_lockfile=false, from_remote=false)
 bslib=0.8.0 (repository(url: http://custom), type=binary, path='', from_lockfile=false, from_remote=false)
 cli=3.6.3 (repository(url: http://custom), type=binary, path='', from_lockfile=false, from_remote=false)
 dplyr=1.1.4 (repository(url: http://custom), type=binary, path='', from_lockfile=false, from_remote=false)

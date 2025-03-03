@@ -5,7 +5,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use crate::link::{LinkError, LinkMode};
+use crate::sync::{LinkError, LinkMode};
 use crate::Version;
 use regex::Regex;
 
@@ -19,7 +19,16 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
-pub trait RCmd {
+#[inline]
+fn get_r_default_path() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("R.exe")
+    } else {
+        PathBuf::from("R")
+    }
+}
+
+pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
     fn install(
         &self,
@@ -56,7 +65,7 @@ pub struct RCommandLine {
 
 pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
     // Give preference to the R version on the $PATH
-    if does_r_cmd_match_version(&RCommandLine { r: None }, &r_version) {
+    if does_r_cmd_match_version(&RCommandLine { r: None }, r_version) {
         log::debug!("R {r_version} found on the path");
         return Some(RCommandLine { r: None });
     }
@@ -70,12 +79,11 @@ pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
     // returns an RCommandLine struct with the path to the executable if found
     let r_cmd = fs::read_dir(opt_r)
         .ok()?
-        .into_iter()
         .filter_map(Result::ok)
         .map(|p| p.path().join("bin/R"))
         .filter(|p| p.exists())
         .map(|r| RCommandLine { r: Some(r) })
-        .find(|r_cmd| does_r_cmd_match_version(&r_cmd, &r_version))?;
+        .find(|r_cmd| does_r_cmd_match_version(r_cmd, r_version))?;
 
     log::debug!(
         "R {r_version} found at {}",
@@ -133,10 +141,7 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = match &self.r {
-            Some(r) => Command::new(r),
-            None => Command::new("R"),
-        };
+        let mut command = Command::new(self.r.as_ref().unwrap_or(&get_r_default_path()));
         command
             .arg("CMD")
             .arg("INSTALL")
@@ -146,10 +151,13 @@ impl RCmd for RCommandLine {
                 destination.as_ref().to_string_lossy()
             ))
             .arg("--use-vanilla")
+            .arg("--strip")
+            .arg("--strip-lib")
             .arg(tmp_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library)
             .env("R_LIBS_USER", &library)
+            .env("_R_SHLIB_STRIP_", "true")
             .stdout(writer)
             .stderr(writer_clone);
 
@@ -165,6 +173,12 @@ impl RCmd for RCommandLine {
         let status = handle.wait().unwrap();
 
         if !status.success() {
+            // Always delete the destination is an error happend
+            if destination.as_ref().is_dir() {
+                // We ignore that error intentionally since we want to keep the one from CLI
+                let _ = fs::remove_dir_all(destination.as_ref());
+            }
+
             return Err(InstallError {
                 source: InstallErrorKind::InstallationFailed(output),
             });
@@ -195,13 +209,20 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(&self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+        let output = Command::new(&self.r.as_ref().unwrap_or(&get_r_default_path()))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
                 source: VersionErrorKind::Io(e),
             })?;
-        let stdout = std::str::from_utf8(&output.stdout).map_err(|e| VersionError {
+
+        // R.bat on Windows will write to stderr rather than stdout for some reasons
+        let stdout = std::str::from_utf8(if cfg!(windows) {
+            &output.stderr
+        } else {
+            &output.stdout
+        })
+        .map_err(|e| VersionError {
             source: VersionErrorKind::Utf8(e),
         })?;
         if let Some(v) = find_r_version(stdout) {
