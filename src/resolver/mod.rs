@@ -311,7 +311,6 @@ impl<'d> Resolver<'d> {
     ) -> Resolution<'d> {
         let mut result = Resolution::default();
         let mut processed = HashSet::with_capacity(dependencies.len() * 10);
-
         let mut queue: VecDeque<_> = dependencies
             .iter()
             .map(|d| QueueItem {

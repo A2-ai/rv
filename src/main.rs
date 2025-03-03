@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
     activate, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine,
-    ResolvedDependency, Resolver, SyncHandler,
+    ResolvedDependency, Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -28,13 +28,22 @@ pub struct Cli {
 pub enum Command {
     /// Creates a new rv project
     Init {
-        #[clap(value_parser)]
+        #[clap(value_parser, default_value = ".")]
         project_directory: PathBuf,
+        #[clap(short = 'r', long)]
+        r_version: Option<String>,
+        #[clap(long)]
+        no_repositories: bool,
+        #[clap(long, value_parser, num_args = 1..)]
+        add: Vec<String>,
     },
     /// Returns the path for the library for the current project/system
     Library,
     /// Dry run of what sync would do
-    Plan,
+    Plan {
+        #[clap(short, long)]
+        upgrade: bool
+    },
     /// Replaces the library with exactly what is in the lock file
     Sync,
     /// Provide infomration about the project
@@ -46,6 +55,11 @@ pub enum Command {
     Cache {
         #[clap(short, long)]
         json: bool,
+    },
+    /// Upgrade packages to the latest versions available
+    Upgrade {
+        #[clap(long)]
+        dry_run: bool,
     },
     /// Migrate renv to rv
     Migrate {
@@ -64,6 +78,13 @@ pub enum MigrateSubcommand {
         #[clap(value_parser, default_value = "renv.lock")]
         renv_file: PathBuf,
     },
+}
+
+#[derive(Debug, Clone)]
+enum SyncMode {
+    Default,
+    FullUpgrade,
+    // TODO: PartialUpgrade -- allow user to specify packages to upgrade
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -93,9 +114,14 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
+
+fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, sync_mode: SyncMode) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
+    match sync_mode {
+        SyncMode::Default => (),
+        SyncMode::FullUpgrade => context.lockfile = None,
+    }
     let resolved = resolve_dependencies(&context);
 
     match timeit!(
@@ -165,16 +191,31 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Init { project_directory } => {
-            if project_directory.exists() {
-                println!("{} already exists", project_directory.display());
-                return Ok(());
-            }
-            // TODO: use cli flag for non-default r_version
-            let r_version = RCommandLine { r: None }.version()?;
-            // TODO: use cli flag to turn off default repositories (or specify non-default repos)
-            let repositories = find_r_repositories()?;
-            init(&project_directory, &r_version.major_minor(), &repositories)?;
+        Command::Init {
+            project_directory,
+            r_version,
+            no_repositories,
+            add,
+        } => {
+            let r_version = if let Some(r) = r_version {
+                // Make sure input is a valid version format. NOT checking if it is a valid R version on system in init
+                if r.parse::<Version>().is_err() {
+                    bail!("R version specified could not be parsed as a valid version")
+                }
+                r
+            } else {
+                // if r version is not provided, get the major.minor of the R version on the path
+                let [major, minor] = RCommandLine { r: None }.version()?.major_minor();
+                format!("{major}.{minor}")
+            };
+
+            let repositories = if no_repositories {
+                Vec::new()
+            } else {
+                find_r_repositories()?
+            };
+            init(&project_directory, &r_version, &repositories, &add)?;
+            activate(&project_directory)?;
             println!(
                 "rv project successfully initialized at {}",
                 project_directory.display()
@@ -184,11 +225,21 @@ fn try_main() -> Result<()> {
             let context = CliContext::new(&cli.config_file)?;
             println!("{}", context.library_path().display());
         }
-        Command::Plan => {
-            _sync(&cli.config_file, true, cli.verbose.is_present())?;
+        Command::Plan { upgrade } => {
+            let upgrade = if upgrade {
+                SyncMode::FullUpgrade
+            } else {
+                SyncMode::Default
+            };
+            _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present())?;
+            _sync(&cli.config_file, false, cli.verbose.is_present(), SyncMode::Default)?;
+        }
+        Command::Upgrade{
+            dry_run,
+        } => {
+            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), SyncMode::FullUpgrade)?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;

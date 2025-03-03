@@ -19,6 +19,15 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
+#[inline]
+fn get_r_default_path() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("R.exe")
+    } else {
+        PathBuf::from("R")
+    }
+}
+
 pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
     fn install(
@@ -132,10 +141,7 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = match &self.r {
-            Some(r) => Command::new(r),
-            None => Command::new("R"),
-        };
+        let mut command = Command::new(self.r.as_ref().unwrap_or(&get_r_default_path()));
         command
             .arg("CMD")
             .arg("INSTALL")
@@ -145,10 +151,13 @@ impl RCmd for RCommandLine {
                 destination.as_ref().to_string_lossy()
             ))
             .arg("--use-vanilla")
+            .arg("--strip")
+            .arg("--strip-lib")
             .arg(tmp_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library)
             .env("R_LIBS_USER", &library)
+            .env("_R_SHLIB_STRIP_", "true")
             .stdout(writer)
             .stderr(writer_clone);
 
@@ -200,13 +209,20 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+        let output = Command::new(&self.r.as_ref().unwrap_or(&get_r_default_path()))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
                 source: VersionErrorKind::Io(e),
             })?;
-        let stdout = std::str::from_utf8(&output.stdout).map_err(|e| VersionError {
+
+        // R.bat on Windows will write to stderr rather than stdout for some reasons
+        let stdout = std::str::from_utf8(if cfg!(windows) {
+            &output.stderr
+        } else {
+            &output.stdout
+        })
+        .map_err(|e| VersionError {
             source: VersionErrorKind::Utf8(e),
         })?;
         if let Some(v) = find_r_version(stdout) {

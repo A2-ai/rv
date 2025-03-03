@@ -28,7 +28,9 @@ repositories = [
     # {name = "dplyr", repository = "CRAN", force_source = true},
     # {name = "dplyr", git = "https://github.com/tidyverse/dplyr.git", tag = "v1.1.4"},
     # {name = "dplyr", path = "/path/to/local/dplyr"},
-dependencies = []
+dependencies = [
+%dependencies%
+]
 
 "#;
 
@@ -38,21 +40,27 @@ dependencies = []
 ///     - If a library directory exists, init will not create a new one or remove any of the installed packages
 /// - Creating a .gitignore file within the rv subdirectory to prevent upload of installed packages to git
 /// - Initialize the config file with the R version and repositories set as options within R
+/// - Activate the project by setting the libPaths to the rv library
 pub fn init(
     project_directory: impl AsRef<Path>,
-    r_version: &[u32; 2],
-    repositories: &Vec<Repository>,
+    r_version: &str,
+    repositories: &[Repository],
+    dependencies: &[String],
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     create_library_structure(proj_dir)?;
     create_gitignore(proj_dir)?;
     let project_name = proj_dir
+        .canonicalize()
+        .map_err(|e| InitError {
+            source: InitErrorKind::Io(e),
+        })?
         .iter()
         .last()
         .map(|x| x.to_string_lossy().to_string())
         .unwrap_or("my rv project".to_string());
 
-    let config = render_config(&project_name, &r_version, &repositories);
+    let config = render_config(&project_name, &r_version, &repositories, dependencies);
 
     let mut file = File::create(proj_dir.join(CONFIG_FILENAME)).map_err(|e| InitError {
         source: InitErrorKind::Io(e),
@@ -66,8 +74,9 @@ pub fn init(
 
 fn render_config(
     project_name: &str,
-    r_version: &[u32; 2],
-    repositories: &Vec<Repository>,
+    r_version: &str,
+    repositories: &[Repository],
+    dependencies: &[String],
 ) -> String {
     let repos = repositories
         .iter()
@@ -75,10 +84,17 @@ fn render_config(
         .collect::<Vec<_>>()
         .join("\n");
 
+    let deps = dependencies
+        .iter()
+        .map(|d| format!(r#"    "{d}","#))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
-        .replace("%r_version%", &format!("{}.{}", r_version[0], r_version[1]))
+        .replace("%r_version%", r_version)
         .replace("%repositories%", &repos)
+        .replace("%dependencies%", &deps)
 }
 
 pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
@@ -132,6 +148,10 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
 }
 
 fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+    let lib_dir = project_directory.as_ref().join(LIBRARY_PATH);
+    if lib_dir.is_dir() {
+        return Ok(());
+    }
     std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH)).map_err(|e| InitError {
         source: InitErrorKind::Io(e),
     })
@@ -179,7 +199,7 @@ mod tests {
         Repository, Version,
     };
 
-    use super::{find_r_repositories, init};
+    use super::init;
     use tempfile::tempdir;
 
     #[test]
@@ -190,7 +210,14 @@ mod tests {
             Repository::new("test1".to_string(), "this is test1".to_string(), true),
             Repository::new("test2".to_string(), "this is test2".to_string(), false),
         ];
-        init(&project_directory, &r_version.major_minor(), &repositories).unwrap();
+        let dependencies = vec!["dplyr".to_string()];
+        init(
+            &project_directory,
+            &r_version.original,
+            &repositories,
+            &dependencies,
+        )
+        .unwrap();
         let dir = &project_directory.into_path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
