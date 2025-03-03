@@ -6,8 +6,7 @@ use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Git, Http, Lockfile,
-    RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler
 };
 
 #[derive(Parser)]
@@ -37,15 +36,15 @@ pub enum Command {
     Plan,
     /// Replaces the library with exactly what is in the lock file
     Sync,
-    /// Add a simple package to the project and sync
+    /// Add simple packages to the project and sync
     Add {
         #[clap(value_parser)]
         packages: Vec<String>,
         #[clap(long)]
-        /// Dry run of what sync would do
-        plan: bool,
+        /// Dry run of what sync would do with the packages added. Does not make any file changes
+        dry_run: bool,
         #[clap(long)]
-        /// Do not automatically sync
+        /// Add packages to config file, but do not sync
         no_sync: bool,
     },
     /// Gives information about where the cache is for that project
@@ -99,8 +98,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
-    let mut context = CliContext::new(config_file)?;
+fn _sync(mut context: CliContext, dry_run: bool, has_logs_enabled: bool) -> Result<()> {
     context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
 
@@ -191,25 +189,36 @@ fn try_main() -> Result<()> {
             println!("{}", context.library_path().display());
         }
         Command::Plan => {
-            _sync(&cli.config_file, true, cli.verbose.is_present())?;
+            let context = CliContext::new(&cli.config_file)?;
+            _sync(context,true, cli.verbose.is_present())?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present())?;
+            let context = CliContext::new(&cli.config_file)?;
+            _sync(context, false, cli.verbose.is_present())?;
         }
         Command::Add {
             packages,
-            plan,
+            dry_run,
             no_sync,
         } => {
             // load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
             add_packages(&mut doc, packages)?;
-            write(&cli.config_file, doc.to_string())?;
-            if plan {
-                _sync(&cli.config_file, true, cli.verbose.is_present())?;
-            } else if !no_sync {
-                _sync(&cli.config_file, false, cli.verbose.is_present())?;
+            // write the update if not dry run
+            if !dry_run {
+                write(&cli.config_file, doc.to_string())?;
             }
+            // if no sync, exit early
+            if no_sync {
+                println!("Packages successfully added");
+                return Ok(());
+            }
+            let mut context = CliContext::new(&cli.config_file)?;
+            // if dry run, the config won't have been editied to reflect the added changes so must be added
+            if dry_run {
+                context.config = doc.to_string().parse::<Config>()?;
+            }
+            _sync(context, dry_run, cli.verbose.is_present())?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
