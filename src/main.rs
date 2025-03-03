@@ -6,8 +6,8 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine,
-    ResolvedDependency, Resolver, SyncHandler,
+    activate, deactivate, CacheInfo, DependencyInfo, Git, Http, Lockfile, ProjectInfo, RCmd,
+    RCommandLine, ResolvedDependency, Resolver, SyncHandler,
 };
 
 #[derive(Parser)]
@@ -232,23 +232,24 @@ fn try_main() -> Result<()> {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);
-            let info = ProjectInfo::new(
-                &context.lockfile,
-                &context.cache,
-                &context.r_version,
+            let info = DependencyInfo::new(
                 &context.library,
-                &context.databases,
                 &resolved,
                 &context.config.repositories(),
+                &context.databases,
+                &context.r_version,
+                &context.cache,
+                context.lockfile.as_ref(),
             );
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&info).expect("valid json")
-                );
-            } else {
-                println!("{info}");
-            }
+            println!("{info}");
+            // if json {
+            //     println!(
+            //         "{}",
+            //         serde_json::to_string_pretty(&info).expect("valid json")
+            //     );
+            // } else {
+            //     println!("{info}");
+            // }
         }
         Command::Activate => {
             let dir = std::env::current_dir()?;
