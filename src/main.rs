@@ -47,18 +47,13 @@ pub enum Command {
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
-<<<<<<< HEAD
-    /// Provide infomration about the project
-    Info {
-        #[clap(short, long)]
-        json: bool,
-=======
     /// Provide information about the project
     Info {
         #[clap(short, long)]
+        json: bool,
+        #[clap(short, long)]
         /// Display only the r version
         r_version: bool,
->>>>>>> 95710f7 (minimal info + verifying r version matches config)
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -273,13 +268,6 @@ fn try_main() -> Result<()> {
                 SyncMode::FullUpgrade,
             )?;
         }
-        Command::Info { r_version } => {
-            let context = CliContext::new(&cli.config_file)?;
-
-            if r_version {
-                println!("{}", context.config.r_version());
-            }
-        }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
             let info = CacheInfo::new(
@@ -318,7 +306,7 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Info { json } => {
+        Command::Info { json, r_version } => {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);
