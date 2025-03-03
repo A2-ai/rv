@@ -76,14 +76,13 @@ pub(crate) const GLOBAL_ACTIVATE_FILE_CONTENT: &str = r#"local({
 	}
 	if (interactive()) {
 		# Extract the R version from rv for comparison with the local R version
-		rv_info <- system2("rv", "info --r-version", stdout = TRUE)
+		rv_info <- system2("rv", c("info", "--r-version"), stdout = TRUE)
 		if (!is.null(attr(rv_info, "status"))) {
 			# if system2 fails it'll add a status attrivute with the error code
 			warning("failed to run rv info, check your console for messages")
 		} else {
 			sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
-			r_matches <- sys_r |> 
-				grepl(pattern = paste0("^", rv_info))
+			r_matches <- grepl(paste0("^", rv_info), sys_r)
 		}
 		message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
 		if (!r_matches) {
@@ -110,14 +109,13 @@ pub(crate) const PROJECT_ACTIVATE_FILE_CONTENT: &str = r#"local({
 	}
 	if (interactive()) {
 		# Extract the R version from rv for comparison with the local R version
-		rv_info <- system2("rv", "info --r-version", stdout = TRUE)
+		rv_info <- system2("rv", c("info", "--r-version"), stdout = TRUE)
 		if (!is.null(attr(rv_info, "status"))) {
 			# if system2 fails it'll add a status attrivute with the error code
 			warning("failed to run rv info, check your console for messages")
 		} else {
 			sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
-			r_matches <- sys_r |> 
-				grepl(pattern = paste0("^", rv_info))
+			r_matches <- grepl(paste0("^", rv_info), sys_r)
 		}
 		message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
 		if (!r_matches) {
