@@ -32,6 +32,7 @@ pub enum Command {
         project_directory: PathBuf,
     },
     /// Returns the path for the library for the current project/system
+    /// The path is always in unix format
     Library,
     /// Dry run of what sync would do
     Plan,
@@ -177,7 +178,13 @@ fn try_main() -> Result<()> {
         }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
-            println!("{}", context.library_path().display());
+            let path_str = context.library_path().to_string_lossy();
+            let path_out = if cfg!(windows) {
+                path_str.replace('\\', "/")
+            } else {
+              path_str.to_string()
+            };
+            println!("{path_out}");
         }
         Command::Plan => {
             _sync(&cli.config_file, true, cli.verbose.is_present())?;
