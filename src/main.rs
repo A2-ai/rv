@@ -65,6 +65,7 @@ pub enum MigrateSubcommand {
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     let resolver = Resolver::new(
+        &context.project_dir,
         &context.databases,
         &context.r_version,
         context.lockfile.as_ref(),
@@ -100,8 +101,12 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result
             "Synced dependencies"
         },
         {
-            let mut handler =
-                SyncHandler::new(&context.library, &context.cache, &context.staging_path());
+            let mut handler = SyncHandler::new(
+                &context.project_dir,
+                &context.library,
+                &context.cache,
+                &context.staging_path(),
+            );
             if dry_run {
                 handler.dry_run();
             }

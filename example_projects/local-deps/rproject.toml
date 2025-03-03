@@ -6,5 +6,5 @@ repositories = [
 ]
 dependencies = [
 #    "R6",
-    { name = "dummy", path = "dummy-pkg/" }
+    { name = "dummy", path = "../../dummy-pkg/" }
 ]
