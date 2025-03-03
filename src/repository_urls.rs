@@ -174,6 +174,11 @@ impl<'a> RepoServer<'a> {
         self.get_source_path(&file_name)
     }
 
+    fn get_archive_tarball_path(&self, name: &str, version: &str) -> String {
+        let file_name = format!("Archive/{name}/{name}_{version}.tar.gz");
+        self.get_source_path(&file_name)
+    }
+
     fn get_tarball_urls(
         &self,
         name: &str,
@@ -181,10 +186,11 @@ impl<'a> RepoServer<'a> {
         path: Option<&str>,
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
-    ) -> (String, Option<String>) {
+    ) -> (String, Option<String>, String) {
         let source = self.get_source_tarball_path(name, version, path);
         let binary = self.get_binary_tarball_path(name, version, path, r_version, sysinfo);
-        (source, binary)
+        let archive = self.get_archive_tarball_path(name, version);
+        (source, binary, archive)
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {
@@ -305,7 +311,7 @@ pub fn get_tarball_urls(
     dep: &ResolvedDependency,
     r_version: &[u32; 2],
     sysinfo: &SystemInfo,
-) -> (String, Option<String>) {
+) -> (String, Option<String>, String) {
     let repo_server = RepoServer::from_url(dep.source.source_path());
     repo_server.get_tarball_urls(
         &dep.name,

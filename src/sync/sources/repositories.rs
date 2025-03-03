@@ -44,7 +44,7 @@ pub(crate) fn install_package(
                 pkg.version.original
             );
 
-            let (source_url, binary_url) =
+            let (source_url, binary_url, archive_url) =
                 get_tarball_urls(pkg, &cache.r_version, &cache.system_info);
             let http = Http {};
 
