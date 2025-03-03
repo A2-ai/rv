@@ -24,25 +24,28 @@ fs-err = "3"
 walkdir = "2"
 os_pipe = "1"
 tempfile = "3"
-git2 = "0.20.0"
+git2 = { version = "0.20", features = ["vendored-libgit2", "vendored-openssl"] }
 reflink-copy = "0.1"
 log = "0.4"
 filetime = "0.2.25"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"
-ureq = "2"
+ureq = "3"
 sha2 = "0.10"
+crossbeam = "0.8.4"
+# TODO: make it CLI only
+indicatif = "0.17.11"
+num_cpus = "1.16.0"
+zip = "2"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }
 rayon = { version = "1", optional = true }
 anyhow = { version = "1", optional = true }
 env_logger = { version = "0.11", optional = true }
-crossbeam = { version = "0.8", optional = true }
-num_cpus = { version = "1", optional = true }
-jiff = { version = "0.1", optional = true }
-indicatif = { version = "0.17", optional = true }
+jiff = { version = "0.2", optional = true }
+
 
 [features]
 cli = [
@@ -51,10 +54,7 @@ cli = [
     "dep:anyhow",
     "dep:clap-verbosity-flag",
     "dep:env_logger",
-    "dep:crossbeam",
-    "dep:num_cpus",
     "dep:jiff",
-    "dep:indicatif",
 ]
 
 [dev-dependencies]

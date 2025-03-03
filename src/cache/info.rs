@@ -1,11 +1,9 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use serde::Serialize;
-
-use crate::cli::CliContext;
 use crate::lockfile::Source;
-use crate::{hash_string, ResolvedDependency};
+use crate::{hash_string, Config, DiskCache, ResolvedDependency};
+use serde::Serialize;
 
 /// Both for git and remote urls
 #[derive(Debug, Serialize)]
@@ -56,10 +54,9 @@ pub struct CacheInfo {
 }
 
 impl CacheInfo {
-    pub fn new(context: &CliContext, resolved: Vec<ResolvedDependency>) -> Self {
-        let root = context.cache.root.clone();
-        let repositories = context
-            .config
+    pub fn new(config: &Config, cache: &DiskCache, resolved: Vec<ResolvedDependency>) -> Self {
+        let root = cache.root.clone();
+        let repositories = config
             .repositories()
             .iter()
             .map(|r| {
@@ -77,17 +74,19 @@ impl CacheInfo {
         let mut url_paths = Vec::new();
 
         for d in resolved {
+            if !d.source.is_git_or_url() {
+                continue;
+            }
+            let paths = cache.get_package_paths(&d.source, None, None);
             match d.source {
-                Source::Git { git, sha, .. } => {
-                    let paths = context.cache.get_git_package_paths(&git, &sha);
+                Source::Git { git, .. } => {
                     git_paths.push(CacheUrlInfo {
                         url: git,
                         source_path: paths.source,
                         binary_path: paths.binary,
                     });
                 }
-                Source::Url { url, sha, .. } => {
-                    let paths = context.cache.get_url_package_paths(&url, &sha);
+                Source::Url { url, .. } => {
                     url_paths.push(CacheUrlInfo {
                         url,
                         source_path: paths.source,

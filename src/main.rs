@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, migrate_renv, sync, CacheInfo, CliContext};
+use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver,
-    Version,
+    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
+    Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -105,13 +105,17 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result
         } else {
             "Synced dependencies"
         },
-        sync(
-            &context,
-            &resolved,
-            &context.library,
-            dry_run,
-            !has_logs_enabled
-        )
+        {
+            let mut handler =
+                SyncHandler::new(&context.library, &context.cache, &context.staging_path());
+            if dry_run {
+                handler.dry_run();
+            }
+            if !has_logs_enabled {
+                handler.show_progress_bar();
+            }
+            handler.handle(&resolved, &context.r_cmd)
+        }
     ) {
         Ok(changes) => {
             if changes.is_empty() {
@@ -147,7 +151,7 @@ fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool) -> Result
             if context.staging_path().is_dir() {
                 fs::remove_dir_all(context.staging_path())?;
             }
-            Err(e)
+            Err(e.into())
         }
     }
 }
@@ -204,7 +208,11 @@ fn try_main() -> Result<()> {
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
-            let info = CacheInfo::new(&context, resolve_dependencies(&context));
+            let info = CacheInfo::new(
+                &context.config,
+                &context.cache,
+                resolve_dependencies(&context),
+            );
             if json {
                 println!(
                     "{}",
