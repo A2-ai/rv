@@ -1,9 +1,6 @@
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use fs_err::{read_to_string, write, OpenOptions};
+use fs_err::{read_to_string, write};
 
 use crate::consts::{GLOBAL_ACTIVATE_FILE_CONTENT, PROJECT_ACTIVATE_FILE_CONTENT};
 
@@ -40,14 +37,8 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         return Ok(());
     }
 
-    let mut file = OpenOptions::new()
-        .append(true)
-        .open(&rprofile_path)
-        .map_err(|e| ActivateError {
-            source: ActivateErrorKind::Io(e),
-        })?;
-    println!("file created");
-    writeln!(file, "{}", activation_string()).map_err(|e| ActivateError {
+    let new_content = format!("{}\n{}", activation_string(), content);
+    write(rprofile_path, new_content).map_err(|e| ActivateError {
         source: ActivateErrorKind::Io(e),
     })?;
 
@@ -80,7 +71,9 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
 }
 
 fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
-    let dir = dir.as_ref();
+    let dir = dir.as_ref().canonicalize().map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(e),
+    })?;
 
     // Determine if the content of the activate file is for global or project specific activation
     let content = match etcetera::home_dir()
