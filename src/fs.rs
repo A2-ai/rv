@@ -109,18 +109,39 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
 
 /// Untars an archive in the given destination folder, returning a path to the first folder in what
 /// was extracted since R tarballs are (always?) a folder
+/// For windows binaries, they are in .zip archives and will be unzipped
 pub(crate) fn untar_archive<R: Read>(
-    reader: R,
+    mut reader: R,
     dest: impl AsRef<Path>,
 ) -> Result<Option<PathBuf>, std::io::Error> {
     let dest = dest.as_ref();
-    fs::create_dir_all(&dest)?;
+    fs::create_dir_all(dest)?;
 
-    let tar = GzDecoder::new(reader);
-    let mut archive = Archive::new(tar);
-    archive.unpack(&dest)?;
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer)?;
 
-    let dir: Option<PathBuf> = fs::read_dir(&dest)?
+    match buffer[..4] {
+        // zip
+        [0x50, 0x4b, 0x03, 0x04] => {
+            // zip lib requires Seek
+            let cursor = std::io::Cursor::new(buffer);
+            zip::read::ZipArchive::new(cursor)?.extract(dest)?;
+        }
+        // tar.gz, .tgz
+        [0x1F, 0x8B, ..] => {
+            let tar = GzDecoder::new(buffer.as_slice());
+            let mut archive = Archive::new(tar);
+            archive.unpack(dest)?;
+        }
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "not tar.gz or a .zip archive",
+            ))
+        }
+    }
+
+    let dir: Option<PathBuf> = fs::read_dir(dest)?
         .filter_map(|entry| {
             let entry = entry.ok()?;
             if entry.file_type().ok()?.is_dir() {
