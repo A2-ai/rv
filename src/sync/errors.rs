@@ -1,8 +1,9 @@
-use std::io;
-
 use crate::http::HttpError;
 use crate::r_cmd::InstallError;
 use crate::sync::LinkError;
+use std::fmt;
+use std::fmt::Formatter;
+use std::io;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
@@ -19,10 +20,12 @@ pub enum SyncErrorKind {
     Git(#[from] git2::Error),
     #[error("Failed to link files from cache: {0:?})")]
     LinkError(LinkError),
-    #[error("Failed to install package: {0:?})")]
+    #[error("Failed to install R package: {0:?})")]
     InstallError(InstallError),
     #[error("Failed to download package: {0:?})")]
     HttpError(HttpError),
+    #[error("{0}")]
+    SyncFailed(SyncErrors),
 }
 
 impl From<InstallError> for SyncError {
@@ -62,5 +65,22 @@ impl From<git2::Error> for SyncError {
         Self {
             source: SyncErrorKind::Git(error),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct SyncErrors {
+    pub(crate) errors: Vec<(String, SyncError)>,
+}
+
+impl fmt::Display for SyncErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Failed to install dependencies.")?;
+
+        for (dep, e) in &self.errors {
+            write!(f, "\n    Failed to install {dep}:\n        {e}")?;
+        }
+
+        Ok(())
     }
 }
