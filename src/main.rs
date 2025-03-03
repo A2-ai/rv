@@ -248,13 +248,6 @@ fn try_main() -> Result<()> {
                 println!("{}", context.config.r_version());
             }
         }
-        Command::Info { r_version } => {
-            let context = CliContext::new(&cli.config_file)?;
-
-            if r_version {
-                println!("{}", context.config.r_version());
-            }
-        }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
             let info = CacheInfo::new(
