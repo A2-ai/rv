@@ -11,12 +11,13 @@ use crate::fs::mtime_recursive;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
-use crate::sync::errors::SyncError;
+use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{sources, LinkMode};
 use crate::{BuildPlan, BuildStep, DiskCache, Git, Library, RCmd, ResolvedDependency};
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
+    project_dir: &'a Path,
     library: &'a Library,
     cache: &'a DiskCache,
     staging_path: PathBuf,
@@ -26,8 +27,14 @@ pub struct SyncHandler<'a> {
 }
 
 impl<'a> SyncHandler<'a> {
-    pub fn new(library: &'a Library, cache: &'a DiskCache, staging_path: impl AsRef<Path>) -> Self {
+    pub fn new(
+        project_dir: &'a Path,
+        library: &'a Library,
+        cache: &'a DiskCache,
+        staging_path: impl AsRef<Path>,
+    ) -> Self {
         Self {
+            project_dir,
             library,
             cache,
             staging_path: staging_path.as_ref().to_path_buf(),
@@ -81,7 +88,9 @@ impl<'a> SyncHandler<'a> {
             Source::Git { .. } => {
                 sources::git::install_package(dep, &self.staging_path, self.cache, r_cmd, &Git {})
             }
-            Source::Local { .. } => sources::local::install_package(dep, &self.staging_path, r_cmd),
+            Source::Local { .. } => {
+                sources::local::install_package(dep, &self.project_dir, &self.staging_path, r_cmd)
+            }
             Source::Url { .. } => {
                 sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
@@ -111,10 +120,15 @@ impl<'a> SyncHandler<'a> {
 
         // Check which package we already have installed at the right version and which ones
         // are not present in the resolved deps (eg installed some other way)
+        // We do not do this check for git or url packages since we might not have the version
+        // might be the same but the content changed (eg different git branch)
+        // This is only used for repo and local packages. There is a step just after to check mtime
+        // for local folder.
+        // TODO: we could create a file for git/url for sha like we do for local mtime?
         for (name, version) in &self.library.packages {
             if deps_to_install
                 .get(name.as_str())
-                .map(|v| *v == version)
+                .map(|(v, source)| !source.is_git_or_url() && *v == version)
                 .unwrap_or(false)
             {
                 deps_seen.insert(name.as_str());
@@ -290,12 +304,13 @@ impl<'a> SyncHandler<'a> {
                         } else {
                             self.install_package(dep, r_cmd)
                         };
+
                         match install_result {
                             Ok(_) => {
                                 let sync_change = SyncChange::installed(
                                     &dep.name,
                                     &dep.version.original,
-                                    dep.source.source_path(),
+                                    &dep.source.to_string(),
                                     dep.kind,
                                     start.elapsed(),
                                 );
@@ -353,15 +368,16 @@ impl<'a> SyncHandler<'a> {
 
         pb.finish_and_clear();
 
-        // TODO: how to handle multiple errors
-        // if has_errors.load(Ordering::Relaxed) {
-        //     let err = errors.lock().unwrap();
-        //     let mut message = String::from("Failed to install dependencies.");
-        //     for (dep, e) in &*err {
-        //         message += &format!("\n    Failed to install {}:\n        {e}", dep.name);
-        //     }
-        //     bail!(message);
-        // }
+        if has_errors.load(Ordering::Relaxed) {
+            let mut err = errors.lock().unwrap();
+            let errors = std::mem::take(&mut *err)
+                .into_iter()
+                .map(|(d, e)| (d.name.to_string(), e))
+                .collect();
+            return Err(SyncError {
+                source: SyncErrorKind::SyncFailed(SyncErrors { errors }),
+            });
+        }
 
         // If we are there, it means we are successful. Replace the project lib by the staging dir
         if self.library.path().is_dir() {

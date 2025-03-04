@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Result};
+
+use anyhow::{bail, Result};
 use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
@@ -37,11 +38,12 @@ pub enum Command {
         add: Vec<String>,
     },
     /// Returns the path for the library for the current project/system
+    /// The path is always in unix format
     Library,
     /// Dry run of what sync would do
     Plan {
         #[clap(short, long)]
-        upgrade: bool
+        upgrade: bool,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
@@ -96,6 +98,7 @@ enum SyncMode {
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     let resolver = Resolver::new(
+        &context.project_dir,
         &context.databases,
         &context.r_version,
         context.lockfile.as_ref(),
@@ -135,8 +138,12 @@ fn _sync(mut context: CliContext, dry_run: bool, has_logs_enabled: bool, sync_mo
             "Synced dependencies"
         },
         {
-            let mut handler =
-                SyncHandler::new(&context.library, &context.cache, &context.staging_path());
+            let mut handler = SyncHandler::new(
+                &context.project_dir,
+                &context.library,
+                &context.cache,
+                &context.staging_path(),
+            );
             if dry_run {
                 handler.dry_run();
             }
@@ -227,7 +234,13 @@ fn try_main() -> Result<()> {
         }
         Command::Library => {
             let context = CliContext::new(&cli.config_file)?;
-            println!("{}", context.library_path().display());
+            let path_str = context.library_path().to_string_lossy();
+            let path_out = if cfg!(windows) {
+                path_str.replace('\\', "/")
+            } else {
+              path_str.to_string()
+            };
+            println!("{path_out}");
         }
         Command::Plan { upgrade } => {
             let upgrade = if upgrade {
