@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use crate::lockfile::Source;
 use crate::{ResolvedDependency, Version};
 
 #[derive(Debug, PartialEq)]
@@ -75,10 +76,10 @@ impl<'a> BuildPlan<'a> {
         self.deps.len() - self.installed.len()
     }
 
-    pub fn all_dependencies(&self) -> HashMap<&str, &Version> {
+    pub fn all_dependencies(&self) -> HashMap<&str, (&Version, &Source)> {
         self.deps
             .iter()
-            .map(|r| (r.name.as_ref(), r.version.as_ref()))
+            .map(|r| (r.name.as_ref(), (r.version.as_ref(), &r.source)))
             .collect()
     }
 

@@ -120,10 +120,15 @@ impl<'a> SyncHandler<'a> {
 
         // Check which package we already have installed at the right version and which ones
         // are not present in the resolved deps (eg installed some other way)
+        // We do not do this check for git or url packages since we might not have the version
+        // might be the same but the content changed (eg different git branch)
+        // This is only used for repo and local packages. There is a step just after to check mtime
+        // for local folder.
+        // TODO: we could create a file for git/url for sha like we do for local mtime?
         for (name, version) in &self.library.packages {
             if deps_to_install
                 .get(name.as_str())
-                .map(|v| *v == version)
+                .map(|(v, source)| !source.is_git_or_url() && *v == version)
                 .unwrap_or(false)
             {
                 deps_seen.insert(name.as_str());
@@ -305,7 +310,7 @@ impl<'a> SyncHandler<'a> {
                                 let sync_change = SyncChange::installed(
                                     &dep.name,
                                     &dep.version.original,
-                                    dep.source.source_path(),
+                                    &dep.source.to_string(),
                                     dep.kind,
                                     start.elapsed(),
                                 );

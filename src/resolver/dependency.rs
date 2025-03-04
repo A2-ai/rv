@@ -12,7 +12,7 @@ use std::str::FromStr;
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
 /// will be borrowed
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
     pub(crate) version: Cow<'d, Version>,
@@ -224,11 +224,11 @@ impl<'d> ResolvedDependency<'d> {
     }
 }
 
-impl fmt::Display for ResolvedDependency<'_> {
+impl fmt::Debug for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} ({}, type={}, path='{}', from_lockfile={}, from_remote={})",
+            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={})",
             self.name,
             self.version.original,
             self.source,
