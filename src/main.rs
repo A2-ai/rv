@@ -50,10 +50,10 @@ pub enum Command {
         #[clap(value_parser)]
         packages: Vec<String>,
         #[clap(long)]
-        /// Dry run of what sync would do with the packages added. Does not make any file changes
+        /// Do not make any changes, only report what would happen if those packages were added         
         dry_run: bool,
         #[clap(long)]
-        /// Add packages to config file, but do not sync
+        /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
     },
     /// Gives information about where the cache is for that project
