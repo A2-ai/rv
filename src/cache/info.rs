@@ -108,15 +108,15 @@ impl CacheInfo {
 
 impl fmt::Display for CacheInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}\n", self.root.display())?;
+        writeln!(f, "{}", self.root.display())?;
         for r in &self.repositories {
-            write!(f, "{}\n", r)?;
+            writeln!(f, "{}", r)?;
         }
         for r in &self.git {
-            write!(f, "Git: {}\n", r)?;
+            writeln!(f, "Git: {}", r)?;
         }
         for r in &self.urls {
-            write!(f, "Url: {}\n", r)?;
+            writeln!(f, "Url: {}", r)?;
         }
 
         Ok(())

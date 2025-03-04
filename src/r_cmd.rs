@@ -209,7 +209,7 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(&self.r.as_ref().unwrap_or(&get_r_default_path()))
+        let output = Command::new(self.r.as_ref().unwrap_or(&get_r_default_path()))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {

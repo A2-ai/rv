@@ -39,7 +39,7 @@ pub(crate) fn install_package(
         )?;
     } else {
         log::debug!("Building the local package in {}", actual_path.display());
-        r_cmd.install(&actual_path, library_dir, &library_dir)?;
+        r_cmd.install(&actual_path, library_dir, library_dir)?;
     }
 
     // If it's a dir, save the dir mtime
