@@ -231,7 +231,6 @@ impl<'d> Resolver<'d> {
         git_ops: &'d impl GitOperations,
         cache: &'d DiskCache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        log::debug!("Cloning {repo_url} with ref {git_ref:?}");
         let clone_path = cache.get_git_clone_path(repo_url);
 
         match git_ops.clone_and_checkout(repo_url, git_ref.clone(), &clone_path) {
@@ -664,7 +663,7 @@ mod tests {
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();
             for d in resolution.found {
-                out.push_str(&d.to_string());
+                out.push_str(&format!("{d:?}"));
                 out.push_str("\n");
             }
 

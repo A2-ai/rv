@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
@@ -42,7 +42,7 @@ pub enum Command {
     /// Dry run of what sync would do
     Plan {
         #[clap(short, long)]
-        upgrade: bool
+        upgrade: bool,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
@@ -109,8 +109,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-
-fn _sync(config_file: &PathBuf, dry_run: bool, has_logs_enabled: bool, sync_mode: SyncMode) -> Result<()> {
+fn _sync(
+    config_file: &PathBuf,
+    dry_run: bool,
+    has_logs_enabled: bool,
+    sync_mode: SyncMode,
+) -> Result<()> {
     let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
     match sync_mode {
@@ -229,12 +233,20 @@ fn try_main() -> Result<()> {
             _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
-            _sync(&cli.config_file, false, cli.verbose.is_present(), SyncMode::Default)?;
+            _sync(
+                &cli.config_file,
+                false,
+                cli.verbose.is_present(),
+                SyncMode::Default,
+            )?;
         }
-        Command::Upgrade{
-            dry_run,
-        } => {
-            _sync(&cli.config_file, dry_run, cli.verbose.is_present(), SyncMode::FullUpgrade)?;
+        Command::Upgrade { dry_run } => {
+            _sync(
+                &cli.config_file,
+                dry_run,
+                cli.verbose.is_present(),
+                SyncMode::FullUpgrade,
+            )?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;

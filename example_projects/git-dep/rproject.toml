@@ -5,6 +5,5 @@ repositories = [
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
 ]
 dependencies = [
-    # This one has a git remote for a dep
-    { name = "gsm", git = "https://github.com/A2-ai/rv.git.pkgA/", tag ="v3.0", install_suggestions = true},
+    {name = "tomledit", git = "https://github.com/Keats/tomledit", branch = "readme"},
 ]
