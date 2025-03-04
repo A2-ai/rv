@@ -174,6 +174,7 @@ impl<'a> RepoServer<'a> {
         self.get_source_path(&file_name)
     }
 
+    // Archived packages under the format <base url>/src/contrib/Archive/<pkg name>/<pkg name>_<pkg version>.tar.gz
     fn get_archive_tarball_path(&self, name: &str, version: &str) -> String {
         let file_name = format!("Archive/{name}/{name}_{version}.tar.gz");
         self.get_source_path(&file_name)
