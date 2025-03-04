@@ -1,10 +1,10 @@
 use crate::VersionRequirement;
 use crate::{ConfigDependency, DiskCache, GitOperations, Lockfile, RepositoryDatabase, Version};
 
+use fs_err as fs;
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
-use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod dependency;
 
@@ -87,6 +87,8 @@ macro_rules! prepare_deps {
 
 #[derive(Debug, PartialEq)]
 pub struct Resolver<'d> {
+    /// We need that to resolve properly local deps relative to the project dir
+    project_dir: PathBuf,
     /// The repositories are stored in the order defined in the config
     /// The last should get priority over previous repositories
     /// (db, force_source)
@@ -99,11 +101,13 @@ pub struct Resolver<'d> {
 
 impl<'d> Resolver<'d> {
     pub fn new(
+        project_dir: impl AsRef<Path>,
         repositories: &'d [(RepositoryDatabase, bool)],
         r_version: &'d Version,
         lockfile: Option<&'d Lockfile>,
     ) -> Self {
         Self {
+            project_dir: project_dir.as_ref().into(),
             repositories,
             r_version,
             lockfile,
@@ -115,24 +119,22 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
+        let canon_path = match fs::canonicalize(&self.project_dir.join(local_path)) {
+            Ok(canon_path) => canon_path,
+            Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
+        };
 
-        let package = if local_path.is_file() {
-            // We have a file, it should be a tarball. TODO: Extract it to tmpdir for now
+        let package = if canon_path.is_file() {
+            // We have a file, it should be a tarball.
             // even though we might have to extract again in sync?
             // TODO: keep the sha of the tar in the lockfile?
             let tempdir = tempfile::tempdir()?;
-            let path = untar_archive(fs::read(local_path)?.as_slice(), tempdir.path())?;
-            parse_description_file_in_folder(path.unwrap_or_else(|| local_path.clone()))?
-        } else if local_path.is_dir() {
+            let path = untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path())?;
+            parse_description_file_in_folder(path.unwrap_or_else(|| canon_path.clone()))?
+        } else if canon_path.is_dir() {
             // we have a folder
-            parse_description_file_in_folder(local_path)?
-        } else {
-            return Err(format!(
-                "{} doesn't exist or is not a directory/tarball",
-                local_path.display()
-            )
-            .into());
-        };
+            parse_description_file_in_folder(&canon_path)?
+        } else {unreachable!()};
 
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
@@ -652,7 +654,8 @@ mod tests {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
             let (_cache_dir, cache) = setup_cache(&r_version);
-            let resolver = Resolver::new(&repositories, &r_version, Some(&lockfile));
+            let resolver =
+                Resolver::new(Path::new("."), &repositories, &r_version, Some(&lockfile));
             let resolution = resolver.resolve(
                 &config.dependencies(),
                 config.prefer_repositories_for(),
