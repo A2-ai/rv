@@ -6,8 +6,7 @@ use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
-    Resolver, SyncHandler, Version,
+    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -47,6 +46,12 @@ pub enum Command {
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Provide information about the project
+    Info {
+        #[clap(short, long)]
+        /// Display only the r version
+        r_version: bool,
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
@@ -247,6 +252,13 @@ fn try_main() -> Result<()> {
             dry_run,
         } => {
             _sync(&cli.config_file, dry_run, cli.verbose.is_present(), SyncMode::FullUpgrade)?;
+        }
+        Command::Info { r_version } => {
+            let context = CliContext::new(&cli.config_file)?;
+
+            if r_version {
+                println!("{}", context.config.r_version());
+            }
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;
