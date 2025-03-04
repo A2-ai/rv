@@ -218,7 +218,7 @@ fn try_main() -> Result<()> {
             let repositories = if no_repositories {
                 Vec::new()
             } else {
-                find_r_repositories()?
+                find_r_repositories().unwrap_or(Vec::new())
             };
             init(&project_directory, &r_version, &repositories, &add)?;
             activate(&project_directory)?;
