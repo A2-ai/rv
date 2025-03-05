@@ -30,7 +30,7 @@ impl CliContext {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
         let r_cmd = find_r_version_command(&r_version)
-            .ok_or(anyhow!("Could not find specified version ({r_version})"))?;
+            .ok_or(anyhow!("Could not find specified R version ({r_version})"))?;
 
         let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
             Ok(c) => c,
@@ -41,7 +41,15 @@ impl CliContext {
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
         let lockfile_path = project_dir.join(LOCKFILE_NAME);
         let lockfile = if lockfile_path.exists() {
-            Some(Lockfile::load(lockfile_path)?)
+            let lockfile = Lockfile::load(lockfile_path)?;
+            if !r_version.hazy_match(&lockfile.r_version()) {
+                log::debug!(
+                    "R version in config file and lockfile are not compatible. Ignoring lockfile."
+                );
+                None
+            } else {
+                Some(lockfile)
+            }
         } else {
             None
         };
