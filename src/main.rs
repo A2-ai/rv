@@ -2,12 +2,12 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use fs_err as fs;
+use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, deactivate, CacheInfo, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency,
-    Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
+    Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -47,6 +47,25 @@ pub enum Command {
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Add simple packages to the project and sync
+    Add {
+        #[clap(value_parser)]
+        packages: Vec<String>,
+        #[clap(long)]
+        /// Do not make any changes, only report what would happen if those packages were added         
+        dry_run: bool,
+        #[clap(long)]
+        /// Add packages to config file, but do not sync. No effect if --dry-run is used
+        no_sync: bool,
+    },
+    /// Provide information about the project
+    Info {
+        #[clap(short, long)]
+        json: bool,
+        #[clap(short, long)]
+        /// Display only the r version
+        r_version: bool,
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
@@ -112,12 +131,11 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
 }
 
 fn _sync(
-    config_file: &PathBuf,
+    mut context: CliContext,
     dry_run: bool,
     has_logs_enabled: bool,
     sync_mode: SyncMode,
 ) -> Result<()> {
-    let mut context = CliContext::new(config_file)?;
     context.load_databases_if_needed()?;
     match sync_mode {
         SyncMode::Default => (),
@@ -242,19 +260,46 @@ fn try_main() -> Result<()> {
             } else {
                 SyncMode::Default
             };
-            _sync(&cli.config_file, true, cli.verbose.is_present(), upgrade)?;
+            let context = CliContext::new(&cli.config_file)?;
+            _sync(context, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
+            let context = CliContext::new(&cli.config_file)?;
+            _sync(context, false, cli.verbose.is_present(), SyncMode::Default)?;
+        }
+        Command::Add {
+            packages,
+            dry_run,
+            no_sync,
+        } => {
+            // load config to verify structure is valid
+            let mut doc = read_and_verify_config(&cli.config_file)?;
+            add_packages(&mut doc, packages)?;
+            // write the update if not dry run
+            if !dry_run {
+                write(&cli.config_file, doc.to_string())?;
+            }
+            // if no sync, exit early
+            if no_sync {
+                println!("Packages successfully added");
+                return Ok(());
+            }
+            let mut context = CliContext::new(&cli.config_file)?;
+            // if dry run, the config won't have been editied to reflect the added changes so must be added
+            if dry_run {
+                context.config = doc.to_string().parse::<Config>()?;
+            }
             _sync(
-                &cli.config_file,
-                false,
+                context,
+                dry_run,
                 cli.verbose.is_present(),
                 SyncMode::Default,
             )?;
         }
         Command::Upgrade { dry_run } => {
+            let context = CliContext::new(&cli.config_file)?;
             _sync(
-                &cli.config_file,
+                context,
                 dry_run,
                 cli.verbose.is_present(),
                 SyncMode::FullUpgrade,
@@ -295,6 +340,39 @@ fn try_main() -> Result<()> {
                 );
                 for u in &unresolved {
                     eprintln!("    {u}");
+                }
+            }
+        }
+        Command::Info { json, r_version } => {
+            let mut context = CliContext::new(&cli.config_file)?;
+            context.load_databases()?;
+            let resolved = resolve_dependencies(&context);
+            let info = ProjectInfo::new(
+                &context.library,
+                &resolved,
+                &context.config.repositories(),
+                &context.databases,
+                &context.r_version,
+                &context.cache,
+                context.lockfile.as_ref(),
+            );
+            if json {
+                if r_version {
+                    println!(
+                        "{}",
+                        serde_json::json!({"r_version": context.config.r_version().original})
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&info).expect("valid json")
+                    );
+                }
+            } else {
+                if r_version {
+                    println!("{}", context.config.r_version().original);
+                } else {
+                    println!("{info}");
                 }
             }
         }
