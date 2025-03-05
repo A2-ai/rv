@@ -10,7 +10,7 @@ use crate::package::PackageType;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
 use crate::{
-    is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency, TarballURLs,
+    is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls
 };
 
 pub(crate) fn install_package(
@@ -43,7 +43,7 @@ pub(crate) fn install_package(
                 pkg.version.original
             );
 
-            let tarball_url = TarballURLs::new(pkg, &cache.r_version, &cache.system_info);
+            let tarball_url = get_tarball_urls(pkg, &cache.r_version, &cache.system_info);
             let http = Http {};
 
             let download_and_install_source_or_archive = || -> Result<(), SyncError> {

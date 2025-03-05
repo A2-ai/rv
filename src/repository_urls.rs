@@ -187,11 +187,11 @@ impl<'a> RepoServer<'a> {
         path: Option<&str>,
         r_version: &[u32; 2],
         sysinfo: &SystemInfo,
-    ) -> TarballURLs {
+    ) -> TarballUrls {
         let source = self.get_source_tarball_path(name, version, path);
         let binary = self.get_binary_tarball_path(name, version, path, r_version, sysinfo);
         let archive = self.get_archive_tarball_path(name, version);
-        TarballURLs { source, binary, archive, }
+        TarballUrls { source, binary, archive, }
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {
@@ -308,21 +308,19 @@ impl<'a> RepoServer<'a> {
     }
 }
 
-pub struct TarballURLs {
+pub struct TarballUrls {
     pub source: String,
     pub binary: Option<String>,
     pub archive: String,
 }
 
-impl TarballURLs {
-    pub fn new(dep: &ResolvedDependency, r_version: &[u32; 2], sysinfo: &SystemInfo) -> Self {
-        let repo_server = RepoServer::from_url(dep.source.source_path());
-        repo_server.get_tarball_urls(&dep.name, &dep.version.original,
-            dep.path.as_deref(),
-            r_version,
-            sysinfo,
-        )
-    }
+pub fn get_tarball_urls(dep: &ResolvedDependency, r_version: &[u32; 2], sysinfo: &SystemInfo) -> TarballUrls {
+    let repo_server = RepoServer::from_url(dep.source.source_path());
+    repo_server.get_tarball_urls(&dep.name, &dep.version.original,
+        dep.path.as_deref(),
+        r_version,
+        sysinfo,
+    )
 }
 
 /// Gets the source/binary url for the given filename, usually PACKAGES
