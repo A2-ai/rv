@@ -232,7 +232,7 @@ fn try_main() -> Result<()> {
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
             } else {
-              path_str.to_string()
+                path_str.to_string()
             };
             println!("{path_out}");
         }
