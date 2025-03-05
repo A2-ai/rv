@@ -67,7 +67,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
     let mut found_r_vers = Vec::new();
     // Give preference to the R version on the path
     if let Ok(path_r) = (&RCommandLine { r: None }).version() {
-        if does_r_cmd_version_match_version(&path_r, r_version) {
+        if r_version.hazy_match(&path_r) {
             log::debug!("R {r_version} found on the path");
             return Ok(RCommandLine { r: None });
         }
@@ -81,7 +81,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
         })
             .version()
         {
-            if does_r_cmd_version_match_version(&rig_r, r_version) {
+            if r_version.hazy_match(&rig_r) {
                 log::debug!("R {r_version} found on the path from `rig`");
                 return Ok(RCommandLine {
                     r: Some(PathBuf::from("R.bat")),
@@ -129,7 +129,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
         })
         .version()
         {
-            if does_r_cmd_version_match_version(&ver, &r_version) {
+            if r_version.hazy_match(&ver) {
                 log::debug!(" R {r_version} found at {}", path.display());
                 return Ok(RCommandLine { r: Some(path) });
             }
@@ -155,12 +155,6 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
             ),
         });
     }
-}
-
-// See if the found R binary version matches the specified version.
-// Hazy matches version based on number of specified elements
-fn does_r_cmd_version_match_version(r_cmd_version: &Version, version: &Version) -> bool {
-    version.hazy_match(r_cmd_version)
 }
 
 impl RCmd for RCommandLine {
