@@ -1,8 +1,10 @@
+use serde_json::Value;
+
 use crate::cache::InstallationStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
-use crate::{Version, VersionRequirement};
+use crate::{Http, HttpDownload, Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -88,12 +90,21 @@ impl<'d> ResolvedDependency<'d> {
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
 
+        let source = if repo_url.contains("r-universe.dev") {
+            if let Ok((git, sha)) = query_r_universe(package, repo_url) {
+                Source::Git { git, sha, directory: None, tag: None, branch: None }
+            } else {
+                log::warn!("Git information for {} from r-universe could not be determined. Falling back as standard repository", package.name);
+                Source::Repository { repository: repo_url.to_string() }
+            }
+        } else {
+            Source::Repository { repository: repo_url.to_string() }
+        };
+
         let res = Self {
             name: Cow::Borrowed(&package.name),
             version: Cow::Borrowed(&package.version),
-            source: Source::Repository {
-                repository: repo_url.to_string(),
-            },
+            source,
             dependencies: deps
                 .direct
                 .iter()
@@ -309,4 +320,32 @@ impl fmt::Display for UnresolvedDependency<'_> {
             }
         )
     }
+}
+
+fn query_r_universe(package: &Package, repo_url: &str) -> Result<(String, String), ()> {
+    if !repo_url.contains("r-universe.dev") {
+        return Err(())
+    }
+    let http = Http {};
+    let api_url = format!("{}/api/packages/{}", repo_url, package.name);
+    let mut writer = Vec::new();
+    match http.download(&api_url, &mut writer, Vec::new()) {
+        Ok(bytes_read) if bytes_read != 0 => (),
+        _ => return Err(()),
+    }
+
+    let content = unsafe { std::str::from_utf8_unchecked(&writer) };
+    let v: Value = serde_json::from_str(content).map_err(|_| ())?;
+    let git = v
+        .get("RemoteUrl")
+        .and_then(|val| val.as_str())
+        .ok_or(())?
+        .to_string();
+    let sha = v
+        .get("RemoteSha")
+        .and_then(|val| val.as_str())
+        .ok_or(())?
+        .to_string();
+
+    Ok((git, sha))
 }
