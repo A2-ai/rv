@@ -191,7 +191,11 @@ impl<'a> RepoServer<'a> {
         let source = self.get_source_tarball_path(name, version, path);
         let binary = self.get_binary_tarball_path(name, version, path, r_version, sysinfo);
         let archive = self.get_archive_tarball_path(name, version);
-        TarballUrls { source, binary, archive, }
+        TarballUrls {
+            source,
+            binary,
+            archive,
+        }
     }
 
     fn get_windows_url(&self, file_name: &str, r_version: &[u32; 2]) -> String {
@@ -314,9 +318,15 @@ pub struct TarballUrls {
     pub archive: String,
 }
 
-pub fn get_tarball_urls(dep: &ResolvedDependency, r_version: &[u32; 2], sysinfo: &SystemInfo) -> TarballUrls {
+pub fn get_tarball_urls(
+    dep: &ResolvedDependency,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> TarballUrls {
     let repo_server = RepoServer::from_url(dep.source.source_path());
-    repo_server.get_tarball_urls(&dep.name, &dep.version.original,
+    repo_server.get_tarball_urls(
+        &dep.name,
+        &dep.version.original,
         dep.path.as_deref(),
         r_version,
         sysinfo,

@@ -29,8 +29,7 @@ impl CliContext {
     pub fn new(config_file: &PathBuf) -> Result<Self> {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
-        let r_cmd = find_r_version_command(&r_version)
-            .ok_or(anyhow!("Could not find specified R version ({r_version})"))?;
+        let r_cmd = find_r_version_command(&r_version)?;
 
         let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
             Ok(c) => c,

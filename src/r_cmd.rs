@@ -63,58 +63,73 @@ pub struct RCommandLine {
     pub r: Option<PathBuf>,
 }
 
-pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
-    // Give preference to the R version on the $PATH
-    if does_r_cmd_match_version(&RCommandLine { r: None }, r_version) {
-        log::debug!("R {r_version} found on the path");
-        return Some(RCommandLine { r: None });
+pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
+    let mut found_r_vers = Vec::new();
+    // Give preference to the R version on the path
+    if let Ok(path_r) = (&RCommandLine { r: None }).version() {
+        if r_version.hazy_match(&path_r) {
+            log::debug!("R {r_version} found on the path");
+            return Ok(RCommandLine { r: None });
+        }
+        found_r_vers.push(path_r.original);
     }
 
     // For windows, R installed/managed by rig is has the extension .bat
-    if cfg!(windows)
-        && does_r_cmd_match_version(
-            &RCommandLine {
-                r: Some(PathBuf::from("R.bat")),
-            },
-            r_version,
-        )
-    {
-        log::debug!("R {r_version} found on the path from `rig`");
-        return Some(RCommandLine {
+    if cfg!(windows) {
+        if let Ok(rig_r) = (&RCommandLine {
             r: Some(PathBuf::from("R.bat")),
-        });
+        })
+            .version()
+        {
+            if r_version.hazy_match(&rig_r) {
+                log::debug!("R {r_version} found on the path from `rig`");
+                return Ok(RCommandLine {
+                    r: Some(PathBuf::from("R.bat")),
+                });
+            }
+            found_r_vers.push(rig_r.original);
+        }
     }
 
     let opt_r = PathBuf::from("/opt/R");
-    if !opt_r.is_dir() {
-        return None;
+    if opt_r.is_dir() {
+        // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
+        // returns an RCommandLine struct with the path to the executable if found
+        for path in fs::read_dir(opt_r)
+            .map_err(|e| VersionError {
+                source: VersionErrorKind::Io(e),
+            })?
+            .filter_map(Result::ok)
+            .map(|p| p.path().join("bin/R"))
+            .filter(|p| p.exists())
+        {
+            if let Ok(ver) = (RCommandLine {
+                r: Some(path.clone()),
+            })
+            .version()
+            {
+                if r_version.hazy_match(&ver) {
+                    log::debug!(" R {r_version} found at {}", path.display());
+                    return Ok(RCommandLine { r: Some(path) });
+                }
+                found_r_vers.push(ver.original);
+            }
+        }
     }
 
-    // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
-    // returns an RCommandLine struct with the path to the executable if found
-    let r_cmd = fs::read_dir(opt_r)
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|p| p.path().join("bin/R"))
-        .filter(|p| p.exists())
-        .map(|r| RCommandLine { r: Some(r) })
-        .find(|r_cmd| does_r_cmd_match_version(r_cmd, r_version))?;
-
-    log::debug!(
-        "R {r_version} found at {}",
-        r_cmd.r.as_ref().unwrap().display()
-    ); // can unwrap because `r` is only `None` when it is found on the PATH, which is checked and returned at the start of the function
-    Some(r_cmd)
-}
-
-// See if the found R binary matches the specified version.
-// If version cannot be determined, return false
-// Hazy matches version based on number of specified elements
-fn does_r_cmd_match_version(r_cmd: &RCommandLine, version: &Version) -> bool {
-    if let Ok(v) = r_cmd.version() {
-        version.hazy_match(&v)
+    if found_r_vers.is_empty() {
+        return Err(VersionError {
+            source: VersionErrorKind::NoR,
+        });
     } else {
-        false
+        found_r_vers.sort();
+        found_r_vers.dedup();
+        return Err(VersionError {
+            source: VersionErrorKind::NotCompatible(
+                r_version.original.to_string(),
+                found_r_vers.join(", "),
+            ),
+        });
     }
 }
 
@@ -301,6 +316,12 @@ pub enum VersionErrorKind {
     Utf8(#[from] std::str::Utf8Error),
     #[error("Version not found in R --version output")]
     NotFound,
+    #[error("R not found on system")]
+    NoR,
+    #[error(
+        "Specified R version ({0}) does not match any available versions found on the system ({1})"
+    )]
+    NotCompatible(String, String),
 }
 
 #[allow(unused_imports, unused_variables)]
