@@ -105,7 +105,9 @@ impl Package {
         let suggests = if install_suggestions {
             self.suggests
                 .iter()
-                .filter(|p| !BASE_PACKAGES.contains(&p.name()) && !RECOMMENDED_PACKAGES.contains(&p.name()))
+                .filter(|p| {
+                    !BASE_PACKAGES.contains(&p.name()) && !RECOMMENDED_PACKAGES.contains(&p.name())
+                })
                 .collect()
         } else {
             Vec::new()
@@ -114,7 +116,9 @@ impl Package {
         InstallationDependencies {
             direct: out
                 .into_iter()
-                .filter(|p| !BASE_PACKAGES.contains(&p.name()) && !RECOMMENDED_PACKAGES.contains(&p.name()))
+                .filter(|p| {
+                    !BASE_PACKAGES.contains(&p.name()) && !RECOMMENDED_PACKAGES.contains(&p.name())
+                })
                 .collect(),
             suggests,
         }
