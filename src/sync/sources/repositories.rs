@@ -10,7 +10,7 @@ use crate::package::PackageType;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
 use crate::{
-    get_tarball_urls, is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency,
+    is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls
 };
 
 pub(crate) fn install_package(
@@ -21,13 +21,12 @@ pub(crate) fn install_package(
 ) -> Result<(), SyncError> {
     let pkg_paths =
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
-
-    let compile_package = || {
-        let source_path = pkg_paths.source.join(pkg.name.as_ref());
-        log::debug!("Compiling package from {}", source_path.display());
-        r_cmd.install(&source_path, library_dir, &pkg_paths.binary)
-    };
-
+        let compile_package = || {
+            let source_path = pkg_paths.source.join(pkg.name.as_ref());
+            log::debug!("Compiling package from {}", source_path.display());
+            r_cmd.install(&source_path, library_dir, &pkg_paths.binary)
+        };
+    
     match pkg.installation_status {
         InstallationStatus::Source => {
             log::debug!(
@@ -44,30 +43,33 @@ pub(crate) fn install_package(
                 pkg.version.original
             );
 
-            let (source_url, binary_url) =
-                get_tarball_urls(pkg, &cache.r_version, &cache.system_info);
+            let tarball_url = get_tarball_urls(pkg, &cache.r_version, &cache.system_info);
             let http = Http {};
 
-            let download_and_install_source = || -> Result<(), SyncError> {
+            let download_and_install_source_or_archive = || -> Result<(), SyncError> {
                 log::debug!(
                     "Downloading package {} ({}) as source tarball",
                     pkg.name,
                     pkg.version.original
                 );
-                http.download_and_untar(&source_url, &pkg_paths.source, false)?;
+                if let Err(e) = http.download_and_untar(&tarball_url.source, &pkg_paths.source, false) {
+                    log::warn!("Failed to download/untar source package from {}: {e:?}, falling back to {}", tarball_url.source, tarball_url.archive);
+                    log::debug!("Downloading package {} ({}) from archive", pkg.name, pkg.version.original);
+                    http.download_and_untar(&tarball_url.archive, &pkg_paths.source, false)?;
+                }
                 compile_package()?;
                 Ok(())
             };
 
-            if pkg.kind == PackageType::Source || binary_url.is_none() {
-                download_and_install_source()?;
+            if pkg.kind == PackageType::Source || tarball_url.binary.is_none() {
+                download_and_install_source_or_archive()?;
             } else {
                 // If we get an error doing the binary download, fall back to source
                 if let Err(e) =
-                    http.download_and_untar(&binary_url.clone().unwrap(), &pkg_paths.binary, false)
+                    http.download_and_untar(&tarball_url.binary.clone().unwrap(), &pkg_paths.binary, false)
                 {
-                    log::warn!("Failed to download/untar binary package from {}: {e:?}, falling back to {source_url}", binary_url.clone().unwrap());
-                    download_and_install_source()?;
+                    log::warn!("Failed to download/untar binary package from {}: {e:?}, falling back to {}", tarball_url.binary.clone().unwrap(), tarball_url.source);
+                    download_and_install_source_or_archive()?;
                 } else {
                     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
                     // source files. We have to check first whether what we have is actually binary content.
@@ -90,7 +92,6 @@ pub(crate) fn install_package(
         }
         _ => {}
     }
-
     // And then we always link the binary folder into the staging library
     LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dir)?;
 
