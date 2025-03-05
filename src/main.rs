@@ -240,7 +240,7 @@ fn try_main() -> Result<()> {
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
             } else {
-              path_str.to_string()
+                path_str.to_string()
             };
             println!("{path_out}");
         }
@@ -320,12 +320,23 @@ fn try_main() -> Result<()> {
                 context.lockfile.as_ref(),
             );
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&info).expect("valid json")
-                );
+                if r_version {
+                    println!(
+                        "{}",
+                        serde_json::json!({"r_version": context.config.r_version().original})
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&info).expect("valid json")
+                    );
+                }
             } else {
-                println!("{info}");
+                if r_version {
+                    println!("{}", context.config.r_version().original);
+                } else {
+                    println!("{info}");
+                }
             }
         }
         Command::Activate => {

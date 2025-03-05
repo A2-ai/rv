@@ -95,7 +95,7 @@ fn clone_repository(
     // If the destination exists, open the repo and fetch instead but only if we can't find the ref
     let repo = if destination.exists() {
         log::debug!("Repo {url} found in cache.");
-        
+
         Repository::open(destination)?
     } else {
         log::debug!("Repo {url} not found in cache. Cloning.");
