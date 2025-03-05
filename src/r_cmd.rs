@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::error::Error;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -63,44 +65,45 @@ pub struct RCommandLine {
     pub r: Option<PathBuf>,
 }
 
-pub fn find_r_version_command(r_version: &Version) -> Option<RCommandLine> {
+pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Box<dyn Error>> {
+    let found_r_vers = Vec::new();
     // Give preference to the R version on the $PATH
-    if does_r_cmd_match_version(&RCommandLine { r: None }, r_version) {
-        log::debug!("R {r_version} found on the path");
-        return Some(RCommandLine { r: None });
+    if let Ok(path_r) = (&RCommandLine {r: None}).version() {
+        if does_r_cmd_version_match_version(&path_r, r_version) {
+            log::debug!("R {r_version} found on the path");
+            return Ok(RCommandLine { r: None });
+        }
+        found_r_vers.push(&path_r);
     }
 
     let opt_r = PathBuf::from("/opt/R");
     if !opt_r.is_dir() {
-        return None;
+        return Err("R could not be found on the system".into());
     }
 
     // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
     // returns an RCommandLine struct with the path to the executable if found
-    let r_cmd = fs::read_dir(opt_r)
-        .ok()?
+    for path in fs::read_dir(opt_r)?
         .filter_map(Result::ok)
         .map(|p| p.path().join("bin/R"))
-        .filter(|p| p.exists())
-        .map(|r| RCommandLine { r: Some(r) })
-        .find(|r_cmd| does_r_cmd_match_version(r_cmd, r_version))?;
+        .filter(|p| p.exists()) {
+            if let Ok(ver) = (RCommandLine { r: Some(path) }).version() {
+                if does_r_cmd_version_match_version(&ver, &r_version) {
+                    log::debug!(" R {r_version} found at {}", &path.display());
+                    return Ok(RCommandLine { r: Some(path) })
+                }
+                found_r_vers.push(&ver);
+            }
+    }
 
-    log::debug!(
-        "R {r_version} found at {}",
-        r_cmd.r.as_ref().unwrap().display()
-    ); // can unwrap because `r` is only `None` when it is found on the PATH, which is checked and returned at the start of the function
-    Some(r_cmd)
+    Err(format!("Specified R version ({r_version}) do not match any versions found on system ({})", found_r_vers.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(", ")).into())
 }
 
 // See if the found R binary matches the specified version.
 // If version cannot be determined, return false
 // Hazy matches version based on number of specified elements
-fn does_r_cmd_match_version(r_cmd: &RCommandLine, version: &Version) -> bool {
-    if let Ok(v) = r_cmd.version() {
-        version.hazy_match(&v)
-    } else {
-        false
-    }
+fn does_r_cmd_version_match_version(r_cmd_version: &Version, version: &Version) -> bool {
+    r_cmd_version.hazy_match(version)
 }
 
 impl RCmd for RCommandLine {
