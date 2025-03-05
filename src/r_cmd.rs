@@ -76,16 +76,12 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
 
     // For windows, R installed/managed by rig is has the extension .bat
     if cfg!(windows) {
-        if does_r_cmd_match_version(
-            &RCommandLine {
-                r: Some(PathBuf::from("R.bat")),
-            },
-            r_version,
-        ) {
-            log::debug!("R {r_version} found on the path from `rig`");
-            return Some(RCommandLine {
-                r: Some(PathBuf::from("R.bat")),
-            });
+        if let Ok(rig_r) = (&RCommandLine { r: Some(PathBuf::from("R.bat")) }).version() {
+            if does_r_cmd_version_match_version(&rig_r, r_version) {
+                log::debug!("R {r_version} found on the path from `rig`");
+                return Ok(RCommandLine { r: Some(PathBuf::from("R.bat")) });
+            }
+            found_r_vers.push(rig_r);
         }
     }
 
