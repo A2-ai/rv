@@ -497,7 +497,6 @@ impl<'d> Resolver<'d> {
                 }
             }
         }
-
         result
     }
 }
