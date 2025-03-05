@@ -138,6 +138,16 @@ impl<'d> Resolver<'d> {
             unreachable!()
         };
 
+        if item.name != package.name {
+            return Err(format!(
+                "Found package `{}` from {} but it is called `{}` in the rproject.toml",
+                package.name,
+                local_path.display(),
+                item.name
+            )
+            .into());
+        }
+
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
             Source::Local {
@@ -164,6 +174,7 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
+            println!("Getting there");
             let installation_status =
                 cache.get_installation_status(&item.name, &package.version, &package.source);
             let resolved_dep =
@@ -246,6 +257,14 @@ impl<'d> Resolver<'d> {
                 };
                 let package = parse_description_file_in_folder(&package_path)?;
 
+                if item.name != package.name {
+                    return Err(format!(
+                        "Found package `{}` from {repo_url} but it is called `{}` in the rproject.toml",
+                        package.name, item.name
+                    )
+                    .into());
+                }
+
                 let source = if let Some(dep) = item.dep {
                     dep.as_git_source_with_sha(sha)
                 } else {
@@ -286,6 +305,13 @@ impl<'d> Resolver<'d> {
 
         let install_path = dir.unwrap_or_else(|| out_path.clone());
         let package = parse_description_file_in_folder(&install_path)?;
+        if item.name != package.name {
+            return Err(format!(
+                "Found package `{}` from {url} but it is called `{}` in the rproject.toml",
+                package.name, item.name
+            )
+            .into());
+        }
         let is_binary = is_binary_package(&install_path, &package.name);
         let (resolved_dep, deps) = ResolvedDependency::from_url_package(
             &package,

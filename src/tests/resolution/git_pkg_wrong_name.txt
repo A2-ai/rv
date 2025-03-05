@@ -1,0 +1,12 @@
+[project]
+name = "remote"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+]
+dependencies = [
+    { name = "wrong", git = "https://github.com/Gilead-BioStats/gsm", tag ="v2.2.2", install_suggestions = true},
+]
+---
+repos = [{name = "posit", source = "posit-src", force_source = false}]
+---
