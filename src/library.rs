@@ -100,4 +100,16 @@ impl Library {
             }
         }
     }
+
+    pub fn contains_package(&self, pkg_name: &str, version: Option<&Version>) -> bool {
+        if let Some(version) = version {
+            if let Some(v) = self.packages.get(pkg_name) {
+                return v == version;
+            }
+        } else {
+            return self.packages.contains_key(pkg_name);
+        }
+
+        false
+    }
 }

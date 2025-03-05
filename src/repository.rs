@@ -112,6 +112,17 @@ impl RepositoryDatabase {
 
         find_package(&self.source_packages).map(|p| (p, PackageType::Source))
     }
+
+    pub(crate) fn get_binary_count(&self, r_version: &[u32; 2]) -> usize {
+        self.binary_packages
+            .get(r_version)
+            .map(|db| db.len())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn get_source_count(&self) -> usize {
+        self.source_packages.len()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
