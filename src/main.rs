@@ -1,14 +1,13 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-
 use anyhow::{bail, Result};
 use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine,
-    ResolvedDependency, Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
+    Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -58,14 +57,14 @@ pub enum Command {
         #[clap(long)]
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
-    }
+    },
     /// Provide information about the project
     Info {
         #[clap(short, long)]
         json: bool,
         #[clap(short, long)]
         /// Display only the r version
-        r_version: bool
+        r_version: bool,
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -131,8 +130,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     resolution.found
 }
 
-
-fn _sync(mut context: CliContext, dry_run: bool, has_logs_enabled: bool, sync_mode: SyncMode) -> Result<()> {
+fn _sync(
+    mut context: CliContext,
+    dry_run: bool,
+    has_logs_enabled: bool,
+    sync_mode: SyncMode,
+) -> Result<()> {
     context.load_databases_if_needed()?;
     match sync_mode {
         SyncMode::Default => (),
@@ -258,7 +261,7 @@ fn try_main() -> Result<()> {
                 SyncMode::Default
             };
             let context = CliContext::new(&cli.config_file)?;
-            _sync(context,true, cli.verbose.is_present(), upgrade)?;
+            _sync(context, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
             let context = CliContext::new(&cli.config_file)?;
@@ -286,13 +289,21 @@ fn try_main() -> Result<()> {
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
             }
-            _sync(context, dry_run, cli.verbose.is_present(), SyncMode::Default)?;
+            _sync(
+                context,
+                dry_run,
+                cli.verbose.is_present(),
+                SyncMode::Default,
+            )?;
         }
-        Command::Upgrade{
-            dry_run,
-        } => {
+        Command::Upgrade { dry_run } => {
             let context = CliContext::new(&cli.config_file)?;
-            _sync(context, dry_run, cli.verbose.is_present(), SyncMode::FullUpgrade)?;
+            _sync(
+                context,
+                dry_run,
+                cli.verbose.is_present(),
+                SyncMode::FullUpgrade,
+            )?;
         }
         Command::Cache { json } => {
             let context = CliContext::new(&cli.config_file)?;

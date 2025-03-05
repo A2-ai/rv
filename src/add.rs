@@ -23,12 +23,10 @@ pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Resu
     // collect the names of all of the dependencies
     let config_dep_names = config_deps
         .iter()
-        .filter_map(|v| {
-            match v {
-                Value::String(s) => Some(s.value().as_str()),
-                Value::InlineTable(t) => t.get("name").and_then(|v| v.as_str()),
-                _ => None,
-            }
+        .filter_map(|v| match v {
+            Value::String(s) => Some(s.value().as_str()),
+            Value::InlineTable(t) => t.get("name").and_then(|v| v.as_str()),
+            _ => None,
         })
         .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
         .collect::<Vec<_>>();
