@@ -119,7 +119,7 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
-        let canon_path = match fs::canonicalize(&self.project_dir.join(local_path)) {
+        let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
             Ok(canon_path) => canon_path,
             Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
         };

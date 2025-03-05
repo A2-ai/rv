@@ -89,7 +89,7 @@ impl<'a> SyncHandler<'a> {
                 sources::git::install_package(dep, &self.staging_path, self.cache, r_cmd, &Git {})
             }
             Source::Local { .. } => {
-                sources::local::install_package(dep, &self.project_dir, &self.staging_path, r_cmd)
+                sources::local::install_package(dep, self.project_dir, &self.staging_path, r_cmd)
             }
             Source::Url { .. } => {
                 sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
