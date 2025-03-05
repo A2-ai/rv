@@ -1,6 +1,5 @@
 use crate::consts::PACKAGE_FILENAME;
 use crate::{OsType, ResolvedDependency, SystemInfo};
-use clap_verbosity_flag::TraceLevel;
 use regex::Regex;
 use std::sync::LazyLock;
 
