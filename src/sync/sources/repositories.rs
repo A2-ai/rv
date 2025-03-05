@@ -53,7 +53,8 @@ pub(crate) fn install_package(
                     pkg.version.original
                 );
                 if let Err(e) = http.download_and_untar(&tarball_url.source, &pkg_paths.source, false) {
-                    log::debug!("Failed to download/untar source package from {}: {e:?}, falling back to {}", tarball_url.source, tarball_url.archive);
+                    log::warn!("Failed to download/untar source package from {}: {e:?}, falling back to {}", tarball_url.source, tarball_url.archive);
+                    log::debug!("Downloading package {} ({}) from archive", pkg.name, pkg.version.original);
                     http.download_and_untar(&tarball_url.archive, &pkg_paths.source, false)?;
                 }
                 compile_package()?;
