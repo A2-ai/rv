@@ -90,16 +90,16 @@ impl<'d> ResolvedDependency<'d> {
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
 
-        let source = if repo_url.contains("r-universe.dev") {
+        let mut source= Source::Repository { repository: repo_url.to_string() };
+        // If repository is r-universe, treat as a git repo since r-universe does not have archive
+        // TODO: support as repository until version does not match
+        if repo_url.contains("r-universe.dev") {
             if let Ok((git, sha)) = query_r_universe(package, repo_url) {
-                Source::Git { git, sha, directory: None, tag: None, branch: None }
+                source = Source::Git { git, sha, directory: None, tag: None, branch: None };
             } else {
                 log::warn!("Git information for {} from r-universe could not be determined. Falling back as standard repository", package.name);
-                Source::Repository { repository: repo_url.to_string() }
             }
-        } else {
-            Source::Repository { repository: repo_url.to_string() }
-        };
+        }
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
