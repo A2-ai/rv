@@ -1,0 +1,6 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+--- unresolved --- 
+wrong [listed in rproject.toml]: "Found package `dummy` from dummy-pkg but it is called `wrong` in the rproject.toml"
