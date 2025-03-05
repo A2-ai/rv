@@ -134,7 +134,9 @@ impl<'d> Resolver<'d> {
         } else if canon_path.is_dir() {
             // we have a folder
             parse_description_file_in_folder(&canon_path)?
-        } else {unreachable!()};
+        } else {
+            unreachable!()
+        };
 
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
