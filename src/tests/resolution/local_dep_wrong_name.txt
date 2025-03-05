@@ -1,0 +1,9 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "wrong", path = "dummy-pkg" }
+]
+---
+---

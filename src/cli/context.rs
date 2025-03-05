@@ -40,7 +40,15 @@ impl CliContext {
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
         let lockfile_path = project_dir.join(LOCKFILE_NAME);
         let lockfile = if lockfile_path.exists() {
-            Some(Lockfile::load(lockfile_path)?)
+            let lockfile = Lockfile::load(lockfile_path)?;
+            if !r_version.hazy_match(&lockfile.r_version()) {
+                log::debug!(
+                    "R version in config file and lockfile are not compatible. Ignoring lockfile."
+                );
+                None
+            } else {
+                Some(lockfile)
+            }
         } else {
             None
         };

@@ -1,8 +1,7 @@
 use core::fmt;
-use std::io::Write;
 use std::path::Path;
 
-use git2::{AutotagOption, FetchOptions, RemoteCallbacks, RemoteUpdateFlags, Repository};
+use git2::{AutotagOption, FetchOptions, RemoteUpdateFlags, Repository};
 
 /// What a git URL can point to
 /// If it's coming from a lockfile, it will always be a commit

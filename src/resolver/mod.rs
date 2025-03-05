@@ -119,7 +119,7 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
-        let canon_path = match fs::canonicalize(&self.project_dir.join(local_path)) {
+        let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
             Ok(canon_path) => canon_path,
             Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
         };
@@ -137,6 +137,16 @@ impl<'d> Resolver<'d> {
         } else {
             unreachable!()
         };
+
+        if item.name != package.name {
+            return Err(format!(
+                "Found package `{}` from {} but it is called `{}` in the rproject.toml",
+                package.name,
+                local_path.display(),
+                item.name
+            )
+            .into());
+        }
 
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
@@ -246,6 +256,14 @@ impl<'d> Resolver<'d> {
                 };
                 let package = parse_description_file_in_folder(&package_path)?;
 
+                if item.name != package.name {
+                    return Err(format!(
+                        "Found package `{}` from {repo_url} but it is called `{}` in the rproject.toml",
+                        package.name, item.name
+                    )
+                    .into());
+                }
+
                 let source = if let Some(dep) = item.dep {
                     dep.as_git_source_with_sha(sha)
                 } else {
@@ -286,6 +304,13 @@ impl<'d> Resolver<'d> {
 
         let install_path = dir.unwrap_or_else(|| out_path.clone());
         let package = parse_description_file_in_folder(&install_path)?;
+        if item.name != package.name {
+            return Err(format!(
+                "Found package `{}` from {url} but it is called `{}` in the rproject.toml",
+                package.name, item.name
+            )
+            .into());
+        }
         let is_binary = is_binary_package(&install_path, &package.name);
         let (resolved_dep, deps) = ResolvedDependency::from_url_package(
             &package,

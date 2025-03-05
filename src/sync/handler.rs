@@ -24,6 +24,7 @@ pub struct SyncHandler<'a> {
     dry_run: bool,
     show_progress_bar: bool,
     max_workers: usize,
+    has_lockfile: bool,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -40,6 +41,7 @@ impl<'a> SyncHandler<'a> {
             staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
             show_progress_bar: false,
+            has_lockfile: false,
             max_workers: num_cpus::get(),
         }
     }
@@ -55,6 +57,10 @@ impl<'a> SyncHandler<'a> {
     pub fn set_max_workers(&mut self, max_workers: usize) {
         assert!(self.max_workers > 0);
         self.max_workers = max_workers;
+    }
+
+    pub fn set_has_lockfile(&mut self, has_lockfile: bool) {
+        self.has_lockfile = has_lockfile;
     }
 
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
@@ -89,7 +95,7 @@ impl<'a> SyncHandler<'a> {
                 sources::git::install_package(dep, &self.staging_path, self.cache, r_cmd, &Git {})
             }
             Source::Local { .. } => {
-                sources::local::install_package(dep, &self.project_dir, &self.staging_path, r_cmd)
+                sources::local::install_package(dep, self.project_dir, &self.staging_path, r_cmd)
             }
             Source::Url { .. } => {
                 sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
@@ -131,7 +137,10 @@ impl<'a> SyncHandler<'a> {
                 .map(|(v, source)| !source.is_git_or_url() && *v == version)
                 .unwrap_or(false)
             {
-                deps_seen.insert(name.as_str());
+                // If we don't have a lockfile, we cannot trust anything present in the library
+                if self.has_lockfile {
+                    deps_seen.insert(name.as_str());
+                }
             } else {
                 to_remove.insert((name.to_string(), true));
             }
