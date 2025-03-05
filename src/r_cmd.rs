@@ -93,9 +93,25 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
 
     let opt_r = PathBuf::from("/opt/R");
     if !opt_r.is_dir() {
-        return Err(VersionError {
-            source: VersionErrorKind::NoR,
-        });
+        if found_r_vers.is_empty() {
+            return Err(VersionError {
+                source: VersionErrorKind::NoR,
+            });
+        } else {
+            found_r_vers.sort();
+            found_r_vers.dedup();
+            let found_r_vers_str = found_r_vers
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(VersionError {
+                source: VersionErrorKind::NotCompatible(
+                    r_version.original.to_string(),
+                    found_r_vers_str,
+                ),
+            });
+        }
     }
 
     // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
@@ -120,17 +136,25 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
             found_r_vers.push(ver);
         }
     }
-    // Return ordered list of unique found R versions
-    found_r_vers.sort();
-    found_r_vers.dedup();
-    let found_r_vers_str = found_r_vers
-        .iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    Err(VersionError {
-        source: VersionErrorKind::NotCompatible(r_version.original.to_string(), found_r_vers_str),
-    })
+    if found_r_vers.is_empty() {
+        return Err(VersionError {
+            source: VersionErrorKind::NoR,
+        });
+    } else {
+        found_r_vers.sort();
+        found_r_vers.dedup();
+        let found_r_vers_str = found_r_vers
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(VersionError {
+            source: VersionErrorKind::NotCompatible(
+                r_version.original.to_string(),
+                found_r_vers_str,
+            ),
+        });
+    }
 }
 
 // See if the found R binary version matches the specified version.
