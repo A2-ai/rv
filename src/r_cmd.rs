@@ -65,7 +65,7 @@ pub struct RCommandLine {
 
 pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
     let mut found_r_vers = Vec::new();
-    // Give preference to the R version on the $PATH
+    // Give preference to the R version on the path
     if let Ok(path_r) = (&RCommandLine { r: None }).version() {
         if does_r_cmd_version_match_version(&path_r, r_version) {
             log::debug!("R {r_version} found on the path");
@@ -76,10 +76,16 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
 
     // For windows, R installed/managed by rig is has the extension .bat
     if cfg!(windows) {
-        if let Ok(rig_r) = (&RCommandLine { r: Some(PathBuf::from("R.bat")) }).version() {
+        if let Ok(rig_r) = (&RCommandLine {
+            r: Some(PathBuf::from("R.bat")),
+        })
+            .version()
+        {
             if does_r_cmd_version_match_version(&rig_r, r_version) {
                 log::debug!("R {r_version} found on the path from `rig`");
-                return Ok(RCommandLine { r: Some(PathBuf::from("R.bat")) });
+                return Ok(RCommandLine {
+                    r: Some(PathBuf::from("R.bat")),
+                });
             }
             found_r_vers.push(rig_r);
         }
@@ -114,6 +120,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
             found_r_vers.push(ver);
         }
     }
+    // Return ordered list of unique found R versions
     found_r_vers.sort();
     found_r_vers.dedup();
     let found_r_vers_str = found_r_vers
@@ -126,8 +133,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
     })
 }
 
-// See if the found R binary matches the specified version.
-// If version cannot be determined, return false
+// See if the found R binary version matches the specified version.
 // Hazy matches version based on number of specified elements
 fn does_r_cmd_version_match_version(r_cmd_version: &Version, version: &Version) -> bool {
     version.hazy_match(r_cmd_version)
@@ -318,7 +324,9 @@ pub enum VersionErrorKind {
     NotFound,
     #[error("R not found on system")]
     NoR,
-    #[error("Specified R version ({0}) does not match any available versions found on the system ({1})")]
+    #[error(
+        "Specified R version ({0}) does not match any available versions found on the system ({1})"
+    )]
     NotCompatible(String, String),
 }
 

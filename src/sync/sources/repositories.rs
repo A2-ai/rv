@@ -10,7 +10,7 @@ use crate::package::PackageType;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
 use crate::{
-    is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls
+    get_tarball_urls, is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency,
 };
 
 pub(crate) fn install_package(
@@ -21,12 +21,12 @@ pub(crate) fn install_package(
 ) -> Result<(), SyncError> {
     let pkg_paths =
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
-        let compile_package = || {
-            let source_path = pkg_paths.source.join(pkg.name.as_ref());
-            log::debug!("Compiling package from {}", source_path.display());
-            r_cmd.install(&source_path, library_dir, &pkg_paths.binary)
-        };
-    
+    let compile_package = || {
+        let source_path = pkg_paths.source.join(pkg.name.as_ref());
+        log::debug!("Compiling package from {}", source_path.display());
+        r_cmd.install(&source_path, library_dir, &pkg_paths.binary)
+    };
+
     match pkg.installation_status {
         InstallationStatus::Source => {
             log::debug!(
@@ -52,9 +52,15 @@ pub(crate) fn install_package(
                     pkg.name,
                     pkg.version.original
                 );
-                if let Err(e) = http.download_and_untar(&tarball_url.source, &pkg_paths.source, false) {
+                if let Err(e) =
+                    http.download_and_untar(&tarball_url.source, &pkg_paths.source, false)
+                {
                     log::warn!("Failed to download/untar source package from {}: {e:?}, falling back to {}", tarball_url.source, tarball_url.archive);
-                    log::debug!("Downloading package {} ({}) from archive", pkg.name, pkg.version.original);
+                    log::debug!(
+                        "Downloading package {} ({}) from archive",
+                        pkg.name,
+                        pkg.version.original
+                    );
                     http.download_and_untar(&tarball_url.archive, &pkg_paths.source, false)?;
                 }
                 compile_package()?;
@@ -65,9 +71,11 @@ pub(crate) fn install_package(
                 download_and_install_source_or_archive()?;
             } else {
                 // If we get an error doing the binary download, fall back to source
-                if let Err(e) =
-                    http.download_and_untar(&tarball_url.binary.clone().unwrap(), &pkg_paths.binary, false)
-                {
+                if let Err(e) = http.download_and_untar(
+                    &tarball_url.binary.clone().unwrap(),
+                    &pkg_paths.binary,
+                    false,
+                ) {
                     log::warn!("Failed to download/untar binary package from {}: {e:?}, falling back to {}", tarball_url.binary.clone().unwrap(), tarball_url.source);
                     download_and_install_source_or_archive()?;
                 } else {
