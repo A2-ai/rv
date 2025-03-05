@@ -31,7 +31,7 @@ pub use package::{is_binary_package, Version, VersionRequirement};
 pub use r_cmd::{find_r_version_command, RCmd, RCommandLine};
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
-pub use repository_urls::{get_package_file_urls, get_tarball_urls};
+pub use repository_urls::{get_package_file_urls, TarballURLs};
 pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, SyncHandler};
 pub use system_info::{OsType, SystemInfo};

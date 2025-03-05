@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use fs_err as fs;
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
