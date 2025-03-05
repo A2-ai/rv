@@ -189,16 +189,28 @@ fn resolve_repository<'a>(
         });
     }
 
-    let version_requirement = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);
-
     // match the repository database with its corresponding repository
     let repo_pairs = repositories
         .iter()
         .zip(repository_database)
         .map(|(repo, (repo_db, force_source))| (repo, repo_db, force_source))
         .collect::<Vec<_>>();
+    
+    let repo_ver_req = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);
+    if let Ok(source) = find_package_in_repo(pkg_info, &repo_pairs, r_version, &repo_ver_req) {
+        return Ok(source);
+    }
+    let archive_ver_req = VersionRequirement::new(pkg_info.version.clone(), Operator::GreaterOrEqual);
+    find_package_in_repo(pkg_info, &repo_pairs, r_version, &archive_ver_req)
+}
 
-    // if a repository is found as that is specified by the package log, look in it first
+fn find_package_in_repo<'a>(
+    pkg_info: &PackageInfo,
+    repo_pairs: &[(&'a RenvRepository, &RepositoryDatabase, &bool)],
+    r_version: &Version,
+    version_requirement: &VersionRequirement,
+) -> Result<Source<'a>, Box<dyn Error>> {
+    // if a repository is found as that is specified by the package log, look in it first for an exact version match
     let pref_repo_pair = pkg_info
         .repository
         .as_ref()
@@ -217,17 +229,12 @@ fn resolve_repository<'a>(
         };
     }
 
-    // if a repository is not found in its specified repository, look in the rest of the repositories
+    // if a package is not found in its specified repository, look in the rest of the repositories
     // sacrificing one additional iteration step of re-looking up in preferred repository for less complexity
     repo_pairs
         .into_iter()
         .find_map(|(repo, repo_db, force_source)| {
-            repo_db.find_package(
-                &pkg_info.package,
-                Some(&version_requirement),
-                r_version,
-                *force_source,
-            )?;
+            repo_db.find_package(&pkg_info.package, Some(&version_requirement), r_version, **force_source)?;
             Some(Source::Repository(repo))
         })
         .ok_or("Could not find package in repository".into())
