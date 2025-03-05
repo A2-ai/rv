@@ -7,7 +7,8 @@ use fs_err::{self as fs, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http, Lockfile, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, CacheInfo, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine,
+    ResolvedDependency, Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -57,6 +58,14 @@ pub enum Command {
         #[clap(long)]
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
+    }
+    /// Provide information about the project
+    Info {
+        #[clap(short, long)]
+        json: bool,
+        #[clap(short, long)]
+        /// Display only the r version
+        r_version: bool
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -238,7 +247,7 @@ fn try_main() -> Result<()> {
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
             } else {
-              path_str.to_string()
+                path_str.to_string()
             };
             println!("{path_out}");
         }
@@ -320,6 +329,39 @@ fn try_main() -> Result<()> {
                 );
                 for u in &unresolved {
                     eprintln!("    {u}");
+                }
+            }
+        }
+        Command::Info { json, r_version } => {
+            let mut context = CliContext::new(&cli.config_file)?;
+            context.load_databases()?;
+            let resolved = resolve_dependencies(&context);
+            let info = ProjectInfo::new(
+                &context.library,
+                &resolved,
+                &context.config.repositories(),
+                &context.databases,
+                &context.r_version,
+                &context.cache,
+                context.lockfile.as_ref(),
+            );
+            if json {
+                if r_version {
+                    println!(
+                        "{}",
+                        serde_json::json!({"r_version": context.config.r_version().original})
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&info).expect("valid json")
+                    );
+                }
+            } else {
+                if r_version {
+                    println!("{}", context.config.r_version().original);
+                } else {
+                    println!("{info}");
                 }
             }
         }
