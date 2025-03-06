@@ -195,12 +195,18 @@ fn resolve_repository<'a>(
         .zip(repository_database)
         .map(|(repo, (repo_db, force_source))| (repo, repo_db, force_source))
         .collect::<Vec<_>>();
-    
+
+    // Look for the exact package version in the repositories.
+    // We prefer to find the package in the base repository over hoping it is in the archive
     let repo_ver_req = VersionRequirement::new(pkg_info.version.clone(), Operator::Equal);
     if let Ok(source) = find_package_in_repo(pkg_info, &repo_pairs, r_version, &repo_ver_req) {
         return Ok(source);
     }
-    let archive_ver_req = VersionRequirement::new(pkg_info.version.clone(), Operator::GreaterOrEqual);
+
+    // See if the repositories contains a package version greater or equal to the one in the lockfile since there will be
+    // a higher likelihood of the package existing in the archive
+    let archive_ver_req =
+        VersionRequirement::new(pkg_info.version.clone(), Operator::GreaterOrEqual);
     find_package_in_repo(pkg_info, &repo_pairs, r_version, &archive_ver_req)
 }
 
@@ -219,7 +225,7 @@ fn find_package_in_repo<'a>(
         if repo_db
             .find_package(
                 &pkg_info.package,
-                Some(&version_requirement),
+                Some(version_requirement),
                 r_version,
                 **force_source,
             )
@@ -232,9 +238,14 @@ fn find_package_in_repo<'a>(
     // if a package is not found in its specified repository, look in the rest of the repositories
     // sacrificing one additional iteration step of re-looking up in preferred repository for less complexity
     repo_pairs
-        .into_iter()
+        .iter()
         .find_map(|(repo, repo_db, force_source)| {
-            repo_db.find_package(&pkg_info.package, Some(&version_requirement), r_version, **force_source)?;
+            repo_db.find_package(
+                &pkg_info.package,
+                Some(version_requirement),
+                r_version,
+                **force_source,
+            )?;
             Some(Source::Repository(repo))
         })
         .ok_or("Could not find package in repository".into())
