@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::git::GitReference;
+use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
@@ -35,6 +36,8 @@ pub(crate) fn install_package(
         };
 
         r_cmd.install(&source_path, library_dir, &pkg_paths.binary)?;
+        let metadata = LocalMetadata::Sha(sha.to_owned());
+        metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
     }
 
     // And then we always link the binary folder into the staging library

@@ -66,7 +66,7 @@ pub struct RCommandLine {
 pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
     let mut found_r_vers = Vec::new();
     // Give preference to the R version on the path
-    if let Ok(path_r) = (&RCommandLine { r: None }).version() {
+    if let Ok(path_r) = (RCommandLine { r: None }).version() {
         if r_version.hazy_match(&path_r) {
             log::debug!("R {r_version} found on the path");
             return Ok(RCommandLine { r: None });
@@ -76,10 +76,10 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
 
     // For windows, R installed/managed by rig is has the extension .bat
     if cfg!(windows) {
-        if let Ok(rig_r) = (&RCommandLine {
+        if let Ok(rig_r) = (RCommandLine {
             r: Some(PathBuf::from("R.bat")),
         })
-            .version()
+        .version()
         {
             if r_version.hazy_match(&rig_r) {
                 log::debug!("R {r_version} found on the path from `rig`");
@@ -118,18 +118,18 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
     }
 
     if found_r_vers.is_empty() {
-        return Err(VersionError {
+        Err(VersionError {
             source: VersionErrorKind::NoR,
-        });
+        })
     } else {
         found_r_vers.sort();
         found_r_vers.dedup();
-        return Err(VersionError {
+        Err(VersionError {
             source: VersionErrorKind::NotCompatible(
                 r_version.original.to_string(),
                 found_r_vers.join(", "),
             ),
-        });
+        })
     }
 }
 

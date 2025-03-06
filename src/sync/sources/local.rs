@@ -1,10 +1,9 @@
-use std::io::Write;
 use std::path::Path;
 
 use fs_err as fs;
 
-use crate::consts::LOCAL_MTIME_FILENAME;
 use crate::fs::{mtime_recursive, untar_archive};
+use crate::library::LocalMetadata;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
 use crate::{is_binary_package, RCmd, ResolvedDependency};
@@ -47,14 +46,8 @@ pub(crate) fn install_package(
     // If it's a dir, save the dir mtime
     if actual_path.is_dir() {
         let local_mtime = mtime_recursive(&actual_path)?;
-
-        // And just write the mtime in the output directory
-        let mut file = fs::File::create(
-            library_dir
-                .join(pkg.name.as_ref())
-                .join(LOCAL_MTIME_FILENAME),
-        )?;
-        file.write_all(local_mtime.unix_seconds().to_string().as_bytes())?;
+        let metadata = LocalMetadata::Mtime(local_mtime.unix_seconds());
+        metadata.write(library_dir.join(pkg.name.as_ref()))?;
     }
 
     Ok(())

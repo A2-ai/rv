@@ -9,9 +9,9 @@ pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentM
     let config_file = config_file.as_ref();
     let _ = Config::from_file(config_file).map_err(|e| AddError {
         path: config_file.into(),
-        source: AddErrorKind::ConfigLoad(e),
+        source: Box::new(AddErrorKind::ConfigLoad(e)),
     })?;
-    let config_content = fs::read_to_string(&config_file).unwrap(); // Verified config could be loaded above
+    let config_content = fs::read_to_string(config_file).unwrap(); // Verified config could be loaded above
 
     Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
@@ -72,7 +72,7 @@ fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
 #[non_exhaustive]
 pub struct AddError {
     path: Box<Path>,
-    source: AddErrorKind,
+    source: Box<AddErrorKind>,
 }
 
 #[derive(Debug, thiserror::Error)]
