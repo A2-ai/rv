@@ -307,7 +307,8 @@ fn try_main() -> Result<()> {
             )?;
         }
         Command::Cache { json } => {
-            let context = CliContext::new(&cli.config_file)?;
+            let mut context = CliContext::new(&cli.config_file)?;
+            context.load_databases()?;
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
