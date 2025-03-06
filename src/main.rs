@@ -229,14 +229,23 @@ fn try_main() -> Result<()> {
                 r
             } else {
                 // if r version is not provided, get the major.minor of the R version on the path
-                let [major, minor] = RCommandLine { r: None }.version()?.major_minor();
+                let [major, minor] = match (RCommandLine { r: None }).version() {
+                    Ok(r_ver) => r_ver,
+                    Err(e) => {
+                        if cfg!(windows) {
+                            RCommandLine { r: Some(PathBuf::from("R.bat")) }.version()?
+                        } else {
+                            Err(e)?
+                        }
+                    }
+                }.major_minor();
                 format!("{major}.{minor}")
             };
 
             let repositories = if no_repositories {
                 Vec::new()
             } else {
-                find_r_repositories()?
+                find_r_repositories().unwrap_or(Vec::new())
             };
             init(&project_directory, &r_version, &repositories, &add)?;
             activate(&project_directory)?;

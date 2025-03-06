@@ -53,13 +53,8 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
     "survival",
 ];
 
-pub(crate) const GLOBAL_ACTIVATE_FILE_CONTENT: &str = r#"local({
-	owd <- getwd()
-	setwd("~")
-	on.exit({
-	   setwd(owd)
-	})
-	rv_lib <- system2("rv", "library", stdout = TRUE)
+pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
+	rv_lib <- system2("%rv command%", "library", stdout = TRUE)
 	# this might not yet exist, so we'll normalize it but not force it to exist
 	# and we create it below as needed
 	rv_lib <- normalizePath(rv_lib, mustWork = FALSE)
@@ -75,40 +70,7 @@ pub(crate) const GLOBAL_ACTIVATE_FILE_CONTENT: &str = r#"local({
 	}
 	if (interactive()) {
 		# Extract the R version from rv for comparison with the local R version
-		rv_info <- system2("rv", c("info", "--r-version"), stdout = TRUE)
-		if (!is.null(attr(rv_info, "status"))) {
-			# if system2 fails it'll add a status attrivute with the error code
-			warning("failed to run rv info, check your console for messages")
-		} else {
-			sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
-			r_matches <- grepl(paste0("^", rv_info), sys_r)
-		}
-		message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
-		if (!r_matches) {
-			message(sprintf("\nWARNING: R version specified in config (%s) does not match session version (%s)", rv_info, sys_r))
-		}
-	}
-})
-"#;
-
-pub(crate) const PROJECT_ACTIVATE_FILE_CONTENT: &str = r#"local({
-	rv_lib <- system2("rv", "library", stdout = TRUE)
-	# this might not yet exist, so we'll normalize it but not force it to exist
-	# and we create it below as needed
-	rv_lib <- normalizePath(rv_lib, mustWork = FALSE)
-	if (!is.null(attr(rv_lib, "status"))) {
-		# if system2 fails it'll add a status attribute with the error code
-		warning("failed to run rv library, check your console for messages")
-	} else {
-		if (!dir.exists(rv_lib)) {
-			message("creating rv library: ", rv_lib)
-			dir.create(rv_lib, recursive = TRUE)
-		}
-		.libPaths(rv_lib, include.site = FALSE)
-	}
-	if (interactive()) {
-		# Extract the R version from rv for comparison with the local R version
-		rv_info <- system2("rv", c("info", "--r-version"), stdout = TRUE)
+		rv_info <- system2("%rv command%", c("info", "--r-version"), stdout = TRUE)
 		if (!is.null(attr(rv_info, "status"))) {
 			# if system2 fails it'll add a status attrivute with the error code
 			warning("failed to run rv info, check your console for messages")
