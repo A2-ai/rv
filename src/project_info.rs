@@ -97,9 +97,9 @@ impl<'a> RemoteInfo<'a> {
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (alias, (url, bin_count, src_count)) in &self.repositories {
-            write!(
+            writeln!(
                 f,
-                "{alias} ({url}): {bin_count} binary packages, {src_count} source packages\n"
+                "{alias} ({url}): {bin_count} binary packages, {src_count} source packages"
             )?;
         }
         Ok(())
@@ -264,7 +264,7 @@ impl fmt::Display for DependencyInfo<'_> {
         }
         write!(f, "{pkg_source}")?;
         // If there are no packages to install from any of the sources, install_summary will never be edited and there is no reason to print
-        if install_summary != String::from("\nInstallation Summary: \n") {
+        if install_summary != *"\nInstallation Summary: \n" {
             write!(f, "{install_summary}")?;
         }
 
@@ -303,7 +303,7 @@ impl<'a> DependencySummary<'a> {
         let is_binary = is_binary_package(resolved_dep, repo_dbs, r_version);
 
         // If the package is within the library, immediately return saying it is installed
-        if library.contains_package(&resolved_dep.name, Some(&resolved_dep.version)) {
+        if library.contains_package(resolved_dep) {
             return Self {
                 _name: &resolved_dep.name,
                 is_binary,
@@ -441,7 +441,7 @@ fn is_binary_package(
 // - url: package url
 fn get_dep_id(dep: &ResolvedDependency, repos: &[Repository]) -> String {
     match &dep.source {
-        Source::Repository { repository } => get_repository_alias(&repository, repos),
+        Source::Repository { repository } => get_repository_alias(repository, repos),
         Source::Git { git, .. } => git.to_string(),
         Source::Local { path } => path.to_string_lossy().to_string(),
         Source::Url { url, .. } => url.to_string(),

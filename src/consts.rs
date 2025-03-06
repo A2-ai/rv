@@ -14,8 +14,7 @@ pub const PACKAGE_TIMEOUT: u64 = 60 * 60;
 pub const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
 pub const PACKAGE_DB_FILENAME: &str = "packages.bin";
 
-// Filename where we will stick the max mtime of a local dep
-pub(crate) const LOCAL_MTIME_FILENAME: &str = ".rv.mtime";
+pub(crate) const LIBRARY_METADATA_FILENAME: &str = ".rv.metadata";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 pub(crate) const BASE_PACKAGES: [&str; 14] = [
