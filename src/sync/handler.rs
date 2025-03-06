@@ -368,12 +368,16 @@ impl<'a> SyncHandler<'a> {
             });
         }
 
-        // If we are there, it means we are successful. Replace the project lib by the staging dir
-        if self.library.path().is_dir() {
-            fs::remove_dir_all(self.library.path())?;
-        }
+        if self.dry_run {
+            fs::remove_dir_all(&self.staging_path)?;
+        } else{
+            // If we are there, it means we are successful. Replace the project lib by the staging dir
+            if self.library.path().is_dir() {
+                fs::remove_dir_all(self.library.path())?;
+            }
 
-        fs::rename(&self.staging_path, self.library.path())?;
+            fs::rename(&self.staging_path, self.library.path())?;
+        }
 
         // Sort all changes by a-z and fall back on installed status for things with the same name
         sync_changes.sort_unstable_by(|a, b| {
