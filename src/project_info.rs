@@ -382,7 +382,7 @@ impl Counts {
             // Other fields are updated agnostic to if the dep is from binary or not
             counts.to_install += 1;
             match dep.status {
-                DependencyStatus::InCache => counts.in_cache += 1,
+                DependencyStatus::InCache | DependencyStatus::ToCompile => counts.in_cache += 1,
                 DependencyStatus::Missing => counts.to_download += 1,
                 _ => (),
             }
