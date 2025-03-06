@@ -37,7 +37,7 @@ pub enum Command {
         #[clap(long, value_parser, num_args = 1..)]
         add: Vec<String>,
     },
-    /// Returns the path for the library for the current project/system
+    /// Returns the path for the library for the current project/system. 
     /// The path is always in unix format
     Library,
     /// Dry run of what sync would do
