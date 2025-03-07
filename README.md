@@ -54,12 +54,12 @@ Additional example projects with more configurations can be found in the `exampl
 
 You can customize this configuration file using the following flags:
 * `--r-version`: The R version is set to be the version found on the path by default. This flag allows you to set any custom version
-    > [!NOTE]
-    > For RStudio/Positron users, the R version on the path does NOT always match the version set for the session. Please use this flag to ensure correct R version is used for your project
+> [!NOTE]
+> For RStudio/Positron users, the R version on the path does NOT always match the version set for the session. Please use this flag to ensure correct R version is used for your project
 * `--no-repositories`: The repositories are set as what is found in the current R session. This flag sets the repositories field in the configuration file to blank
 * `--add`: The dependency field is blank by default. This flag can be used to add dependencies you know will be needed to the project directly to the config
-    > [!NOTE]
-    > `rv init` will not automatically sync your project
+> [!NOTE]
+> `rv init` will not automatically sync your project
 
 For interactive R sessions, we recommend restarting R after initializing your project to ensure your library paths are set properly
 
@@ -70,13 +70,13 @@ We cannot guarantee `rv` will migrate your renv project in its entirety, but any
 
 Some common reasons a dependency may not be able to be migrated:
 * It could not be found in any of the repositories listed in the renv.lock. 
-    > [!TIP]
-    > Determine the repository the dependency was installed from and add both to the configuration file
+> [!TIP]
+> Determine the repository the dependency was installed from and add both to the configuration file
 * The correct version could not be found in any of the repositories listed in the renv.lock
-    > [!TIP]
-    > * If the exact version is required and can be found in a different repository, add both the dependency and repository to the config
-    > * If the exact version is required, use the url dependency format to directly access the archive (i.e. {name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr_1.1.3.tar.gz"})
-    > * If the exact version is not required, add the dependency to the config
+> [!TIP]
+> * If the exact version is required and can be found in a different repository, add both the dependency and repository to the config
+> * If the exact version is required, use the url dependency format to directly access the archive (i.e. {name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr_1.1.3.tar.gz"})
+> * If the exact version is not required, add the dependency to the config
 
 After migration of the renv.lock file is complete, we recommend:
     1. Removing `source("renv/activate.R")` from the projects `.Rprofile`
