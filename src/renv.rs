@@ -219,7 +219,7 @@ fn resolve_repository<'a>(
 
     // if a repository is not found in its specified repository, look in the rest of the repositories
     // sacrificing one additional iteration step of re-looking up in preferred repository for less complexity
-    if let Some((pkg, repo)) = repo_pairs
+    if let Some((found_pkg, repo)) = repo_pairs
         .into_iter()
         .find_map(|(repo, repo_db, force_source)| {
             let (pkg, _) =
@@ -227,10 +227,10 @@ fn resolve_repository<'a>(
             Some((pkg, repo))
         })
     {
-        if pkg.version == pkg_info.version {
+        if found_pkg.version == pkg_info.version {
             Ok(Source::Repository(repo))
         } else {
-            Err(format!("Package version not found in repositories. Found version {} in {}", pkg.version, repo.url).into())
+            Err(format!("Package version ({}) not found in repositories. Found version {} in {}", pkg_info.version, found_pkg.version, repo.url).into())
         }
     } else {
         Err("Package not found in repositories".into())
