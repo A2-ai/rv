@@ -64,7 +64,7 @@ You can customize this configuration file using the following flags:
 For interactive R sessions, we recommend restarting R after initializing your project to ensure your library paths are set properly
 
 ### From a renv project
-`rv migrate renv` will initilise an existing renv project by migrating your renv.lock file to a rv configuration file.
+`rv migrate renv` will initialize an existing renv project by migrating your renv.lock file to a rv configuration file.
 
 We cannot guarantee `rv` will migrate your renv project in its entirety, but any dependencies not fully migrated will be logged.
 
