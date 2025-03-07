@@ -4,6 +4,38 @@
 
 `rv` is a new way to manage and install your R packages in a reproducible, fast, and declaritive way. 
 
+# How it works
+
+`rv` has several top level commands to provide the user with as much flexibility as possible. The two primary commands are:
+```
+rv plan # detail what will occur if sync is run
+rv sync # synchronize the library, config file, and lock file
+```
+
+The subsequent actions of these commands are controlled by a configuration file that specifies a desired project state by specifying the R version, repositories, and dependencies the project uses. Additionally, specific package and repository level customizations can be specified.
+
+For example, a simple configuration file:
+```
+[project]
+name = "my first rv project"
+r_version = "4.4"
+
+# any repositories, order matters
+repositories = [
+    { alias = "PPM", url = "https://packagemanager.posit.co/cran/latest" },
+]
+
+# top level packages to install
+dependencies = [
+    "dplyr",
+    { name = "ggplot2", install_suggestions = true}
+]
+```
+
+Running `rv sync` will synchronize the library, lock file, and configuration file by installing `dplyr`, `ggplot2`, any dependencies those packages require, and the suggested packages for `ggplot2`. Running `rv plan` will give you a preview of what `rv sync` will do.
+
+Additional example projects with more configurations can be found in the `example_projects' directory of this repository
+
 # Commands, Flags, and Terminology to know
 
 > [!TIP]
@@ -51,8 +83,8 @@ After migration of the renv.lock file is complete, we recommend:
     2. Running `rv activate`
     3. Restarting R to set your library paths to rv
 
-## Installing new packages
-To install a new package, you can always directly edit the configuration file.
+## Installing packages
+`rv sync` is used to synchronize the lock file, configuration file, and library of a project. So if a new package is added to your configuration file, `rv sync` will install the package and its dependencies.
 
 For quick editing, you can use `rv add <pkg1> <pkg2> ...` which will add these packages to the dependencies section of the config file and sync.
 
@@ -60,40 +92,10 @@ Additionally, you can use the following flags:
 * `--no-sync` will add the listed packages to the config but will NOT sync
 * `--dry-run` will not make any changes and only report what would happen if you were to install those packages
 
+For more complex edits, including specific sources and other configuration, you can directly edit the configuration file and re-run `rv sync`.
+
 ## Upgrading packages
 `rv` will default to installing packages from the source they were originally installed from. 
 This means if you installed a package from a repository, but later remove that repository from the configuration file, the package will still be installed from the original repository.
 
 To upgrade packages to be the latest versions available from the sources listed, use `rv upgrade`. If you'd like to see what will occur when you were to upgrade, run `rv upgrade --dry-run` or `rv plan --upgrade`.
-
-# How it works
-
-`rv` has several top level commands to provide the user with as much flexibility as possible. The two primary commands are:
-```
-rv plan # detail what will occur if sync is run
-rv sync # synchronize the library, config file, and lock file
-```
-
-The subsequent actions of these commands are controlled by a configuration file that specifies a desired project state by specifying the R version, repositories, and dependencies the project uses. Additionally, specific package and repository level customizations can be specified.
-
-For example, a simple configuration file:
-```
-[project]
-name = "my first rv project"
-r_version = "4.4"
-
-# any repositories, order matters
-repositories = [
-    { alias = "PPM", url = "https://packagemanager.posit.co/cran/latest" },
-]
-
-# top level packages to install
-dependencies = [
-    "dplyr",
-    { name = "ggplot2", install_suggestions = true}
-]
-```
-
-Running `rv sync` will synchronize the library, lock file, and configuration file by installing `dplyr`, `ggplot2`, any dependencies those packages require, and the suggested packages for `ggplot2`. Running `rv plan` will give you a preview of what `rv sync` will do.
-
-Additional example projects with more configurations can be found in the `example_projects' directory of this repository
