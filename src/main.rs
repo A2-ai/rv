@@ -326,6 +326,8 @@ fn try_main() -> Result<()> {
             subcommand: MigrateSubcommand::Renv { renv_file },
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
+            let project_dir = &cli.config_file.parent().unwrap().to_path_buf(); // migrate_renv writes config_file, so parent dir must exist
+            activate(project_dir)?;
             if unresolved.is_empty() {
                 println!(
                     "{} was successfully migrated to {}",
