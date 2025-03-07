@@ -157,7 +157,7 @@ fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), I
     })
 }
 
-fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+pub fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     let path = project_directory.as_ref().join(GITIGNORE_PATH);
     if path.exists() {
         return Ok(());
