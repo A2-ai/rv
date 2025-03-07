@@ -76,8 +76,11 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     })?;
 
     let template = ACTIVATE_FILE_TEMPLATE.to_string();
-    let global_wd_content = if etcetera::home_dir().map(|home| home == dir).unwrap_or(false) {
-    r#"
+    let global_wd_content = if etcetera::home_dir()
+        .map(|home| home == dir)
+        .unwrap_or(false)
+    {
+        r#"
         owd <- getwd()
         setwd("~")
         on.exit({
@@ -86,14 +89,10 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     } else {
         ""
     };
-    let rv_command = if cfg!(windows) {
-        "rv.exe"
-    } else {
-        "rv"
-    };
+    let rv_command = if cfg!(windows) { "rv.exe" } else { "rv" };
     let content = template
-        .replace("%rv command%", &rv_command)
-        .replace("%global wd content%", &global_wd_content);
+        .replace("%rv command%", rv_command)
+        .replace("%global wd content%", global_wd_content);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = &dir.join(ACTIVATE_FILE_NAME);

@@ -134,11 +134,6 @@ impl<'a> SyncHandler<'a> {
             } else {
                 deps_to_remove.insert((name.as_str(), true));
             }
-
-            // If we don't have a lockfile, we do not trust anything present in the library
-            if !self.has_lockfile {
-                continue;
-            }
         }
 
         // Lastly, remove any package that we can't really access
@@ -370,7 +365,7 @@ impl<'a> SyncHandler<'a> {
 
         if self.dry_run {
             fs::remove_dir_all(&self.staging_path)?;
-        } else{
+        } else {
             // If we are there, it means we are successful. Replace the project lib by the staging dir
             if self.library.path().is_dir() {
                 fs::remove_dir_all(self.library.path())?;
