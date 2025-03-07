@@ -147,7 +147,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
         .collect::<Vec<_>>())
 }
 
-fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+pub fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     let lib_dir = project_directory.as_ref().join(LIBRARY_PATH);
     if lib_dir.is_dir() {
         return Ok(());
