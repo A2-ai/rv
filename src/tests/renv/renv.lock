@@ -13,6 +13,32 @@
     ]
   },
   "Packages": {
+    "A3": {
+      "Package": "A3",
+      "Version": "0.9.2",
+      "Source": "Repository",
+      "Repository": "cran-binary",
+      "Requirements": [
+        "R",
+        "xtable",
+        "pbapply"
+      ],
+      "Hash": "1920b2f11133b12350024297d8a4ff4a"
+    },
+    "AATtools": {
+      "Package": "AATtools",
+      "Version": "0.0.5",
+      "Source": "Repository",
+      "Repository": "cran-binary",
+      "Requirements": [
+        "R",
+        "magrittr",
+        "dplyr",
+        "doParallel",
+        "foreach"
+      ],
+      "Hash": "1920b2f11133b12350024297d8a4ff4a"
+    },
     "Matrix": {
       "Package": "Matrix",
       "Version": "1.7-0",
