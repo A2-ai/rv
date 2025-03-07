@@ -230,7 +230,7 @@ fn resolve_repository<'a>(
         if pkg.version == pkg_info.version {
             Ok(Source::Repository(repo))
         } else {
-            Err("Package version not found in repositories".into())
+            Err(format!("Package version not found in repositories. Found version {} in {}", pkg.version, repo.url).into())
         }
     } else {
         Err("Package not found in repositories".into())
