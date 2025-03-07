@@ -6,5 +6,5 @@ expression: out
 { name = "rv.git.pkgA", path = "src/tests/renv/rv.git.pkgA_0.0.0.9000.tar.gz" }
 { name = "simpar", repository = "gh-pkg-mirror" }
 --- unresolved --- 
-`R6` could not be resolved due to: "Package version not found in repositories"
+`R6` could not be resolved due to: "Package version not found in repositories. Found version 2.5.1 in https://cran-binary"
 `slurmtools` could not be resolved due to: "Package not found in repositories"
