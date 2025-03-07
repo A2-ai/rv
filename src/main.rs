@@ -37,7 +37,7 @@ pub enum Command {
         #[clap(long, value_parser, num_args = 1..)]
         add: Vec<String>,
     },
-    /// Returns the path for the library for the current project/system. 
+    /// Returns the path for the library for the current project/system.
     /// The path is always in unix format
     Library,
     /// Dry run of what sync would do
@@ -233,12 +233,16 @@ fn try_main() -> Result<()> {
                     Ok(r_ver) => r_ver,
                     Err(e) => {
                         if cfg!(windows) {
-                            RCommandLine { r: Some(PathBuf::from("R.bat")) }.version()?
+                            RCommandLine {
+                                r: Some(PathBuf::from("R.bat")),
+                            }
+                            .version()?
                         } else {
                             Err(e)?
                         }
                     }
-                }.major_minor();
+                }
+                .major_minor();
                 format!("{major}.{minor}")
             };
 
