@@ -219,18 +219,22 @@ fn resolve_repository<'a>(
 
     // if a repository is not found in its specified repository, look in the rest of the repositories
     // sacrificing one additional iteration step of re-looking up in preferred repository for less complexity
-    repo_pairs
+    if let Some((found_pkg, repo)) = repo_pairs
         .into_iter()
         .find_map(|(repo, repo_db, force_source)| {
-            repo_db.find_package(
-                &pkg_info.package,
-                Some(&version_requirement),
-                r_version,
-                *force_source,
-            )?;
-            Some(Source::Repository(repo))
+            let (pkg, _) =
+                repo_db.find_package(&pkg_info.package, None, r_version, *force_source)?;
+            Some((pkg, repo))
         })
-        .ok_or("Could not find package in repository".into())
+    {
+        if found_pkg.version == pkg_info.version {
+            Ok(Source::Repository(repo))
+        } else {
+            Err(format!("Package version ({}) not found in repositories. Found version {} in {}", pkg_info.version, found_pkg.version, repo.url).into())
+        }
+    } else {
+        Err("Package not found in repositories".into())
+    }
 }
 
 // Expected GitHub sourced package format from renv.lock

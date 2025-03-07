@@ -2,9 +2,9 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use fs_err::{self as fs, write};
+use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
+use rv::cli::{create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext};
 use rv::{
     activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
     Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
@@ -340,6 +340,16 @@ fn try_main() -> Result<()> {
             subcommand: MigrateSubcommand::Renv { renv_file },
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
+            // migrate renv will create the config file, so parent directory is confirmed to exist
+            let project_dir = &cli.config_file.parent().unwrap().to_path_buf();
+            create_library_structure(project_dir)?;
+            create_gitignore(project_dir)?;
+            activate(project_dir)?;
+            let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
+                "source(\"renv/activate.R\")",
+                "# source(\"renv/activate.R\")",
+            );
+            write(project_dir.join(".Rprofile"), content)?;
             if unresolved.is_empty() {
                 println!(
                     "{} was successfully migrated to {}",
