@@ -107,7 +107,8 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     let mut start_idx = 0;
     let mut end_idx = 0;
 
-    for line in content.replace("\r\n", "\n").split("\n") {
+    let content = content.replace("\r\n", "\n");
+    for line in content.split("\n") {
         // Empty line is a new package
         if line.trim().is_empty() {
             let pkg = parse_pkg(&content[start_idx..end_idx]);

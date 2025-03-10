@@ -10,12 +10,12 @@ use crate::package::{Version, VersionRequirement};
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {
     pub(crate) url: String,
-    source_packages: HashMap<String, Vec<Package>>,
+    pub(crate) source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
     // for both binary and source
     // But each major.minor R version will get different binary package database
-    binary_packages: HashMap<[u32; 2], HashMap<String, Vec<Package>>>,
+    pub(crate) binary_packages: HashMap<[u32; 2], HashMap<String, Vec<Package>>>,
 }
 
 impl RepositoryDatabase {

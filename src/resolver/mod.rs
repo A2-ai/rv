@@ -531,6 +531,7 @@ impl<'d> Resolver<'d> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
@@ -542,6 +543,7 @@ mod tests {
     use crate::config::Config;
     use crate::consts::DESCRIPTION_FILENAME;
     use crate::http::HttpError;
+    use crate::package::{parse_package_file, Package};
     use crate::repository::RepositoryDatabase;
     use crate::{DiskCache, SystemInfo};
 
@@ -595,6 +597,7 @@ mod tests {
 
     fn extract_test_elements(
         path: &Path,
+        dbs: &HashMap<String, HashMap<String, Vec<Package>>>,
     ) -> (Config, Version, Vec<(RepositoryDatabase, bool)>, Lockfile) {
         let content = std::fs::read_to_string(path).unwrap();
         let parts: Vec<_> = content.splitn(3, "---").collect();
@@ -605,15 +608,13 @@ mod tests {
             for r in data.repos {
                 let mut repo = RepositoryDatabase::new(&format!("http://{}", r.name));
                 if let Some(p) = r.source {
-                    let path = format!("src/tests/package_files/{p}.PACKAGE");
-                    let text = std::fs::read_to_string(&path).unwrap();
-                    repo.parse_source(&text);
+                    repo.source_packages = dbs[&p].clone();
                 }
 
                 if let Some(p) = r.binary {
-                    let path = format!("src/tests/package_files/{p}.PACKAGE");
-                    let text = std::fs::read_to_string(&path).unwrap();
-                    repo.parse_binary(&text, r_version.major_minor());
+                    println!("{:?}", p);
+                    repo.binary_packages
+                        .insert(r_version.major_minor(), dbs[&p].clone());
                 }
                 res.push((repo, r.force_source));
             }
@@ -674,10 +675,25 @@ mod tests {
     #[test]
     fn resolving() {
         let paths = std::fs::read_dir("src/tests/resolution/").unwrap();
+        let dbs: HashMap<_, _> = std::fs::read_dir("src/tests/package_files/")
+            .unwrap()
+            .into_iter()
+            .map(|x| {
+                let x = x.unwrap();
+                let content = std::fs::read_to_string(x.path()).unwrap();
+                (
+                    x.file_name()
+                        .to_string_lossy()
+                        .trim_end_matches(".PACKAGE")
+                        .to_string(),
+                    parse_package_file(content.as_str()),
+                )
+            })
+            .collect();
 
         for path in paths {
             let p = path.unwrap().path();
-            let (config, r_version, repositories, lockfile) = extract_test_elements(&p);
+            let (config, r_version, repositories, lockfile) = extract_test_elements(&p, &dbs);
             let (_cache_dir, cache) = setup_cache(&r_version);
             let resolver =
                 Resolver::new(Path::new("."), &repositories, &r_version, Some(&lockfile));
