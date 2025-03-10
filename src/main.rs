@@ -341,7 +341,7 @@ fn try_main() -> Result<()> {
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
             // migrate renv will create the config file, so parent directory is confirmed to exist
-            let project_dir = &cli.config_file.canonicalize().unwrap().parent().unwrap().to_path_buf();
+            let project_dir = &cli.config_file.canonicalize()?.parent().unwrap().to_path_buf();
             create_library_structure(project_dir)?;
             create_gitignore(project_dir)?;
             activate(project_dir)?;
