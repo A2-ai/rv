@@ -1,4 +1,5 @@
 use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -14,7 +15,7 @@ pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
 pub use version::{deserialize_version, Operator, Version, VersionRequirement};
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode)]
 pub enum PackageType {
     Source,
     Binary,
@@ -29,7 +30,7 @@ impl fmt::Display for PackageType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
 pub(crate) enum Dependency {
     Simple(String),
     Pinned {
@@ -56,7 +57,7 @@ impl Dependency {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,
