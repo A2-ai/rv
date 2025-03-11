@@ -138,9 +138,22 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
         .lines()
         .filter_map(|line| {
             let mut parts = line.splitn(2, '\t');
+            let alias = parts.next()?.to_string();
+            let mut url = parts.next()?.to_string();
+            let mut url_parts = url.split('/');
+            let mut new_url = Vec::new();
+            while let Some(part) = url_parts.next() {
+                if part == "__linux__" {
+                    url_parts.next(); // Skip the next path element
+                } else {
+                    new_url.push(part);
+                }
+            }
+            url = new_url.join("/");
+
             Some(Repository::new(
-                parts.next()?.to_string(),
-                parts.next()?.to_string(),
+                alias,
+                url,
                 false,
             ))
         })
