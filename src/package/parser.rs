@@ -3,8 +3,14 @@
 use crate::package::remotes::parse_remote;
 use crate::package::{Dependency, Package};
 use crate::{Version, VersionRequirement};
+use regex::Regex;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::LazyLock;
+
+static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
+static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
 fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
@@ -12,7 +18,7 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
     for dep in content.split(",") {
         // there are cases where dep array is constructed with a trailing comma that would give
         // an empty string
-        // for example, one Depends fielf for the binr in the posit db looked like:
+        // for example, one Depends field for the binr in the posit db looked like:
         // Depends: R (>= 2.15),
         if dep.is_empty() {
             continue;
@@ -44,23 +50,22 @@ fn parse_dependencies(content: &str) -> Vec<Dependency> {
 pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     let mut packages: HashMap<String, Vec<Package>> = HashMap::new();
 
-    for package_data in content
-        .replace("\r\n", "\n")
-        .replace("\n        ", " ")
-        .split("\n\n")
-    {
+    let parse_pkg = |content: &str| -> Package {
         let mut package = Package::default();
-        let mut name = String::new();
-        // Then we fix the line wrapping for deps
-        for line in package_data.lines() {
-            let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
-            match parts[0] {
-                "Package" => name = parts[1].to_string(),
+
+        for captures in PACKAGE_KEY_VAL_RE.captures_iter(content) {
+            let key = captures.name("key").unwrap().as_str();
+            let value = captures.name("value").unwrap().as_str();
+            let value = ANY_SPACE_RE.replace_all(value, " ");
+            let value = value.trim();
+
+            match key {
+                "Package" => package.name = value.to_string(),
                 "Version" => {
-                    package.version = Version::from_str(parts[1]).unwrap();
+                    package.version = Version::from_str(value).unwrap();
                 }
                 "Depends" => {
-                    for p in parse_dependencies(parts[1]) {
+                    for p in parse_dependencies(value) {
                         if p.name() == "R" {
                             package.r_requirement = p.version_requirement().cloned();
                         } else {
@@ -68,22 +73,21 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                         }
                     }
                 }
-                "Imports" => package.imports = parse_dependencies(parts[1]),
-                "LinkingTo" => package.linking_to = parse_dependencies(parts[1]),
-                "Suggests" => package.suggests = parse_dependencies(parts[1]),
-                "Enhances" => package.enhances = parse_dependencies(parts[1]),
-                "License" => package.license = parts[1].to_string(),
-                "MD5sum" => package.md5_sum = parts[1].to_string(),
-                "NeedsCompilation" => package.needs_compilation = parts[1] == "yes",
-                "Path" => package.path = Some(parts[1].to_string()),
+                "Imports" => package.imports = parse_dependencies(value),
+                "LinkingTo" => package.linking_to = parse_dependencies(value),
+                "Suggests" => package.suggests = parse_dependencies(value),
+                "Enhances" => package.enhances = parse_dependencies(value),
+                "License" => package.license = value.to_string(),
+                "MD5sum" => package.md5_sum = value.to_string(),
+                "NeedsCompilation" => package.needs_compilation = value == "yes",
+                "Path" => package.path = Some(value.to_string()),
                 "Priority" => {
-                    if parts[1] == "recommended" {
+                    if value == "recommended" {
                         package.recommended = true;
                     }
                 }
                 "Remotes" => {
-                    let remotes = parts[1]
-                        .trim()
+                    let remotes = value
                         .split(",")
                         .map(|x| (x.to_string(), parse_remote(x.trim())))
                         .collect::<Vec<_>>();
@@ -97,16 +101,29 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             }
         }
 
-        // We might have some spurious empty packages depending on lines, skip those
-        if name.is_empty() {
-            continue;
-        }
+        package
+    };
 
-        package.name = name.clone();
-        if let Some(p) = packages.get_mut(&name) {
-            p.push(package);
+    let mut start_idx = 0;
+    let mut end_idx = 0;
+
+    let content = content.replace("\r\n", "\n");
+    for line in content.split("\n") {
+        // Empty line is a new package
+        if line.trim().is_empty() {
+            let pkg = parse_pkg(&content[start_idx..end_idx]);
+            if !pkg.name.is_empty() {
+                if let Some(p) = packages.get_mut(&pkg.name) {
+                    p.push(pkg);
+                } else {
+                    packages.insert(pkg.name.clone(), vec![pkg]);
+                }
+            }
+            end_idx += line.chars().count() + 1;
+            start_idx = end_idx;
         } else {
-            packages.insert(name, vec![package]);
+            // +1 for a \n
+            end_idx += line.chars().count() + 1;
         }
     }
 
@@ -184,5 +201,36 @@ mod tests {
             std::fs::read_to_string("src/tests/package_files/cran-binary.PACKAGE").unwrap();
         let packages = parse_package_file(&content);
         assert_eq!(packages.len(), 22362);
+    }
+
+    #[test]
+    fn works_on_weird_linebreaks() {
+        let content = r#"
+Package: admiraldev
+Version: 1.2.0
+Depends: R (>= 4.1)
+Imports: cli (>= 3.0.0), dplyr (>= 1.0.5), glue (>=
+     1.6.0), lifecycle (>= 0.1.0), lubridate (>=
+     1.7.4), purrr (>= 0.3.3), rlang (>= 0.4.4),
+     stringr (>= 1.4.0), tidyr (>= 1.0.2),
+     tidyselect (>= 1.0.0)
+Suggests: diffdf, DT, htmltools, knitr, methods,
+     pkgdown, rmarkdown, spelling, testthat (>=
+     3.2.0), withr
+License: Apache License (>= 2)
+MD5sum: 4499ab1d94ad9e3f54d86dc12e704e3f
+NeedsCompilation: no
+    "#;
+        let packages = parse_package_file(&content);
+        assert_eq!(packages.len(), 1);
+    }
+
+    #[test]
+    fn works_on_gsm() {
+        let mut content =
+            std::fs::read_to_string("src/tests/descriptions/gsm.DESCRIPTION").unwrap();
+        content += "\n";
+        let packages = parse_package_file(&content);
+        assert_eq!(packages.len(), 1);
     }
 }
