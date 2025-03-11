@@ -46,7 +46,7 @@ pub fn migrate_renv(
     let (resolved, unresolved) = renv_lock.resolve(&databases);
 
     // Write config out to the config file specified in the cli, even if config file is outside of the renv.lock project
-    
+
     let r_version = if strict_r_version {
         &renv_lock.r_version().original
     } else {
