@@ -1,6 +1,7 @@
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::cache::InstallationStatus;
+use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
@@ -9,7 +10,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::str::{FromStr, Utf8Error};
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -90,14 +91,18 @@ impl<'d> ResolvedDependency<'d> {
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
 
-        let mut source= Source::Repository { repository: repo_url.to_string() };
+        let mut source = Source::Repository {
+            repository: repo_url.to_string(),
+        };
         // If repository is r-universe, treat as a git repo since r-universe does not have archive
-        // TODO: support as repository until version does not match
+
+        // TODO: If/when the need arises to not treat r-universe as a git repo, we will keep both the repository and git info
+        // and use the repository when the locked version and version in the PACKAGES database match. Once package no longer
+        // found in the repository, should convert to Git Repo only
         if repo_url.contains("r-universe.dev") {
-            if let Ok((git, sha)) = query_r_universe(package, repo_url) {
-                source = Source::Git { git, sha, directory: None, tag: None, branch: None };
-            } else {
-                log::warn!("Git information for {} from r-universe could not be determined. Falling back as standard repository", package.name);
+            match RUniverseApi::query_r_universe_api(package, repo_url) {
+                Ok(r) => source = Source::Git { git: r.remote_url, sha: r.remote_sha, directory: None, tag: None, branch: None },
+                Err(e) => log::warn!("Git information for {} from r-universe could not be determined due to {e:?}. Falling back to standard repository. Library may not be able to be recreated.", package.name),
             }
         }
 
@@ -322,30 +327,67 @@ impl fmt::Display for UnresolvedDependency<'_> {
     }
 }
 
-fn query_r_universe(package: &Package, repo_url: &str) -> Result<(String, String), ()> {
-    if !repo_url.contains("r-universe.dev") {
-        return Err(())
+#[derive(Debug, PartialEq, Clone, Deserialize)]
+struct RUniverseApi {
+    remote_url: String,
+    remote_sha: String,
+}
+
+impl RUniverseApi {
+    fn query_r_universe_api(package: &Package, repo_url: &str) -> Result<Self, RUniverseApiError> {
+        let http = Http {};
+        let api_url = format!("{}/api/packages/{}", repo_url, package.name);
+        let mut writer = Vec::new();
+
+        http.download(&api_url, &mut writer, Vec::new())
+            .map_err(|e| RUniverseApiError::from_http(e, &api_url))?;
+
+        let content =
+            std::str::from_utf8(&writer).map_err(|e| RUniverseApiError::from_utf8(e, &api_url))?;
+        let r_universe_api: RUniverseApi = serde_json::from_str(content)
+            .map_err(|e| RUniverseApiError::from_serde_json(e, &api_url))?;
+
+        Ok(r_universe_api)
     }
-    let http = Http {};
-    let api_url = format!("{}/api/packages/{}", repo_url, package.name);
-    let mut writer = Vec::new();
-    match http.download(&api_url, &mut writer, Vec::new()) {
-        Ok(bytes_read) if bytes_read != 0 => (),
-        _ => return Err(()),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to determine Git info from `{url}`")]
+#[non_exhaustive]
+pub struct RUniverseApiError {
+    pub url: String,
+    pub source: RUniverseApiErrorKind,
+}
+
+impl RUniverseApiError {
+    fn from_http(error: HttpError, url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            source: RUniverseApiErrorKind::Http(error),
+        }
     }
 
-    let content = unsafe { std::str::from_utf8_unchecked(&writer) };
-    let v: Value = serde_json::from_str(content).map_err(|_| ())?;
-    let git = v
-        .get("RemoteUrl")
-        .and_then(|val| val.as_str())
-        .ok_or(())?
-        .to_string();
-    let sha = v
-        .get("RemoteSha")
-        .and_then(|val| val.as_str())
-        .ok_or(())?
-        .to_string();
+    fn from_utf8(error: Utf8Error, url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            source: RUniverseApiErrorKind::Utf8(error),
+        }
+    }
 
-    Ok((git, sha))
+    fn from_serde_json(error: serde_json::Error, url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            source: RUniverseApiErrorKind::Parse(error),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RUniverseApiErrorKind {
+    #[error(transparent)]
+    Http(#[from] HttpError),
+    #[error(transparent)]
+    Utf8(#[from] Utf8Error),
+    #[error(transparent)]
+    Parse(#[from] serde_json::Error),
 }
