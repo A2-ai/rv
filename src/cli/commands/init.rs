@@ -150,6 +150,9 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
 }
 
 fn strip_linux_url(url: &str) -> String {
+    if !url.contains("__linux__") {
+        return url.to_string();
+    }
     let mut url_parts = url.split('/');
     let mut new_url = Vec::new();
     while let Some(part) = url_parts.next() {
