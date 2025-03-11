@@ -138,13 +138,31 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
         .lines()
         .filter_map(|line| {
             let mut parts = line.splitn(2, '\t');
+            let alias = parts.next()?.to_string();
+            let url = strip_linux_url(parts.next()?);
             Some(Repository::new(
-                parts.next()?.to_string(),
-                parts.next()?.to_string(),
+                alias,
+                url,
                 false,
             ))
         })
         .collect::<Vec<_>>())
+}
+
+fn strip_linux_url(url: &str) -> String {
+    if !url.contains("__linux__") {
+        return url.to_string();
+    }
+    let mut url_parts = url.split('/');
+    let mut new_url = Vec::new();
+    while let Some(part) = url_parts.next() {
+        if part == "__linux__" {
+            url_parts.next(); // Skip the next path element
+        } else {
+            new_url.push(part);
+        }
+    }
+    new_url.join("/")
 }
 
 pub fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
@@ -199,7 +217,7 @@ mod tests {
         Repository, Version,
     };
 
-    use super::init;
+    use super::{init, strip_linux_url};
     use tempfile::tempdir;
 
     #[test]
@@ -222,5 +240,12 @@ mod tests {
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
         assert!(dir.join(CONFIG_FILENAME).exists());
+    }
+
+    #[test]
+    fn test_linux_url_strip() {
+        let urls = ["https://packagemanager.posit.co/cran/latest", "https://packagemanager.posit.co/cran/__linux__/jammy/latest"];
+        let cleaned_urls = urls.iter().map(|u| strip_linux_url(u)).collect::<Vec<_>>();
+        assert_eq!(cleaned_urls[0], cleaned_urls[1]);
     }
 }
