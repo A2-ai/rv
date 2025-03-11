@@ -133,6 +133,7 @@ mod tests {
             from_lockfile: false,
             from_remote: false,
             remotes: HashMap::new(),
+            local_resolved_path: None,
         }
     }
 

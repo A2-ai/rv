@@ -443,7 +443,7 @@ fn get_dep_id(dep: &ResolvedDependency, repos: &[Repository]) -> String {
     match &dep.source {
         Source::Repository { repository } => get_repository_alias(repository, repos),
         Source::Git { git, .. } => git.to_string(),
-        Source::Local { path } => path.to_string_lossy().to_string(),
+        Source::Local { path, .. } => path.to_string_lossy().to_string(),
         Source::Url { url, .. } => url.to_string(),
     }
 }

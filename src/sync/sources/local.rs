@@ -4,6 +4,7 @@ use fs_err as fs;
 
 use crate::fs::{mtime_recursive, untar_archive};
 use crate::library::LocalMetadata;
+use crate::lockfile::Source;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
 use crate::{is_binary_package, RCmd, ResolvedDependency};
@@ -14,15 +15,17 @@ pub(crate) fn install_package(
     library_dir: &Path,
     r_cmd: &impl RCmd,
 ) -> Result<(), SyncError> {
-    // First we check if the package exists in the library and what's the mtime in it
-    let local_path = Path::new(pkg.source.source_path());
+    let (local_path, sha) = match &pkg.source {
+        Source::Local { path, sha } => (path, sha.clone()),
+        _ => unreachable!(),
+    };
+
     let tempdir = tempfile::tempdir()?;
     let canon_path = fs::canonicalize(project_dir.join(local_path))?;
 
-    // TODO: use the file sha somehow?
     let actual_path = if canon_path.is_file() {
-        // TODO: we're already doing that in resolve, that's wasteful
-        let path = untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path())?;
+        // TODO: we're already untarring in resolve, that's wasteful
+        let (path, _) = untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path(), false)?;
         path.unwrap_or_else(|| canon_path.clone())
     } else {
         canon_path.clone()
@@ -43,12 +46,14 @@ pub(crate) fn install_package(
         r_cmd.install(&actual_path, library_dir, library_dir)?;
     }
 
-    // If it's a dir, save the dir mtime
-    if actual_path.is_dir() {
+    // If it's a dir, save the dir mtime and if it's a tarball its sha
+    let metadata = if canon_path.is_dir() {
         let local_mtime = mtime_recursive(&actual_path)?;
-        let metadata = LocalMetadata::Mtime(local_mtime.unix_seconds());
-        metadata.write(library_dir.join(pkg.name.as_ref()))?;
-    }
+        LocalMetadata::Mtime(local_mtime.unix_seconds())
+    } else {
+        LocalMetadata::Sha(sha.unwrap())
+    };
+    metadata.write(library_dir.join(pkg.name.as_ref()))?;
 
     Ok(())
 }

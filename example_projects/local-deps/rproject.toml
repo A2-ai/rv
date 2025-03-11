@@ -5,6 +5,5 @@ repositories = [
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
 ]
 dependencies = [
-#    "R6",
     { name = "dummy", path = "../../dummy-pkg/" }
 ]
