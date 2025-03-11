@@ -402,7 +402,7 @@ fn when_non_zero(s: &str, arg_of_interest: usize) -> &str {
 // Determine if pkg is in the lockfile, if lockfile is None, we assume all packages are in the lockfile
 // This is because we are using if a package is not in a lockfile as a proxy for if it was installed using rv
 fn is_in_lock(pkg: &str, lock: Option<&Lockfile>) -> bool {
-    lock.map_or(true, |l| l.get_package(pkg, None).is_some())
+    lock.is_none_or(|l| l.get_package(pkg, None).is_some())
 }
 
 fn is_binary_package(

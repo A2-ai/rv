@@ -1,13 +1,12 @@
+use bincode::{Decode, Encode};
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-
 use crate::package::{parse_package_file, Package, PackageType};
 use crate::package::{Version, VersionRequirement};
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
 pub struct RepositoryDatabase {
     pub(crate) url: String,
     source_packages: HashMap<String, Vec<Package>>,
@@ -31,18 +30,21 @@ impl RepositoryDatabase {
             std::fs::File::open(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );
 
-        bincode::deserialize_from(reader).map_err(RepositoryDatabaseError::from_bincode)
+        bincode::decode_from_reader(reader, bincode::config::standard())
+            .map_err(RepositoryDatabaseError::from_bincode)
     }
 
     pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent).map_err(RepositoryDatabaseError::from_io)?;
         }
-        let writer = BufWriter::new(
+        let mut writer = BufWriter::new(
             std::fs::File::create(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
         );
+        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
+            .expect("valid data");
 
-        bincode::serialize_into(writer, self).map_err(RepositoryDatabaseError::from_bincode)
+        Ok(())
     }
 
     pub fn parse_source(&mut self, content: &str) {
@@ -139,7 +141,7 @@ impl RepositoryDatabaseError {
         }
     }
 
-    fn from_bincode(err: bincode::Error) -> Self {
+    fn from_bincode(err: bincode::error::DecodeError) -> Self {
         Self {
             source: RepositoryDatabaseErrorKind::Bincode(err),
         }
@@ -150,5 +152,5 @@ impl RepositoryDatabaseError {
 #[error(transparent)]
 pub enum RepositoryDatabaseErrorKind {
     Io(#[from] std::io::Error),
-    Bincode(#[from] bincode::Error),
+    Bincode(#[from] bincode::error::DecodeError),
 }

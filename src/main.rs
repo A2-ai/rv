@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
-use rv::cli::{create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext};
+use rv::cli::{
+    create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
+};
 use rv::{
     activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
     Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
