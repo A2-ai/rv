@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use bincode::{Decode, Encode};
 
 #[derive(Debug, PartialEq, Clone)]
 enum RemoteType {
@@ -23,7 +23,7 @@ impl RemoteType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub enum PackageRemote {
     Git {
         url: String,

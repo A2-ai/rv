@@ -97,9 +97,9 @@ impl<'a> RemoteInfo<'a> {
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (alias, (url, bin_count, src_count)) in &self.repositories {
-            write!(
+            writeln!(
                 f,
-                "{alias} ({url}): {bin_count} binary packages, {src_count} source packages\n"
+                "{alias} ({url}): {bin_count} binary packages, {src_count} source packages"
             )?;
         }
         Ok(())
@@ -264,7 +264,7 @@ impl fmt::Display for DependencyInfo<'_> {
         }
         write!(f, "{pkg_source}")?;
         // If there are no packages to install from any of the sources, install_summary will never be edited and there is no reason to print
-        if install_summary != String::from("\nInstallation Summary: \n") {
+        if install_summary != *"\nInstallation Summary: \n" {
             write!(f, "{install_summary}")?;
         }
 
@@ -303,7 +303,7 @@ impl<'a> DependencySummary<'a> {
         let is_binary = is_binary_package(resolved_dep, repo_dbs, r_version);
 
         // If the package is within the library, immediately return saying it is installed
-        if library.contains_package(&resolved_dep.name, Some(&resolved_dep.version)) {
+        if library.contains_package(resolved_dep) {
             return Self {
                 _name: &resolved_dep.name,
                 is_binary,
@@ -382,7 +382,7 @@ impl Counts {
             // Other fields are updated agnostic to if the dep is from binary or not
             counts.to_install += 1;
             match dep.status {
-                DependencyStatus::InCache => counts.in_cache += 1,
+                DependencyStatus::InCache | DependencyStatus::ToCompile => counts.in_cache += 1,
                 DependencyStatus::Missing => counts.to_download += 1,
                 _ => (),
             }
@@ -402,7 +402,7 @@ fn when_non_zero(s: &str, arg_of_interest: usize) -> &str {
 // Determine if pkg is in the lockfile, if lockfile is None, we assume all packages are in the lockfile
 // This is because we are using if a package is not in a lockfile as a proxy for if it was installed using rv
 fn is_in_lock(pkg: &str, lock: Option<&Lockfile>) -> bool {
-    lock.map_or(true, |l| l.get_package(pkg, None).is_some())
+    lock.is_none_or(|l| l.get_package(pkg, None).is_some())
 }
 
 fn is_binary_package(
@@ -441,7 +441,7 @@ fn is_binary_package(
 // - url: package url
 fn get_dep_id(dep: &ResolvedDependency, repos: &[Repository]) -> String {
     match &dep.source {
-        Source::Repository { repository } => get_repository_alias(&repository, repos),
+        Source::Repository { repository } => get_repository_alias(repository, repos),
         Source::Git { git, .. } => git.to_string(),
         Source::Local { path } => path.to_string_lossy().to_string(),
         Source::Url { url, .. } => url.to_string(),

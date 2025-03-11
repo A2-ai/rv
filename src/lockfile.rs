@@ -95,9 +95,10 @@ impl Source {
         }
     }
 
-    pub fn git_sha(&self) -> &str {
+    pub fn sha(&self) -> &str {
         match self {
             Source::Git { ref sha, .. } => sha.as_str(),
+            Source::Url { ref sha, .. } => sha.as_str(),
             _ => unreachable!("handle other cases"),
         }
     }

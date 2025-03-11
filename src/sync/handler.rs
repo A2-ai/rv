@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::fs::mtime_recursive;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
@@ -103,6 +102,49 @@ impl<'a> SyncHandler<'a> {
         }
     }
 
+    /// We want to figure out:
+    /// 1. if there are packages in there not the list of deps (eg to remove)
+    /// 2. if all the packages are already installed at the right version
+    /// 3. if there are some local packages we can copy
+    ///
+    /// If we don't have a lockfile, we just skip the whole thing and pretend we don't have a library
+    fn compare_with_local_library(
+        &self,
+        deps: &[ResolvedDependency],
+    ) -> (HashSet<&str>, HashSet<&str>, HashSet<(&str, bool)>) {
+        let mut deps_seen = HashSet::new();
+        let mut deps_to_copy = HashSet::new();
+        // (name, notify). We do not notify if the package is broken in some ways.
+        let mut deps_to_remove = HashSet::new();
+
+        let deps_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name.as_ref(), d)).collect();
+
+        for name in self.library.packages.keys() {
+            if deps_by_name
+                .get(name.as_str())
+                .map(|d| self.library.contains_package(d))
+                .unwrap_or(false)
+            {
+                // If we don't have a lockfile, we cannot trust anything present in the library
+                if self.has_lockfile {
+                    deps_seen.insert(name.as_str());
+                } else if matches!(deps_by_name[name.as_str()].source, Source::Local { .. }) {
+                    deps_to_copy.insert(name.as_str());
+                }
+            } else {
+                deps_to_remove.insert((name.as_str(), true));
+            }
+        }
+
+        // Lastly, remove any package that we can't really access
+        for name in &self.library.broken {
+            log::debug!("Package {name} in library is broken");
+            deps_to_remove.insert((name.as_str(), false));
+        }
+
+        (deps_seen, deps_to_copy, deps_to_remove)
+    }
+
     pub fn handle(
         &self,
         deps: &[ResolvedDependency],
@@ -112,84 +154,19 @@ impl<'a> SyncHandler<'a> {
         if self.staging_path.is_dir() {
             fs::remove_dir_all(&self.staging_path)?;
         }
+        fs::create_dir_all(self.library.path())?;
 
         let mut sync_changes = Vec::new();
 
         let plan = BuildPlan::new(deps);
         let num_deps_to_install = plan.num_to_install();
-        let deps_to_install = plan.all_dependencies();
-        // (name, notify). We do not notify if the package is broken in some ways.
-        let mut to_remove = HashSet::new();
-        let mut deps_seen = HashSet::new();
+        let (deps_seen, deps_to_copy, deos_to_remove) = self.compare_with_local_library(deps);
+        let needs_sync = deps_seen.len() != num_deps_to_install;
 
-        fs::create_dir_all(self.library.path())?;
-
-        // Check which package we already have installed at the right version and which ones
-        // are not present in the resolved deps (eg installed some other way)
-        // We do not do this check for git or url packages since we might not have the version
-        // might be the same but the content changed (eg different git branch)
-        // This is only used for repo and local packages. There is a step just after to check mtime
-        // for local folder.
-        // TODO: we could create a file for git/url for sha like we do for local mtime?
-        for (name, version) in &self.library.packages {
-            if deps_to_install
-                .get(name.as_str())
-                .map(|(v, source)| !source.is_git_or_url() && *v == version)
-                .unwrap_or(false)
-            {
-                // If we don't have a lockfile, we cannot trust anything present in the library
-                if self.has_lockfile {
-                    deps_seen.insert(name.as_str());
-                }
-            } else {
-                to_remove.insert((name.to_string(), true));
-            }
-        }
-
-        // (name, whether to copy from current library)
-        let mut local_deps = HashMap::new();
-        // For local deps we also need to check whether the files from the source are newer than what
-        // is installed currently, if that's the case. If the folder exists and is the same as
-        // what we need to build, we will just copy it
-        // TODO: that logic is not working well if the local folder is a tarball
-        for dep in deps.iter().filter(|x| x.is_local()) {
-            if deps_seen.contains(dep.name.as_ref()) {
-                let local_path = Path::new(dep.source.source_path());
-                let local_mtime = mtime_recursive(local_path)?;
-                let mtime_found = self
-                    .library
-                    .local_packages
-                    .get(dep.name.as_ref())
-                    .unwrap_or(&0);
-
-                // if the mtime we found in the lib is lower than the source folder
-                // remove it from deps_seen as we will need to install it and remove the
-                // existing one from the library
-                if *mtime_found < local_mtime.unix_seconds() {
-                    deps_seen.remove(dep.name.as_ref());
-                    to_remove.insert((dep.name.as_ref().to_string(), false));
-                    local_deps.insert(dep.name.as_ref(), false);
-                } else {
-                    // same mtime or higher: we copy from the library
-                    local_deps.insert(dep.name.as_ref(), true);
-                }
-            } else {
-                local_deps.insert(dep.name.as_ref(), false);
-            }
-        }
-        // make it immutable
-        let local_deps = Arc::new(local_deps);
-
-        // Lastly, remove any package that we can't really access
-        for name in &self.library.broken {
-            log::debug!("Package {name} in library is broken");
-            to_remove.insert((name.to_string(), false));
-        }
-
-        for (dir_name, notify) in to_remove {
+        for (dir_name, notify) in deos_to_remove {
             // Only actually remove the deps if we are not going to rebuild the lib folder
-            if deps_seen.len() == num_deps_to_install {
-                let p = self.library.path().join(&dir_name);
+            if !needs_sync {
+                let p = self.library.path().join(dir_name);
                 if !self.dry_run && notify {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
@@ -197,12 +174,12 @@ impl<'a> SyncHandler<'a> {
             }
 
             if notify {
-                sync_changes.push(SyncChange::removed(&dir_name));
+                sync_changes.push(SyncChange::removed(dir_name));
             }
         }
 
         // If we have all the deps we need, exit early
-        if deps_seen.len() == num_deps_to_install {
+        if !needs_sync {
             return Ok(sync_changes);
         }
 
@@ -239,6 +216,8 @@ impl<'a> SyncHandler<'a> {
         let installed_count = Arc::new(AtomicUsize::new(0));
         let has_errors = Arc::new(AtomicBool::new(false));
         let errors = Arc::new(Mutex::new(Vec::new()));
+        let deps_to_copy = Arc::new(deps_to_copy);
+
         thread::scope(|s| {
             let plan_clone = Arc::clone(&plan);
             let ready_sender_clone = ready_sender.clone();
@@ -277,7 +256,7 @@ impl<'a> SyncHandler<'a> {
                 let plan = Arc::clone(&plan);
                 let has_errors_clone = Arc::clone(&has_errors);
                 let errors_clone = Arc::clone(&errors);
-                let local_deps_clone = Arc::clone(&local_deps);
+                let deps_to_copy_clone = Arc::clone(&deps_to_copy);
                 let pb_clone = Arc::clone(&pb);
                 let installing_clone = Arc::clone(&installing);
 
@@ -304,11 +283,7 @@ impl<'a> SyncHandler<'a> {
                             }
                         }
                         let start = std::time::Instant::now();
-                        let install_result = if local_deps_clone
-                            .get(dep.name.as_ref())
-                            .cloned()
-                            .unwrap_or_default()
-                        {
+                        let install_result = if deps_to_copy_clone.contains(dep.name.as_ref()) {
                             self.copy_package(dep)
                         } else {
                             self.install_package(dep, r_cmd)
@@ -388,12 +363,16 @@ impl<'a> SyncHandler<'a> {
             });
         }
 
-        // If we are there, it means we are successful. Replace the project lib by the staging dir
-        if self.library.path().is_dir() {
-            fs::remove_dir_all(self.library.path())?;
-        }
+        if self.dry_run {
+            fs::remove_dir_all(&self.staging_path)?;
+        } else {
+            // If we are there, it means we are successful. Replace the project lib by the staging dir
+            if self.library.path().is_dir() {
+                fs::remove_dir_all(self.library.path())?;
+            }
 
-        fs::rename(&self.staging_path, self.library.path())?;
+            fs::rename(&self.staging_path, self.library.path())?;
+        }
 
         // Sort all changes by a-z and fall back on installed status for things with the same name
         sync_changes.sort_unstable_by(|a, b| {

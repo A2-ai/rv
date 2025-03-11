@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -9,16 +9,16 @@ serde_json = "1"
 # To write the lockfile in the way we want + add/remove things from rproject.toml
 toml_edit = "0.22.22"
 serde = { version = "1", features = ["derive"] }
-# There's a regex to grab the R version from a string
+# There's a regex to grab the R version from a string and some to parse package files
 regex = "1"
 # To find the cache directory for each OS
-etcetera = "0.8.0"
+etcetera = "0.10.0"
 # Sets some spec like data in the cache dir
 cachedir = "0.3"
 # To get the OS name, version etc
 os_info = "3.9.1"
 # We use bincode to serialize package databases to disk
-bincode = "1"
+bincode = "2"
 thiserror = "2"
 fs-err = "3"
 walkdir = "2"

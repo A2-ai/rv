@@ -11,11 +11,7 @@ use std::str::FromStr;
 /// A DESCRIPTION file is like a PACKAGE file, only that it contains info about a single package
 pub fn parse_description_file(content: &str) -> Option<Package> {
     // TODO: handle remotes in package for deps
-    let new_content = content
-        .replace("\r\n", "\n")
-        .replace("\n    ", " ")
-        .replace("\n  ", " ")
-        .replace("  ", " ");
+    let new_content = content.to_string() + "\n";
 
     let packages = parse_package_file(new_content.as_str());
     packages

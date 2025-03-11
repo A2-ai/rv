@@ -2,9 +2,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use fs_err::{self as fs, write};
+use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, migrate_renv, CliContext};
+use rv::cli::{
+    create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
+};
 use rv::{
     activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
     Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
@@ -37,7 +39,7 @@ pub enum Command {
         #[clap(long, value_parser, num_args = 1..)]
         add: Vec<String>,
     },
-    /// Returns the path for the library for the current project/system
+    /// Returns the path for the library for the current project/system.
     /// The path is always in unix format
     Library,
     /// Dry run of what sync would do
@@ -229,14 +231,27 @@ fn try_main() -> Result<()> {
                 r
             } else {
                 // if r version is not provided, get the major.minor of the R version on the path
-                let [major, minor] = RCommandLine { r: None }.version()?.major_minor();
+                let [major, minor] = match (RCommandLine { r: None }).version() {
+                    Ok(r_ver) => r_ver,
+                    Err(e) => {
+                        if cfg!(windows) {
+                            RCommandLine {
+                                r: Some(PathBuf::from("R.bat")),
+                            }
+                            .version()?
+                        } else {
+                            Err(e)?
+                        }
+                    }
+                }
+                .major_minor();
                 format!("{major}.{minor}")
             };
 
             let repositories = if no_repositories {
                 Vec::new()
             } else {
-                find_r_repositories()?
+                find_r_repositories().unwrap_or(Vec::new())
             };
             init(&project_directory, &r_version, &repositories, &add)?;
             activate(&project_directory)?;
@@ -307,7 +322,8 @@ fn try_main() -> Result<()> {
             )?;
         }
         Command::Cache { json } => {
-            let context = CliContext::new(&cli.config_file)?;
+            let mut context = CliContext::new(&cli.config_file)?;
+            context.load_databases()?;
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
@@ -326,6 +342,16 @@ fn try_main() -> Result<()> {
             subcommand: MigrateSubcommand::Renv { renv_file },
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
+            // migrate renv will create the config file, so parent directory is confirmed to exist
+            let project_dir = &cli.config_file.canonicalize()?.parent().unwrap().to_path_buf();
+            create_library_structure(project_dir)?;
+            create_gitignore(project_dir)?;
+            activate(project_dir)?;
+            let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
+                "source(\"renv/activate.R\")",
+                "# source(\"renv/activate.R\")",
+            );
+            write(project_dir.join(".Rprofile"), content)?;
             if unresolved.is_empty() {
                 println!(
                     "{} was successfully migrated to {}",

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use fs_err::{read_to_string, write};
 
-use crate::consts::{GLOBAL_ACTIVATE_FILE_CONTENT, PROJECT_ACTIVATE_FILE_CONTENT};
+use crate::consts::ACTIVATE_FILE_TEMPLATE;
 
 // constant file name and function to provide the R code string to source the file
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
@@ -75,15 +75,24 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         source: ActivateErrorKind::Io(e),
     })?;
 
-    // Determine if the content of the activate file is for global or project specific activation
-    let content = match etcetera::home_dir()
+    let template = ACTIVATE_FILE_TEMPLATE.to_string();
+    let global_wd_content = if etcetera::home_dir()
         .map(|home| home == dir)
         .unwrap_or(false)
     {
-        true => GLOBAL_ACTIVATE_FILE_CONTENT,
-        false => PROJECT_ACTIVATE_FILE_CONTENT,
+        r#"
+        owd <- getwd()
+        setwd("~")
+        on.exit({
+            setwd(owd)
+        })"#
+    } else {
+        ""
     };
-
+    let rv_command = if cfg!(windows) { "rv.exe" } else { "rv" };
+    let content = template
+        .replace("%rv command%", rv_command)
+        .replace("%global wd content%", global_wd_content);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = &dir.join(ACTIVATE_FILE_NAME);

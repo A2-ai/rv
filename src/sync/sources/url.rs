@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::library::LocalMetadata;
 use crate::package::PackageType;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
@@ -30,6 +31,9 @@ pub(crate) fn install_package(
         );
         r_cmd.install(&download_path, library_dir, &pkg_paths.binary)?;
     }
+
+    let metadata = LocalMetadata::Sha(pkg.source.sha().to_owned());
+    metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
 
     // And then we always link the binary folder into the staging library
     LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dir)?;
