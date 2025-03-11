@@ -102,7 +102,7 @@ impl<'d> ResolvedDependency<'d> {
         if repo_url.contains("r-universe.dev") {
             match RUniverseApi::query_r_universe_api(package, repo_url) {
                 Ok(r) => source = Source::Git { git: r.remote_url, sha: r.remote_sha, directory: None, tag: None, branch: None },
-                Err(e) => log::warn!("Git information for {} from r-universe could not be determined due to {e:?}. Falling back to standard repository. Library may not be able to be recreated.", package.name),
+                Err(e) => log::warn!("Could not properly lock {} due to: {e:?}. Falling back to standard repository. Library may not be able to be recreated.", package.name),
             }
         }
 
@@ -328,6 +328,8 @@ impl fmt::Display for UnresolvedDependency<'_> {
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+
 struct RUniverseApi {
     remote_url: String,
     remote_sha: String,
@@ -339,45 +341,38 @@ impl RUniverseApi {
         let api_url = format!("{}/api/packages/{}", repo_url, package.name);
         let mut writer = Vec::new();
 
-        http.download(&api_url, &mut writer, Vec::new())
-            .map_err(|e| RUniverseApiError::from_http(e, &api_url))?;
+        http.download(&api_url, &mut writer, Vec::new())?;
 
-        let content =
-            std::str::from_utf8(&writer).map_err(|e| RUniverseApiError::from_utf8(e, &api_url))?;
-        let r_universe_api: RUniverseApi = serde_json::from_str(content)
-            .map_err(|e| RUniverseApiError::from_serde_json(e, &api_url))?;
+        let content = std::str::from_utf8(&writer)?;
+        let r_universe_api: RUniverseApi = serde_json::from_str(content)?;
 
         Ok(r_universe_api)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to determine Git info from `{url}`")]
+#[error("Failed to determine Git info from R-Universe API")]
 #[non_exhaustive]
 pub struct RUniverseApiError {
-    pub url: String,
     pub source: RUniverseApiErrorKind,
 }
 
-impl RUniverseApiError {
-    fn from_http(error: HttpError, url: &str) -> Self {
-        Self {
-            url: url.to_string(),
-            source: RUniverseApiErrorKind::Http(error),
-        }
+impl From<HttpError> for RUniverseApiError {
+    fn from(value: HttpError) -> Self {
+        Self { source: RUniverseApiErrorKind::Http(value) }
     }
+}
 
-    fn from_utf8(error: Utf8Error, url: &str) -> Self {
-        Self {
-            url: url.to_string(),
-            source: RUniverseApiErrorKind::Utf8(error),
-        }
+impl From<Utf8Error> for RUniverseApiError {
+    fn from(value: Utf8Error) -> Self {
+        Self { source: RUniverseApiErrorKind::Utf8(value) }
     }
+}
 
-    fn from_serde_json(error: serde_json::Error, url: &str) -> Self {
+impl From<serde_json::Error> for RUniverseApiError {
+    fn from(value: serde_json::Error) -> Self {
         Self {
-            url: url.to_string(),
-            source: RUniverseApiErrorKind::Parse(error),
+            source: RUniverseApiErrorKind::Parse(value)
         }
     }
 }
