@@ -94,6 +94,8 @@ pub enum MigrateSubcommand {
     Renv {
         #[clap(value_parser, default_value = "renv.lock")]
         renv_file: PathBuf,
+        #[clap(long)]
+        strict_r_version: bool,
     },
 }
 
@@ -339,9 +341,9 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Migrate {
-            subcommand: MigrateSubcommand::Renv { renv_file },
+            subcommand: MigrateSubcommand::Renv { renv_file , strict_r_version},
         } => {
-            let unresolved = migrate_renv(&renv_file, &cli.config_file)?;
+            let unresolved = migrate_renv(&renv_file, &cli.config_file, strict_r_version)?;
             // migrate renv will create the config file, so parent directory is confirmed to exist
             let project_dir = &cli.config_file.canonicalize()?.parent().unwrap().to_path_buf();
             create_library_structure(project_dir)?;
