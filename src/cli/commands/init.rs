@@ -140,11 +140,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
             let mut parts = line.splitn(2, '\t');
             let alias = parts.next()?.to_string();
             let url = strip_linux_url(parts.next()?);
-            Some(Repository::new(
-                alias,
-                url,
-                false,
-            ))
+            Some(Repository::new(alias, url, false))
         })
         .collect::<Vec<_>>())
 }
@@ -244,7 +240,10 @@ mod tests {
 
     #[test]
     fn test_linux_url_strip() {
-        let urls = ["https://packagemanager.posit.co/cran/latest", "https://packagemanager.posit.co/cran/__linux__/jammy/latest"];
+        let urls = [
+            "https://packagemanager.posit.co/cran/latest",
+            "https://packagemanager.posit.co/cran/__linux__/jammy/latest",
+        ];
         let cleaned_urls = urls.iter().map(|u| strip_linux_url(u)).collect::<Vec<_>>();
         assert_eq!(cleaned_urls[0], cleaned_urls[1]);
     }

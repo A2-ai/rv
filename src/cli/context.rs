@@ -41,7 +41,7 @@ impl CliContext {
         let lockfile_path = project_dir.join(LOCKFILE_NAME);
         let lockfile = if lockfile_path.exists() {
             let lockfile = Lockfile::load(lockfile_path)?;
-            if !r_version.hazy_match(&lockfile.r_version()) {
+            if !lockfile.r_version().hazy_match(&r_version) {
                 log::debug!(
                     "R version in config file and lockfile are not compatible. Ignoring lockfile."
                 );

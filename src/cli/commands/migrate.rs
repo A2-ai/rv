@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use crate::{
     cli::context::load_databases,
     renv::{ResolvedRenv, UnresolvedRenv},
-    DiskCache, RenvLock, Repository, SystemInfo, Version,
+    DiskCache, RenvLock, Repository, SystemInfo,
 };
 
 const RENV_CONFIG_TEMPLATE: &str = r#"# this config was migrated from %renv_file% on %time%
@@ -25,6 +25,7 @@ dependencies = [
 pub fn migrate_renv(
     renv_file: impl AsRef<Path>,
     config_file: impl AsRef<Path>,
+    strict_r_version: bool,
 ) -> Result<Vec<UnresolvedRenv>> {
     // project name is the parent directory of the renv project
     let project_name = renv_file
@@ -45,10 +46,17 @@ pub fn migrate_renv(
     let (resolved, unresolved) = renv_lock.resolve(&databases);
 
     // Write config out to the config file specified in the cli, even if config file is outside of the renv.lock project
+
+    let r_version = if strict_r_version {
+        &renv_lock.r_version().original
+    } else {
+        let [major, minor] = renv_lock.r_version().major_minor();
+        &format!("{major}.{minor}")
+    };
     let config = render_config(
         &renv_file.as_ref().to_string_lossy(),
         project_name,
-        renv_lock.r_version(),
+        r_version,
         &renv_lock.config_repositories(),
         &resolved,
     );
@@ -60,7 +68,7 @@ pub fn migrate_renv(
 fn render_config(
     renv_file: &str,
     project_name: &str,
-    r_version: &Version,
+    r_version: &str,
     repositories: &Vec<Repository>,
     resolved_deps: &Vec<ResolvedRenv>,
 ) -> String {
@@ -86,7 +94,6 @@ fn render_config(
         .map(|d| format!("    {d}"))
         .collect::<Vec<_>>()
         .join(",\n");
-
     // get time. Try to round to seconds, but if error, leave as unrounded
     let time = jiff::Zoned::now();
     let time = time.round(jiff::Unit::Day).unwrap_or(time);
@@ -95,7 +102,7 @@ fn render_config(
         .replace("%renv_file%", renv_file)
         .replace("%time%", &time.to_string())
         .replace("%project_name%", project_name)
-        .replace("%r_version%", &r_version.original)
+        .replace("%r_version%", &r_version)
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
 }
