@@ -96,9 +96,9 @@ impl<'d> ResolvedDependency<'d> {
         };
         // If repository is r-universe, treat as a git repo since r-universe does not have archive
 
-        // TODO: If/when the need arises to not treat r-universe as a git repo, we will keep both the repository and git info
-        // and use the repository when the locked version and version in the PACKAGES database match. Once package no longer
-        // found in the repository, should convert to Git Repo only
+        // TODO: If/when the need arises to not treat r-universe as a git repo, the potential spec is to keep both the repository 
+        // and git info. The repository is used while the locked version and version in the PACKAGES database match, 
+        // switching to using git once it is no longer available
         if repo_url.contains("r-universe.dev") {
             match RUniverseApi::query_r_universe_api(package, repo_url) {
                 Ok(r) => source = Source::Git { git: r.remote_url, sha: r.remote_sha, directory: None, tag: None, branch: None },
@@ -329,7 +329,6 @@ impl fmt::Display for UnresolvedDependency<'_> {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-
 struct RUniverseApi {
     remote_url: String,
     remote_sha: String,
@@ -342,9 +341,7 @@ impl RUniverseApi {
         let mut writer = Vec::new();
 
         http.download(&api_url, &mut writer, Vec::new())?;
-
-        let content = std::str::from_utf8(&writer)?;
-        let r_universe_api: RUniverseApi = serde_json::from_str(content)?;
+        let r_universe_api: RUniverseApi = serde_json::from_slice(&writer)?;
 
         Ok(r_universe_api)
     }
