@@ -95,6 +95,12 @@
         "digest"
       ],
       "Hash": "b574c1bce8b11eec3b135f7c585a04c7"
+    },
+    "unknown_pkg": {
+      "Package": "unknown_pkg",
+      "Version": "0.1.1",
+      "Source": "unknown",
+      "Hash": "b574c1bce8b11eec3b135f7c585a04c7"
     }
   }
 }

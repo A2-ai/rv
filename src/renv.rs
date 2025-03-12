@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{
     consts::RECOMMENDED_PACKAGES,
@@ -13,14 +13,29 @@ use crate::{
     Repository, RepositoryDatabase,
 };
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, PartialEq, Clone)]
 // as enum since logic to resolve depends on this
 enum RenvSource {
     Repository,
     GitHub,
     Local,
     Other(String),
+}
+
+impl<'de> Deserialize<'de> for RenvSource {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let source_enum = match s.as_str() {
+            "Repository" => RenvSource::Repository,
+            "GitHub" => RenvSource::GitHub,
+            "Local" => RenvSource::Local,
+            other => RenvSource::Other(other.to_string()),
+        };
+        Ok(source_enum)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -106,7 +121,7 @@ impl RenvLock {
                 continue;
             }
 
-            let res = match package_info.source {
+            let res = match &package_info.source {
                 RenvSource::Repository => resolve_repository(
                     package_info,
                     &self.r.repositories,
@@ -117,7 +132,9 @@ impl RenvLock {
                     resolve_github(package_info).map(|(git, sha)| Source::Git { git, sha })
                 }
                 RenvSource::Local => resolve_local(package_info).map(Source::Local),
-                _ => Err("Source is not supported".into()),
+                RenvSource::Other(source) => {
+                    Err(format!("Source ({source}) is not supported").into())
+                }
             };
             match res {
                 Ok(source) => resolved.push(ResolvedRenv {
@@ -130,6 +147,10 @@ impl RenvLock {
                 }),
             }
         }
+
+        //alphabetize to match with plan/sync
+        resolved.sort_by_key(|a| &a.package_info.package);
+        unresolved.sort_by_key(|a| a.package_info.package.clone());
         (resolved, unresolved)
     }
 
@@ -394,10 +415,7 @@ mod tests {
         let renv_lock = RenvLock::parse_renv_lock("src/tests/renv/renv.lock").unwrap();
         let repository_databases =
             repository_databases(renv_lock.r_version(), &renv_lock.config_repositories());
-        let (mut resolved, mut unresolved) = renv_lock.resolve(&repository_databases);
-        // sort by name of package to maintain order for all snapshot test
-        resolved.sort_by_key(|r| r.package_info.package.clone());
-        unresolved.sort_by_key(|u| u.package_info.package.clone());
+        let (resolved, unresolved) = renv_lock.resolve(&repository_databases);
 
         let mut out = String::new();
         for r in resolved {

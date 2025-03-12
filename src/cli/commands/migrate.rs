@@ -46,13 +46,13 @@ pub fn migrate_renv(
     let (resolved, unresolved) = renv_lock.resolve(&databases);
 
     // Write config out to the config file specified in the cli, even if config file is outside of the renv.lock project
-
     let r_version = if strict_r_version {
         &renv_lock.r_version().original
     } else {
         let [major, minor] = renv_lock.r_version().major_minor();
         &format!("{major}.{minor}")
     };
+
     let config = render_config(
         &renv_file.as_ref().to_string_lossy(),
         project_name,
@@ -69,8 +69,8 @@ fn render_config(
     renv_file: &str,
     project_name: &str,
     r_version: &str,
-    repositories: &Vec<Repository>,
-    resolved_deps: &Vec<ResolvedRenv>,
+    repositories: &[Repository],
+    resolved_deps: &[ResolvedRenv],
 ) -> String {
     let repos = repositories
         .iter()
@@ -89,6 +89,7 @@ fn render_config(
         .collect::<Vec<_>>()
         .join(",\n");
 
+    // print alphabetically to match with plan/sync output
     let deps = resolved_deps
         .iter()
         .map(|d| format!("    {d}"))
