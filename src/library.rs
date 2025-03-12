@@ -29,10 +29,11 @@ fn get_current_system_path(system_info: &SystemInfo, r_version: [u32; 2]) -> Pat
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum LocalMetadata {
-    /// For local folders/tarballs. The mtime of the source folder at the time of building
+    /// For local folders. The mtime of the source folder at the time of building
     Mtime(i64),
-    /// For git repositories and URL sources
+    /// For git repositories, URL sources and local tarballs
     Sha(String),
 }
 
@@ -159,14 +160,25 @@ impl Library {
                 .get(pkg.name.as_ref())
                 .map(|m| m.sha().unwrap() == sha.as_str())
                 .unwrap_or(false),
-            // TODO: check if mtimes works with an archive
-            Source::Local { ref path } => {
+            Source::Local { ref sha, .. } => {
                 if let Some(metadata) = self.non_repo_packages.get(pkg.name.as_ref()) {
-                    let local_mtime = match mtime_recursive(path) {
-                        Ok(m) => m,
-                        Err(_) => return false,
-                    };
-                    local_mtime.unix_seconds() == metadata.mtime().unwrap()
+                    match metadata {
+                        LocalMetadata::Mtime(local_mtime) => {
+                            let current_mtime =
+                                match mtime_recursive(pkg.local_resolved_path.clone().unwrap()) {
+                                    Ok(m) => m,
+                                    Err(_) => return false,
+                                };
+                            current_mtime.unix_seconds() == *local_mtime
+                        }
+                        LocalMetadata::Sha(local_sha) => {
+                            if let Some(s) = sha {
+                                s == local_sha
+                            } else {
+                                false
+                            }
+                        }
+                    }
                 } else {
                     false
                 }

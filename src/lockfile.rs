@@ -23,9 +23,9 @@ pub enum Source {
         git: String,
         sha: String,
         directory: Option<String>,
-        // We keep tag and branch around to quickly compare with the config file, eg
-        // if the tag changed in the config file we know that it will require an update without
-        // having to look up anything
+        /// We keep tag and branch around to quickly compare with the config file, eg
+        /// if the tag changed in the config file we know that it will require an update without
+        /// having to look up anything
         tag: Option<String>,
         branch: Option<String>,
     },
@@ -38,6 +38,8 @@ pub enum Source {
     },
     Local {
         path: PathBuf,
+        /// Only for tarballs
+        sha: Option<String>,
     },
 }
 
@@ -72,8 +74,11 @@ impl Source {
             Self::Repository { repository } => {
                 table.insert("repository", Value::from(repository));
             }
-            Self::Local { path } => {
+            Self::Local { path, sha } => {
                 table.insert("path", Value::from(path.display().to_string()));
+                if let Some(s) = sha {
+                    table.insert("sha", Value::from(s));
+                }
             }
         };
 
@@ -89,7 +94,7 @@ impl Source {
     pub fn source_path(&self) -> &str {
         match self {
             Source::Repository { ref repository } => repository.as_str(),
-            Source::Local { ref path } => path.to_str().unwrap(),
+            Source::Local { ref path, .. } => path.to_str().unwrap(),
             Source::Git { ref git, .. } => git.as_str(),
             Source::Url { ref url, .. } => url.as_str(),
         }
@@ -138,7 +143,7 @@ impl Source {
             (Source::Url { url: url1, .. }, ConfigDependency::Url { url: url2, .. }) => {
                 url1 == url2
             }
-            (Source::Local { path: p1 }, ConfigDependency::Local { path: p2, .. }) => p1 == p2,
+            (Source::Local { path: p1, .. }, ConfigDependency::Local { path: p2, .. }) => p1 == p2,
             (
                 Source::Repository { repository: r1 },
                 ConfigDependency::Detailed { repository: r2, .. },
@@ -164,8 +169,12 @@ impl fmt::Debug for Source {
             Self::Repository { repository } => {
                 write!(f, "repository(url: {repository})")
             }
-            Self::Local { path } => {
-                write!(f, "local(path: {})", path.display())
+            Self::Local { path, sha } => {
+                if let Some(sha) = sha {
+                    write!(f, "local(path: {}, sha: {sha})", path.display())
+                } else {
+                    write!(f, "local(path: {})", path.display())
+                }
             }
             Self::Url { url, sha } => {
                 write!(f, "url(url: {url}, sha:{sha})")
@@ -195,7 +204,7 @@ impl fmt::Display for Source {
             Self::Repository { repository } => {
                 write!(f, "{repository}")
             }
-            Self::Local { path } => {
+            Self::Local { path, .. } => {
                 write!(f, " {}", path.display())
             }
             Self::Url { url, .. } => {

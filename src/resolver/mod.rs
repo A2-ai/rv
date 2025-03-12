@@ -124,16 +124,19 @@ impl<'d> Resolver<'d> {
             Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
         };
 
-        let package = if canon_path.is_file() {
+        let (package, sha) = if canon_path.is_file() {
             // We have a file, it should be a tarball.
             // even though we might have to extract again in sync?
-            // TODO: keep the sha of the tar in the lockfile?
             let tempdir = tempfile::tempdir()?;
-            let path = untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path())?;
-            parse_description_file_in_folder(path.unwrap_or_else(|| canon_path.clone()))?
+            let (path, hash) =
+                untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path(), true)?;
+            (
+                parse_description_file_in_folder(path.unwrap_or_else(|| canon_path.clone()))?,
+                hash,
+            )
         } else if canon_path.is_dir() {
             // we have a folder
-            parse_description_file_in_folder(&canon_path)?
+            (parse_description_file_in_folder(&canon_path)?, None)
         } else {
             unreachable!()
         };
@@ -152,8 +155,10 @@ impl<'d> Resolver<'d> {
             &package,
             Source::Local {
                 path: local_path.clone(),
+                sha,
             },
             item.install_suggestions,
+            canon_path,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
@@ -612,7 +617,6 @@ mod tests {
                 }
 
                 if let Some(p) = r.binary {
-                    println!("{:?}", p);
                     repo.binary_packages
                         .insert(r_version.major_minor(), dbs[&p].clone());
                 }

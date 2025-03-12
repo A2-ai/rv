@@ -28,6 +28,8 @@ pub struct ResolvedDependency<'d> {
     pub(crate) from_remote: bool,
     // Remotes are only for local/git deps so the values will always be owned
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
+    // Only set for local dependencies. This is the full resolved path to a directory/tarball
+    pub(crate) local_resolved_path: Option<PathBuf>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -75,6 +77,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: HashMap::new(),
             // it might come from a remote but we don't keep track of that
             from_remote: false,
+            local_resolved_path: None,
         }
     }
 
@@ -112,6 +115,7 @@ impl<'d> ResolvedDependency<'d> {
             installation_status,
             remotes: HashMap::new(),
             from_remote: false,
+            local_resolved_path: None,
         };
 
         (res, deps)
@@ -149,6 +153,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
+            local_resolved_path: None,
         };
 
         (res, deps)
@@ -158,6 +163,7 @@ impl<'d> ResolvedDependency<'d> {
         package: &Package,
         source: Source,
         install_suggests: bool,
+        local_resolved_path: PathBuf,
     ) -> (Self, InstallationDependencies) {
         let deps = package.dependencies_to_install(install_suggests);
         let res = Self {
@@ -183,6 +189,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
+            local_resolved_path: Some(local_resolved_path),
         };
 
         (res, deps)
@@ -218,6 +225,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
+            local_resolved_path: None,
         };
 
         (res, deps)

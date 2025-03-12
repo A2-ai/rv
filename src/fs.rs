@@ -1,6 +1,6 @@
 use fs_err as fs;
 use std::fs::Metadata;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use filetime::FileTime;
@@ -113,12 +113,20 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
 pub(crate) fn untar_archive<R: Read>(
     mut reader: R,
     dest: impl AsRef<Path>,
-) -> Result<Option<PathBuf>, std::io::Error> {
+    compute_hash: bool,
+) -> Result<(Option<PathBuf>, Option<String>), std::io::Error> {
     let dest = dest.as_ref();
     fs::create_dir_all(dest)?;
 
+    let mut hash = None;
     let mut buffer = Vec::new();
     reader.read_to_end(&mut buffer)?;
+    if compute_hash {
+        let mut hasher = Sha256::new();
+        hasher.update(&buffer);
+        let hash_out = hasher.finalize();
+        hash = Some(format!("{hash_out:x}"));
+    }
 
     match buffer[..4] {
         // zip
@@ -152,16 +160,5 @@ pub(crate) fn untar_archive<R: Read>(
         })
         .next();
 
-    Ok(dir)
-}
-
-pub(crate) fn hash_file(path: impl AsRef<Path>) -> Result<String, std::io::Error> {
-    let mut hasher = Sha256::new();
-    let file = fs::File::open(path.as_ref())?;
-    let mut reader = BufReader::new(file);
-    let mut buffer = Vec::new();
-    reader.read_to_end(&mut buffer)?;
-    hasher.update(&buffer);
-    let hash = hasher.finalize();
-    Ok(format!("{hash:x}"))
+    Ok((dir, hash))
 }

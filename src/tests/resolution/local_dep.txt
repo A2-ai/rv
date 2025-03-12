@@ -6,4 +6,5 @@ dependencies = [
     { name = "dummy", path = "dummy-pkg" }
 ]
 ---
+repos = [{name = "cran", binary = "cran-binary", force_source = false}]
 ---

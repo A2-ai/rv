@@ -1,44 +1,10 @@
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use std::{io, io::Write, time::Duration};
+use std::{fs, io, io::Write, time::Duration};
 
 use crate::fs::untar_archive;
-use sha2::{Digest, Sha256};
 use ureq::http::{HeaderName, HeaderValue};
-
-// A writer that returns the sha256 hash at the end
-struct ShaWriter<W: Write> {
-    inner: W,
-    hasher: Sha256,
-}
-
-impl<W: Write> ShaWriter<W> {
-    fn new(inner: W) -> Self {
-        Self {
-            inner,
-            hasher: Sha256::new(),
-        }
-    }
-
-    #[must_use]
-    fn finish(self) -> (W, String) {
-        let hash = self.hasher.finalize();
-        (self.inner, format!("{hash:x}"))
-    }
-}
-
-impl<W: Write> Write for ShaWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let n = self.inner.write(buf)?;
-        self.hasher.update(&buf[..n]);
-        Ok(n)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
-    }
-}
 
 /// Downloads a remote content to the given writer.
 /// Returns the number of bytes written to the writer, 0 for a 404 or an empty 200
@@ -176,24 +142,37 @@ impl HttpDownload for Http {
         destination: impl AsRef<Path>,
         use_sha_in_path: bool,
     ) -> Result<(Option<PathBuf>, String), HttpError> {
-        let destination = destination.as_ref();
+        let destination = destination.as_ref().to_path_buf();
 
-        let mut writer = ShaWriter::new(Vec::new());
+        let mut writer = Vec::new();
         self.download(url, &mut writer, vec![])?;
-        let (inner, sha) = writer.finish();
 
-        let final_dest = if use_sha_in_path {
-            destination.join(&sha[..10])
+        let (destination, dir, sha) = if use_sha_in_path {
+            // If we want to use the sha in path, we need to untar first so we get the sha rather
+            // than reading the file twice
+            let tempdir = tempfile::tempdir().map_err(|e| HttpError::from_io(url, e))?;
+            let (dir, sha) = untar_archive(Cursor::new(writer), tempdir.path(), true)
+                .map_err(|e| HttpError::from_io(url, e))?;
+            let actual_dir = dir.unwrap();
+            let sha = sha.unwrap();
+            let new_destination = destination.join(&sha[..10]);
+            let install_dir = new_destination.join(actual_dir.file_name().unwrap());
+            if install_dir.is_dir() {
+                fs::remove_dir_all(&install_dir).map_err(|e| HttpError::from_io(url, e))?;
+            }
+            fs::create_dir_all(&install_dir).map_err(|e| HttpError::from_io(url, e))?;
+            fs::rename(&actual_dir, &install_dir).map_err(|e| HttpError::from_io(url, e))?;
+
+            (new_destination, Some(install_dir), sha)
         } else {
-            destination.to_path_buf()
+            let (dir, sha) = untar_archive(Cursor::new(writer), &destination, true)
+                .map_err(|e| HttpError::from_io(url, e))?;
+            (destination, dir, sha.unwrap())
         };
-
-        let dir = untar_archive(Cursor::new(inner), &final_dest)
-            .map_err(|e| HttpError::from_io(url, e))?;
 
         log::debug!(
             "Successfully extracted archive to {} (in sub folder: {:?})",
-            final_dest.display(),
+            destination.display(),
             dir
         );
 
