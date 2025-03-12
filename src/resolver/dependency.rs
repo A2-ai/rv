@@ -364,20 +364,24 @@ pub struct RUniverseApiError {
 
 impl From<HttpError> for RUniverseApiError {
     fn from(value: HttpError) -> Self {
-        Self { source: RUniverseApiErrorKind::Http(value) }
+        Self {
+            source: RUniverseApiErrorKind::Http(value),
+        }
     }
 }
 
 impl From<Utf8Error> for RUniverseApiError {
     fn from(value: Utf8Error) -> Self {
-        Self { source: RUniverseApiErrorKind::Utf8(value) }
+        Self {
+            source: RUniverseApiErrorKind::Utf8(value),
+        }
     }
 }
 
 impl From<serde_json::Error> for RUniverseApiError {
     fn from(value: serde_json::Error) -> Self {
         Self {
-            source: RUniverseApiErrorKind::Parse(value)
+            source: RUniverseApiErrorKind::Parse(value),
         }
     }
 }
