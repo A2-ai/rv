@@ -1,0 +1,12 @@
+[project]
+name = "r-universe"
+r_version = "4.4"
+
+dependencies = [
+    "scicalc"
+]
+
+repositories = [
+    {alias = "r-universe", url = "https://a2-ai.r-universe.dev"},
+    {alias = "RSPM", url = "https://packagemanager.posit.co/cran/2024-12-04"},
+]
