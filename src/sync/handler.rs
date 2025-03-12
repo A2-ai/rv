@@ -160,10 +160,10 @@ impl<'a> SyncHandler<'a> {
 
         let plan = BuildPlan::new(deps);
         let num_deps_to_install = plan.num_to_install();
-        let (deps_seen, deps_to_copy, deos_to_remove) = self.compare_with_local_library(deps);
+        let (deps_seen, deps_to_copy, deps_to_remove) = self.compare_with_local_library(deps);
         let needs_sync = deps_seen.len() != num_deps_to_install;
 
-        for (dir_name, notify) in deos_to_remove {
+        for (dir_name, notify) in deps_to_remove {
             // Only actually remove the deps if we are not going to rebuild the lib folder
             if !needs_sync {
                 let p = self.library.path().join(dir_name);

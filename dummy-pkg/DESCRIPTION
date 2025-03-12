@@ -1,9 +1,10 @@
 Package: dummy
-Title: Package Which Has No Dependencies
+Title: Dummy package
 Version: 0.0.0.9001
 Authors@R: 
     person("Wes", "Cummings", , "wes@a2-ai.com", role = c("aut", "cre"))
-Description: This package has no dependencies
+Description: Test package
+Imports: R6
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

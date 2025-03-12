@@ -127,7 +127,6 @@ impl<'d> Resolver<'d> {
         let (package, sha) = if canon_path.is_file() {
             // We have a file, it should be a tarball.
             // even though we might have to extract again in sync?
-            // TODO: keep the sha of the tar in the lockfile?
             let tempdir = tempfile::tempdir()?;
             let (path, hash) =
                 untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path(), true)?;

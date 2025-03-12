@@ -141,12 +141,15 @@ impl RCmd for RCommandLine {
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError> {
         // Always delete destination if it exists first to avoid issues with incomplete installs
-        if destination.as_ref().is_dir() {
-            fs::remove_dir_all(destination.as_ref())
+        // except if it's the same as the library. This happens for local packages
+        if library.as_ref() != destination.as_ref() {
+            if destination.as_ref().is_dir() {
+                fs::remove_dir_all(destination.as_ref())
+                    .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
+            }
+            fs::create_dir_all(destination.as_ref())
                 .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
         }
-        fs::create_dir_all(destination.as_ref())
-            .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
 
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
