@@ -1,15 +1,15 @@
 use clap::{Parser, Subcommand};
+use rv::consts::RVR_FILENAME;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
-use rv::cli::{
-    create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
-};
+use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
-    Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
+    activate, add_packages, add_rprofile_source_call, deactivate, read_and_verify_config,
+    CacheInfo, Config, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency,
+    Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -33,11 +33,17 @@ pub enum Command {
         #[clap(value_parser, default_value = ".")]
         project_directory: PathBuf,
         #[clap(short = 'r', long)]
+        /// Specify a non-default R version
         r_version: Option<String>,
         #[clap(long)]
+        /// Do no populated repositories
         no_repositories: bool,
         #[clap(long, value_parser, num_args = 1..)]
+        /// Add simple packages to the config
         add: Vec<String>,
+        #[clap(long)]
+        /// Turn off rv access through .rv R environment
+        no_r_environment: bool,
     },
     /// Returns the path for the library for the current project/system.
     /// The path is always in unix format
@@ -97,6 +103,8 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Include the patch in the R version
         strict_r_version: bool,
+        /// Turn off rv access through .rv R environment
+        no_r_environment: bool,
     },
 }
 
@@ -225,6 +233,7 @@ fn try_main() -> Result<()> {
             r_version,
             no_repositories,
             add,
+            no_r_environment,
         } => {
             let r_version = if let Some(r) = r_version {
                 // Make sure input is a valid version format. NOT checking if it is a valid R version on system in init
@@ -257,6 +266,9 @@ fn try_main() -> Result<()> {
                 find_r_repositories().unwrap_or(Vec::new())
             };
             init(&project_directory, &r_version, &repositories, &add)?;
+            if !no_r_environment {
+                add_rprofile_source_call(&project_directory, RVR_FILENAME)?;
+            }
             activate(&project_directory)?;
             println!(
                 "rv project successfully initialized at {}",
@@ -346,6 +358,7 @@ fn try_main() -> Result<()> {
                 MigrateSubcommand::Renv {
                     renv_file,
                     strict_r_version,
+                    no_r_environment,
                 },
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file, strict_r_version)?;
@@ -356,8 +369,10 @@ fn try_main() -> Result<()> {
                 .parent()
                 .unwrap()
                 .to_path_buf();
-            create_library_structure(project_dir)?;
-            create_gitignore(project_dir)?;
+            init_structure(project_dir)?;
+            if !no_r_environment {
+                add_rprofile_source_call(project_dir, RVR_FILENAME)?
+            }
             activate(project_dir)?;
             let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
                 "source(\"renv/activate.R\")",

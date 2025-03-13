@@ -1,5 +1,5 @@
 mod init;
 mod migrate;
 
-pub use init::{create_gitignore, create_library_structure, find_r_repositories, init};
+pub use init::{find_r_repositories, init, init_structure};
 pub use migrate::migrate_renv;

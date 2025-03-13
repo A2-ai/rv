@@ -2,6 +2,7 @@ pub const PACKAGE_FILENAME: &str = "PACKAGES";
 pub const DESCRIPTION_FILENAME: &str = "DESCRIPTION";
 pub const SOURCE_PACKAGES_PATH: &str = "/src/contrib/PACKAGES";
 pub const LOCKFILE_NAME: &str = "rv.lock";
+pub const RVR_FILENAME: &str = "rv/scripts/rvr.R";
 
 pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
@@ -85,3 +86,30 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 	}
 })
 "#;
+
+pub(crate) const RVR_FILE_CONTENT: &str = r#".rv <- new.env()
+.rv$config_path <- file.path(normalizePath(getwd()), "rproject.toml")
+.rv$info <- function(json = FALSE) {
+  command <- c("info")
+  if (json) { command <- c(command, "--json") }
+  .rv$command(command)
+}
+.rv$plan <- function() { .rv$command("plan") }
+.rv$sync <- function() { .rv$command("sync") }
+.rv$add <- function(..., dry_run = FALSE) {
+  dots <- unlist(list(...))
+  command <- c("add", dots)
+  if (dry_run) { command <- c(command, "--dry-run") }
+  .rv$command(command)
+}
+
+.rv$command <- function(command) {
+  # underlying system calls to rv
+  args <- c(command, "-c", .rv$config_path)
+  res <- system2("rv", args, stdout = TRUE)
+  if (!is.null(attr(res, "status"))) {
+    warning(sprintf("failed to run `rv %s`, check your console for messages", paste(args, collapse = " ")))
+  } else {
+    message(paste(res, collapse = "\n"))
+  }
+}"#;

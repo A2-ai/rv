@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use fs_err::{read_to_string, write};
 
@@ -6,9 +9,6 @@ use crate::consts::ACTIVATE_FILE_TEMPLATE;
 
 // constant file name and function to provide the R code string to source the file
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
-fn activation_string() -> String {
-    format!(r#"source("{ACTIVATE_FILE_NAME}")"#)
-}
 
 pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
@@ -21,26 +21,29 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     }
 
     write_activate_file(dir)?;
+    add_rprofile_source_call(dir, ACTIVATE_FILE_TEMPLATE)?;
+    Ok(())
+}
 
-    let rprofile_path = dir.join(".Rprofile");
-    if !rprofile_path.exists() {
-        write(&rprofile_path, format!("{}\n", activation_string())).map_err(|e| ActivateError {
-            source: ActivateErrorKind::Io(e),
-        })?;
+pub fn add_rprofile_source_call(
+    dir: impl AsRef<Path>,
+    source_file: impl AsRef<Path>,
+) -> Result<(), io::Error> {
+    let path = dir.as_ref().join(".Rprofile");
+    let source_file = source_file.as_ref();
+
+    let content = if path.exists() {
+        read_to_string(&path)?
+    } else {
+        String::new()
     };
 
-    let content = read_to_string(&rprofile_path).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
-
-    if content.contains(&activation_string()) {
+    if content.contains(&*source_file.to_string_lossy()) {
         return Ok(());
     }
 
-    let new_content = format!("{}\n{}", activation_string(), content);
-    write(rprofile_path, new_content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    let new_content = format!(r#"source("{}")\n{}"#, source_file.display(), content);
+    write(path, new_content)?;
 
     Ok(())
 }
@@ -59,7 +62,7 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
 
     let new_content = content
         .lines()
-        .filter(|line| line != &activation_string())
+        .filter(|line| line != &format!(r#"source("{ACTIVATE_FILE_NAME}")"#))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -126,6 +129,14 @@ pub enum ActivateErrorKind {
     #[error("{0} is not a directory")]
     NotDir(PathBuf),
     Io(std::io::Error),
+}
+
+impl From<io::Error> for ActivateError {
+    fn from(value: io::Error) -> Self {
+        Self {
+            source: ActivateErrorKind::Io(value),
+        }
+    }
 }
 
 #[cfg(test)]
