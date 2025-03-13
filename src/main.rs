@@ -2,14 +2,13 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use fs_err::{self as fs, read_to_string, write};
+use fs_err::{self as fs, read_to_string, remove_dir_all, write};
 use rv::cli::utils::timeit;
 use rv::cli::{
     create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
 };
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
-    Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, read_and_verify_config, remove_package, CacheInfo, Config, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version
 };
 
 #[derive(Parser)]
@@ -73,6 +72,13 @@ pub enum Command {
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
     },
+    /// Remove dependencies, library, or cache
+    Remove {
+        #[clap(subcommand)]
+        subcommand: Option<RemoveSubcommand>,
+        #[arg(value_name = "PACKAGE", num_args = 1.., required = false)]
+        packages: Vec<String>,
+    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
@@ -105,6 +111,12 @@ pub enum MigrateSubcommand {
         /// Include the patch in the R version
         strict_r_version: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RemoveSubcommand {
+    Cache,
+    Library,
 }
 
 #[derive(Debug, Subcommand)]
@@ -355,7 +367,7 @@ fn try_main() -> Result<()> {
         } => {
             // load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
-            add_packages(&mut doc, packages)?;
+            add_packages(&mut doc, packages);
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
@@ -376,6 +388,19 @@ fn try_main() -> Result<()> {
                 cli.verbose.is_present(),
                 SyncMode::Default,
             )?;
+        }
+        Command::Remove { subcommand, packages} => {
+            let context = CliContext::new(&cli.config_file)?;
+            match subcommand {
+                Some(RemoveSubcommand::Cache) => remove_dir_all(context.cache.root)?,
+                Some(RemoveSubcommand::Library) => remove_dir_all(context.library_path())?,
+                None if packages.is_empty() => bail!("No command specified"),
+                _ => {
+                    let mut doc = read_and_verify_config(&cli.config_file)?;
+                    remove_package(&mut doc, packages);
+                    println!("{}", doc.to_string());
+                }
+            }
         }
         Command::Cache { json } => {
             let mut context = CliContext::new(&cli.config_file)?;

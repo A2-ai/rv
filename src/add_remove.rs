@@ -16,20 +16,23 @@ pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentM
     Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
 
-pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
+pub fn remove_package(config_doc: &mut DocumentMut, packages: Vec<String>) {
+    let config_deps = get_mut_array(config_doc);
+    let dep_names = get_dep_names(&config_deps);
+    for p in packages {
+        // If a dependency matches the package, remove it
+        if let Some(index) = dep_names.iter().position(|dep| dep == &p) {
+            config_deps.remove(index);
+        }
+    };
+}
+
+pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
 
     // collect the names of all of the dependencies
-    let config_dep_names = config_deps
-        .iter()
-        .filter_map(|v| match v {
-            Value::String(s) => Some(s.value().as_str()),
-            Value::InlineTable(t) => t.get("name").and_then(|v| v.as_str()),
-            _ => None,
-        })
-        .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
-        .collect::<Vec<_>>();
+    let config_dep_names = get_dep_names(config_deps);
 
     // Determine if the dep to add is in the config, if not add it
     for d in packages {
@@ -45,8 +48,6 @@ pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Resu
     // Set a trailing new line and comma for the last element for proper formatting
     config_deps.set_trailing("\n");
     config_deps.set_trailing_comma(true);
-
-    Ok(())
 }
 
 fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
@@ -65,6 +66,18 @@ fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
         last.decor_mut().set_suffix("");
     }
     deps
+}
+
+fn get_dep_names(array: &Array) -> Vec<String> {
+    array
+        .iter()
+        .map(|v| match v {
+            Value::String(s) => Some(s.value().as_str()),
+            Value::InlineTable(t) => t.get("name").and_then(|v| v.as_str()),
+            _ => None,
+        })
+        .map(|v| v.unwrap_or_default().to_string()) // Need to allocate so values are not a reference to a mut
+        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -91,7 +104,7 @@ mod tests {
     fn add_remove() {
         let config_file = "src/tests/valid_config/all_fields.toml";
         let mut doc = read_and_verify_config(&config_file).unwrap();
-        add_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]).unwrap();
+        add_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]);
         insta::assert_snapshot!("add_remove", doc.to_string());
     }
 }
