@@ -18,11 +18,12 @@ pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentM
 
 pub fn remove_packages(config_doc: &mut DocumentMut, packages: Vec<String>) {
     let config_deps = get_mut_array(config_doc);
-    let dep_names = get_dep_names(&config_deps);
+    let mut dep_names = get_dep_names(&config_deps);
     for p in packages {
         // If a dependency matches the package, remove it
         if let Some(index) = dep_names.iter().position(|dep| dep == &p) {
             config_deps.remove(index);
+            dep_names.remove(index);
         }
     }
 
@@ -102,13 +103,15 @@ pub enum AddErrorKind {
 
 #[cfg(test)]
 mod tests {
-    use crate::{add_packages, read_and_verify_config};
+    use crate::{add_packages, read_and_verify_config, remove_packages};
 
     #[test]
     fn add_remove() {
         let config_file = "src/tests/valid_config/all_fields.toml";
         let mut doc = read_and_verify_config(&config_file).unwrap();
         add_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]);
-        insta::assert_snapshot!("add_remove", doc.to_string());
+        insta::assert_snapshot!("add", doc.to_string());
+        remove_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]);
+        insta::assert_snapshot!("remove", doc.to_string());
     }
 }
