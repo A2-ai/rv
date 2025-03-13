@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crate::lockfile::Source;
 use crate::package::{deserialize_version, Version};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -15,7 +15,7 @@ struct Author {
     maintainer: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,

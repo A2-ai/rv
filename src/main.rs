@@ -47,8 +47,21 @@ pub enum Command {
         #[clap(short, long)]
         upgrade: bool,
     },
+    /// Provide information about the project
+    Info {
+        #[clap(short, long)]
+        json: bool,
+        #[clap(short, long)]
+        /// Display only the r version
+        r_version: bool,
+    },
     /// Replaces the library with exactly what is in the lock file
     Sync,
+    /// Upgrade packages to the latest versions available
+    Upgrade {
+        #[clap(long)]
+        dry_run: bool,
+    },
     /// Add simple packages to the project and sync
     Add {
         #[clap(value_parser)]
@@ -60,23 +73,17 @@ pub enum Command {
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
     },
-    /// Provide information about the project
-    Info {
-        #[clap(short, long)]
-        json: bool,
-        #[clap(short, long)]
-        /// Display only the r version
-        r_version: bool,
-    },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
         json: bool,
     },
-    /// Upgrade packages to the latest versions available
-    Upgrade {
-        #[clap(long)]
-        dry_run: bool,
+    /// List dependencies and repositories 
+    List {
+        #[clap(subcommand)]
+        subcommand: ListSubcommand,
+        #[clap(long, global = true)]
+        json: bool,
     },
     /// Migrate renv to rv
     Migrate {
@@ -97,6 +104,19 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Include the patch in the R version
         strict_r_version: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ListSubcommand {
+    Repositories,
+    Dependencies{
+        #[clap(long)]
+        /// Whether all dependencies of dependencies should be listed
+        recursive: bool,
+        #[clap(long)]
+        /// List in order of config. Defaults to alphabetical
+        in_order: bool,
     },
 }
 
@@ -282,9 +302,51 @@ fn try_main() -> Result<()> {
             let context = CliContext::new(&cli.config_file)?;
             _sync(context, true, cli.verbose.is_present(), upgrade)?;
         }
+        Command::Info { json, r_version } => {
+            let mut context = CliContext::new(&cli.config_file)?;
+            context.load_databases()?;
+            let resolved = resolve_dependencies(&context);
+            let info = ProjectInfo::new(
+                &context.library,
+                &resolved,
+                &context.config.repositories(),
+                &context.databases,
+                &context.r_version,
+                &context.cache,
+                context.lockfile.as_ref(),
+            );
+            if json {
+                if r_version {
+                    println!(
+                        "{}",
+                        serde_json::json!({"r_version": context.config.r_version().original})
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&info).expect("valid json")
+                    );
+                }
+            } else {
+                if r_version {
+                    println!("{}", context.config.r_version().original);
+                } else {
+                    println!("{info}");
+                }
+            }
+        }
         Command::Sync => {
             let context = CliContext::new(&cli.config_file)?;
             _sync(context, false, cli.verbose.is_present(), SyncMode::Default)?;
+        }
+        Command::Upgrade { dry_run } => {
+            let context = CliContext::new(&cli.config_file)?;
+            _sync(
+                context,
+                dry_run,
+                cli.verbose.is_present(),
+                SyncMode::FullUpgrade,
+            )?;
         }
         Command::Add {
             packages,
@@ -313,15 +375,6 @@ fn try_main() -> Result<()> {
                 dry_run,
                 cli.verbose.is_present(),
                 SyncMode::Default,
-            )?;
-        }
-        Command::Upgrade { dry_run } => {
-            let context = CliContext::new(&cli.config_file)?;
-            _sync(
-                context,
-                dry_run,
-                cli.verbose.is_present(),
-                SyncMode::FullUpgrade,
             )?;
         }
         Command::Cache { json } => {
@@ -382,37 +435,42 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Info { json, r_version } => {
-            let mut context = CliContext::new(&cli.config_file)?;
-            context.load_databases()?;
-            let resolved = resolve_dependencies(&context);
-            let info = ProjectInfo::new(
-                &context.library,
-                &resolved,
-                &context.config.repositories(),
-                &context.databases,
-                &context.r_version,
-                &context.cache,
-                context.lockfile.as_ref(),
-            );
-            if json {
-                if r_version {
-                    println!(
-                        "{}",
-                        serde_json::json!({"r_version": context.config.r_version().original})
-                    );
-                } else {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&info).expect("valid json")
-                    );
-                }
-            } else {
-                if r_version {
-                    println!("{}", context.config.r_version().original);
-                } else {
-                    println!("{info}");
-                }
+        Command::List { subcommand, json} => {
+            match subcommand {
+                ListSubcommand::Dependencies { recursive, in_order } => {
+                    let mut context = CliContext::new(&cli.config_file)?;                    
+                    let mut deps = if recursive {
+                        context.load_databases_if_needed()?;
+                        let resolved = resolve_dependencies(&context);
+                        resolved.iter().map(|d| d.name().to_string()).collect::<Vec<_>>()
+                    } else {
+                        context.config.dependencies().iter().map(|d| d.name().to_string()).collect::<Vec<_>>()
+                    };
+                    if !in_order {
+                        deps.sort_by(|a, b| a.cmp(b));
+                    }
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&deps).expect("valid json")
+                        );
+                    } else {
+                        for d in deps {
+                            println!("{d}");
+                        }
+                    }
+                },
+                ListSubcommand::Repositories => {
+                    let config = Config::from_file(&cli.config_file)?;
+                    let repos = config.repositories();
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&repos).expect("valid json"));
+                    } else {
+                        for r in repos {
+                            println!("{}: {}", r.alias, r.url());
+                        }
+                    }
+                },
             }
         }
         Command::Activate => {
