@@ -24,7 +24,11 @@ pub fn remove_package(config_doc: &mut DocumentMut, packages: Vec<String>) {
         if let Some(index) = dep_names.iter().position(|dep| dep == &p) {
             config_deps.remove(index);
         }
-    };
+    }
+
+    // Set a trailing new line and comma for the last element for proper formatting
+    config_deps.set_trailing("\n");
+    config_deps.set_trailing_comma(true);
 }
 
 pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) {

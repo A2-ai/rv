@@ -2,13 +2,15 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use fs_err::{self as fs, read_to_string, remove_dir_all, write};
+use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
 use rv::cli::{
     create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
 };
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, remove_package, CacheInfo, Config, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version
+    activate, add_packages, deactivate, read_and_verify_config, remove_package, CacheInfo, Config,
+    Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver,
+    SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -74,17 +76,22 @@ pub enum Command {
     },
     /// Remove dependencies, library, or cache
     Remove {
-        #[clap(subcommand)]
-        subcommand: Option<RemoveSubcommand>,
-        #[arg(value_name = "PACKAGE", num_args = 1.., required = false)]
+        #[arg(value_name = "PACKAGES", num_args = 1.., required = false)]
+        /// Remove the listed packages. Is not compatible with library and cache subcommands
         packages: Vec<String>,
+        #[clap(long)]
+        /// For package removal only. Do not make any changes, only report what would happen if those packages were removed
+        dry_run: bool,
+        #[clap(long)]
+        /// For package removal only. Remove packages from config file, but do not sync. No effect if --dry-run is used
+        no_sync: bool,
     },
     /// Gives information about where the cache is for that project
     Cache {
         #[clap(short, long)]
         json: bool,
     },
-    /// List dependencies and repositories 
+    /// List dependencies and repositories
     List {
         #[clap(subcommand)]
         subcommand: ListSubcommand,
@@ -114,15 +121,9 @@ pub enum MigrateSubcommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum RemoveSubcommand {
-    Cache,
-    Library,
-}
-
-#[derive(Debug, Subcommand)]
 pub enum ListSubcommand {
     Repositories,
-    Dependencies{
+    Dependencies {
         #[clap(long)]
         /// Whether all dependencies of dependencies should be listed
         recursive: bool,
@@ -137,6 +138,29 @@ enum SyncMode {
     Default,
     FullUpgrade,
     // TODO: PartialUpgrade -- allow user to specify packages to upgrade
+}
+
+fn _edit(
+    doc: String,
+    config_file: &PathBuf,
+    dry_run: bool,
+    no_sync: bool,
+    has_logs_enabled: bool,
+) -> Result<()> {
+    // if no sync, exit early
+    if no_sync {
+        write(config_file, doc)?;
+        println!("Packages successfully added");
+        return Ok(());
+    }
+    let mut context = CliContext::new(config_file)?;
+    context.config = doc.parse::<Config>()?;
+    _sync(context, dry_run, has_logs_enabled, SyncMode::Default)?;
+    // only write if sync successful (meaning packages to add could be resolved)
+    if !dry_run {
+        write(config_file, doc)?;
+    }
+    Ok(())
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -368,39 +392,28 @@ fn try_main() -> Result<()> {
             // load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
             add_packages(&mut doc, packages);
-            // write the update if not dry run
-            if !dry_run {
-                write(&cli.config_file, doc.to_string())?;
-            }
-            // if no sync, exit early
-            if no_sync {
-                println!("Packages successfully added");
-                return Ok(());
-            }
-            let mut context = CliContext::new(&cli.config_file)?;
-            // if dry run, the config won't have been editied to reflect the added changes so must be added
-            if dry_run {
-                context.config = doc.to_string().parse::<Config>()?;
-            }
-            _sync(
-                context,
+            _edit(
+                doc.to_string(),
+                &cli.config_file,
                 dry_run,
+                no_sync,
                 cli.verbose.is_present(),
-                SyncMode::Default,
             )?;
         }
-        Command::Remove { subcommand, packages} => {
-            let context = CliContext::new(&cli.config_file)?;
-            match subcommand {
-                Some(RemoveSubcommand::Cache) => remove_dir_all(context.cache.root)?,
-                Some(RemoveSubcommand::Library) => remove_dir_all(context.library_path())?,
-                None if packages.is_empty() => bail!("No command specified"),
-                _ => {
-                    let mut doc = read_and_verify_config(&cli.config_file)?;
-                    remove_package(&mut doc, packages);
-                    println!("{}", doc.to_string());
-                }
-            }
+        Command::Remove {
+            packages,
+            dry_run,
+            no_sync,
+        } => {
+            let mut doc = read_and_verify_config(&cli.config_file)?;
+            remove_package(&mut doc, packages);
+            _edit(
+                doc.to_string(),
+                &cli.config_file,
+                dry_run,
+                no_sync,
+                cli.verbose.is_present(),
+            )?;
         }
         Command::Cache { json } => {
             let mut context = CliContext::new(&cli.config_file)?;
@@ -460,44 +473,56 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::List { subcommand, json} => {
-            match subcommand {
-                ListSubcommand::Dependencies { recursive, in_order } => {
-                    let mut context = CliContext::new(&cli.config_file)?;                    
-                    let mut deps = if recursive {
-                        context.load_databases_if_needed()?;
-                        let resolved = resolve_dependencies(&context);
-                        resolved.iter().map(|d| d.name().to_string()).collect::<Vec<_>>()
-                    } else {
-                        context.config.dependencies().iter().map(|d| d.name().to_string()).collect::<Vec<_>>()
-                    };
-                    if !in_order {
-                        deps.sort_by(|a, b| a.cmp(b));
+        Command::List { subcommand, json } => match subcommand {
+            ListSubcommand::Dependencies {
+                recursive,
+                in_order,
+            } => {
+                let mut context = CliContext::new(&cli.config_file)?;
+                let mut deps = if recursive {
+                    context.load_databases_if_needed()?;
+                    let resolved = resolve_dependencies(&context);
+                    resolved
+                        .iter()
+                        .map(|d| d.name().to_string())
+                        .collect::<Vec<_>>()
+                } else {
+                    context
+                        .config
+                        .dependencies()
+                        .iter()
+                        .map(|d| d.name().to_string())
+                        .collect::<Vec<_>>()
+                };
+                if !in_order {
+                    deps.sort_by(|a, b| a.cmp(b));
+                }
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&deps).expect("valid json")
+                    );
+                } else {
+                    for d in deps {
+                        println!("{d}");
                     }
-                    if json {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&deps).expect("valid json")
-                        );
-                    } else {
-                        for d in deps {
-                            println!("{d}");
-                        }
-                    }
-                },
-                ListSubcommand::Repositories => {
-                    let config = Config::from_file(&cli.config_file)?;
-                    let repos = config.repositories();
-                    if json {
-                        println!("{}", serde_json::to_string_pretty(&repos).expect("valid json"));
-                    } else {
-                        for r in repos {
-                            println!("{}: {}", r.alias, r.url());
-                        }
-                    }
-                },
+                }
             }
-        }
+            ListSubcommand::Repositories => {
+                let config = Config::from_file(&cli.config_file)?;
+                let repos = config.repositories();
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&repos).expect("valid json")
+                    );
+                } else {
+                    for r in repos {
+                        println!("{}: {}", r.alias, r.url());
+                    }
+                }
+            }
+        },
         Command::Activate => {
             let dir = std::env::current_dir()?;
             activate(dir)?;
