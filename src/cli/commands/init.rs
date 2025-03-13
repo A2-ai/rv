@@ -188,7 +188,9 @@ fn write_rvr(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     if path.exists() {
         return Ok(());
     }
-
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     write(path, RVR_FILE_CONTENT)?;
     Ok(())
 }

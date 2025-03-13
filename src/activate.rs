@@ -56,27 +56,20 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         return Ok(());
     }
 
-    let content = read_to_string(&rprofile_path).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
-
+    let content = read_to_string(&rprofile_path)?;
     let new_content = content
         .lines()
         .filter(|line| line != &format!(r#"source("{ACTIVATE_FILE_NAME}")"#))
         .collect::<Vec<_>>()
         .join("\n");
 
-    write(&rprofile_path, new_content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    write(&rprofile_path, new_content)?;
 
     Ok(())
 }
 
 fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
-    let dir = dir.as_ref().canonicalize().map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    let dir = dir.as_ref().canonicalize()?;
 
     let template = ACTIVATE_FILE_TEMPLATE.to_string();
     let global_wd_content = if etcetera::home_dir()
@@ -100,9 +93,7 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = &dir.join(ACTIVATE_FILE_NAME);
     if let Some(parent) = activate_file_name.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| ActivateError {
-            source: ActivateErrorKind::Io(e),
-        })?;
+        std::fs::create_dir_all(parent)?;
     }
     let activate_content = read_to_string(activate_file_name).unwrap_or_default();
     if content == activate_content {
@@ -110,9 +101,7 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     }
 
     // Write the content of activate file
-    write(activate_file_name, content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    write(activate_file_name, content)?;
     Ok(())
 }
 
