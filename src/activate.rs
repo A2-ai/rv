@@ -46,8 +46,8 @@ fn add_rprofile_source_call(
     if content.contains(&*source_file.to_string_lossy()) {
         return Ok(());
     }
-
-    let new_content = format!(r#"source("{}")\n{}"#, source_file.display(), content);
+    let source_str = format!(r#"source("{}")"#, source_file.display());
+    let new_content = format!("{}\n{}", source_str, content);
     write(path, new_content)?;
 
     Ok(())
