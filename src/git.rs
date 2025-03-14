@@ -3,6 +3,14 @@ use std::path::Path;
 
 use git2::{AutotagOption, FetchOptions, RemoteUpdateFlags, Repository};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FetchMethod {
+    /// Uses the git CLI, solving most auth issues with private repos
+    Cli,
+    /// Use the libgit2 api, ok for public repos
+    Git2,
+}
+
 /// What a git URL can point to
 /// If it's coming from a lockfile, it will always be a commit
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +76,7 @@ fn git_fetch(repo: &Repository) -> Result<(), git2::Error> {
         .find_remote("origin")
         .or_else(|_| repo.remote_anonymous("origin"))?;
 
+    // TODO: be more specific with those refs
     remote.download(
         &["refs/heads/*:refs/heads/*"],
         Some(&mut get_fetch_options()),

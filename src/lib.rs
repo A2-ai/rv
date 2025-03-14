@@ -4,6 +4,7 @@ mod cache;
 mod config;
 mod fs;
 mod git;
+mod gitx;
 mod http;
 mod library;
 mod lockfile;

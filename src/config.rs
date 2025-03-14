@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::git::FetchMethod;
 use crate::lockfile::Source;
 use crate::package::{deserialize_version, Version};
 use serde::Deserialize;
@@ -193,10 +194,18 @@ pub(crate) struct Project {
     prefer_repositories_for: Vec<String>,
 }
 
+#[derive(Debug, PartialEq, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Net {
+    use_git_cli: bool,
+}
+
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub(crate) project: Project,
+    #[serde(default)]
+    pub(crate) net: Net,
 }
 
 impl Config {
@@ -295,6 +304,14 @@ impl Config {
 
     pub fn r_version(&self) -> &Version {
         &self.project.r_version
+    }
+
+    pub fn git_fetch_method(&self) -> FetchMethod {
+        if self.net.use_git_cli {
+            FetchMethod::Cli
+        } else {
+            FetchMethod::Git2
+        }
     }
 }
 
