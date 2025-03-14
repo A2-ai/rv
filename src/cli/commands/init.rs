@@ -47,9 +47,14 @@ pub fn init(
     r_version: &str,
     repositories: &[Repository],
     dependencies: &[String],
+    force: bool,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     init_structure(proj_dir)?;
+    let config_path = proj_dir.join(CONFIG_FILENAME);
+    if config_path.exists() && !force {
+        return Ok(())
+    }
     let project_name = proj_dir
         .canonicalize()
         .map_err(|e| InitError {
@@ -232,6 +237,7 @@ mod tests {
             &r_version.original,
             &repositories,
             &dependencies,
+            false
         )
         .unwrap();
         let dir = &project_directory.into_path();
