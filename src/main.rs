@@ -64,9 +64,19 @@ pub enum Command {
     Info {
         #[clap(short, long)]
         json: bool,
-        #[clap(short, long)]
-        /// Display only the r version
+    },
+    /// List simple project items
+    List {
+        #[clap(long)]
+        /// The relative library path
+        library: bool,
+        #[clap(long)]
+        /// The R version specified in the config
         r_version: bool,
+        #[clap(long)]
+        /// The repositories specified in the config
+        #[clap(long)]
+        repositories: bool,
     },
     /// Gives information about where the cache is for that project
     Cache {
@@ -324,6 +334,35 @@ fn try_main() -> Result<()> {
                 SyncMode::FullUpgrade,
             )?;
         }
+        Command::List {
+            library,
+            r_version,
+            repositories,
+        } => {
+            let context = CliContext::new(&cli.config_file)?;
+            if library {
+                let path_str = context.library_path().to_string_lossy();
+                let path_out = if cfg!(windows) {
+                    path_str.replace('\\', "/")
+                } else {
+                    path_str.to_string()
+                };
+                println!("{path_out}");
+            }
+            if r_version {
+                println!("r-version: {}", context.r_version.original);
+            }
+            if repositories {
+                let repos = context
+                    .config
+                    .repositories()
+                    .iter()
+                    .map(|r| format!("({}, {})", r.alias, r.url()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                println!("repositories: {}", repos);
+            }
+        }
         Command::Cache { json } => {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
@@ -382,7 +421,7 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Info { json, r_version } => {
+        Command::Info { json } => {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);
@@ -396,23 +435,12 @@ fn try_main() -> Result<()> {
                 context.lockfile.as_ref(),
             );
             if json {
-                if r_version {
-                    println!(
-                        "{}",
-                        serde_json::json!({"r_version": context.config.r_version().original})
-                    );
-                } else {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&info).expect("valid json")
-                    );
-                }
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&info).expect("valid json")
+                );
             } else {
-                if r_version {
-                    println!("{}", context.config.r_version().original);
-                } else {
-                    println!("{info}");
-                }
+                println!("{info}");
             }
         }
         Command::Activate => {
