@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use rv::consts::RVR_FILENAME;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -7,7 +6,7 @@ use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, add_rprofile_source_call, deactivate, read_and_verify_config,
+    activate, add_packages, deactivate, read_and_verify_config,
     CacheInfo, Config, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency,
     Resolver, SyncHandler, Version,
 };
@@ -90,7 +89,10 @@ pub enum Command {
         subcommand: MigrateSubcommand,
     },
     /// Activate a previously initialized rv project
-    Activate,
+    Activate {
+        #[clap(long)]
+        no_r_environment: bool,
+    },
     /// Deactivate an rv project
     Deactivate,
 }
@@ -266,10 +268,7 @@ fn try_main() -> Result<()> {
                 find_r_repositories().unwrap_or(Vec::new())
             };
             init(&project_directory, &r_version, &repositories, &add)?;
-            if !no_r_environment {
-                add_rprofile_source_call(&project_directory, RVR_FILENAME)?;
-            }
-            activate(&project_directory)?;
+            activate(&project_directory, no_r_environment)?;
             println!(
                 "rv project successfully initialized at {}",
                 project_directory.display()
@@ -370,10 +369,7 @@ fn try_main() -> Result<()> {
                 .unwrap()
                 .to_path_buf();
             init_structure(project_dir)?;
-            if !no_r_environment {
-                add_rprofile_source_call(project_dir, RVR_FILENAME)?
-            }
-            activate(project_dir)?;
+            activate(project_dir, no_r_environment)?;
             let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
                 "source(\"renv/activate.R\")",
                 "# source(\"renv/activate.R\")",
@@ -430,9 +426,9 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Activate => {
+        Command::Activate{no_r_environment} => {
             let dir = std::env::current_dir()?;
-            activate(dir)?;
+            activate(dir, no_r_environment)?;
             println!("rv activated");
         }
         Command::Deactivate => {

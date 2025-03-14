@@ -5,12 +5,13 @@ use std::{
 
 use fs_err::{read_to_string, write};
 
-use crate::consts::ACTIVATE_FILE_TEMPLATE;
+use crate::consts::{ACTIVATE_FILE_TEMPLATE, RVR_FILE_CONTENT};
 
 // constant file name and function to provide the R code string to source the file
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
+const RVR_FILE_NAME: &str = "rv/scripts/rvr.R";
 
-pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
+pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
 
     // ensure the directory is a directory and that it exists. If not, activation cannot occur
@@ -21,11 +22,15 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     }
 
     write_activate_file(dir)?;
-    add_rprofile_source_call(dir, ACTIVATE_FILE_TEMPLATE)?;
+    add_rprofile_source_call(dir, ACTIVATE_FILE_NAME)?;
+    write_rvr_file(dir)?;
+    if !no_r_environment {
+        add_rprofile_source_call(dir, RVR_FILE_NAME)?;
+    }
     Ok(())
 }
 
-pub fn add_rprofile_source_call(
+fn add_rprofile_source_call(
     dir: impl AsRef<Path>,
     source_file: impl AsRef<Path>,
 ) -> Result<(), io::Error> {
@@ -60,6 +65,7 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     let new_content = content
         .lines()
         .filter(|line| line != &format!(r#"source("{ACTIVATE_FILE_NAME}")"#))
+        .filter(|line| line != &format!(r#"source("{RVR_FILE_NAME}"#))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -105,6 +111,19 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     Ok(())
 }
 
+
+fn write_rvr_file(project_directory: impl AsRef<Path>) -> Result<(), ActivateError> {
+    let path = project_directory.as_ref().join(RVR_FILE_NAME);
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    write(path, RVR_FILE_CONTENT)?;
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("Activate error: {source}")]
 #[non_exhaustive]
@@ -130,13 +149,16 @@ impl From<io::Error> for ActivateError {
 
 #[cfg(test)]
 mod tests {
+    use crate::activate::RVR_FILE_NAME;
+
     use super::{activate, ACTIVATE_FILE_NAME};
 
     #[test]
     fn test_activation() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        activate(&tmp_dir).unwrap();
+        activate(&tmp_dir, false).unwrap();
         assert!(tmp_dir.path().join(ACTIVATE_FILE_NAME).exists());
+        assert!(tmp_dir.path().join(RVR_FILE_NAME).exists());
         assert!(tmp_dir.path().join(".Rprofile").exists());
     }
 }

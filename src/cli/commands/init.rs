@@ -6,13 +6,12 @@ use std::{
 
 use fs_err::write;
 
-use crate::{consts::RVR_FILE_CONTENT, Repository};
+use crate::Repository;
 
 const GITIGNORE_CONTENT: &str = "library/\nstaging/\n";
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 const CONFIG_FILENAME: &str = "rproject.toml";
-const RVR_FILENAME: &str = "rv/scripts/rvr.R";
 
 const INITIAL_CONFIG: &str = r#"[project]
 name = "%project_name%"
@@ -160,7 +159,6 @@ pub fn init_structure(project_directory: impl AsRef<Path>) -> Result<(), InitErr
     let project_directory = project_directory.as_ref();
     create_library_structure(project_directory)?;
     create_gitignore(project_directory)?;
-    write_rvr(project_directory)?;
     Ok(())
 }
 
@@ -180,18 +178,6 @@ fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError
     }
 
     write(path, GITIGNORE_CONTENT)?;
-    Ok(())
-}
-
-fn write_rvr(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
-    let path = project_directory.as_ref().join(RVR_FILENAME);
-    if path.exists() {
-        return Ok(());
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    write(path, RVR_FILE_CONTENT)?;
     Ok(())
 }
 

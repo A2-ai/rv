@@ -22,7 +22,7 @@ pub mod cli;
 
 pub mod consts;
 
-pub use activate::{activate, add_rprofile_source_call, deactivate};
+pub use activate::{activate, deactivate};
 pub use add::{add_packages, read_and_verify_config};
 pub use cache::{utils::hash_string, CacheInfo, DiskCache, PackagePaths};
 pub use config::{Config, ConfigDependency, Repository};
