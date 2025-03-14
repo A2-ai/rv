@@ -1,16 +1,17 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use fs_err::{read_to_string, write};
 
-use crate::consts::ACTIVATE_FILE_TEMPLATE;
+use crate::consts::{ACTIVATE_FILE_TEMPLATE, RVR_FILE_CONTENT};
 
 // constant file name and function to provide the R code string to source the file
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
-fn activation_string() -> String {
-    format!(r#"source("{ACTIVATE_FILE_NAME}")"#)
-}
+const RVR_FILE_NAME: &str = "rv/scripts/rvr.R";
 
-pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
+pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
 
     // ensure the directory is a directory and that it exists. If not, activation cannot occur
@@ -21,26 +22,33 @@ pub fn activate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     }
 
     write_activate_file(dir)?;
+    add_rprofile_source_call(dir, ACTIVATE_FILE_NAME)?;
+    write_rvr_file(dir)?;
+    if !no_r_environment {
+        add_rprofile_source_call(dir, RVR_FILE_NAME)?;
+    }
+    Ok(())
+}
 
-    let rprofile_path = dir.join(".Rprofile");
-    if !rprofile_path.exists() {
-        write(&rprofile_path, format!("{}\n", activation_string())).map_err(|e| ActivateError {
-            source: ActivateErrorKind::Io(e),
-        })?;
+fn add_rprofile_source_call(
+    dir: impl AsRef<Path>,
+    source_file: impl AsRef<Path>,
+) -> Result<(), io::Error> {
+    let path = dir.as_ref().join(".Rprofile");
+    let source_file = source_file.as_ref();
+
+    let content = if path.exists() {
+        read_to_string(&path)?
+    } else {
+        String::new()
     };
 
-    let content = read_to_string(&rprofile_path).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
-
-    if content.contains(&activation_string()) {
+    if content.contains(&*source_file.to_string_lossy()) {
         return Ok(());
     }
-
-    let new_content = format!("{}\n{}", activation_string(), content);
-    write(rprofile_path, new_content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    let source_str = format!(r#"source("{}")"#, source_file.display());
+    let new_content = format!("{}\n{}", source_str, content);
+    write(path, new_content)?;
 
     Ok(())
 }
@@ -53,27 +61,21 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         return Ok(());
     }
 
-    let content = read_to_string(&rprofile_path).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
-
+    let content = read_to_string(&rprofile_path)?;
     let new_content = content
         .lines()
-        .filter(|line| line != &activation_string())
+        .filter(|line| line != &format!(r#"source("{ACTIVATE_FILE_NAME}")"#))
+        .filter(|line| line != &format!(r#"source("{RVR_FILE_NAME}"#))
         .collect::<Vec<_>>()
         .join("\n");
 
-    write(&rprofile_path, new_content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    write(&rprofile_path, new_content)?;
 
     Ok(())
 }
 
 fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
-    let dir = dir.as_ref().canonicalize().map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    let dir = dir.as_ref().canonicalize()?;
 
     let template = ACTIVATE_FILE_TEMPLATE.to_string();
     let global_wd_content = if etcetera::home_dir()
@@ -97,9 +99,7 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = &dir.join(ACTIVATE_FILE_NAME);
     if let Some(parent) = activate_file_name.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| ActivateError {
-            source: ActivateErrorKind::Io(e),
-        })?;
+        std::fs::create_dir_all(parent)?;
     }
     let activate_content = read_to_string(activate_file_name).unwrap_or_default();
     if content == activate_content {
@@ -107,9 +107,20 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     }
 
     // Write the content of activate file
-    write(activate_file_name, content).map_err(|e| ActivateError {
-        source: ActivateErrorKind::Io(e),
-    })?;
+    write(activate_file_name, content)?;
+    Ok(())
+}
+
+
+fn write_rvr_file(project_directory: impl AsRef<Path>) -> Result<(), ActivateError> {
+    let path = project_directory.as_ref().join(RVR_FILE_NAME);
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    write(path, RVR_FILE_CONTENT)?;
     Ok(())
 }
 
@@ -128,15 +139,26 @@ pub enum ActivateErrorKind {
     Io(std::io::Error),
 }
 
+impl From<io::Error> for ActivateError {
+    fn from(value: io::Error) -> Self {
+        Self {
+            source: ActivateErrorKind::Io(value),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::activate::RVR_FILE_NAME;
+
     use super::{activate, ACTIVATE_FILE_NAME};
 
     #[test]
     fn test_activation() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        activate(&tmp_dir).unwrap();
+        activate(&tmp_dir, false).unwrap();
         assert!(tmp_dir.path().join(ACTIVATE_FILE_NAME).exists());
+        assert!(tmp_dir.path().join(RVR_FILE_NAME).exists());
         assert!(tmp_dir.path().join(".Rprofile").exists());
     }
 }
