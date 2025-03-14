@@ -347,7 +347,7 @@ fn try_main() -> Result<()> {
                 } else {
                     path_str.to_string()
                 };
-                println!("{path_out}");
+                println!("library: {path_out}");
             }
             if r_version {
                 println!("r-version: {}", context.r_version.original);
