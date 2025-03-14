@@ -8,8 +8,9 @@ use rv::cli::{
     create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
 };
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
-    Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, GitExecutor,
+    Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
+    Version,
 };
 
 #[derive(Parser)]
@@ -121,7 +122,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
-        &Git {},
+        &GitExecutor {},
         &Http {},
     );
     if !resolution.is_success() {

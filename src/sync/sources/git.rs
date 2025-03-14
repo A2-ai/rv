@@ -1,18 +1,18 @@
-use std::path::Path;
-
-use crate::git::GitReference;
+use crate::git::{GitReference, GitRemote};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
-use crate::{DiskCache, GitOperations, RCmd, ResolvedDependency};
+use crate::{CommandExecutor, DiskCache, RCmd, ResolvedDependency};
+use std::path::Path;
+use url::Url;
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
     library_dir: &Path,
     cache: &DiskCache,
     r_cmd: &impl RCmd,
-    git_ops: &impl GitOperations,
+    git_exec: &(impl CommandExecutor + Clone + 'static),
 ) -> Result<(), SyncError> {
     let pkg_paths = cache.get_package_paths(&pkg.source, None, None);
 
@@ -25,7 +25,12 @@ pub(crate) fn install_package(
 
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        git_ops.clone_and_checkout(repo_url, Some(GitReference::Commit(sha)), &pkg_paths.source)?;
+        let remote = GitRemote::new(&Url::parse(repo_url).unwrap());
+        remote.checkout(
+            &pkg_paths.source,
+            &GitReference::Commit(sha),
+            git_exec.clone(),
+        )?;
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
             Source::Git {
