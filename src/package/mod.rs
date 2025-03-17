@@ -124,6 +124,18 @@ impl Package {
             suggests,
         }
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+
+    pub fn md5_sum(&self) -> &str {
+        &self.md5_sum
+    }
 }
 
 /// Returns whether this folder contains compiled R files
