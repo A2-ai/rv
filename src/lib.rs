@@ -30,7 +30,7 @@ pub use git::{Git, GitOperations};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::Lockfile;
-pub use package::{is_binary_package, Version, VersionRequirement};
+pub use package::{is_binary_package, Version, VersionRequirement, Package, parse_package_file};
 pub use project_info::ProjectInfo;
 pub use r_cmd::{find_r_version_command, RCmd, RCommandLine};
 pub use renv::RenvLock;
