@@ -25,6 +25,7 @@ impl GitRepository {
         path: impl AsRef<Path>,
         executor: impl CommandExecutor + 'static,
     ) -> Result<Self, std::io::Error> {
+        // Only there to error if the folder is not a git repo
         let _ = executor.execute(Command::new("git").arg("rev-parse").current_dir(&path))?;
 
         Ok(Self {
@@ -78,7 +79,7 @@ impl GitRepository {
     }
 
     pub fn checkout(&self, oid: &Oid) -> Result<(), std::io::Error> {
-        log::debug!("Doing git checkout {}", oid.as_str());
+        log::debug!("Doing git checkout {} in {}", oid.as_str(), self.path.display());
         self.executor
             .execute(
                 Command::new("git")
@@ -104,9 +105,7 @@ impl GitRepository {
         directory: Option<&PathBuf>,
     ) -> Result<String, std::io::Error> {
         log::debug!("Getting description file content of repo {url} at {reference:?}");
-        if self.ref_as_oid(reference.reference()).is_none() {
-            self.fetch(url, reference)?;
-        }
+        self.fetch(url, reference)?;
 
         if let Some(oid) = self.ref_as_oid(reference.reference()) {
             self.checkout(&oid)?;
@@ -158,6 +157,9 @@ impl GitRepository {
         Ok(())
     }
 
+    /// This only parses a branch/tag to a commit
+    /// If the reference is a sha, it will just return itself but without checking whether
+    /// it exists in the repo
     pub fn rev_parse(&self, reference: &str) -> Result<Oid, std::io::Error> {
         let output = self
             .executor

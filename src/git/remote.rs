@@ -75,13 +75,9 @@ impl GitRemote {
             GitRepository::init(dest.as_ref(), executor)?
         };
 
-        // First we fetch if we can't find the reference locally
-        let mut oid = repo.ref_as_oid(reference.reference());
-        if oid.is_none() {
-            repo.fetch(&self.url, reference)?;
-            oid = repo.ref_as_oid(reference.reference());
-        }
-        if let Some(o) = oid {
+        repo.fetch(&self.url, reference)?;
+
+        if let Some(o) = repo.ref_as_oid(reference.reference()) {
             repo.checkout(&o)?;
         } else {
             return Err(std::io::Error::new(
