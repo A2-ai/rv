@@ -31,7 +31,7 @@ impl fmt::Display for PackageType {
 }
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
-pub(crate) enum Dependency {
+pub enum Dependency {
     Simple(String),
     Pinned {
         name: String,
@@ -59,21 +59,21 @@ impl Dependency {
 
 #[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
 pub struct Package {
-    pub(crate) name: String,
-    pub(crate) version: Version,
-    r_requirement: Option<VersionRequirement>,
-    depends: Vec<Dependency>,
-    imports: Vec<Dependency>,
-    suggests: Vec<Dependency>,
-    enhances: Vec<Dependency>,
-    linking_to: Vec<Dependency>,
-    license: String,
-    md5_sum: String,
-    pub(crate) path: Option<String>,
-    recommended: bool,
-    pub(crate) needs_compilation: bool,
+    pub name: String,
+    pub version: Version,
+    pub r_requirement: Option<VersionRequirement>,
+    pub depends: Vec<Dependency>,
+    pub imports: Vec<Dependency>,
+    pub suggests: Vec<Dependency>,
+    pub enhances: Vec<Dependency>,
+    pub linking_to: Vec<Dependency>,
+    pub license: String,
+    pub md5_sum: String,
+    pub path: Option<String>,
+    pub recommended: bool,
+    pub needs_compilation: bool,
     // {remote_string => (pkg name, remote)}
-    pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
+    pub remotes: HashMap<String, (Option<String>, PackageRemote)>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize)]
@@ -125,6 +125,7 @@ impl Package {
         }
     }
 
+    // TODO: remove help fxns
     pub fn name(&self) -> &str {
         &self.name
     }
