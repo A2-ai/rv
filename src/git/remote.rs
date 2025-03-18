@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-
 use crate::git::{CommandExecutor, GitReference, GitRepository};
 
 #[derive(Debug, Clone)]

@@ -55,7 +55,7 @@ impl GitRepository {
         log::debug!("Fetching {} with reference {reference:?}", url);
         let refspecs = reference.as_refspecs();
         if refspecs.len() == 1 {
-            fetch_with_cli(self, url, &refspecs[0], &*self.executor)
+            fetch_with_cli(self, url, &refspecs[0], &*self.executor)?;
         } else {
             let mut errors: Vec<_> = refspecs
                 .iter()
@@ -70,15 +70,30 @@ impl GitRepository {
                 })
                 .collect();
             if errors.len() == refspecs.len() {
-                Err(errors.pop().unwrap())
-            } else {
-                Ok(())
+                return Err(errors.pop().unwrap());
             }
         }
+
+        // if we have a branch fetch won't create it locally so we need to checkout
+        // otherwise there's nothing to rev-parse
+        if self.rev_parse(reference.reference()).is_err() {
+            match reference {
+                GitReference::Branch(branch) => {
+                    self.checkout_branch(branch)?;
+                }
+                _ => (),
+            }
+        }
+
+        Ok(())
     }
 
     pub fn checkout(&self, oid: &Oid) -> Result<(), std::io::Error> {
-        log::debug!("Doing git checkout {} in {}", oid.as_str(), self.path.display());
+        log::debug!(
+            "Doing git checkout {} in {}",
+            oid.as_str(),
+            self.path.display()
+        );
         self.executor
             .execute(
                 Command::new("git")
@@ -90,6 +105,29 @@ impl GitRepository {
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to checkout `{}`", oid.as_str()),
+                )
+            })?;
+        Ok(())
+    }
+
+    pub fn checkout_branch(&self, branch_name: &str) -> Result<(), std::io::Error> {
+        log::debug!(
+            "Doing git checkout -b {branch_name} in {}",
+            self.path.display()
+        );
+        self.executor
+            .execute(
+                Command::new("git")
+                    .arg("checkout")
+                    .arg("-b")
+                    .arg(branch_name)
+                    .arg(&format!("origin/{branch_name}"))
+                    .current_dir(&self.path),
+            )
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to checkout branch `{branch_name}`"),
                 )
             })?;
         Ok(())
@@ -153,6 +191,15 @@ impl GitRepository {
 
         // 3. perform the fetch
         self.fetch(url, reference)?;
+
+        // 4. disable sparse-checkout
+        self.executor.execute(
+            Command::new("git")
+                .arg("sparse-checkout")
+                .arg("disable")
+                .current_dir(&self.path),
+        )?;
+
         Ok(())
     }
 
