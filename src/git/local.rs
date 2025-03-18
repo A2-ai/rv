@@ -6,7 +6,6 @@ use fs_err as fs;
 use crate::consts::DESCRIPTION_FILENAME;
 use crate::git::reference::{GitReference, Oid};
 use crate::git::CommandExecutor;
-use url::Url;
 
 pub struct GitRepository {
     path: PathBuf,
@@ -52,7 +51,7 @@ impl GitRepository {
         })
     }
 
-    pub fn fetch(&self, url: &Url, reference: &GitReference) -> Result<(), std::io::Error> {
+    pub fn fetch(&self, url: &str, reference: &GitReference) -> Result<(), std::io::Error> {
         log::debug!("Fetching {} with reference {reference:?}", url);
         let refspecs = reference.as_refspecs();
         if refspecs.len() == 1 {
@@ -100,7 +99,7 @@ impl GitRepository {
     /// If we don't fetch it and try to checkout and read the DESCRIPTION file
     pub fn get_description_file_content(
         &self,
-        url: &Url,
+        url: &str,
         reference: &GitReference,
         directory: Option<&PathBuf>,
     ) -> Result<String, std::io::Error> {
@@ -129,7 +128,7 @@ impl GitRepository {
     /// Does a sparse checkout with just DESCRIPTION file checkout.
     pub fn sparse_checkout(
         &self,
-        url: &Url,
+        url: &str,
         reference: &GitReference,
     ) -> Result<(), std::io::Error> {
         log::debug!("Doing a sparse checkout of {url} at {reference:?}");
@@ -185,7 +184,7 @@ impl GitRepository {
 
 fn fetch_with_cli(
     repo: &GitRepository,
-    url: &Url,
+    url: &str,
     refspec: &str,
     executor: &dyn CommandExecutor,
 ) -> Result<(), std::io::Error> {
@@ -197,7 +196,7 @@ fn fetch_with_cli(
                 .arg("--tags")
                 .arg("--force")
                 .arg("--update-head-ok")
-                .arg(url.as_str())
+                .arg(url)
                 .arg(refspec)
                 .current_dir(&repo.path)
                 // Disable interactive prompts

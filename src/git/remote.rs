@@ -1,19 +1,18 @@
 use std::path::{Path, PathBuf};
 
-use url::Url;
 
 use crate::git::{CommandExecutor, GitReference, GitRepository};
 
 #[derive(Debug, Clone)]
 pub struct GitRemote {
-    url: Url,
+    url: String,
     directory: Option<PathBuf>,
 }
 
 impl GitRemote {
-    pub fn new(url: &Url) -> Self {
+    pub fn new(url: &str) -> Self {
         Self {
-            url: url.clone(),
+            url: url.to_string(),
             directory: None,
         }
     }

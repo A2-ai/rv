@@ -5,7 +5,6 @@ use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
 use crate::{CommandExecutor, DiskCache, RCmd, ResolvedDependency};
 use std::path::Path;
-use url::Url;
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
@@ -25,7 +24,7 @@ pub(crate) fn install_package(
 
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        let remote = GitRemote::new(&Url::parse(repo_url).unwrap());
+        let remote = GitRemote::new(&repo_url);
         remote.checkout(
             &pkg_paths.source,
             &GitReference::Commit(sha),

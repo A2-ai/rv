@@ -37,7 +37,6 @@ crossbeam = "0.8.4"
 indicatif = "0.17.11"
 num_cpus = "1.16.0"
 zip = "2"
-url = {version = "2", features = ["serde"]}
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }

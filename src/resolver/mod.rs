@@ -5,7 +5,6 @@ use fs_err as fs;
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use url::Url;
 
 mod dependency;
 
@@ -254,7 +253,7 @@ impl<'d> Resolver<'d> {
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let clone_path = cache.get_git_clone_path(repo_url);
 
-        let mut remote = GitRemote::new(&Url::parse(repo_url).unwrap());
+        let mut remote = GitRemote::new(&repo_url);
         if let Some(d) = directory {
             remote.set_directory(d);
         }
