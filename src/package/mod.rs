@@ -40,7 +40,7 @@ pub enum Dependency {
 }
 
 impl Dependency {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             Dependency::Simple(s) => s,
             Dependency::Pinned { name, .. } => name,
