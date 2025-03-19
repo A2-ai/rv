@@ -7,6 +7,8 @@ use crate::consts::DESCRIPTION_FILENAME;
 use crate::git::reference::{GitReference, Oid};
 use crate::git::CommandExecutor;
 
+const HEAD_LINE_START: &str = "HEAD branch: ";
+
 pub struct GitRepository {
     path: PathBuf,
     executor: Box<dyn CommandExecutor>,
@@ -37,6 +39,7 @@ impl GitRepository {
     /// We do init instead of clone so we can fetch exactly what we need
     pub fn init(
         path: impl AsRef<Path>,
+        url: &str,
         executor: impl CommandExecutor + 'static,
     ) -> Result<Self, std::io::Error> {
         if !path.as_ref().is_dir() {
@@ -44,6 +47,14 @@ impl GitRepository {
         }
         log::debug!("Initializing git repository at {}", path.as_ref().display());
         let _ = executor.execute(Command::new("git").arg("init").current_dir(&path))?;
+        let _ = executor.execute(
+            Command::new("git")
+                .arg("remote")
+                .arg("add")
+                .arg("origin")
+                .arg(url)
+                .current_dir(&path),
+        )?;
 
         Ok(Self {
             path: path.as_ref().into(),
@@ -52,7 +63,27 @@ impl GitRepository {
     }
 
     pub fn fetch(&self, url: &str, reference: &GitReference) -> Result<(), std::io::Error> {
-        log::debug!("Fetching {} with reference {reference:?}", url);
+        // Before fetching, checks whether the oid exists locally
+        if let Some(oid) = self.ref_as_oid(reference.reference()) {
+            if self
+                .executor
+                .execute(
+                    Command::new("git")
+                        .arg("cat-file")
+                        .arg("-e")
+                        .arg(oid.as_str())
+                        .current_dir(&self.path),
+                )
+                .is_ok()
+            {
+                log::debug!(
+                    "No need to fetch {url}, reference {reference:?} is already found locally"
+                );
+                return Ok(());
+            }
+        }
+
+        log::debug!("Fetching {url} with reference {reference:?}");
         let refspecs = reference.as_refspecs();
         if refspecs.len() == 1 {
             fetch_with_cli(self, url, &refspecs[0], &*self.executor)?;
@@ -63,6 +94,7 @@ impl GitRepository {
                     match fetch_with_cli(self, url, refspec.as_str(), &*self.executor) {
                         Ok(_) => None,
                         Err(e) => {
+                            println!("Failed to fetch {}", refspec);
                             log::debug!("Failed to fetch refspec `{refspec}`: {e}");
                             Some(e)
                         }
@@ -81,6 +113,9 @@ impl GitRepository {
                 GitReference::Branch(branch) => {
                     self.checkout_branch(branch)?;
                 }
+                GitReference::Unknown("HEAD") => {
+                    self.checkout_head()?;
+                }
                 _ => (),
             }
         }
@@ -89,6 +124,17 @@ impl GitRepository {
     }
 
     pub fn checkout(&self, oid: &Oid) -> Result<(), std::io::Error> {
+        if let Ok(head_oid) = self.rev_parse("HEAD") {
+            // If HEAD is already our reference, no need to checkout
+            if &head_oid == oid {
+                log::debug!(
+                    "No need to checkout {}, it's already checked out",
+                    oid.as_str()
+                );
+                return Ok(());
+            }
+        };
+
         log::debug!(
             "Doing git checkout {} in {}",
             oid.as_str(),
@@ -121,7 +167,7 @@ impl GitRepository {
                     .arg("checkout")
                     .arg("-b")
                     .arg(branch_name)
-                    .arg(&format!("origin/{branch_name}"))
+                    .arg(format!("origin/{branch_name}"))
                     .current_dir(&self.path),
             )
             .map_err(|_| {
@@ -133,18 +179,50 @@ impl GitRepository {
         Ok(())
     }
 
+    /// If we don't know what we have, we will fetch the HEAD branch
+    fn checkout_head(&self) -> Result<(), std::io::Error> {
+        let output = self.executor.execute(
+            Command::new("git")
+                .arg("remote")
+                .arg("show")
+                .arg("origin")
+                .current_dir(&self.path),
+        )?;
+        let mut branch_name = String::new();
+
+        for l in output.lines() {
+            if l.trim().starts_with(HEAD_LINE_START) {
+                branch_name = l.replace(HEAD_LINE_START, "").trim().to_string();
+            }
+        }
+
+        if branch_name.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("No HEAD branch found, output of CLI was:\n{output}\n"),
+            ));
+        }
+
+        self.checkout_branch(&branch_name)
+    }
+
     /// Checks if we have that reference in the local repo.
-    /// If we don't fetch it and try to checkout and read the DESCRIPTION file
     pub fn get_description_file_content(
         &self,
         url: &str,
         reference: &GitReference,
         directory: Option<&PathBuf>,
     ) -> Result<String, std::io::Error> {
-        log::debug!("Getting description file content of repo {url} at {reference:?}");
-        self.fetch(url, reference)?;
-
+        log::debug!(
+            "Getting description file content of repo {url} at {reference:?} in {}",
+            self.path.display()
+        );
+        println!(
+            "ref {reference:?} as oid {:?}",
+            self.ref_as_oid(reference.reference())
+        );
         if let Some(oid) = self.ref_as_oid(reference.reference()) {
+            println!("Checking out");
             self.checkout(&oid)?;
 
             let mut desc_path = self.path.clone();
@@ -192,7 +270,11 @@ impl GitRepository {
         // 3. perform the fetch
         self.fetch(url, reference)?;
 
-        // 4. disable sparse-checkout
+        Ok(())
+    }
+
+    pub fn disable_sparse_checkout(&self) -> Result<(), std::io::Error> {
+        log::debug!("Disabling sparse checkout in {}", self.path.display());
         self.executor.execute(
             Command::new("git")
                 .arg("sparse-checkout")

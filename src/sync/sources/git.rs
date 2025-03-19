@@ -24,7 +24,7 @@ pub(crate) fn install_package(
 
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
-        let remote = GitRemote::new(&repo_url);
+        let remote = GitRemote::new(repo_url);
         remote.checkout(
             &pkg_paths.source,
             &GitReference::Commit(sha),

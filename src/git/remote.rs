@@ -22,8 +22,8 @@ impl GitRemote {
 
     /// Fetch the minimum possible to only get the DESCRIPTION file.
     /// If the repository is already in the cache at `full_dest`, just checkout the reference and use that
-    /// The sparse checkout will be done in a temp dir.
-    /// This will return the body of the DESCRIPTION file if there was one
+    /// This will return the body of the DESCRIPTION file if there was one as well as the oid.
+    /// Only used during resolution
     pub fn sparse_checkout_for_description(
         &self,
         dest: impl AsRef<Path>,
@@ -33,6 +33,7 @@ impl GitRemote {
         // If we have it locally try to only fetch what's needed
         if dest.as_ref().is_dir() {
             let local = GitRepository::open(dest.as_ref(), executor)?;
+            local.fetch(&self.url, reference)?;
             let content = local.get_description_file_content(
                 &self.url,
                 reference,
@@ -41,7 +42,8 @@ impl GitRemote {
             let oid = local.ref_as_oid(reference.reference()).unwrap();
             Ok((oid.as_str().to_string(), content))
         } else {
-            let local = GitRepository::init(dest.as_ref(), executor)?;
+            let local = GitRepository::init(dest.as_ref(), &self.url, executor)?;
+            local.fetch(&self.url, reference)?;
             match local.sparse_checkout(&self.url, reference) {
                 Ok(_) => (),
                 Err(e) => {
@@ -70,11 +72,11 @@ impl GitRemote {
         let repo = if dest.as_ref().is_dir() {
             GitRepository::open(dest.as_ref(), executor)?
         } else {
-            GitRepository::init(dest.as_ref(), executor)?
+            GitRepository::init(dest.as_ref(), &self.url, executor)?
         };
 
+        repo.disable_sparse_checkout()?;
         repo.fetch(&self.url, reference)?;
-
         if let Some(o) = repo.ref_as_oid(reference.reference()) {
             repo.checkout(&o)?;
         } else {
