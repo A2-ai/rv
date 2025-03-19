@@ -26,6 +26,7 @@ impl GitRepository {
         path: impl AsRef<Path>,
         executor: impl CommandExecutor + 'static,
     ) -> Result<Self, std::io::Error> {
+        log::debug!("Opening git repository at {}", path.as_ref().display());
         // Only there to error if the folder is not a git repo
         let _ = executor.execute(Command::new("git").arg("rev-parse").current_dir(&path))?;
 
@@ -42,10 +43,10 @@ impl GitRepository {
         url: &str,
         executor: impl CommandExecutor + 'static,
     ) -> Result<Self, std::io::Error> {
+        log::debug!("Initializing git repository at {}", path.as_ref().display());
         if !path.as_ref().is_dir() {
             fs::create_dir_all(&path)?;
         }
-        log::debug!("Initializing git repository at {}", path.as_ref().display());
         let _ = executor.execute(Command::new("git").arg("init").current_dir(&path))?;
         let _ = executor.execute(
             Command::new("git")
@@ -217,12 +218,7 @@ impl GitRepository {
             "Getting description file content of repo {url} at {reference:?} in {}",
             self.path.display()
         );
-        println!(
-            "ref {reference:?} as oid {:?}",
-            self.ref_as_oid(reference.reference())
-        );
         if let Some(oid) = self.ref_as_oid(reference.reference()) {
-            println!("Checking out");
             self.checkout(&oid)?;
 
             let mut desc_path = self.path.clone();
