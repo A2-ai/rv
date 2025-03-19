@@ -129,7 +129,7 @@ where
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct VersionRequirement {
-    pub(crate) version: Version,
+    pub version: Version,
     op: Operator,
 }
 
