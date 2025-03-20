@@ -29,7 +29,10 @@ impl GitRepository {
     ) -> Result<Self, std::io::Error> {
         log::debug!("Opening git repository at {}", path.as_ref().display());
         // Only there to error if the folder is not a git repo
-        if executor.execute(Command::new("git").arg("rev-parse").current_dir(&path)).is_err() {
+        if executor
+            .execute(Command::new("git").arg("rev-parse").current_dir(&path))
+            .is_err()
+        {
             fs::remove_dir_all(&path)?;
             return Self::init(path, url, executor);
         }

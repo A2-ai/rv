@@ -236,7 +236,6 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.clone()),
             source,
-            // We'll handle the installation status later by comparing mtimes
             installation_status: InstallationStatus::Source,
             install_suggests,
             remotes: package.remotes.clone(),

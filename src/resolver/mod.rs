@@ -290,8 +290,11 @@ impl<'d> Resolver<'d> {
                         branch: None,
                     }
                 };
-                let status =
-                    cache.get_installation_status(repo_url, &package.version.original, &source);
+                let status = cache.get_installation_status(
+                    &package.name,
+                    &package.version.original,
+                    &source,
+                );
                 let (resolved_dep, deps) = ResolvedDependency::from_git_package(
                     &package,
                     source,
