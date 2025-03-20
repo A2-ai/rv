@@ -26,7 +26,7 @@ pub use activate::{activate, deactivate};
 pub use add::{add_packages, read_and_verify_config};
 pub use cache::{utils::hash_string, CacheInfo, DiskCache, PackagePaths};
 pub use config::{Config, ConfigDependency, Repository};
-pub use git::{Git, GitOperations};
+pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::Lockfile;

@@ -24,7 +24,6 @@ fs-err = "3"
 walkdir = "2"
 os_pipe = "1"
 tempfile = "3"
-git2 = { version = "0.20", features = ["vendored-libgit2", "vendored-openssl"] }
 reflink-copy = "0.1"
 log = "0.4"
 filetime = "0.2.25"

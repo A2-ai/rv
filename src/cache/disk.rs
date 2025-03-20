@@ -135,12 +135,12 @@ impl DiskCache {
 
     /// We will download them in a separate path, we don't know if we have source or binary
     pub fn get_url_download_path(&self, url: &str) -> PathBuf {
-        let encoded = hash_string(url);
+        let encoded = hash_string(&url.to_ascii_lowercase());
         self.root.join("urls").join(encoded)
     }
 
     pub fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
-        let encoded = hash_string(repo_url);
+        let encoded = hash_string(&repo_url.trim_end_matches("/").to_ascii_lowercase());
         self.root.join("git").join(encoded)
     }
 

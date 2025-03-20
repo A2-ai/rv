@@ -1,0 +1,10 @@
+[project]
+name = "git-dep"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+]
+dependencies = [
+    # This has a remote on github::a2-ai/rv.git.pkgA
+    { name = "rv.git.pkgB", git = "https://github.com/A2-ai/rv.git.pkgB/", tag ="v1.0", install_suggestions = true},
+]

@@ -16,8 +16,6 @@ pub struct SyncError {
 pub enum SyncErrorKind {
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error(transparent)]
-    Git(#[from] git2::Error),
     #[error("Failed to link files from cache: {0:?})")]
     LinkError(LinkError),
     #[error("Failed to install R package: {0:?})")]
@@ -56,14 +54,6 @@ impl From<io::Error> for SyncError {
     fn from(error: io::Error) -> Self {
         Self {
             source: SyncErrorKind::Io(error),
-        }
-    }
-}
-
-impl From<git2::Error> for SyncError {
-    fn from(error: git2::Error) -> Self {
-        Self {
-            source: SyncErrorKind::Git(error),
         }
     }
 }
