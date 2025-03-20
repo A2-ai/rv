@@ -24,11 +24,15 @@ impl GitRepository {
 
     pub fn open(
         path: impl AsRef<Path>,
+        url: &str,
         executor: impl CommandExecutor + 'static,
     ) -> Result<Self, std::io::Error> {
         log::debug!("Opening git repository at {}", path.as_ref().display());
         // Only there to error if the folder is not a git repo
-        let _ = executor.execute(Command::new("git").arg("rev-parse").current_dir(&path))?;
+        if executor.execute(Command::new("git").arg("rev-parse").current_dir(&path)).is_err() {
+            fs::remove_dir_all(&path)?;
+            return Self::init(path, url, executor);
+        }
 
         Ok(Self {
             path: path.as_ref().into(),

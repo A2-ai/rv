@@ -32,7 +32,7 @@ impl GitRemote {
     ) -> Result<(String, String), std::io::Error> {
         // If we have it locally try to only fetch what's needed
         if dest.as_ref().is_dir() {
-            let local = GitRepository::open(dest.as_ref(), executor)?;
+            let local = GitRepository::open(dest.as_ref(), &self.url, executor)?;
             local.fetch(&self.url, reference)?;
             let content = local.get_description_file_content(
                 &self.url,
@@ -70,7 +70,7 @@ impl GitRemote {
         executor: impl CommandExecutor + Clone + 'static,
     ) -> Result<(), std::io::Error> {
         let repo = if dest.as_ref().is_dir() {
-            GitRepository::open(dest.as_ref(), executor)?
+            GitRepository::open(dest.as_ref(), &self.url, executor)?
         } else {
             GitRepository::init(dest.as_ref(), &self.url, executor)?
         };
