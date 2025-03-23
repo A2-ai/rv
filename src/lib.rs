@@ -1,5 +1,5 @@
 mod activate;
-mod add;
+mod add_remove;
 mod cache;
 mod config;
 mod fs;
@@ -23,7 +23,7 @@ pub mod cli;
 pub mod consts;
 
 pub use activate::{activate, deactivate};
-pub use add::{add_packages, read_and_verify_config};
+pub use add_remove::{add_packages, read_and_verify_config, remove_packages};
 pub use cache::{utils::hash_string, CacheInfo, DiskCache, PackagePaths};
 pub use config::{Config, ConfigDependency, Repository};
 pub use git::{Git, GitOperations};
