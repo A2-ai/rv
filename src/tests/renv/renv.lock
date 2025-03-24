@@ -27,17 +27,13 @@
         "methods",
         "stats",
         "utils"
-      ],
-      "Hash": "1920b2f11133b12350024297d8a4ff4a"
+      ]
     },
     "R6": {
       "Package": "R6",
       "Version": "2.5.0",
       "Source": "Repository",
       "Repository": "cran-binary",
-      "Requirements": [
-        "R"
-      ],
       "Hash": "470851b6d5d0ac559e9d01bb352b4021"
     },
     "ghqc": {
