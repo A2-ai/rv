@@ -92,8 +92,8 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 
 pub(crate) const RVR_FILE_CONTENT: &str = r#".rv <- new.env()
 .rv$config_path <- file.path(normalizePath(getwd()), "rproject.toml")
-.rv$info <- function(json = FALSE) {
-  command <- c("info")
+.rv$summary <- function(json = FALSE) {
+  command <- c("summary")
   if (json) { command <- c(command, "--json") }
   .rv$command(command)
 }
