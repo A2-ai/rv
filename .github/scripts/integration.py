@@ -1,14 +1,18 @@
+import json
 import os
 import subprocess
+import shutil
 
 PARENT_FOLDER = "example_projects"
 
-def run_cmd(cmd, path):
-    print(f"Running {cmd}")
-    command = ["./target/release/rv", cmd, "--config-file", path, "-vvv"]
+def run_cmd(cmd, path, json = False):
+    additional_args = ["--json"] if json else []
+    print(f">> Running rv {cmd}")
+    command = ["./target/release/rv", cmd, "--config-file", path, "-vvv"] + additional_args
     result = subprocess.run(command, capture_output=True, text=True)
-    print(result.stdout)
-    print(result.stderr)
+    if not json:
+        print(result.stdout)
+        print(result.stderr)
 
     # Check for errors
     if result.returncode != 0:
@@ -25,7 +29,18 @@ def run_examples():
         if subfolder == "big":
             continue
         subfolder_path = os.path.join(PARENT_FOLDER, subfolder, "rproject.toml")
-        print(f"Processing example: {subfolder_path}")
+        print(f"===== Processing example: {subfolder_path} =====")
+
+        # The git packages depend on each other but we don't want
+        if "git" in subfolder_path:
+            out = run_cmd("cache", subfolder_path, ["--json"])
+            if out:
+                cache_data = json.loads(out)
+                for obj in cache_data.get("git", []):
+                    print(f"Clearing cache: {obj}")
+                    shutil.rmtree(obj["source_path"], ignore_errors=True)
+            else:
+                print("Cache command didn't return anything")
 
         run_cmd("sync", subfolder_path)
         run_cmd("plan", subfolder_path)

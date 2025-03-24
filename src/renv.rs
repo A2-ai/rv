@@ -61,7 +61,8 @@ struct PackageInfo {
     remote_url: Option<String>, // when source is Local
     #[serde(default)]
     requirements: Vec<String>,
-    hash: String,
+    #[serde(default)]
+    hash: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]

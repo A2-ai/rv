@@ -8,8 +8,9 @@ use rv::cli::{
     create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
 };
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
-    Lockfile, ProjectSummary, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, GitExecutor,
+    Http, Lockfile, ProjectSummary, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
+    Version,
 };
 
 #[derive(Parser)]
@@ -38,6 +39,9 @@ pub enum Command {
         no_repositories: bool,
         #[clap(long, value_parser, num_args = 1..)]
         add: Vec<String>,
+        #[clap(long)]
+        /// Force new init. This will replace content in your rproject.toml
+        force: bool
     },
     /// Returns the path for the library for the current project/system.
     /// The path is always in unix format
@@ -131,7 +135,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
-        &Git {},
+        &GitExecutor {},
         &Http {},
     );
     if !resolution.is_success() {
@@ -235,6 +239,7 @@ fn try_main() -> Result<()> {
             r_version,
             no_repositories,
             add,
+            force, 
         } => {
             let r_version = if let Some(r) = r_version {
                 // Make sure input is a valid version format. NOT checking if it is a valid R version on system in init
@@ -266,7 +271,7 @@ fn try_main() -> Result<()> {
             } else {
                 find_r_repositories().unwrap_or(Vec::new())
             };
-            init(&project_directory, &r_version, &repositories, &add)?;
+            init(&project_directory, &r_version, &repositories, &add, force)?;
             activate(&project_directory)?;
             println!(
                 "rv project successfully initialized at {}",

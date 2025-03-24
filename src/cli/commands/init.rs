@@ -46,10 +46,15 @@ pub fn init(
     r_version: &str,
     repositories: &[Repository],
     dependencies: &[String],
+    force: bool,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     create_library_structure(proj_dir)?;
     create_gitignore(proj_dir)?;
+    let config_path = proj_dir.join(CONFIG_FILENAME);
+    if config_path.exists() && !force {
+        return Ok(())
+    }
     let project_name = proj_dir
         .canonicalize()
         .map_err(|e| InitError {
@@ -188,7 +193,7 @@ pub fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitE
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Lockfile error: {source}")]
+#[error("Initialize error: {source}")]
 #[non_exhaustive]
 pub struct InitError {
     source: InitErrorKind,
@@ -230,6 +235,7 @@ mod tests {
             &r_version.original,
             &repositories,
             &dependencies,
+            false
         )
         .unwrap();
         let dir = &project_directory.into_path();
