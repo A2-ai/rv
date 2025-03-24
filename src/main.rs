@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
-use rv::cli::{
-    create_gitignore, create_library_structure, find_r_repositories, init, migrate_renv, CliContext,
-};
+use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
 use rv::{
     activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, GitExecutor,
     Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
@@ -34,11 +32,17 @@ pub enum Command {
         #[clap(value_parser, default_value = ".")]
         project_directory: PathBuf,
         #[clap(short = 'r', long)]
+        /// Specify a non-default R version
         r_version: Option<String>,
         #[clap(long)]
+        /// Do no populated repositories
         no_repositories: bool,
         #[clap(long, value_parser, num_args = 1..)]
+        /// Add simple packages to the config
         add: Vec<String>,
+        #[clap(long)]
+        /// Turn off rv access through .rv R environment
+        no_r_environment: bool,
         #[clap(long)]
         /// Force new init. This will replace content in your rproject.toml
         force: bool
@@ -88,7 +92,10 @@ pub enum Command {
         subcommand: MigrateSubcommand,
     },
     /// Activate a previously initialized rv project
-    Activate,
+    Activate {
+        #[clap(long)]
+        no_r_environment: bool,
+    },
     /// Deactivate an rv project
     Deactivate,
 }
@@ -101,6 +108,8 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Include the patch in the R version
         strict_r_version: bool,
+        /// Turn off rv access through .rv R environment
+        no_r_environment: bool,
     },
 }
 
@@ -229,6 +238,7 @@ fn try_main() -> Result<()> {
             r_version,
             no_repositories,
             add,
+            no_r_environment,
             force, 
         } => {
             let r_version = if let Some(r) = r_version {
@@ -262,7 +272,7 @@ fn try_main() -> Result<()> {
                 find_r_repositories().unwrap_or(Vec::new())
             };
             init(&project_directory, &r_version, &repositories, &add, force)?;
-            activate(&project_directory)?;
+            activate(&project_directory, no_r_environment)?;
             println!(
                 "rv project successfully initialized at {}",
                 project_directory.display()
@@ -351,6 +361,7 @@ fn try_main() -> Result<()> {
                 MigrateSubcommand::Renv {
                     renv_file,
                     strict_r_version,
+                    no_r_environment,
                 },
         } => {
             let unresolved = migrate_renv(&renv_file, &cli.config_file, strict_r_version)?;
@@ -361,9 +372,8 @@ fn try_main() -> Result<()> {
                 .parent()
                 .unwrap()
                 .to_path_buf();
-            create_library_structure(project_dir)?;
-            create_gitignore(project_dir)?;
-            activate(project_dir)?;
+            init_structure(project_dir)?;
+            activate(project_dir, no_r_environment)?;
             let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
                 "source(\"renv/activate.R\")",
                 "# source(\"renv/activate.R\")",
@@ -420,9 +430,9 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Activate => {
+        Command::Activate{no_r_environment} => {
             let dir = std::env::current_dir()?;
-            activate(dir)?;
+            activate(dir, no_r_environment)?;
             println!("rv activated");
         }
         Command::Deactivate => {

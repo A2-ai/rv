@@ -1,9 +1,10 @@
 use std::{
-    fs::File,
-    io::{Read, Write},
+    io::{self, Read},
     path::Path,
     process::Command,
 };
+
+use fs_err::write;
 
 use crate::Repository;
 
@@ -49,8 +50,7 @@ pub fn init(
     force: bool,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
-    create_library_structure(proj_dir)?;
-    create_gitignore(proj_dir)?;
+    init_structure(proj_dir)?;
     let config_path = proj_dir.join(CONFIG_FILENAME);
     if config_path.exists() && !force {
         return Ok(())
@@ -67,13 +67,7 @@ pub fn init(
 
     let config = render_config(&project_name, &r_version, &repositories, dependencies);
 
-    let mut file = File::create(proj_dir.join(CONFIG_FILENAME)).map_err(|e| InitError {
-        source: InitErrorKind::Io(e),
-    })?;
-
-    file.write_all(config.as_bytes()).map_err(|e| InitError {
-        source: InitErrorKind::Io(e),
-    })?;
+    write(proj_dir.join(CONFIG_FILENAME), config)?;
     Ok(())
 }
 
@@ -166,30 +160,30 @@ fn strip_linux_url(url: &str) -> String {
     new_url.join("/")
 }
 
-pub fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+pub fn init_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+    let project_directory = project_directory.as_ref();
+    create_library_structure(project_directory)?;
+    create_gitignore(project_directory)?;
+    Ok(())
+}
+
+fn create_library_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     let lib_dir = project_directory.as_ref().join(LIBRARY_PATH);
     if lib_dir.is_dir() {
         return Ok(());
     }
-    std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH)).map_err(|e| InitError {
-        source: InitErrorKind::Io(e),
-    })
+    std::fs::create_dir_all(project_directory.as_ref().join(LIBRARY_PATH))?;
+    Ok(())
 }
 
-pub fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
+fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     let path = project_directory.as_ref().join(GITIGNORE_PATH);
     if path.exists() {
         return Ok(());
     }
 
-    let mut file = std::fs::File::create(path).map_err(|e| InitError {
-        source: InitErrorKind::Io(e),
-    })?;
-
-    file.write_all(GITIGNORE_CONTENT.as_bytes())
-        .map_err(|e| InitError {
-            source: InitErrorKind::Io(e),
-        })
+    write(path, GITIGNORE_CONTENT)?;
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -207,6 +201,14 @@ pub enum InitErrorKind {
     Command(std::io::Error),
     #[error("Failed to find repositories: {0}")]
     CommandFailed(String),
+}
+
+impl From<io::Error> for InitError {
+    fn from(value: io::Error) -> Self {
+        Self {
+            source: InitErrorKind::Io(value),
+        }
+    }
 }
 
 #[cfg(test)]
