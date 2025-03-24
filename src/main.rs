@@ -60,13 +60,13 @@ pub enum Command {
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
     },
-    /// Provide information about the project
-    Info {
+    /// Provide a summary about the project status
+    Summary {
         #[clap(short, long)]
         json: bool,
     },
-    /// List simple project items
-    List {
+    /// Simple information about the project
+    Info {
         #[clap(long)]
         /// The relative library path
         library: bool,
@@ -334,7 +334,7 @@ fn try_main() -> Result<()> {
                 SyncMode::FullUpgrade,
             )?;
         }
-        Command::List {
+        Command::Info {
             library,
             r_version,
             repositories,
@@ -421,7 +421,7 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Info { json } => {
+        Command::Summary { json } => {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);

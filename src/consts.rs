@@ -54,7 +54,7 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
 ];
 
 pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
-	rv_list <- system2("%rv command%", c("list", "--library", "--r-version", "--repositories"), stdout = TRUE)
+	rv_list <- system2("%rv command%", c("info", "--library", "--r-version", "--repositories"), stdout = TRUE)
 	if (!is.null(attr(rv_list, "status"))) {
 		# if system2 fails it'll add a status attribute with the error code
 		warning("failed to run rv library, check your console for messages")
