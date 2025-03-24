@@ -15,14 +15,14 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ProjectInfo<'a> {
+pub struct ProjectSummary<'a> {
     r_version: &'a Version,
     system_info: &'a SystemInfo,
     dependency_info: DependencyInfo<'a>,
     remote_info: RemoteInfo<'a>,
 }
 
-impl<'a> ProjectInfo<'a> {
+impl<'a> ProjectSummary<'a> {
     pub fn new(
         library: &'a Library,
         resolved_deps: &'a [ResolvedDependency],
@@ -50,7 +50,7 @@ impl<'a> ProjectInfo<'a> {
     }
 }
 
-impl fmt::Display for ProjectInfo<'_> {
+impl fmt::Display for ProjectSummary<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,

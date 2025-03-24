@@ -9,7 +9,7 @@ use rv::cli::{
 };
 use rv::{
     activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, Git, Http,
-    Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
+    Lockfile, ProjectSummary, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler, Version,
 };
 
 #[derive(Parser)]
@@ -425,7 +425,7 @@ fn try_main() -> Result<()> {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);
-            let info = ProjectInfo::new(
+            let info = ProjectSummary::new(
                 &context.library,
                 &resolved,
                 &context.config.repositories(),
