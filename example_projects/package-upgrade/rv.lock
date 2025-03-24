@@ -4,14 +4,6 @@ version = 1
 r_version = "4.4"
 
 [[packages]]
-name = "MASS"
-version = "7.3-60.2"
-source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
-path = "4.4.0/Recommended"
-force_source = false
-dependencies = []
-
-[[packages]]
 name = "Matrix"
 version = "1.6-5"
 source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
@@ -294,8 +286,8 @@ dependencies = []
 
 [[packages]]
 name = "ggplot2"
-version = "3.4.4"
-source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
+version = "3.5.1"
+source = { repository = "https://packagemanager.posit.co/cran/2024-12-04" }
 force_source = false
 dependencies = [
     "cli",
@@ -303,8 +295,6 @@ dependencies = [
     "gtable",
     "isoband",
     "lifecycle",
-    "MASS",
-    "mgcv",
     "rlang",
     "scales",
     "tibble",
@@ -444,17 +434,6 @@ dependencies = [
 ]
 
 [[packages]]
-name = "mgcv"
-version = "1.9-1"
-source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
-path = "4.4.0/Recommended"
-force_source = false
-dependencies = [
-    "nlme",
-    "Matrix",
-]
-
-[[packages]]
 name = "mime"
 version = "0.12"
 source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
@@ -468,16 +447,6 @@ source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
 force_source = false
 dependencies = [
     "colorspace",
-]
-
-[[packages]]
-name = "nlme"
-version = "3.1-164"
-source = { repository = "https://packagemanager.posit.co/cran/2024-02-22" }
-path = "4.4.0/Recommended"
-force_source = false
-dependencies = [
-    "lattice",
 ]
 
 [[packages]]
@@ -515,8 +484,8 @@ dependencies = []
 
 [[packages]]
 name = "pmplots"
-version = "0.4.0"
-source = { repository = "https://a2-ai.github.io/gh-pkg-mirror/2024-02-22" }
+version = "0.5.1"
+source = { repository = "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04" }
 force_source = false
 dependencies = [
     "ggplot2",

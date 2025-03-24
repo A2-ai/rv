@@ -1,5 +1,5 @@
 use crate::VersionRequirement;
-use crate::{ConfigDependency, DiskCache, GitOperations, Lockfile, RepositoryDatabase, Version};
+use crate::{CommandExecutor, ConfigDependency, DiskCache, Lockfile, RepositoryDatabase, Version};
 
 use fs_err as fs;
 use std::borrow::Cow;
@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 mod dependency;
 
 use crate::fs::untar_archive;
-use crate::git::GitReference;
+use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    is_binary_package, parse_description_file_in_folder, PackageRemote, PackageType,
+    is_binary_package, parse_description_file, parse_description_file_in_folder, PackageRemote,
+    PackageType,
 };
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 
@@ -246,20 +247,28 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
         repo_url: &str,
         directory: Option<&str>,
-        git_ref: Option<GitReference>,
-        git_ops: &'d impl GitOperations,
+        git_ref: GitReference,
+        git_executor: &'d (impl CommandExecutor + Clone + 'static),
         cache: &'d DiskCache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let clone_path = cache.get_git_clone_path(repo_url);
 
-        match git_ops.clone_and_checkout(repo_url, git_ref.clone(), &clone_path) {
-            Ok(sha) => {
-                let package_path = if let Some(d) = directory {
-                    clone_path.join(d)
-                } else {
-                    clone_path
+        let mut remote = GitRemote::new(repo_url);
+        if let Some(d) = directory {
+            remote.set_directory(d);
+        }
+
+        match remote.sparse_checkout_for_description(clone_path, &git_ref, git_executor.clone()) {
+            Ok((sha, description_content)) => {
+                let package = match parse_description_file(&description_content) {
+                    Some(p) => p,
+                    None => {
+                        return Err(format!(
+                            "DESCRIPTION file from {repo_url} was found but is not valid",
+                        )
+                        .into());
+                    }
                 };
-                let package = parse_description_file_in_folder(&package_path)?;
 
                 if item.name != package.name {
                     return Err(format!(
@@ -281,8 +290,11 @@ impl<'d> Resolver<'d> {
                         branch: None,
                     }
                 };
-                let status =
-                    cache.get_installation_status(repo_url, &package.version.original, &source);
+                let status = cache.get_installation_status(
+                    &package.name,
+                    &package.version.original,
+                    &source,
+                );
                 let (resolved_dep, deps) = ResolvedDependency::from_git_package(
                     &package,
                     source,
@@ -339,7 +351,7 @@ impl<'d> Resolver<'d> {
         dependencies: &'d [ConfigDependency],
         prefer_repositories_for: &'d [String],
         cache: &'d DiskCache,
-        git_ops: &'d impl GitOperations,
+        git_exec: &'d (impl CommandExecutor + Clone + 'static),
         http_download: &'d impl HttpDownload,
     ) -> Resolution<'d> {
         let mut result = Resolution::default();
@@ -420,8 +432,12 @@ impl<'d> Resolver<'d> {
                             &item,
                             url,
                             directory.as_deref(),
-                            reference.clone().as_deref().map(GitReference::Unknown),
-                            git_ops,
+                            reference
+                                .clone()
+                                .as_deref()
+                                .map(GitReference::Unknown)
+                                .unwrap_or(GitReference::Unknown("HEAD")),
+                            git_exec,
                             cache,
                         ) {
                             Ok((mut resolved_dep, items)) => {
@@ -512,8 +528,8 @@ impl<'d> Resolver<'d> {
                         &item,
                         git,
                         directory.as_deref(),
-                        Some(git_ref),
-                        git_ops,
+                        git_ref,
+                        git_exec,
                         cache,
                     ) {
                         Ok((resolved_dep, items)) => {
@@ -539,9 +555,9 @@ mod tests {
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::str::FromStr;
 
-    use git2::Error;
     use serde::Deserialize;
     use tempfile::TempDir;
 
@@ -552,15 +568,11 @@ mod tests {
     use crate::repository::RepositoryDatabase;
     use crate::{DiskCache, SystemInfo};
 
+    #[derive(Clone)]
     struct FakeGit;
 
-    impl GitOperations for FakeGit {
-        fn clone_and_checkout(
-            &self,
-            _: &str,
-            _: Option<GitReference<'_>>,
-            _: impl AsRef<Path>,
-        ) -> Result<String, Error> {
+    impl CommandExecutor for FakeGit {
+        fn execute(&self, _: &mut Command) -> Result<String, std::io::Error> {
             Ok("somethinglikeasha".to_string())
         }
     }

@@ -99,8 +99,8 @@ impl<'d> ResolvedDependency<'d> {
         };
         // If repository is r-universe, treat as a git repo since r-universe does not have archive
 
-        // TODO: If/when the need arises to not treat r-universe as a git repo, the potential spec is to keep both the repository 
-        // and git info. The repository is used while the locked version and version in the PACKAGES database match, 
+        // TODO: If/when the need arises to not treat r-universe as a git repo, the potential spec is to keep both the repository
+        // and git info. The repository is used while the locked version and version in the PACKAGES database match,
         // switching to using git once it is no longer available
         if repo_url.contains("r-universe.dev") {
             match RUniverseApi::query_r_universe_api(package, repo_url) {
@@ -236,7 +236,6 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.clone()),
             source,
-            // We'll handle the installation status later by comparing mtimes
             installation_status: InstallationStatus::Source,
             install_suggests,
             remotes: package.remotes.clone(),

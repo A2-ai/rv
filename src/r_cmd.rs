@@ -19,15 +19,6 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
-#[inline]
-fn get_r_default_path() -> PathBuf {
-    if cfg!(windows) {
-        PathBuf::from("R.exe")
-    } else {
-        PathBuf::from("R")
-    }
-}
-
 pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
     fn install(
@@ -174,7 +165,7 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = Command::new(self.r.as_ref().unwrap_or(&get_r_default_path()));
+        let mut command = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")));
         command
             .arg("CMD")
             .arg("INSTALL")
@@ -242,7 +233,7 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(self.r.as_ref().unwrap_or(&get_r_default_path()))
+        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
