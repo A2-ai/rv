@@ -54,34 +54,38 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
 ];
 
 pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
-	rv_lib <- system2("%rv command%", "library", stdout = TRUE)
-	# this might not yet exist, so we'll normalize it but not force it to exist
-	# and we create it below as needed
-	rv_lib <- normalizePath(rv_lib, mustWork = FALSE)
-	if (!is.null(attr(rv_lib, "status"))) {
+	rv_info <- system2("%rv command%", c("info", "--library", "--r-version", "--repositories"), stdout = TRUE)
+	if (!is.null(attr(rv_info, "status"))) {
 		# if system2 fails it'll add a status attribute with the error code
-		warning("failed to run rv library, check your console for messages")
+		warning("failed to run rv info, check your console for messages")
 	} else {
+		# extract library, r-version, and repositories from rv
+		rv_lib <- sub("library: (.+)", "\\1", grep("^library:", rv_info, value = TRUE))
+		rv_r_ver <- sub("r-version: (.+)", "\\1", grep("^r-version:", rv_info, value = TRUE))
+		repo_str <- sub("repositories: ", "", grep("^repositories:", rv_info, value = TRUE))
+		repo_entries <- gsub("[()]", "", strsplit(repo_str, "), (", fixed = TRUE)[[1]])
+		repo_list <- setNames(
+			trimws(sub(".*, ", "", repo_entries)),  # Extract URL
+			trimws(sub(", .*", "", repo_entries))   # Extract Name
+		)
+		# this might not yet exist, so we'll normalize it but not force it to exist
+		# and we create it below as needed
+		rv_lib <- normalizePath(rv_lib, mustWork = FALSE)
 		if (!dir.exists(rv_lib)) {
 			message("creating rv library: ", rv_lib)
 			dir.create(rv_lib, recursive = TRUE)
 		}
 		.libPaths(rv_lib, include.site = FALSE)
-	}
-	if (interactive()) {
-		# Extract the R version from rv for comparison with the local R version
-		rv_info <- system2("%rv command%", c("info", "--r-version"), stdout = TRUE)
-		if (!is.null(attr(rv_info, "status"))) {
-			# if system2 fails it'll add a status attrivute with the error code
-			warning("failed to run rv info, check your console for messages")
-		} else {
+		options(repos = repo_list)
+
+		if (interactive()) {
+			message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"), "\n")
+			message("rv repositories active!\nrepositories: \n", paste0("  ", names(getOption("repos")), ": ", getOption("repos"), collapse = "\n"))
 			sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
-			r_matches <- grepl(paste0("^", rv_info), sys_r)
+			if (!grepl(paste0("^", rv_r_ver), sys_r)) {
+				message(sprintf("\nWARNING: R version specified in config (%s) does not match session version (%s)", rv_r_ver, sys_r))
 		}
-		message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"))
-		if (!r_matches) {
-			message(sprintf("\nWARNING: R version specified in config (%s) does not match session version (%s)", rv_info, sys_r))
-		}
+	}
 	}
 })
 "#;
