@@ -6,9 +6,9 @@ use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config,
-    CacheInfo, Config, Git, Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency,
-    Resolver, SyncHandler, Version,
+    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, GitExecutor,
+    Http, Lockfile, ProjectInfo, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
+    Version,
 };
 
 #[derive(Parser)]
@@ -134,7 +134,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
-        &Git {},
+        &GitExecutor {},
         &Http {},
     );
     if !resolution.is_success() {

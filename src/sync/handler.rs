@@ -12,7 +12,7 @@ use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{sources, LinkMode};
-use crate::{BuildPlan, BuildStep, DiskCache, Git, Library, RCmd, ResolvedDependency};
+use crate::{BuildPlan, BuildStep, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency};
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
@@ -90,9 +90,13 @@ impl<'a> SyncHandler<'a> {
             Source::Repository { .. } => {
                 sources::repositories::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
-            Source::Git { .. } => {
-                sources::git::install_package(dep, &self.staging_path, self.cache, r_cmd, &Git {})
-            }
+            Source::Git { .. } => sources::git::install_package(
+                dep,
+                &self.staging_path,
+                self.cache,
+                r_cmd,
+                &GitExecutor {},
+            ),
             Source::Local { .. } => {
                 sources::local::install_package(dep, self.project_dir, &self.staging_path, r_cmd)
             }

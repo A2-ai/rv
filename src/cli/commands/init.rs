@@ -187,7 +187,7 @@ fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Lockfile error: {source}")]
+#[error("Initialize error: {source}")]
 #[non_exhaustive]
 pub struct InitError {
     source: InitErrorKind,

@@ -1,0 +1,11 @@
+[project]
+name = "private-git-dep"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+]
+dependencies = [
+    # This one has a private git remote for a dep.
+    # Only members of the a2-ai org will be able to install this example project
+    { name = "rdstarlight", git = "git@github.com:A2-ai/rdstarlight.git", commit ="869aa1020fed41ba87ba54290105392ea805fa75"},
+]
