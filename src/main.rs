@@ -430,7 +430,7 @@ fn try_main() -> Result<()> {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context);
-            let info = ProjectSummary::new(
+            let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,
                 &context.config.repositories(),
@@ -442,10 +442,10 @@ fn try_main() -> Result<()> {
             if json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&info).expect("valid json")
+                    serde_json::to_string_pretty(&summary).expect("valid json")
                 );
             } else {
-                println!("{info}");
+                println!("{summary}");
             }
         }
         Command::Activate => {
