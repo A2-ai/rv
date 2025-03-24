@@ -110,7 +110,7 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
 /// Untars an archive in the given destination folder, returning a path to the first folder in what
 /// was extracted since R tarballs are (always?) a folder
 /// For windows binaries, they are in .zip archives and will be unzipped
-pub(crate) fn untar_archive<R: Read>(
+pub fn untar_archive<R: Read>(
     mut reader: R,
     dest: impl AsRef<Path>,
     compute_hash: bool,
