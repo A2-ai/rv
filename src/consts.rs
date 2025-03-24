@@ -54,15 +54,15 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
 ];
 
 pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
-	rv_list <- system2("%rv command%", c("info", "--library", "--r-version", "--repositories"), stdout = TRUE)
-	if (!is.null(attr(rv_list, "status"))) {
+	rv_info <- system2("%rv command%", c("info", "--library", "--r-version", "--repositories"), stdout = TRUE)
+	if (!is.null(attr(rv_info, "status"))) {
 		# if system2 fails it'll add a status attribute with the error code
-		warning("failed to run rv library, check your console for messages")
+		warning("failed to run rv info, check your console for messages")
 	} else {
 		# extract library, r-version, and repositories from rv
-		rv_lib <- sub("library: (.+)", "\\1", grep("^library:", rv_list, value = TRUE))
-		rv_r_ver <- sub("r-version: (.+)", "\\1", grep("^r-version:", rv_list, value = TRUE))
-		repo_str <- sub("repositories: ", "", grep("^repositories:", rv_list, value = TRUE))
+		rv_lib <- sub("library: (.+)", "\\1", grep("^library:", rv_info, value = TRUE))
+		rv_r_ver <- sub("r-version: (.+)", "\\1", grep("^r-version:", rv_info, value = TRUE))
+		repo_str <- sub("repositories: ", "", grep("^repositories:", rv_info, value = TRUE))
 		repo_entries <- gsub("[()]", "", strsplit(repo_str, "), (", fixed = TRUE)[[1]])
 		repo_list <- setNames(
 			trimws(sub(".*, ", "", repo_entries)),  # Extract URL
@@ -77,14 +77,15 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		}
 		.libPaths(rv_lib, include.site = FALSE)
 		options(repos = repo_list)
-	}
-	if (interactive()) {
-		message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"), "\n")
-		message("rv repositories active!\nrepositories: \n", paste0("  ", names(getOption("repos")), ": ", getOption("repos"), collapse = "\n"))
-		sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
-		if (!grepl(paste0("^", rv_r_ver), sys_r)) {
-			message(sprintf("\nWARNING: R version specified in config (%s) does not match session version (%s)", rv_r_ver, sys_r))
+
+		if (interactive()) {
+			message("rv libpaths active!\nlibrary paths: \n", paste0("  ", .libPaths(), collapse = "\n"), "\n")
+			message("rv repositories active!\nrepositories: \n", paste0("  ", names(getOption("repos")), ": ", getOption("repos"), collapse = "\n"))
+			sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
+			if (!grepl(paste0("^", rv_r_ver), sys_r)) {
+				message(sprintf("\nWARNING: R version specified in config (%s) does not match session version (%s)", rv_r_ver, sys_r))
 		}
+	}
 	}
 })
 "#;
