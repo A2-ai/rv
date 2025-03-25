@@ -57,7 +57,7 @@ impl RepositoryDatabase {
     }
 
     // We always prefer binary unless `force_source` is set to true
-    pub(crate) fn find_package<'a>(
+    pub fn find_package<'a>(
         &'a self,
         name: &str,
         version_requirement: Option<&VersionRequirement>,
