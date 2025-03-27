@@ -9,7 +9,7 @@ static POSIT_PACKAGE_MANAGER_BASE_URL: &str = "https://packagemanager.posit.co/c
 static RV_BASE_URL: &str = "TODO: RV base url";
 
 /// This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
-fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
+pub fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
     match distro {
         "centos" => {
             if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
