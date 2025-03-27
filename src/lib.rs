@@ -32,7 +32,7 @@ pub use library::Library;
 pub use lockfile::Lockfile;
 pub use package::{is_binary_package, Version, VersionRequirement, Package, parse_package_file, parse_dependencies};
 pub use project_info::ProjectInfo;
-pub use r_cmd::{get_r_default_path, find_r_version_command, RCmd, RCommandLine};
+pub use r_cmd::{get_r_default_path, find_r_version_command, RCmd, RCommandLine, VersionError};
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
