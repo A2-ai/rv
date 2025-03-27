@@ -20,7 +20,7 @@ fn find_r_version(output: &str) -> Option<Version> {
 }
 
 #[inline]
-fn get_r_default_path() -> PathBuf {
+pub fn get_r_default_path() -> PathBuf {
     if cfg!(windows) {
         PathBuf::from("R.exe")
     } else {

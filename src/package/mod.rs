@@ -11,7 +11,7 @@ mod remotes;
 mod version;
 
 pub use description::{parse_description_file_in_folder, parse_version};
-pub use parser::parse_package_file;
+pub use parser::{parse_package_file, parse_dependencies};
 pub use remotes::PackageRemote;
 pub use version::{deserialize_version, Operator, Version, VersionRequirement};
 
@@ -47,7 +47,7 @@ impl Dependency {
         }
     }
 
-    pub(crate) fn version_requirement(&self) -> Option<&VersionRequirement> {
+    pub fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
             Dependency::Pinned {
