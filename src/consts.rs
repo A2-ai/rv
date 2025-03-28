@@ -64,7 +64,7 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		rv_r_ver <- sub("r-version: (.+)", "\\1", grep("^r-version:", rv_info, value = TRUE))
 		repo_str <- sub("repositories: ", "", grep("^repositories:", rv_info, value = TRUE))
 		repo_entries <- gsub("[()]", "", strsplit(repo_str, "), (", fixed = TRUE)[[1]])
-    repo_list <- trimws(sub(".*, ", "", repo_entries)),  # Extract URL
+    repo_list <- trimws(sub(".*, ", "", repo_entries))  # Extract URL
     names(repo_list) <- trimws(sub(", .*", "", repo_entries))   # Extract Name
 		# this might not yet exist, so we'll normalize it but not force it to exist
 		# and we create it below as needed
