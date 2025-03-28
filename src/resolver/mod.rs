@@ -720,7 +720,7 @@ mod tests {
                 &FakeGit {},
                 &FakeHttp {},
             );
-            // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), &resolved);
+            // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), resolution.found.clone());
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();
             for d in resolution.found {
