@@ -406,7 +406,7 @@ impl Lockfile {
     ) -> Option<&LockedPackage> {
         if let Some(p) = self.packages.iter().find(|p| p.name == name) {
             if let Some(d) = dep {
-                if p.source.is_matching(d) {
+                if p.source.is_matching(d) && p.install_suggests() == d.install_suggestions() {
                     return Some(p);
                 }
             } else {
@@ -437,12 +437,16 @@ impl Lockfile {
     /// we'll need to look up the databases
     pub fn can_resolve(&self, deps: &[ConfigDependency]) -> bool {
         for d in deps {
-            if self.get_package(d.name(), Some(d)).is_none() {
+            if let Some(pkg) = self.get_package(d.name(), Some(d)) {
+                if d.install_suggestions() && !pkg.install_suggests() {
+                    return false
+                }
+            } else {
                 return false;
             }
         }
 
-        false
+        true
     }
 
     /// Gets a set of all the package names listed in the lockfile
