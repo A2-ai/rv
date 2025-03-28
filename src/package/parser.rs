@@ -104,26 +104,15 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
         package
     };
 
-    let mut start_idx = 0;
-    let mut end_idx = 0;
-
-    let content = content.replace("\r\n", "\n");
-    for line in content.split("\n") {
-        // Empty line is a new package
-        if line.trim().is_empty() {
-            let pkg = parse_pkg(&content[start_idx..end_idx]);
-            if !pkg.name.is_empty() {
-                if let Some(p) = packages.get_mut(&pkg.name) {
-                    p.push(pkg);
-                } else {
-                    packages.insert(pkg.name.clone(), vec![pkg]);
-                }
+    // packages are split by an empty line
+    for pkg_data in content.replace("\r\n", "\n").split("\n\n") {
+        let pkg = parse_pkg(pkg_data);
+        if !pkg.name.is_empty() {
+            if let Some(p) = packages.get_mut(&pkg.name) {
+                p.push(pkg);
+            } else {
+                packages.insert(pkg.name.clone(), vec![pkg]);
             }
-            end_idx += line.chars().count() + 1;
-            start_idx = end_idx;
-        } else {
-            // +1 for a \n
-            end_idx += line.chars().count() + 1;
         }
     }
 
@@ -232,5 +221,18 @@ NeedsCompilation: no
         content += "\n";
         let packages = parse_package_file(&content);
         assert_eq!(packages.len(), 1);
+    }
+
+    #[test]
+    fn works_on_shinytest2() {
+        let mut content =
+            std::fs::read_to_string("src/tests/descriptions/shinytest2.DESCRIPTION").unwrap();
+        content += "\n";
+        let packages = parse_package_file(&content);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(
+            packages["shinytest2"][0].linking_to,
+            vec![Dependency::Simple("cpp11".to_string())]
+        );
     }
 }

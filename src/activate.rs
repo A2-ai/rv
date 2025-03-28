@@ -111,7 +111,6 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     Ok(())
 }
 
-
 fn write_rvr_file(project_directory: impl AsRef<Path>) -> Result<(), ActivateError> {
     let path = project_directory.as_ref().join(RVR_FILE_NAME);
     if path.exists() {

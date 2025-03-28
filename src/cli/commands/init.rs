@@ -53,7 +53,7 @@ pub fn init(
     init_structure(proj_dir)?;
     let config_path = proj_dir.join(CONFIG_FILENAME);
     if config_path.exists() && !force {
-        return Ok(())
+        return Ok(());
     }
     let project_name = proj_dir
         .canonicalize()
@@ -237,7 +237,7 @@ mod tests {
             &r_version.original,
             &repositories,
             &dependencies,
-            false
+            false,
         )
         .unwrap();
         let dir = &project_directory.into_path();
