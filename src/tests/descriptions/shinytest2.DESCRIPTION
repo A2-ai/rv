@@ -1,0 +1,105 @@
+Package: shinytest2
+Title: Testing for Shiny Applications
+Version: 0.3.2.9000
+Authors@R:
+    c(
+        person("Barret", "Schloerke", role = c("cre", "aut"), email = "barret@posit.co", comment = c(ORCID = "0000-0001-9986-114X")),
+        person(family = "Posit Software, PBC", role = c("cph", "fnd")),
+        person("Winston", "Chang", role ="ctb", email = "winston@posit.co", comment = "Original author to rstudio/shinytest"),
+        person("Gábor", "Csárdi", role = "ctb", email = "gabor@posit.co", comment = "Original author to rstudio/shinytest"),
+        person("Hadley", "Wickham", role = "ctb", email = "hadley@posit.co", comment = "Original author to rstudio/shinytest"),
+        person(family = "Mango Solutions", role = c("cph", "ccp"), comment = "Original author to rstudio/shinytest")
+    )
+Description: Automated unit testing of Shiny applications through a headless 'Chromium' browser.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Language: en-US
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+URL: https://rstudio.github.io/shinytest2/, https://github.com/rstudio/shinytest2
+BugReports: https://github.com/rstudio/shinytest2/issues
+VignetteBuilder: knitr
+Depends:
+    testthat (>= 3.1.2)
+Imports:
+    R6 (>= 2.4.0),
+    callr,
+    checkmate (>= 2.0.0),
+    chromote (>= 0.5.0),
+    cli,
+    fs,
+    globals (>= 0.14.0),
+    httr,
+    jsonlite,
+    pingr,
+    rlang (>= 1.0.0),
+    rmarkdown,
+    shiny,
+    withr,
+    lifecycle
+Suggests:
+    deSolve,
+    diffobj,
+    ggplot2,
+    knitr,
+    plotly,
+    png,
+    rstudioapi,
+    shinyWidgets,
+    shinytest (>= 1.5.1),
+    shinyvalidate (>= 0.1.2),
+    showimage,
+    usethis,
+    vdiffr (>= 1.0.0),
+    spelling
+Config/Needs/check:
+    rstudio/shiny,
+    bslib
+Config/Needs/website:
+    pkgdown,
+    tidyverse/tidytemplate
+Config/testthat/edition: 3
+Collate:
+    'R6-helper.R'
+    'app-driver-chromote.R'
+    'app-driver-dir.R'
+    'app-driver-expect-download.R'
+    'app-driver-expect-js.R'
+    'app-driver-expect-screenshot.R'
+    'app-driver-expect-unique-names.R'
+    'app-driver-expect-values.R'
+    'app-driver-get-log.R'
+    'app-driver-initialize.R'
+    'app-driver-log-message.R'
+    'app-driver-message.R'
+    'app-driver-node.R'
+    'app-driver-set-inputs.R'
+    'app-driver-start.R'
+    'app-driver-stop.R'
+    'app-driver-timeout.R'
+    'app-driver-upload-file.R'
+    'app-driver-variant.R'
+    'app-driver-wait.R'
+    'app-driver-window.R'
+    'app-driver.R'
+    'chromote-methods.R'
+    'compare-screenshot-threshold.R'
+    'cpp11.R'
+    'expect-snapshot.R'
+    'expr-recurse.R'
+    'httr.R'
+    'migrate.R'
+    'missing-value.R'
+    'utils.R'
+    'platform.R'
+    'record-test-unique-name.R'
+    'record-test.R'
+    'rstudio.R'
+    'save-app.R'
+    'shiny-browser.R'
+    'shinytest2-logs.R'
+    'shinytest2-package.R'
+    'test-app.R'
+    'use.R'
+LinkingTo:
+    cpp11

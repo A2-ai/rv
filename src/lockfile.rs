@@ -439,7 +439,7 @@ impl Lockfile {
         for d in deps {
             if let Some(pkg) = self.get_package(d.name(), Some(d)) {
                 if d.install_suggestions() && !pkg.install_suggests() {
-                    return false
+                    return false;
                 }
             } else {
                 return false;

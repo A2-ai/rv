@@ -45,7 +45,7 @@ pub enum Command {
         no_r_environment: bool,
         #[clap(long)]
         /// Force new init. This will replace content in your rproject.toml
-        force: bool
+        force: bool,
     },
     /// Returns the path for the library for the current project/system.
     /// The path is always in unix format
@@ -249,7 +249,7 @@ fn try_main() -> Result<()> {
             no_repositories,
             add,
             no_r_environment,
-            force, 
+            force,
         } => {
             let r_version = if let Some(r) = r_version {
                 // Make sure input is a valid version format. NOT checking if it is a valid R version on system in init
@@ -458,7 +458,7 @@ fn try_main() -> Result<()> {
                 println!("{summary}");
             }
         }
-        Command::Activate{no_r_environment} => {
+        Command::Activate { no_r_environment } => {
             let dir = std::env::current_dir()?;
             activate(dir, no_r_environment)?;
             println!("rv activated");
