@@ -148,12 +148,14 @@ impl DiskCache {
     /// If it's not found or the entry is too old, the bool param will be false
     pub fn get_package_db_entry(&self, repo_url: &str) -> (PathBuf, bool) {
         let path = self.get_package_db_path(repo_url);
+
         if path.exists() {
-            let created = path
-                .metadata()
-                .expect("to work")
-                .created()
-                .expect("to have a creation time");
+            let metadata = path.metadata().expect("to work");
+            let created = metadata.created().unwrap_or_else(|_| {
+                // If creation time isn't available, use modified time as fallback
+                // created time is not present on NFS
+                metadata.modified().expect("to have a created or modified time")
+            });
             let now = SystemTime::now();
 
             return if now.duration_since(created).unwrap_or_default().as_secs()
