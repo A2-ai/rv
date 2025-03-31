@@ -31,8 +31,8 @@ pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::Lockfile;
 pub use package::{
-    is_binary_package, parse_description_file, parse_package_file, Dependency, Operator, Package,
-    Version, VersionRequirement,
+    is_binary_package, parse_dependencies, parse_description_file, parse_package_file, Dependency,
+    Operator, Package, Version, VersionRequirement,
 };
 pub use project_summary::ProjectSummary;
 pub use r_cmd::{

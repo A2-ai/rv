@@ -13,7 +13,8 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    is_binary_package, parse_description_file, parse_description_file_in_folder, PackageRemote, PackageType,
+    is_binary_package, parse_description_file, parse_description_file_in_folder, PackageRemote,
+    PackageType,
 };
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 
