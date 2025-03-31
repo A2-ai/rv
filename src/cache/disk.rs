@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use filetime::FileTime;
 use fs_err as fs;
 
 use crate::cache::utils::{
@@ -148,17 +149,16 @@ impl DiskCache {
     /// If it's not found or the entry is too old, the bool param will be false
     pub fn get_package_db_entry(&self, repo_url: &str) -> (PathBuf, bool) {
         let path = self.get_package_db_path(repo_url);
-        if path.exists() {
-            let created = path
-                .metadata()
-                .expect("to work")
-                .created()
-                .expect("to have a creation time");
-            let now = SystemTime::now();
 
-            return if now.duration_since(created).unwrap_or_default().as_secs()
-                > self.packages_timeout
-            {
+        if path.exists() {
+            let metadata = path.metadata().expect("to work");
+            let created = FileTime::from_last_modification_time(&metadata).unix_seconds() as u64;
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            return if (now - created) > self.packages_timeout {
                 (path, false)
             } else {
                 (path, true)
