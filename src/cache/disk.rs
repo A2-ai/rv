@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use filetime::FileTime;
 use fs_err as fs;
 
 use crate::cache::utils::{
@@ -151,16 +152,13 @@ impl DiskCache {
 
         if path.exists() {
             let metadata = path.metadata().expect("to work");
-            let created = metadata.created().unwrap_or_else(|_| {
-                // If creation time isn't available, use modified time as fallback
-                // created time is not present on NFS
-                metadata.modified().expect("to have a created or modified time")
-            });
-            let now = SystemTime::now();
+            let created = FileTime::from_last_modification_time(&metadata).unix_seconds() as u64;
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
-            return if now.duration_since(created).unwrap_or_default().as_secs()
-                > self.packages_timeout
-            {
+            return if (now - created) > self.packages_timeout {
                 (path, false)
             } else {
                 (path, true)
