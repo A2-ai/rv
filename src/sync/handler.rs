@@ -336,6 +336,7 @@ impl<'a> SyncHandler<'a> {
                         );
                         if self.show_progress_bar {
                             pb.inc(1);
+                            pb.set_message(format!("Installing {:?}", installing.lock().unwrap()));
                         }
                     }
                     if !deps_seen.contains(change.name.as_str()) {
