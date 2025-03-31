@@ -22,6 +22,9 @@ dependencies = [
 ]
 "#;
 
+/// Migrate a renv project to rv
+/// This will create a config file in the specified location, and return the unresolved dependencies.
+/// Having unresolved dependencies will not cause an error since the migration is a best effort starter and manual massaging is expected
 pub fn migrate_renv(
     renv_file: impl AsRef<Path>,
     config_file: impl AsRef<Path>,

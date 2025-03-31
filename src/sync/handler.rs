@@ -14,6 +14,7 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{sources, LinkMode};
 use crate::{BuildPlan, BuildStep, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency};
 
+/// A struct to handle the synchronization of packages in a library
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
     project_dir: &'a Path,
@@ -27,6 +28,7 @@ pub struct SyncHandler<'a> {
 }
 
 impl<'a> SyncHandler<'a> {
+    /// Create a new object
     pub fn new(
         project_dir: &'a Path,
         library: &'a Library,
@@ -45,19 +47,23 @@ impl<'a> SyncHandler<'a> {
         }
     }
 
+    /// Set the handler to dry run mode
     pub fn dry_run(&mut self) {
         self.dry_run = true;
     }
 
+    /// Set the handler to show the progress bar
     pub fn show_progress_bar(&mut self) {
         self.show_progress_bar = true;
     }
 
+    /// Set the max number of workers
     pub fn set_max_workers(&mut self, max_workers: usize) {
         assert!(self.max_workers > 0);
         self.max_workers = max_workers;
     }
 
+    /// Tell the handler if we have a valid lockfile or not
     pub fn set_has_lockfile(&mut self, has_lockfile: bool) {
         self.has_lockfile = has_lockfile;
     }
@@ -149,6 +155,7 @@ impl<'a> SyncHandler<'a> {
         (deps_seen, deps_to_copy, deps_to_remove)
     }
 
+    /// Handle the synchronization of packages in the library
     pub fn handle(
         &self,
         deps: &[ResolvedDependency],

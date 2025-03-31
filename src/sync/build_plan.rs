@@ -3,13 +3,18 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::lockfile::Source;
 use crate::{ResolvedDependency, Version};
 
+/// A step in the build plan
 #[derive(Debug, PartialEq)]
 pub enum BuildStep<'a> {
+    /// A package to install
     Install(&'a ResolvedDependency<'a>),
+    /// The step needs to wait
     Wait,
+    /// The step is done
     Done,
 }
 
+/// A plan to build the dependencies for a project, including all of the dependencies, which are installed and which are currently installing
 #[derive(Debug)]
 pub struct BuildPlan<'a> {
     deps: &'a [ResolvedDependency<'a>],
@@ -21,6 +26,7 @@ pub struct BuildPlan<'a> {
 }
 
 impl<'a> BuildPlan<'a> {
+    /// Create a new build plan from the list of dependencies
     pub fn new(deps: &'a [ResolvedDependency<'a>]) -> Self {
         let by_name: HashMap<_, _> = deps.iter().map(|d| (d.name.as_ref(), d)).collect();
         let mut full_deps = HashMap::new();
@@ -49,6 +55,7 @@ impl<'a> BuildPlan<'a> {
         }
     }
 
+    /// Mark a dependency as installed
     pub fn mark_installed(&mut self, name: &str) {
         // The lifetime for the name might be different from that struct
         let pkg = self
@@ -72,10 +79,12 @@ impl<'a> BuildPlan<'a> {
         self.installed.len() == self.deps.len()
     }
 
+    /// return the number of packages to install
     pub fn num_to_install(&self) -> usize {
         self.deps.len() - self.installed.len()
     }
 
+    /// return a HashMap of all of the dependnencies, their version, and their source
     pub fn all_dependencies(&self) -> HashMap<&str, (&Version, &Source)> {
         self.deps
             .iter()

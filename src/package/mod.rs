@@ -31,15 +31,21 @@ impl fmt::Display for PackageType {
 }
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
+/// Dependencies of a package, which either has a version requirement or not
 pub enum Dependency {
+    /// The dependency is only a name
     Simple(String),
+    /// The dependnecy has a version requirement
     Pinned {
+        /// Package name
         name: String,
+        /// Package version requirement
         requirement: VersionRequirement,
     },
 }
 
 impl Dependency {
+    /// Get the name of a dependency
     pub fn name(&self) -> &str {
         match self {
             Dependency::Simple(s) => s,
@@ -47,6 +53,7 @@ impl Dependency {
         }
     }
 
+    /// Get the version requirement of a dependency if it has one
     pub fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
@@ -58,21 +65,36 @@ impl Dependency {
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
+/// A package in the repository. Used to decode the PACKAGES file and the packages DESCRIPTION file
 pub struct Package {
+    /// the name of the package
     pub name: String,
+    /// the version
     pub version: Version,
+    /// if there is a R version requirement
     pub r_requirement: Option<VersionRequirement>,
+    /// The required dependencies
     pub depends: Vec<Dependency>,
+    /// The imported dependencies
     pub imports: Vec<Dependency>,
+    /// The suggested dependnecies
     pub suggests: Vec<Dependency>,
+    /// the enhancement dependencies
     pub enhances: Vec<Dependency>,
+    /// the LinkingTo dependnecies
     pub linking_to: Vec<Dependency>,
+    /// The license of the package
     pub license: String,
+    /// The md5 sum of the package
     pub md5_sum: String,
+    /// The path to the package. Most often used for recommended packages made for the developement version of R
     pub path: Option<String>,
+    /// If the priority is recommended
     pub recommended: bool,
+    /// If the package requires compilation
     pub needs_compilation: bool,
-    // {remote_string => (pkg name, remote)}
+    /// Any remote information for depenency resolution
+    /// {remote_string => (pkg name, remote)}
     pub remotes: HashMap<String, (Option<String>, PackageRemote)>,
 }
 
@@ -84,6 +106,7 @@ pub struct InstallationDependencies<'a> {
 
 impl Package {
     #[inline]
+    /// Determine if a given package works with a given R version
     pub fn works_with_r_version(&self, r_version: &Version) -> bool {
         if let Some(r_req) = &self.r_requirement {
             r_req.is_satisfied(r_version)
@@ -92,10 +115,12 @@ impl Package {
         }
     }
 
+    /// Get the R version requirement of the package if it has one
     pub fn r_version_requirement(&self) -> Option<&VersionRequirement> {
         self.r_requirement.as_ref()
     }
 
+    /// Get the dependnecies to install, including the suggested ones if `install_suggestions` is true
     pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependencies {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise

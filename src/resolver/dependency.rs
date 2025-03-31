@@ -17,9 +17,12 @@ use std::str::{FromStr, Utf8Error};
 /// will be borrowed
 #[derive(PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
-    pub(crate) name: Cow<'d, str>,
-    pub(crate) version: Cow<'d, Version>,
-    pub(crate) source: Source,
+    /// Name of the package
+    pub name: Cow<'d, str>,
+    /// Version of the package
+    pub version: Cow<'d, Version>,
+    /// The source of the package
+    pub source: Source,
     pub(crate) dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
     pub(crate) force_source: bool,
@@ -36,6 +39,7 @@ pub struct ResolvedDependency<'d> {
 }
 
 impl<'d> ResolvedDependency<'d> {
+    /// Return whether the package is installed or not for the given type
     pub fn is_installed(&self) -> bool {
         match self.kind {
             PackageType::Source => self.installation_status.source_available(),
@@ -43,6 +47,7 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
+    /// Return whether the package is a local package or now
     pub fn is_local(&self) -> bool {
         matches!(self.source, Source::Local { .. })
     }
@@ -84,6 +89,7 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
+    /// We found the dependency from the repository
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &str,
@@ -175,6 +181,7 @@ impl<'d> ResolvedDependency<'d> {
         (res, deps)
     }
 
+    /// We found the package from a local path
     pub fn from_local_package(
         package: &Package,
         source: Source,
@@ -211,6 +218,7 @@ impl<'d> ResolvedDependency<'d> {
         (res, deps)
     }
 
+    /// We found the package from a url
     pub fn from_url_package(
         package: &Package,
         kind: PackageType,
@@ -244,18 +252,6 @@ impl<'d> ResolvedDependency<'d> {
         };
 
         (res, deps)
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn version(&self) -> &Version {
-        &self.version
-    }
-
-    pub fn source(&self) -> &Source {
-        &self.source
     }
 }
 
@@ -316,6 +312,7 @@ impl<'d> UnresolvedDependency<'d> {
         self
     }
 
+    /// Return if the package is listed explicitly in the config file
     pub fn is_listed_in_config(&self) -> bool {
         self.parent.is_none()
     }

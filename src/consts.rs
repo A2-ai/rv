@@ -1,17 +1,25 @@
+/// The PACKAGES file is a CRAN-type repository file that describes all of the packages contained in the directory
 pub const PACKAGE_FILENAME: &str = "PACKAGES";
+/// The DESCRIPTION file is within a package and contains metadata about the package
 pub const DESCRIPTION_FILENAME: &str = "DESCRIPTION";
+/// The source PACKAGES file is always at this location within a given repository
 pub const SOURCE_PACKAGES_PATH: &str = "/src/contrib/PACKAGES";
+/// The rv lock file file name
 pub const LOCKFILE_NAME: &str = "rv.lock";
-
+/// The rv directory name in which the library and scripts are stored
 pub const RV_DIR_NAME: &str = "rv";
+/// The base name of where the package library is. Additional elements are added based on the system
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
+/// The directory in which packages are installed temporarily to ensure failures do not effect the current library
 pub const STAGING_DIR_NAME: &str = "staging";
 
 /// How long are the package databases cached for
 /// Same default value as PKGCACHE_TIMEOUT:
 /// https://github.com/r-lib/pkgcache?tab=readme-ov-file#package-environment-variables
 pub const PACKAGE_TIMEOUT: u64 = 60 * 60;
+/// Environment variable name for the package timeout is PKGCACHE_TIMEOUT
 pub const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
+///The PACKAGES file is stored as a binary at this filename
 pub const PACKAGE_DB_FILENAME: &str = "packages.bin";
 
 pub(crate) const LIBRARY_METADATA_FILENAME: &str = ".rv.metadata";

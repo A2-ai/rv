@@ -1,3 +1,4 @@
+/// format an error to a string
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     let mut out = format!("{err}");
 
@@ -11,6 +12,7 @@ pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
 }
 
 #[macro_export]
+/// execute a block of code, and log the time the command took in milliseconds
 macro_rules! timeit {
     ($msg:expr, $x:expr) => {{
         let start = std::time::Instant::now();

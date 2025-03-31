@@ -81,6 +81,7 @@ struct RInfo {
     repositories: Vec<RenvRepository>,
 }
 
+/// A struct to deserialize a renv.lock file
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RenvLock {
@@ -89,6 +90,7 @@ pub struct RenvLock {
 }
 
 impl RenvLock {
+    /// Parse a renv.lock file at the given path
     pub fn parse_renv_lock<P: AsRef<Path>>(path: P) -> Result<Self, FromJsonFileError> {
         let path = path.as_ref();
         let content = match std::fs::read_to_string(path) {
@@ -107,6 +109,7 @@ impl RenvLock {
         })
     }
 
+    /// Resolve the packages in the renv.lock file to their sources
     pub fn resolve(
         &self,
         repository_database: &[(RepositoryDatabase, bool)],
@@ -155,10 +158,12 @@ impl RenvLock {
         (resolved, unresolved)
     }
 
+    /// Get the R version from the renv.lock file
     pub fn r_version(&self) -> &Version {
         &self.r.version
     }
 
+    /// Get the repositories from the renv.lock file
     pub fn config_repositories(&self) -> Vec<Repository> {
         self.r
             .repositories

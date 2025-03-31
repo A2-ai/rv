@@ -12,6 +12,8 @@ static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
 static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
+/// Parse the dependnencies from a string
+/// Examples: pkg1 (>= 1.0.0), pkg2
 pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
 

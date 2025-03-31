@@ -19,6 +19,7 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
+/// A trait to abstract the R command line interface
 pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
     fn install(
@@ -28,6 +29,7 @@ pub trait RCmd: Send + Sync {
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError>;
 
+    /// Checks a package and returns the combined output of stdout and stderr
     fn check(
         &self,
         file_path: &Path,
@@ -36,6 +38,7 @@ pub trait RCmd: Send + Sync {
         env_var: Vec<(&str, &str)>,
     ) -> Result<String, CheckError>;
 
+    /// Builds a package and returns the combined output of stdout and stderr
     fn build(
         &self,
         file_path: &Path,
@@ -45,15 +48,18 @@ pub trait RCmd: Send + Sync {
         env_var: Vec<(&str, &str)>,
     ) -> Result<String, BuildError>;
 
+    /// Returns the version of R
     fn version(&self) -> Result<Version, VersionError>;
 }
 
+/// A struct to abstract the R command line interface
 #[derive(Debug, Clone, PartialEq)]
 pub struct RCommandLine {
     /// specifies the path to the R executable on the system. None indicates using "R" on the $PATH
     pub r: Option<PathBuf>,
 }
 
+/// Given an R version, find the R executable on the system
 pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
     let mut found_r_vers = Vec::new();
     // Give preference to the R version on the path
@@ -248,6 +254,7 @@ impl RCmd for RCommandLine {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 #[non_exhaustive]
@@ -288,6 +295,7 @@ impl From<LinkError> for InstallError {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 pub enum InstallErrorKind {
     #[error("IO error: {error} ({path})")]
@@ -305,6 +313,7 @@ pub enum InstallErrorKind {
     InstallationFailed(String),
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 #[non_exhaustive]
@@ -337,6 +346,7 @@ impl From<std::io::Error> for CheckError {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 pub enum CheckErrorKind {
     #[error("IO error: {error} ({path})")]
@@ -350,6 +360,7 @@ pub enum CheckErrorKind {
     CheckFailed(String),
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 #[non_exhaustive]
@@ -382,6 +393,7 @@ impl From<std::io::Error> for BuildError {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 pub enum BuildErrorKind {
     #[error("IO error: {error} ({path})")]
@@ -395,6 +407,7 @@ pub enum BuildErrorKind {
     BuildFailed(String),
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to get R version")]
 #[non_exhaustive]
@@ -402,6 +415,7 @@ pub struct VersionError {
     pub source: VersionErrorKind,
 }
 
+#[doc(hidden)]
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub enum VersionErrorKind {

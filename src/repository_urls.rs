@@ -318,6 +318,7 @@ pub struct TarballUrls {
     pub archive: String,
 }
 
+/// Gets the source, binary (if available), and archive URLs for the given dependency
 pub fn get_tarball_urls(
     dep: &ResolvedDependency,
     r_version: &[u32; 2],

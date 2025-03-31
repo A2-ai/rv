@@ -87,6 +87,8 @@ macro_rules! prepare_deps {
 }
 
 #[derive(Debug, PartialEq)]
+/// A resolver for packages
+/// It will look at the lockfile first, then the local path, then the repositories
 pub struct Resolver<'d> {
     /// We need that to resolve properly local deps relative to the project dir
     project_dir: PathBuf,
@@ -101,6 +103,7 @@ pub struct Resolver<'d> {
 }
 
 impl<'d> Resolver<'d> {
+    /// Create a new resolver object
     pub fn new(
         project_dir: impl AsRef<Path>,
         repositories: &'d [(RepositoryDatabase, bool)],

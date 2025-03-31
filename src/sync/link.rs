@@ -29,6 +29,7 @@ pub enum LinkError {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+/// LinkMode for linking packages
 pub enum LinkMode {
     /// Copy all files. The slowest option
     Copy,
@@ -51,6 +52,7 @@ impl Default for LinkMode {
 }
 
 impl LinkMode {
+    /// Create a new LinkMode based on the environment variable `RV_LINK_MODE`
     pub fn new() -> Self {
         // First try to find out if the mode is set in the env
         let from_env = if let Ok(val) = env::var(LINK_ENV_NAME) {
@@ -87,6 +89,7 @@ impl LinkMode {
         }
     }
 
+    /// Link files from the source to the destination
     pub fn link_files(
         &self,
         package_name: &str,

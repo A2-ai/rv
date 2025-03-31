@@ -5,6 +5,7 @@ use toml_edit::{Array, DocumentMut, Formatted, Value};
 
 use crate::{config::ConfigLoadError, Config};
 
+/// Reads in the config to a toml_edit DocumentMut if it is a valid config file
 pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
     let config_file = config_file.as_ref();
     let _ = Config::from_file(config_file).map_err(|e| AddError {
@@ -16,6 +17,7 @@ pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentM
     Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
 
+/// Add packages to the config file as simple ConfigDependencies
 pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);

@@ -5,11 +5,17 @@ use std::fmt;
 use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
+/// Comparision operator, typically used for version comparison
 pub enum Operator {
+    /// `==`
     Equal,
+    /// `>`
     Greater,
+    /// `<`
     Lower,
+    /// `>=`
     GreaterOrEqual,
+    /// `<=`
     LowerOrEqual,
 }
 
@@ -43,10 +49,12 @@ impl FromStr for Operator {
 }
 
 #[derive(Debug, Default, Clone, Encode, Decode, Serialize, Deserialize)]
+/// A struct to contain semver versions
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
     parts: [u32; 10],
+    /// The original string of the version
     pub original: String,
 }
 
@@ -129,11 +137,13 @@ where
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct VersionRequirement {
+    /// The version that the operator is compared against
     pub version: Version,
     op: Operator,
 }
 
 impl VersionRequirement {
+    /// returns whether the incoming version satisfies the requirement
     pub fn is_satisfied(&self, version: &Version) -> bool {
         match self.op {
             Operator::Equal => &self.version == version,
@@ -144,6 +154,7 @@ impl VersionRequirement {
         }
     }
 
+    /// Create a new VersionRequirement
     pub fn new(version: Version, op: Operator) -> Self {
         Self { version, op }
     }

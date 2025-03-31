@@ -14,18 +14,28 @@ use fs_err as fs;
 use rayon::prelude::*;
 
 #[derive(Debug)]
+/// Context for the cli commands
 pub struct CliContext {
+    /// the parsed config file
     pub config: Config,
+    /// the project directory
     pub project_dir: PathBuf,
+    /// The R version
     pub r_version: Version,
+    /// The cache
     pub cache: DiskCache,
+    /// The library
     pub library: Library,
+    /// The repository databases, including if any of them are force source
     pub databases: Vec<(RepositoryDatabase, bool)>,
+    /// the lockfile if present
     pub lockfile: Option<Lockfile>,
+    /// the R command line, containing the path to the selected R version
     pub r_cmd: RCommandLine,
 }
 
 impl CliContext {
+    /// Create a new cli context. Does not load the databases.
     pub fn new(config_file: &PathBuf) -> Result<Self> {
         let config = Config::from_file(config_file)?;
         let r_version = config.r_version().clone();
@@ -68,11 +78,13 @@ impl CliContext {
         })
     }
 
+    /// Load the databases always
     pub fn load_databases(&mut self) -> Result<()> {
         self.databases = load_databases(self.config.repositories(), &self.cache)?;
         Ok(())
     }
 
+    /// Only load the databases if the lockfile does not fully resolve the dependencies
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
         let can_resolve = self
             .lockfile
@@ -86,14 +98,17 @@ impl CliContext {
         Ok(())
     }
 
+    /// return the path to the lockfile
     pub fn lockfile_path(&self) -> PathBuf {
         self.project_dir.join(LOCKFILE_NAME)
     }
 
+    /// return the path to the library
     pub fn library_path(&self) -> &Path {
         self.library.path()
     }
 
+    /// return the path to the staging directory
     pub fn staging_path(&self) -> PathBuf {
         self.project_dir.join(RV_DIR_NAME).join(STAGING_DIR_NAME)
     }

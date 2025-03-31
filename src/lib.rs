@@ -1,3 +1,5 @@
+//! This crate provides a library for installing and managing R packages
+#![warn(missing_docs)]
 mod activate;
 mod add;
 mod cache;
@@ -18,8 +20,10 @@ mod sync;
 mod system_info;
 
 #[cfg(feature = "cli")]
+/// CLI commands for the library
 pub mod cli;
 
+/// Constants used in the library
 pub mod consts;
 
 pub use activate::{activate, deactivate};
@@ -31,8 +35,7 @@ pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::Lockfile;
 pub use package::{
-    is_binary_package, parse_dependencies, parse_description_file, parse_package_file, Dependency,
-    Operator, Package, Version, VersionRequirement,
+    is_binary_package, Package, Version, VersionRequirement,
 };
 pub use project_summary::ProjectSummary;
 pub use r_cmd::{
@@ -41,7 +44,15 @@ pub use r_cmd::{
 };
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
-pub use repository_urls::{get_distro_name, get_package_file_urls, get_tarball_urls};
+pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, LinkMode, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
+
+#[doc(hidden)]
+pub mod internal {
+    pub use crate::package::{parse_dependencies, parse_description_file, parse_package_file, Dependency, Operator,};
+    pub use crate::repository_urls::get_distro_name;
+    pub use crate::sync::LinkMode;
+
+}

@@ -11,6 +11,8 @@ use crate::consts::{ACTIVATE_FILE_TEMPLATE, RVR_FILE_CONTENT};
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
 const RVR_FILE_NAME: &str = "rv/scripts/rvr.R";
 
+/// activate a directory for use with rv by sourcing scripts in `rv/scripts` within the .Rprofile
+/// This will set the repositories, libPaths, and create a .rv R environment (if no_r_environment is not false)
 pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
 
@@ -53,6 +55,7 @@ fn add_rprofile_source_call(
     Ok(())
 }
 
+/// Deactivate a directory for use with rv by removing the scripts in `rv/scripts` within the .Rprofile
 pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
     let rprofile_path = dir.join(".Rprofile");

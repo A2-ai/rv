@@ -17,10 +17,14 @@ struct Author {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// Repositories field of the config file
 pub struct Repository {
+    /// Alias of the repository, to be used in the dependencies to reference a repo
     pub alias: String,
+    /// URL of a CRAN-type repository
     pub(crate) url: String,
     #[serde(default)]
+    /// Force source packages from this repository
     pub force_source: bool,
 }
 
@@ -30,6 +34,7 @@ impl Repository {
         self.url.trim_end_matches("/")
     }
 
+    /// Create a new repository
     pub fn new(alias: String, url: String, force_source: bool) -> Self {
         Self {
             alias,
@@ -39,47 +44,69 @@ impl Repository {
     }
 }
 
+/// Deserialize dependencies from the config file
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
+    /// A simple dependency, no additional configuration needed. To be resolved as a repository package
     Simple(String),
+    /// A dependency coming from git. One of commit, tag, branch must be specified
     Git {
+        /// git URL
         git: String,
         // TODO: validate that either commit, branch or tag is set
+        /// Git sha
         commit: Option<String>,
+        /// Git tag
         tag: Option<String>,
+        /// Git branch
         branch: Option<String>,
+        /// A path to a subdirectory containing the R package
         directory: Option<String>,
+        /// Name of the package. Must match the package found at the url
         name: String,
         #[serde(default)]
+        /// Install suggested package dependencies
         install_suggestions: bool,
     },
+    /// A dependency coming from a local path. Can be a directory or tarball, source or binary
     Local {
+        /// Path to the local package
         path: PathBuf,
+        /// Name of the package. Must match the package found at the path
         name: String,
         #[serde(default)]
+        /// Install suggested package dependencies
         install_suggestions: bool,
     },
+    /// A dependency coming from a URL. Can be a source or binary tarball
     Url {
+        /// Url to the package
         url: String,
+        /// Name of the package. Must match the package found at the path
         name: String,
         #[serde(default)]
+        /// Install suggested package dependencies
         install_suggestions: bool,
-        #[serde(default)]
-        force_source: Option<bool>,
     },
+    /// Additional configuration for a dependency being sourced from a repository
     Detailed {
+        /// Name of the package
         name: String,
+        /// Optionally set which repository this package comes from using the alias
         repository: Option<String>,
         #[serde(default)]
+        /// Install suggested package dependencies
         install_suggestions: bool,
         #[serde(default)]
+        /// Force this package to comes from source
         force_source: Option<bool>,
     },
 }
 
 impl ConfigDependency {
+    /// Get the name of the dependency
     pub fn name(&self) -> &str {
         match self {
             ConfigDependency::Simple(s) => s,
@@ -90,6 +117,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get whether the package has force_source set if available
     pub fn force_source(&self) -> Option<bool> {
         match self {
             ConfigDependency::Detailed { force_source, .. } => *force_source,
@@ -97,6 +125,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get the repository alias if available
     pub fn r_repository(&self) -> Option<&str> {
         match self {
             ConfigDependency::Detailed { repository, .. } => repository.as_deref(),
@@ -104,6 +133,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get the local path if available
     pub fn local_path(&self) -> Option<PathBuf> {
         match self {
             ConfigDependency::Local { path, .. } => Some(path.clone()),
@@ -111,6 +141,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Convert a Git dependency to a Source specified by the sha
     pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
         // git: String,
         // // TODO: validate that either commit, branch or tag is set
@@ -136,6 +167,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get whether the package has install_suggestions set
     pub fn install_suggestions(&self) -> bool {
         match self {
             ConfigDependency::Simple(_) => false,
@@ -193,6 +225,7 @@ pub(crate) struct Project {
     prefer_repositories_for: Vec<String>,
 }
 
+/// The config file is a TOML table, project
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -200,6 +233,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a new config from a file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
         let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,
@@ -281,18 +315,22 @@ impl Config {
         Ok(())
     }
 
+    /// Get the repositories of the project
     pub fn repositories(&self) -> &[Repository] {
         &self.project.repositories
     }
 
+    /// Get the dependencies of the project
     pub fn dependencies(&self) -> &[ConfigDependency] {
         &self.project.dependencies
     }
 
+    /// Get if any dependencies should override the remotes
     pub fn prefer_repositories_for(&self) -> &[String] {
         &self.project.prefer_repositories_for
     }
 
+    /// Get the R version set for the project
     pub fn r_version(&self) -> &Version {
         &self.project.r_version
     }

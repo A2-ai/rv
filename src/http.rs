@@ -97,6 +97,7 @@ pub enum HttpErrorKind {
     Http(u16),
 }
 
+/// Trait for downloading files over HTTP
 pub trait HttpDownload {
     /// Downloads a file to the given writer and returns how many bytes were read
     fn download<W: Write>(
@@ -116,6 +117,7 @@ pub trait HttpDownload {
     ) -> Result<(Option<PathBuf>, String), HttpError>;
 }
 
+/// A simple struct to implement the HttpDownload trait
 pub struct Http;
 
 impl HttpDownload for Http {

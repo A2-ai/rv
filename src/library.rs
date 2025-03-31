@@ -69,11 +69,13 @@ impl LocalMetadata {
     }
 }
 
+/// Struct representing the current state of the rv package library
 #[derive(Debug, Clone, PartialEq)]
 pub struct Library {
     /// This is the path where the packages are installed so
     /// rv/library/{R version}/{arch}/{codename?}/
     path: PathBuf,
+    /// Package and versions installed in the library
     pub packages: HashMap<String, Version>,
     /// We keep track of all packages not coming from a package repository
     pub non_repo_packages: HashMap<String, LocalMetadata>,
@@ -84,6 +86,7 @@ pub struct Library {
 }
 
 impl Library {
+    /// Creates a new library object
     pub fn new(
         project_dir: impl AsRef<Path>,
         system_info: &SystemInfo,
@@ -104,6 +107,7 @@ impl Library {
         }
     }
 
+    /// Gets the path of the library
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -149,6 +153,7 @@ impl Library {
         }
     }
 
+    /// return if the library contains a resolved dependency
     pub fn contains_package(&self, pkg: &ResolvedDependency) -> bool {
         if !self.packages.contains_key(pkg.name.as_ref()) {
             return false;
