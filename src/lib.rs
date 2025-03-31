@@ -30,12 +30,18 @@ pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::Lockfile;
-pub use package::{is_binary_package, Version, VersionRequirement};
+pub use package::{
+    is_binary_package, parse_dependencies, Dependency, Operator, Package, Version,
+    VersionRequirement,
+};
 pub use project_summary::ProjectSummary;
-pub use r_cmd::{find_r_version_command, RCmd, RCommandLine};
+pub use r_cmd::{
+    find_r_version_command, BuildError, BuildErrorKind, CheckError, CheckErrorKind, InstallError,
+    InstallErrorKind, RCmd, RCommandLine, VersionError, VersionErrorKind,
+};
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
-pub use repository_urls::{get_package_file_urls, get_tarball_urls};
+pub use repository_urls::{get_distro_name, get_package_file_urls, get_tarball_urls};
 pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};
-pub use sync::{BuildPlan, BuildStep, SyncHandler};
+pub use sync::{BuildPlan, BuildStep, LinkMode, SyncHandler};
 pub use system_info::{OsType, SystemInfo};

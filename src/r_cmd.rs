@@ -34,7 +34,7 @@ pub trait RCmd: Send + Sync {
         result_path: &Path,
         args: Vec<&str>,
         env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error>;
+    ) -> Result<String, CheckError>;
 
     fn build(
         &self,
@@ -43,7 +43,7 @@ pub trait RCmd: Send + Sync {
         output_path: &Path,
         args: Vec<&str>,
         env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error>;
+    ) -> Result<String, BuildError>;
 
     fn version(&self) -> Result<Version, VersionError>;
 }
@@ -149,21 +149,12 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::TempDir(e),
         })?;
         let link = LinkMode::symlink_if_possible();
-        link.link_files("tmp_build", source_folder, tmp_dir.path())
-            .map_err(|e| InstallError {
-                source: InstallErrorKind::LinkError(e),
-            })?;
+        link.link_files("tmp_build", source_folder, tmp_dir.path())?;
 
-        let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
-        let writer_clone = writer.try_clone().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
+        let (mut reader, writer) = os_pipe::pipe()?;
+        let writer_clone = writer.try_clone()?;
 
-        let library = library.as_ref().canonicalize().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
+        let library = library.as_ref().canonicalize()?;
 
         let mut command = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")));
         command
@@ -185,9 +176,7 @@ impl RCmd for RCommandLine {
             .stdout(writer)
             .stderr(writer_clone);
 
-        let mut handle = command.spawn().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
+        let mut handle = command.spawn()?;
 
         // deadlock otherwise according to os_pipe docs
         drop(command);
@@ -217,7 +206,7 @@ impl RCmd for RCommandLine {
         _result_path: &Path,
         _args: Vec<&str>,
         _env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error> {
+    ) -> Result<String, CheckError> {
         todo!()
     }
 
@@ -228,7 +217,7 @@ impl RCmd for RCommandLine {
         _output_path: &Path,
         _args: Vec<&str>,
         _env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error> {
+    ) -> Result<String, BuildError> {
         todo!()
     }
 
@@ -275,6 +264,28 @@ impl InstallError {
             },
         }
     }
+
+    pub fn failed(output: &str) -> Self {
+        Self {
+            source: InstallErrorKind::InstallationFailed(output.to_string()),
+        }
+    }
+}
+
+impl From<std::io::Error> for InstallError {
+    fn from(error: std::io::Error) -> Self {
+        Self {
+            source: InstallErrorKind::Command(error),
+        }
+    }
+}
+
+impl From<LinkError> for InstallError {
+    fn from(error: LinkError) -> Self {
+        Self {
+            source: InstallErrorKind::LinkError(error),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -290,10 +301,98 @@ pub enum InstallErrorKind {
     TempDir(std::io::Error),
     #[error("Command failed: {0}")]
     Command(std::io::Error),
-    #[error(transparent)]
-    Utf8(#[from] std::str::Utf8Error),
     #[error("Installation failed: {0}")]
     InstallationFailed(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+#[non_exhaustive]
+pub struct CheckError {
+    pub source: CheckErrorKind,
+}
+
+impl CheckError {
+    pub fn from_fs_io(error: std::io::Error, path: &Path) -> Self {
+        Self {
+            source: CheckErrorKind::File {
+                error,
+                path: path.to_path_buf(),
+            },
+        }
+    }
+
+    pub fn failed(output: &str) -> Self {
+        Self {
+            source: CheckErrorKind::CheckFailed(output.to_string()),
+        }
+    }
+}
+
+impl From<std::io::Error> for CheckError {
+    fn from(error: std::io::Error) -> Self {
+        Self {
+            source: CheckErrorKind::Command(error),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CheckErrorKind {
+    #[error("IO error: {error} ({path})")]
+    File {
+        error: std::io::Error,
+        path: PathBuf,
+    },
+    #[error("Command failed: {0}")]
+    Command(std::io::Error),
+    #[error("Check failed: {0}")]
+    CheckFailed(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+#[non_exhaustive]
+pub struct BuildError {
+    pub source: BuildErrorKind,
+}
+
+impl BuildError {
+    pub fn from_fs_io(error: std::io::Error, path: &Path) -> Self {
+        Self {
+            source: BuildErrorKind::File {
+                error,
+                path: path.to_path_buf(),
+            },
+        }
+    }
+
+    pub fn failed(output: &str) -> Self {
+        Self {
+            source: BuildErrorKind::BuildFailed(output.to_string()),
+        }
+    }
+}
+
+impl From<std::io::Error> for BuildError {
+    fn from(error: std::io::Error) -> Self {
+        Self {
+            source: BuildErrorKind::Command(error),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BuildErrorKind {
+    #[error("IO error: {error} ({path})")]
+    File {
+        error: std::io::Error,
+        path: PathBuf,
+    },
+    #[error("Command failed: {0}")]
+    Command(std::io::Error),
+    #[error("Build failed: {0}")]
+    BuildFailed(String),
 }
 
 #[derive(Debug, thiserror::Error)]

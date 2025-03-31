@@ -245,6 +245,18 @@ impl<'d> ResolvedDependency<'d> {
 
         (res, deps)
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+
+    pub fn source(&self) -> &Source {
+        &self.source
+    }
 }
 
 impl fmt::Debug for ResolvedDependency<'_> {
