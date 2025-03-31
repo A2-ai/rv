@@ -1,3 +1,4 @@
+use core::num;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -7,7 +8,12 @@ use std::{
 use serde::Serialize;
 
 use crate::{
-    cache::InstallationStatus, consts::NUM_CPUS_ENV_VAR_NAME, lockfile::Source, package::{Operator, PackageType}, DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo, Version, VersionRequirement
+    cache::InstallationStatus,
+    consts::NUM_CPUS_ENV_VAR_NAME,
+    lockfile::Source,
+    package::{Operator, PackageType},
+    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
+    Version, VersionRequirement,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -15,7 +21,7 @@ pub struct ProjectSummary<'a> {
     r_version: &'a Version,
     system_info: &'a SystemInfo,
     dependency_info: DependencyInfo<'a>,
-    cache_root: &'a PathBuf, 
+    cache_root: &'a PathBuf,
     remote_info: RemoteInfo<'a>,
     max_workers: usize,
 }
@@ -32,9 +38,9 @@ impl<'a> ProjectSummary<'a> {
         lockfile: Option<&'a Lockfile>,
     ) -> Self {
         let max_workers = std::env::var(NUM_CPUS_ENV_VAR_NAME)
-        .ok()
-        .and_then(|x| x.parse::<usize>().ok())
-        .unwrap_or_else(num_cpus::get);
+            .ok()
+            .and_then(|x| x.parse::<usize>().ok())
+            .unwrap_or_else(num_cpus::get);
         Self {
             r_version,
             system_info: &cache.system_info,
@@ -58,7 +64,7 @@ impl fmt::Display for ProjectSummary<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "OS: {}{}\nR Version: {}\n\nSync Parallelization: {} workers\nCache Location: {}\n\n",
+            "== System Information == \nOS: {}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}\n\n",
             self.system_info.os_family(),
             if let Some(arch) = self.system_info.arch() {
                 format!(" ({arch})")
@@ -67,6 +73,7 @@ impl fmt::Display for ProjectSummary<'_> {
             },
             self.r_version,
             self.max_workers,
+            num_cpus::get(),
             self.cache_root.as_path().to_string_lossy(),
         )?;
 
