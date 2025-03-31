@@ -6,6 +6,7 @@ pub const LOCKFILE_NAME: &str = "rv.lock";
 pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
 pub const STAGING_DIR_NAME: &str = "staging";
+pub(crate) const LIBRARY_METADATA_FILENAME: &str = ".rv.metadata";
 
 /// How long are the package databases cached for
 /// Same default value as PKGCACHE_TIMEOUT:
@@ -14,7 +15,7 @@ pub const PACKAGE_TIMEOUT: u64 = 60 * 60;
 pub const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
 pub const PACKAGE_DB_FILENAME: &str = "packages.bin";
 
-pub(crate) const LIBRARY_METADATA_FILENAME: &str = ".rv.metadata";
+pub const NUM_CPUS_ENV_VAR_NAME: &str = "RV_NUM_CPUS";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 pub(crate) const BASE_PACKAGES: [&str; 14] = [
