@@ -33,7 +33,6 @@ tar = "0.4"
 ureq = "3"
 sha2 = "0.10"
 crossbeam = "0.8.4"
-# TODO: make it CLI only
 indicatif = "0.17.11"
 num_cpus = "1.16.0"
 zip = "2"

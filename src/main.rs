@@ -164,6 +164,9 @@ fn _sync(
     has_logs_enabled: bool,
     sync_mode: SyncMode,
 ) -> Result<()> {
+    if !has_logs_enabled {
+        context.show_progress_bar();
+    }
     context.load_databases_if_needed()?;
     match sync_mode {
         SyncMode::Default => (),
@@ -329,7 +332,7 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
             let mut context = CliContext::new(&cli.config_file)?;
-            // if dry run, the config won't have been editied to reflect the added changes so must be added
+            // if dry run, the config won't have been edited to reflect the added changes so must be added
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
             }

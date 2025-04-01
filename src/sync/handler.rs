@@ -194,17 +194,19 @@ impl<'a> SyncHandler<'a> {
         // We can't use references from the BuildPlan since we borrow mutably from it so we
         // create a lookup table for resolved deps by name and use those references across channels.
         let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (&d.name, d)).collect();
-        let pb_style =
-            ProgressStyle::with_template("[{elapsed_precise}] {bar:60} {pos:>7}/{len:7}\n{msg}")
-                .unwrap();
 
         let pb = if self.show_progress_bar {
             let pb = ProgressBar::new(plan.full_deps.len() as u64);
-            pb.set_style(pb_style.clone());
+            pb.set_style(
+                ProgressStyle::with_template(
+                    "[{elapsed_precise}] {bar:60} {pos:>7}/{len:7}\n{msg}",
+                )
+                .unwrap(),
+            );
             pb.enable_steady_tick(Duration::from_secs(1));
             Arc::new(pb)
         } else {
-            Arc::new(ProgressBar::new(0))
+            Arc::new(ProgressBar::hidden())
         };
 
         let (ready_sender, ready_receiver) = channel::unbounded();
