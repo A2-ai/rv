@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::consts::NUM_CPUS_ENV_VAR_NAME;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{sources, LinkMode};
+use crate::utils::get_max_workers;
 use crate::{BuildPlan, BuildStep, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency};
 
 #[derive(Debug)]
@@ -34,10 +34,6 @@ impl<'a> SyncHandler<'a> {
         cache: &'a DiskCache,
         staging_path: impl AsRef<Path>,
     ) -> Self {
-        let max_workers = std::env::var(NUM_CPUS_ENV_VAR_NAME)
-            .ok()
-            .and_then(|x| x.parse::<usize>().ok())
-            .unwrap_or_else(num_cpus::get);
         Self {
             project_dir,
             library,
@@ -46,7 +42,7 @@ impl<'a> SyncHandler<'a> {
             dry_run: false,
             show_progress_bar: false,
             has_lockfile: false,
-            max_workers,
+            max_workers: get_max_workers(),
         }
     }
 

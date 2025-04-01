@@ -1,4 +1,3 @@
-use core::num;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -7,13 +6,13 @@ use std::{
 
 use serde::Serialize;
 
+use crate::utils::get_max_workers;
 use crate::{
     cache::InstallationStatus,
-    consts::NUM_CPUS_ENV_VAR_NAME,
     lockfile::Source,
     package::{Operator, PackageType},
-    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
-    Version, VersionRequirement,
+    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency,
+    SystemInfo, Version, VersionRequirement,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,10 +36,6 @@ impl<'a> ProjectSummary<'a> {
         cache: &'a DiskCache,
         lockfile: Option<&'a Lockfile>,
     ) -> Self {
-        let max_workers = std::env::var(NUM_CPUS_ENV_VAR_NAME)
-            .ok()
-            .and_then(|x| x.parse::<usize>().ok())
-            .unwrap_or_else(num_cpus::get);
         Self {
             r_version,
             system_info: &cache.system_info,
@@ -55,7 +50,7 @@ impl<'a> ProjectSummary<'a> {
             ),
             cache_root: &cache.root,
             remote_info: RemoteInfo::new(repositories, repo_dbs, &r_version.major_minor()),
-            max_workers,
+            max_workers: get_max_workers(),
         }
     }
 }
