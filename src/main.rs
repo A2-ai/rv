@@ -133,12 +133,15 @@ enum SyncMode {
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
-    let resolver = Resolver::new(
+    let mut resolver = Resolver::new(
         &context.project_dir,
         &context.databases,
         &context.r_version,
         context.lockfile.as_ref(),
     );
+    if context.show_progress_bar {
+        resolver.show_progress_bar();
+    }
 
     let resolution = resolver.resolve(
         context.config.dependencies(),
