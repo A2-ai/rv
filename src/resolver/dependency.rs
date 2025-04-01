@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use serde::Deserialize;
 
 use crate::cache::InstallationStatus;
@@ -17,18 +19,15 @@ use std::str::{FromStr, Utf8Error};
 /// will be borrowed
 #[derive(PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
-    /// Name of the package
     pub name: Cow<'d, str>,
-    /// Version of the package
     pub version: Cow<'d, Version>,
-    /// The source of the package
     pub source: Source,
     pub(crate) dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
-    pub(crate) installation_status: InstallationStatus,
+    pub installation_status: InstallationStatus,
     pub(crate) path: Option<Cow<'d, str>>,
     pub(crate) from_lockfile: bool,
     pub(crate) from_remote: bool,

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::error::Error;
 use std::fmt;
 use std::fmt::Formatter;
@@ -75,7 +77,6 @@ pub struct DiskCache {
 }
 
 impl DiskCache {
-    /// Instantiate our cache abstraction.
     pub fn new(
         r_version: &Version,
         system_info: SystemInfo,
