@@ -16,6 +16,7 @@ mod repository_urls;
 mod resolver;
 mod sync;
 mod system_info;
+mod utils;
 
 #[cfg(feature = "cli")]
 pub mod cli;
