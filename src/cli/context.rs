@@ -23,6 +23,7 @@ pub struct CliContext {
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
     pub r_cmd: RCommandLine,
+    pub show_progress_bar: bool,
 }
 
 impl CliContext {
@@ -65,7 +66,12 @@ impl CliContext {
             lockfile,
             databases: Vec::new(),
             r_cmd,
+            show_progress_bar: false,
         })
+    }
+
+    pub fn show_progress_bar(&mut self) {
+        self.show_progress_bar = true;
     }
 
     pub fn load_databases(&mut self) -> Result<()> {

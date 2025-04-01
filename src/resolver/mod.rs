@@ -98,6 +98,7 @@ pub struct Resolver<'d> {
     /// If we have a lockfile for the resolver, we will skip looking at the database for any package
     /// listed in it
     lockfile: Option<&'d Lockfile>,
+    show_progress_bar: bool,
 }
 
 impl<'d> Resolver<'d> {
@@ -112,7 +113,12 @@ impl<'d> Resolver<'d> {
             repositories,
             r_version,
             lockfile,
+            show_progress_bar: false,
         }
+    }
+
+    pub fn show_progress_bar(&mut self) {
+        self.show_progress_bar = true;
     }
 
     fn local_lookup(
@@ -304,7 +310,7 @@ impl<'d> Resolver<'d> {
                 Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
             }
             Err(e) => {
-                Err(format!("Could not clone repository {repo_url} (ref: {git_ref:?}) {e}").into())
+                Err(format!("Could not fetch repository {repo_url} (ref: {git_ref:?}) {e}").into())
             }
         }
     }
