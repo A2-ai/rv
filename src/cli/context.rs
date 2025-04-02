@@ -40,7 +40,7 @@ impl CliContext {
         let project_dir = config_file.parent().unwrap().to_path_buf();
         fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
         let lockfile_path = project_dir.join(LOCKFILE_NAME);
-        let lockfile = if lockfile_path.exists() {
+        let lockfile = if lockfile_path.exists() && config.use_lockfile() {
             let lockfile = Lockfile::load(lockfile_path)?;
             if !lockfile.r_version().hazy_match(&r_version) {
                 log::debug!(
