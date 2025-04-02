@@ -1,14 +1,14 @@
 //! CLI context that gets instantiated for a few commands and passed around
-use std::path::{Path, PathBuf};
-
 use crate::cli::utils::write_err;
 use crate::{
     consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
     DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
 };
+use std::path::{Path, PathBuf};
 
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
+use crate::utils::create_spinner;
 use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
@@ -23,6 +23,7 @@ pub struct CliContext {
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
     pub r_cmd: RCommandLine,
+    pub show_progress_bar: bool,
 }
 
 impl CliContext {
@@ -65,11 +66,20 @@ impl CliContext {
             lockfile,
             databases: Vec::new(),
             r_cmd,
+            show_progress_bar: false,
         })
     }
 
+    pub fn show_progress_bar(&mut self) {
+        self.show_progress_bar = true;
+    }
+
     pub fn load_databases(&mut self) -> Result<()> {
+        let pb = create_spinner(self.show_progress_bar, "Loading databases...");
+        let reset_pb = || pb.finish_and_clear();
         self.databases = load_databases(self.config.repositories(), &self.cache)?;
+        reset_pb();
+
         Ok(())
     }
 

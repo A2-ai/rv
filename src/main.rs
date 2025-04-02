@@ -133,12 +133,15 @@ enum SyncMode {
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
 fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
-    let resolver = Resolver::new(
+    let mut resolver = Resolver::new(
         &context.project_dir,
         &context.databases,
         &context.r_version,
         context.lockfile.as_ref(),
     );
+    if context.show_progress_bar {
+        resolver.show_progress_bar();
+    }
 
     let resolution = resolver.resolve(
         context.config.dependencies(),
@@ -164,6 +167,9 @@ fn _sync(
     has_logs_enabled: bool,
     sync_mode: SyncMode,
 ) -> Result<()> {
+    if !has_logs_enabled {
+        context.show_progress_bar();
+    }
     context.load_databases_if_needed()?;
     match sync_mode {
         SyncMode::Default => (),
@@ -329,7 +335,7 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
             let mut context = CliContext::new(&cli.config_file)?;
-            // if dry run, the config won't have been editied to reflect the added changes so must be added
+            // if dry run, the config won't have been edited to reflect the added changes so must be added
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
             }

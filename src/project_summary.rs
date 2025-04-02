@@ -11,8 +11,8 @@ use crate::{
     cache::InstallationStatus,
     lockfile::Source,
     package::{Operator, PackageType},
-    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency,
-    SystemInfo, Version, VersionRequirement,
+    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
+    Version, VersionRequirement,
 };
 
 #[derive(Debug, Clone, Serialize)]

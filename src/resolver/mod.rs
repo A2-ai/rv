@@ -16,6 +16,7 @@ use crate::package::{
     is_binary_package, parse_description_file, parse_description_file_in_folder, PackageRemote,
     PackageType,
 };
+use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -98,6 +99,8 @@ pub struct Resolver<'d> {
     /// If we have a lockfile for the resolver, we will skip looking at the database for any package
     /// listed in it
     lockfile: Option<&'d Lockfile>,
+    /// Progress bar is only shown for git dependencies
+    show_progress_bar: bool,
 }
 
 impl<'d> Resolver<'d> {
@@ -112,7 +115,12 @@ impl<'d> Resolver<'d> {
             repositories,
             r_version,
             lockfile,
+            show_progress_bar: false,
         }
+    }
+
+    pub fn show_progress_bar(&mut self) {
+        self.show_progress_bar = true;
     }
 
     fn local_lookup(
@@ -258,8 +266,14 @@ impl<'d> Resolver<'d> {
             remote.set_directory(d);
         }
 
+        let spinner = create_spinner(
+            self.show_progress_bar,
+            format!("Fetching DESCRIPTION file from {repo_url}#{git_ref}"),
+        );
+
         match remote.sparse_checkout_for_description(clone_path, &git_ref, git_executor.clone()) {
             Ok((sha, description_content)) => {
+                spinner.finish_and_clear();
                 let package = match parse_description_file(&description_content) {
                     Some(p) => p,
                     None => {
@@ -304,7 +318,8 @@ impl<'d> Resolver<'d> {
                 Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
             }
             Err(e) => {
-                Err(format!("Could not clone repository {repo_url} (ref: {git_ref:?}) {e}").into())
+                spinner.finish_and_clear();
+                Err(format!("Could not fetch repository {repo_url} (ref: {git_ref:?}) {e}").into())
             }
         }
     }
