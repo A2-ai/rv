@@ -80,7 +80,8 @@ def run_examples():
 
         test_folder = os.path.join(PARENT_FOLDER, subfolder, "tests")
         if os.path.exists(test_folder):
-            run_r_test(library_path, test_folder)
+            res = run_r_test(library_path, test_folder)
+            print(f"Tests passed with result {res}")
             
             
 
