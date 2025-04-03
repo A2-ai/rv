@@ -33,8 +33,8 @@ def install_tinytest():
 def run_r_test(library_path, test_folder):
     print(">> Running R test")
     library_path = library_path.removesuffix("\n")
+    test_folder = test_folder.replace("\\", "/")
     # Print results to stdout for test success and stderr for test failure
-    test_folder <- str.replace(test_folder, "\\", "/")
     test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_dir('{test_folder}', verbose = FALSE); write(capture.output(res), ifelse(isTRUE(as.logical(res)), stdout(), stderr()))\""
     result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
@@ -81,10 +81,7 @@ def run_examples():
         test_folder = os.path.join(PARENT_FOLDER, subfolder, "tests")
         if os.path.exists(test_folder):
             res = run_r_test(library_path, test_folder)
-            # print(f"Tests passed with result: {res}")
-            
-            
-
+            print(f"Tests passed with result: {res}")
     return 0
 
 if __name__ == "__main__":
