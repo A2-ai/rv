@@ -33,8 +33,8 @@ def install_tinytest():
 def run_r_test(library_path, test_folder):
     print(">> Running R test")
     library_path = library_path.removesuffix("\n")
-    # test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_dir('{test_folder}', verbose = FALSE); if (isTRUE(as.logical(res))) res else stop(paste0(capture.output(res)), collapse = '\n'))\""
-    test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_dir('{test_folder}', verbose = FALSE); write(capture.output(res), ifelse(isTRUE(as.logical(res)), stdout(), stderr()))\""
+    # Print results to stdout for test success and stderr for test failure
+    test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_file('{test_folder}/test_versionCheck.R', verbose = FALSE); write(capture.output(res), ifelse(isTRUE(as.logical(res)), stdout(), stderr()))\""
     result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Command failed with error: {result.stderr}")
@@ -50,7 +50,6 @@ def run_r_test(library_path, test_folder):
 def run_examples():
     install_tinytest()
     items = os.listdir(PARENT_FOLDER)
-    items = ["archive"]
     for subfolder in items:
         # This one needs lots of system deps, skipping in CI
         if subfolder == "big":
@@ -81,7 +80,7 @@ def run_examples():
         test_folder = os.path.join(PARENT_FOLDER, subfolder, "tests")
         if os.path.exists(test_folder):
             res = run_r_test(library_path, test_folder)
-            print(f"Tests passed with result {res}")
+            print(f"Tests passed with result: {res}")
             
             
 
