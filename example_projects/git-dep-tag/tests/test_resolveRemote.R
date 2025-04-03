@@ -1,0 +1,5 @@
+wd <- tinytest::get_call_wd()
+lib_loc <- file.path(wd, lib_loc)
+pkg_burden <- toString(c("rv.git.pkgA", "rv.git.pkgB"))
+ip <- toString(row.names(as.data.frame(installed.packages(lib.loc = lib_loc))))
+expect_equal(ip, pkg_burden)

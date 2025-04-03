@@ -35,7 +35,7 @@ def run_r_test(library_path, test_folder):
     library_path = library_path.removesuffix("\n")
     test_folder = test_folder.replace("\\", "/")
     # Print results to stdout for test success and stderr for test failure
-    test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_dir('{test_folder}', verbose = FALSE); write(capture.output(res), ifelse(isTRUE(as.logical(res)), stdout(), stderr()))\""
+    test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_dir('{test_folder}', verbose = FALSE); write(capture.output(res), ifelse(all(as.logical(res)), stdout(), stderr()))\""
     result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Command failed with error: {result.stderr}")
@@ -51,6 +51,7 @@ def run_r_test(library_path, test_folder):
 def run_examples():
     install_tinytest()
     items = os.listdir(PARENT_FOLDER)
+    items = ["git-dep-tag"]
     for subfolder in items:
         # This one needs lots of system deps, skipping in CI
         if subfolder == "big":

@@ -7,4 +7,4 @@ wd <- tinytest::get_call_wd()
 lib_loc <- file.path(wd, lib_loc)
 
 ip <- toString(row.names(as.data.frame(installed.packages(lib.loc = lib_loc))))
-expect_equal(toString(ip), toString(pkg_burden))
+expect_equal(ip, pkg_burden)
