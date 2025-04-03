@@ -23,7 +23,7 @@ def run_cmd(cmd, path, json = False):
 
 def install_tinytest():
     print(">> Installing tinytest")
-    result = subprocess.run(["Rscript", "-e", "install.packages('tinytest')"], check=True)
+    result = subprocess.run(["Rscript", "-e", "install.packages('.github/r_pkgs/tinytest_1.4.1.tar.gz')"], check=True)
     if result.returncode != 0:
         print(f"Command failed with error: {result.stderr}")
         exit(1)
