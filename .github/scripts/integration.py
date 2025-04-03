@@ -51,7 +51,6 @@ def run_r_test(library_path, test_folder):
 def run_examples():
     install_tinytest()
     items = os.listdir(PARENT_FOLDER)
-    items = ["git-dep-tag"]
     for subfolder in items:
         # This one needs lots of system deps, skipping in CI
         if subfolder == "big":
