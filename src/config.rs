@@ -193,9 +193,17 @@ pub(crate) struct Project {
     prefer_repositories_for: Vec<String>,
 }
 
+// That's the way to do it with serde :/
+// https://github.com/serde-rs/serde/issues/368
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default = "default_true")]
+    pub(crate) use_lockfile: bool,
     pub(crate) project: Project,
 }
 
@@ -295,6 +303,10 @@ impl Config {
 
     pub fn r_version(&self) -> &Version {
         &self.project.r_version
+    }
+
+    pub fn use_lockfile(&self) -> bool {
+        self.use_lockfile
     }
 }
 

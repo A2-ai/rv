@@ -204,7 +204,7 @@ fn _sync(
             if changes.is_empty() {
                 println!("Nothing to do");
             }
-            if !dry_run {
+            if !dry_run && context.config.use_lockfile() {
                 if resolved.is_empty() {
                     // delete the lockfiles if there are no dependencies
                     let lockfile_path = context.lockfile_path();
