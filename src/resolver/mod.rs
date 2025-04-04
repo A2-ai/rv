@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crate::VersionRequirement;
 use crate::{CommandExecutor, ConfigDependency, DiskCache, Lockfile, RepositoryDatabase, Version};
 
@@ -88,6 +90,8 @@ macro_rules! prepare_deps {
 }
 
 #[derive(Debug, PartialEq)]
+/// A resolver for packages
+/// It will look at the lockfile first, then the local path, then the repositories
 pub struct Resolver<'d> {
     /// We need that to resolve properly local deps relative to the project dir
     project_dir: PathBuf,
@@ -360,7 +364,6 @@ impl<'d> Resolver<'d> {
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
-    /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
         dependencies: &'d [ConfigDependency],

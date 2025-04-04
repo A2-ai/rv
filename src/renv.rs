@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{
     collections::HashMap,
     error::Error,
@@ -107,6 +109,8 @@ impl RenvLock {
         })
     }
 
+    /// Resolve the packages in the renv.lock file to their true source 
+    /// since the repository source indicated in the lock file is not always accurate
     pub fn resolve(
         &self,
         repository_database: &[(RepositoryDatabase, bool)],
@@ -159,6 +163,7 @@ impl RenvLock {
         &self.r.version
     }
 
+    /// convert the renv repositories field to the `Repositories` struct to match parse config
     pub fn config_repositories(&self) -> Vec<Repository> {
         self.r
             .repositories

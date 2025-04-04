@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! CLI context that gets instantiated for a few commands and passed around
 use crate::cli::utils::write_err;
 use crate::{
@@ -83,6 +84,7 @@ impl CliContext {
         Ok(())
     }
 
+    /// Only load the databases if the lockfile does not fully resolve the dependencies
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
         let can_resolve = self
             .lockfile

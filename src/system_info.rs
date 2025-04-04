@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! For R we will need some information on what is the current OS.
 //! We can get that information from the `os_info` crate but we don't want to expose its type
 //! to the library/CLI.
@@ -25,6 +27,10 @@ impl OsType {
         }
     }
 
+    /// Get the tarball extension based on the OS
+    /// Windows => zip
+    /// MacOs => tgz
+    /// Linux => tar.gz
     pub fn tarball_extension(&self) -> &'static str {
         match self {
             OsType::Windows => "zip",
@@ -59,6 +65,7 @@ impl SystemInfo {
         }
     }
 
+    /// Create a new SystemInfo object from the current OS information using the os_info crate
     pub fn from_os_info() -> Self {
         let info = os_info::get();
         let os_type = match info.os_type() {

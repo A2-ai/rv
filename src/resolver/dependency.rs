@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use serde::Deserialize;
 
 use crate::cache::InstallationStatus;
@@ -17,15 +19,15 @@ use std::str::{FromStr, Utf8Error};
 /// will be borrowed
 #[derive(PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
-    pub(crate) name: Cow<'d, str>,
-    pub(crate) version: Cow<'d, Version>,
-    pub(crate) source: Source,
+    pub name: Cow<'d, str>,
+    pub version: Cow<'d, Version>,
+    pub source: Source,
     pub(crate) dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
-    pub(crate) installation_status: InstallationStatus,
+    pub installation_status: InstallationStatus,
     pub(crate) path: Option<Cow<'d, str>>,
     pub(crate) from_lockfile: bool,
     pub(crate) from_remote: bool,
@@ -47,7 +49,6 @@ impl<'d> ResolvedDependency<'d> {
         matches!(self.source, Source::Local { .. })
     }
 
-    /// We found the dependency from the lockfile
     pub fn from_locked_package(
         package: &'d LockedPackage,
         installation_status: InstallationStatus,
@@ -263,7 +264,6 @@ impl fmt::Debug for ResolvedDependency<'_> {
     }
 }
 
-/// A dependency that we could not
 #[derive(Debug, PartialEq, Clone)]
 pub struct UnresolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
@@ -304,6 +304,7 @@ impl<'d> UnresolvedDependency<'d> {
         self
     }
 
+    /// Return if the package is listed explicitly in the config file
     pub fn is_listed_in_config(&self) -> bool {
         self.parent.is_none()
     }

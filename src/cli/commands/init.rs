@@ -96,6 +96,7 @@ fn render_config(
         .replace("%dependencies%", &deps)
 }
 
+/// Find the repositories set in `options("repos")` in R
 pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     let r_code = r#"
     repos <- getOption("repos")
@@ -160,6 +161,7 @@ fn strip_linux_url(url: &str) -> String {
     new_url.join("/")
 }
 
+/// initialize the rv directory, including the library directory and the .gitignore file
 pub fn init_structure(project_directory: impl AsRef<Path>) -> Result<(), InitError> {
     let project_directory = project_directory.as_ref();
     create_library_structure(project_directory)?;

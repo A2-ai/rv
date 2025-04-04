@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -74,6 +76,7 @@ pub struct Library {
     /// This is the path where the packages are installed so
     /// rv/library/{R version}/{arch}/{codename?}/
     path: PathBuf,
+    /// Package and versions installed in the library
     pub packages: HashMap<String, Version>,
     /// We keep track of all packages not coming from a package repository
     pub non_repo_packages: HashMap<String, LocalMetadata>,

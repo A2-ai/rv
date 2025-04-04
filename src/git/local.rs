@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -214,7 +215,6 @@ impl GitRepository {
         self.checkout_branch(&branch_name)
     }
 
-    /// Checks if we have that reference in the local repo.
     pub fn get_description_file_content(
         &self,
         url: &str,
@@ -244,7 +244,7 @@ impl GitRepository {
         ))
     }
 
-    /// Does a sparse checkout with just DESCRIPTION file checkout.
+    /// Does a sparse checkout of just DESCRIPTION file checkout to speed up resolution
     pub fn sparse_checkout(
         &self,
         url: &str,

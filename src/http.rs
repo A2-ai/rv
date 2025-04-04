@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -97,6 +99,7 @@ pub enum HttpErrorKind {
     Http(u16),
 }
 
+/// Trait for downloading files over HTTP
 pub trait HttpDownload {
     /// Downloads a file to the given writer and returns how many bytes were read
     fn download<W: Write>(

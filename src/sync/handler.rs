@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crossbeam::{channel, thread};
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};

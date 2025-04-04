@@ -9,7 +9,7 @@ static POSIT_PACKAGE_MANAGER_BASE_URL: &str = "https://packagemanager.posit.co/c
 static RV_BASE_URL: &str = "TODO: RV base url";
 
 /// This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
-fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
+pub fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
     match distro {
         "centos" => {
             if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
@@ -78,7 +78,6 @@ enum RepoServer<'a> {
 }
 
 impl<'a> RepoServer<'a> {
-    /// Convert a url to a variant of the enum
     fn from_url(url: &'a str) -> Self {
         if url.contains(POSIT_PACKAGE_MANAGER_BASE_URL) {
             Self::PositPackageManager(url)
@@ -318,6 +317,7 @@ pub struct TarballUrls {
     pub archive: String,
 }
 
+/// Gets the source, binary (if available), and archive URLs for the given dependency
 pub fn get_tarball_urls(
     dep: &ResolvedDependency,
     r_version: &[u32; 2],

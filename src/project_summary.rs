@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -15,6 +17,7 @@ use crate::{
     Version, VersionRequirement,
 };
 
+/// A summary of the project to be used for the `rv summary` command
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectSummary<'a> {
     r_version: &'a Version,

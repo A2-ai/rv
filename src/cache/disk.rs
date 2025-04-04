@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::error::Error;
 use std::fmt;
 use std::fmt::Formatter;
@@ -14,6 +16,7 @@ use crate::lockfile::Source;
 use crate::{SystemInfo, Version};
 
 #[derive(Debug, Clone)]
+/// Expected paths to the package in the cache for both source and binary. Does not guarantee a package will exist at the location
 pub struct PackagePaths {
     pub binary: PathBuf,
     pub source: PathBuf,
@@ -73,7 +76,6 @@ pub struct DiskCache {
 }
 
 impl DiskCache {
-    /// Instantiate our cache abstraction.
     pub fn new(
         r_version: &Version,
         system_info: SystemInfo,
@@ -140,6 +142,7 @@ impl DiskCache {
         self.root.join("urls").join(encoded)
     }
 
+    /// Get the path to the cloned git repo
     pub fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
         let encoded = hash_string(&repo_url.trim_end_matches("/").to_ascii_lowercase());
         self.root.join("git").join(encoded)

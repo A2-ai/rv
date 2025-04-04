@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ mod remotes;
 mod version;
 
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
-pub use parser::parse_package_file;
+pub use parser::{parse_dependencies, parse_package_file};
 pub use remotes::PackageRemote;
 pub use version::{deserialize_version, Operator, Version, VersionRequirement};
 
@@ -31,7 +32,7 @@ impl fmt::Display for PackageType {
 }
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
-pub(crate) enum Dependency {
+pub enum Dependency {
     Simple(String),
     Pinned {
         name: String,
@@ -40,14 +41,14 @@ pub(crate) enum Dependency {
 }
 
 impl Dependency {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             Dependency::Simple(s) => s,
             Dependency::Pinned { name, .. } => name,
         }
     }
 
-    pub(crate) fn version_requirement(&self) -> Option<&VersionRequirement> {
+    pub fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
             Dependency::Pinned {
@@ -58,22 +59,22 @@ impl Dependency {
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
+/// Used to decode the PACKAGES file and the package's DESCRIPTION file
 pub struct Package {
-    pub(crate) name: String,
-    pub(crate) version: Version,
-    r_requirement: Option<VersionRequirement>,
-    depends: Vec<Dependency>,
-    imports: Vec<Dependency>,
-    suggests: Vec<Dependency>,
-    enhances: Vec<Dependency>,
-    linking_to: Vec<Dependency>,
-    license: String,
-    md5_sum: String,
-    pub(crate) path: Option<String>,
-    recommended: bool,
-    pub(crate) needs_compilation: bool,
-    // {remote_string => (pkg name, remote)}
-    pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
+    pub name: String,
+    pub version: Version,
+    pub r_requirement: Option<VersionRequirement>,
+    pub depends: Vec<Dependency>,
+    pub imports: Vec<Dependency>,
+    pub suggests: Vec<Dependency>,
+    pub enhances: Vec<Dependency>,
+    pub linking_to: Vec<Dependency>,
+    pub license: String,
+    pub md5_sum: String,
+    pub path: Option<String>,
+    pub recommended: bool,
+    pub needs_compilation: bool,
+    pub remotes: HashMap<String, (Option<String>, PackageRemote)>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize)]
@@ -126,7 +127,6 @@ impl Package {
     }
 }
 
-/// Returns whether this folder contains compiled R files
 pub fn is_binary_package(path: impl AsRef<Path>, name: &str) -> bool {
     path.as_ref().join("R").join(format!("{name}.rdx")).exists()
 }

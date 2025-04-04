@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::lockfile::Source;
@@ -83,7 +85,6 @@ impl<'a> BuildPlan<'a> {
             .collect()
     }
 
-    /// get a package to install, an enum {Package, Wait, Done}
     pub fn get(&mut self) -> BuildStep {
         if self.is_done() {
             return BuildStep::Done;

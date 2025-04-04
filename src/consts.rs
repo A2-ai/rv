@@ -1,8 +1,9 @@
+#![allow(missing_docs)]
+
 pub const PACKAGE_FILENAME: &str = "PACKAGES";
 pub const DESCRIPTION_FILENAME: &str = "DESCRIPTION";
 pub const SOURCE_PACKAGES_PATH: &str = "/src/contrib/PACKAGES";
 pub const LOCKFILE_NAME: &str = "rv.lock";
-
 pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
 pub const STAGING_DIR_NAME: &str = "staging";

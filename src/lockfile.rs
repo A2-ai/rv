@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
@@ -433,8 +435,6 @@ impl Lockfile {
         }
     }
 
-    /// Returns whether the lockfile is enough to resolve all the deps given or whether
-    /// we'll need to look up the databases
     pub fn can_resolve(&self, deps: &[ConfigDependency]) -> bool {
         for d in deps {
             if let Some(pkg) = self.get_package(d.name(), Some(d)) {
@@ -449,7 +449,6 @@ impl Lockfile {
         true
     }
 
-    /// Gets a set of all the package names listed in the lockfile
     pub fn package_names(&self) -> HashSet<&str> {
         let mut out = HashSet::new();
         for p in &self.packages {
@@ -458,7 +457,6 @@ impl Lockfile {
         out
     }
 
-    /// Returns the parsed Version of the R version listed in the lockfile
     pub fn r_version(&self) -> Version {
         Version::from_str(&self.r_version.to_string()).unwrap()
     }

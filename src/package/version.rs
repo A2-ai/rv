@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -62,6 +63,9 @@ impl Version {
 
     /// Determines if the called version matches in the input version based on the number of specified elements in the called version
     /// i.e. 4.4 = 4.4.1, but 4.4.2 != 4.4.1
+    /// Example: 
+    ///     Version { 4.4 }.hazy_match( Version { 4.4.1 } ) == true
+    ///     Version { 4.4.1 }.hazy_match( Version { 4.4 } ) == false
     pub(crate) fn hazy_match(&self, version: &Version) -> bool {
         let num_specified = self.original.replace("-", ".").split('.').count();
         self.parts[..num_specified] == version.parts[..num_specified]
@@ -129,11 +133,13 @@ where
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct VersionRequirement {
-    pub(crate) version: Version,
+    /// The version that the operator is compared against
+    pub version: Version,
     op: Operator,
 }
 
 impl VersionRequirement {
+    /// returns whether the incoming version satisfies the requirement
     pub fn is_satisfied(&self, version: &Version) -> bool {
         match self.op {
             Operator::Equal => &self.version == version,
@@ -144,6 +150,7 @@ impl VersionRequirement {
         }
     }
 
+    /// Create a new VersionRequirement
     pub fn new(version: Version, op: Operator) -> Self {
         Self { version, op }
     }

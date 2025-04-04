@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use bincode::{Decode, Encode};
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
@@ -6,6 +8,7 @@ use std::path::Path;
 use crate::package::{parse_package_file, Package, PackageType};
 use crate::package::{Version, VersionRequirement};
 
+/// All of the binary and source packages in the repository specified by the url.
 #[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
 pub struct RepositoryDatabase {
     pub(crate) url: String,
@@ -34,6 +37,7 @@ impl RepositoryDatabase {
             .map_err(RepositoryDatabaseError::from_bincode)
     }
 
+    /// Save the database to a file at the path
     pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent).map_err(RepositoryDatabaseError::from_io)?;
@@ -55,9 +59,10 @@ impl RepositoryDatabase {
         let packages = parse_package_file(content);
         self.binary_packages.insert(r_version, packages);
     }
-
-    // We always prefer binary unless `force_source` is set to true
-    pub(crate) fn find_package<'a>(
+    
+    /// Find a package in the database
+    /// We always prefer binary unless `force_source` is set to true
+    pub fn find_package<'a>(
         &'a self,
         name: &str,
         version_requirement: Option<&VersionRequirement>,

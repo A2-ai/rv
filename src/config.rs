@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -43,34 +45,42 @@ impl Repository {
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
+    /// A simple dependency, no additional configuration needed. To be resolved as a repository package
     Simple(String),
+    /// One of commit, tag, branch must be specified
     Git {
         git: String,
         // TODO: validate that either commit, branch or tag is set
         commit: Option<String>,
         tag: Option<String>,
         branch: Option<String>,
+        /// A path to a subdirectory containing the R package
         directory: Option<String>,
+        /// Must match the package found in the repo
         name: String,
         #[serde(default)]
         install_suggestions: bool,
     },
+    /// Can be a directory or tarball, source or binary
     Local {
         path: PathBuf,
+        /// Must match the package found at the path
         name: String,
         #[serde(default)]
         install_suggestions: bool,
     },
+    /// Can be a source or binary tarball
     Url {
         url: String,
+        /// Must match the package found at the url
         name: String,
         #[serde(default)]
         install_suggestions: bool,
-        #[serde(default)]
-        force_source: Option<bool>,
     },
+    /// Additional configuration for a dependency being sourced from a repository
     Detailed {
         name: String,
+        /// repository alias in the config gets replaced by the URL as part of 
         repository: Option<String>,
         #[serde(default)]
         install_suggestions: bool,
@@ -80,6 +90,7 @@ pub enum ConfigDependency {
 }
 
 impl ConfigDependency {
+    /// Get the name of the dependency
     pub fn name(&self) -> &str {
         match self {
             ConfigDependency::Simple(s) => s,
@@ -90,6 +101,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get whether the package has force_source set if available
     pub fn force_source(&self) -> Option<bool> {
         match self {
             ConfigDependency::Detailed { force_source, .. } => *force_source,
@@ -97,6 +109,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get the repository alias if available
     pub fn r_repository(&self) -> Option<&str> {
         match self {
             ConfigDependency::Detailed { repository, .. } => repository.as_deref(),
@@ -104,6 +117,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get the local path if available
     pub fn local_path(&self) -> Option<PathBuf> {
         match self {
             ConfigDependency::Local { path, .. } => Some(path.clone()),
@@ -111,6 +125,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Convert a Git dependency to a Source specified by the sha
     pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
         // git: String,
         // // TODO: validate that either commit, branch or tag is set
@@ -136,6 +151,7 @@ impl ConfigDependency {
         }
     }
 
+    /// Get whether the package has install_suggestions set
     pub fn install_suggestions(&self) -> bool {
         match self {
             ConfigDependency::Simple(_) => false,
@@ -193,6 +209,7 @@ pub(crate) struct Project {
     prefer_repositories_for: Vec<String>,
 }
 
+/// The config file is a TOML table, project
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -200,6 +217,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a new config from a file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
         let content = match std::fs::read_to_string(path.as_ref()) {
             Ok(c) => c,
