@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crate::VersionRequirement;
 use crate::{CommandExecutor, ConfigDependency, DiskCache, Lockfile, RepositoryDatabase, Version};
 
@@ -103,7 +105,6 @@ pub struct Resolver<'d> {
 }
 
 impl<'d> Resolver<'d> {
-    /// Create a new resolver object
     pub fn new(
         project_dir: impl AsRef<Path>,
         repositories: &'d [(RepositoryDatabase, bool)],
@@ -348,7 +349,6 @@ impl<'d> Resolver<'d> {
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
-    /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
         dependencies: &'d [ConfigDependency],

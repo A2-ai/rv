@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use bincode::{Decode, Encode};
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
@@ -19,14 +21,13 @@ pub struct RepositoryDatabase {
 }
 
 impl RepositoryDatabase {
-    /// Create a new empty database.
     pub fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
             ..Default::default()
         }
     }
-    /// Create a new database from an existing one.
+
     pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
         let reader = BufReader::new(
             std::fs::File::open(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
@@ -50,16 +51,15 @@ impl RepositoryDatabase {
         Ok(())
     }
 
-    /// Parse a PACKAGES file and load it into the database as source packages
     pub fn parse_source(&mut self, content: &str) {
         self.source_packages = parse_package_file(content);
     }
 
-    /// Parse a PACKAGES file and load it into the database as binary packages, mapped with the R version
     pub fn parse_binary(&mut self, content: &str, r_version: [u32; 2]) {
         let packages = parse_package_file(content);
         self.binary_packages.insert(r_version, packages);
     }
+    
     /// Find a package in the database
     /// We always prefer binary unless `force_source` is set to true
     pub fn find_package<'a>(

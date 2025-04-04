@@ -78,7 +78,6 @@ enum RepoServer<'a> {
 }
 
 impl<'a> RepoServer<'a> {
-    /// Convert a url to a variant of the enum
     fn from_url(url: &'a str) -> Self {
         if url.contains(POSIT_PACKAGE_MANAGER_BASE_URL) {
             Self::PositPackageManager(url)

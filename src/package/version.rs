@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -5,17 +6,11 @@ use std::fmt;
 use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
-/// Comparision operator, typically used for version comparison
 pub enum Operator {
-    /// `==`
     Equal,
-    /// `>`
     Greater,
-    /// `<`
     Lower,
-    /// `>=`
     GreaterOrEqual,
-    /// `<=`
     LowerOrEqual,
 }
 
@@ -49,12 +44,10 @@ impl FromStr for Operator {
 }
 
 #[derive(Debug, Default, Clone, Encode, Decode, Serialize, Deserialize)]
-/// A struct to contain semver versions
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
     parts: [u32; 10],
-    /// The original string of the version
     pub original: String,
 }
 
@@ -70,6 +63,9 @@ impl Version {
 
     /// Determines if the called version matches in the input version based on the number of specified elements in the called version
     /// i.e. 4.4 = 4.4.1, but 4.4.2 != 4.4.1
+    /// Example: 
+    ///     Version { 4.4 }.hazy_match( Version { 4.4.1 } ) == true
+    ///     Version { 4.4.1 }.hazy_match( Version { 4.4 } ) == false
     pub(crate) fn hazy_match(&self, version: &Version) -> bool {
         let num_specified = self.original.replace("-", ".").split('.').count();
         self.parts[..num_specified] == version.parts[..num_specified]

@@ -1,12 +1,11 @@
+#![allow(missing_docs)]
 use std::process::Command;
 
 mod local;
 mod reference;
 mod remote;
 
-/// A trait for executing cli commands
 pub trait CommandExecutor {
-    /// execute a given command
     fn execute(&self, command: &mut Command) -> Result<String, std::io::Error>;
 }
 
@@ -15,7 +14,6 @@ pub use reference::GitReference;
 pub use remote::GitRemote;
 
 #[derive(Debug, Clone)]
-/// A simple struct to implement the CommandExecutor trait for Git
 pub struct GitExecutor;
 
 impl CommandExecutor for GitExecutor {

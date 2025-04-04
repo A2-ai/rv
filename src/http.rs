@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -117,7 +119,6 @@ pub trait HttpDownload {
     ) -> Result<(Option<PathBuf>, String), HttpError>;
 }
 
-/// A simple struct to implement the HttpDownload trait
 pub struct Http;
 
 impl HttpDownload for Http {

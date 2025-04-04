@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -17,14 +19,10 @@ struct Author {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-/// Repositories field of the config file
 pub struct Repository {
-    /// Alias of the repository, to be used in the dependencies to reference a repo
     pub alias: String,
-    /// URL of a CRAN-type repository
     pub(crate) url: String,
     #[serde(default)]
-    /// Force source packages from this repository
     pub force_source: bool,
 }
 
@@ -34,7 +32,6 @@ impl Repository {
         self.url.trim_end_matches("/")
     }
 
-    /// Create a new repository
     pub fn new(alias: String, url: String, force_source: bool) -> Self {
         Self {
             alias,
@@ -44,63 +41,50 @@ impl Repository {
     }
 }
 
-/// Deserialize dependencies from the config file
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
     /// A simple dependency, no additional configuration needed. To be resolved as a repository package
     Simple(String),
-    /// A dependency coming from git. One of commit, tag, branch must be specified
+    /// One of commit, tag, branch must be specified
     Git {
-        /// git URL
         git: String,
         // TODO: validate that either commit, branch or tag is set
-        /// Git sha
         commit: Option<String>,
-        /// Git tag
         tag: Option<String>,
-        /// Git branch
         branch: Option<String>,
         /// A path to a subdirectory containing the R package
         directory: Option<String>,
-        /// Name of the package. Must match the package found at the url
+        /// Must match the package found in the repo
         name: String,
         #[serde(default)]
-        /// Install suggested package dependencies
         install_suggestions: bool,
     },
-    /// A dependency coming from a local path. Can be a directory or tarball, source or binary
+    /// Can be a directory or tarball, source or binary
     Local {
-        /// Path to the local package
         path: PathBuf,
-        /// Name of the package. Must match the package found at the path
+        /// Must match the package found at the path
         name: String,
         #[serde(default)]
-        /// Install suggested package dependencies
         install_suggestions: bool,
     },
-    /// A dependency coming from a URL. Can be a source or binary tarball
+    /// Can be a source or binary tarball
     Url {
-        /// Url to the package
         url: String,
-        /// Name of the package. Must match the package found at the path
+        /// Must match the package found at the url
         name: String,
         #[serde(default)]
-        /// Install suggested package dependencies
         install_suggestions: bool,
     },
     /// Additional configuration for a dependency being sourced from a repository
     Detailed {
-        /// Name of the package
         name: String,
-        /// Optionally set which repository this package comes from using the alias
+        /// repository alias in the config gets replaced by the URL as part of 
         repository: Option<String>,
         #[serde(default)]
-        /// Install suggested package dependencies
         install_suggestions: bool,
         #[serde(default)]
-        /// Force this package to comes from source
         force_source: Option<bool>,
     },
 }
@@ -315,22 +299,18 @@ impl Config {
         Ok(())
     }
 
-    /// Get the repositories of the project
     pub fn repositories(&self) -> &[Repository] {
         &self.project.repositories
     }
 
-    /// Get the dependencies of the project
     pub fn dependencies(&self) -> &[ConfigDependency] {
         &self.project.dependencies
     }
 
-    /// Get if any dependencies should override the remotes
     pub fn prefer_repositories_for(&self) -> &[String] {
         &self.project.prefer_repositories_for
     }
 
-    /// Get the R version set for the project
     pub fn r_version(&self) -> &Version {
         &self.project.r_version
     }

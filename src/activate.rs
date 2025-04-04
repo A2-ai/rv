@@ -55,7 +55,7 @@ fn add_rprofile_source_call(
     Ok(())
 }
 
-/// Deactivate a directory for use with rv by removing the scripts in `rv/scripts` within the .Rprofile
+/// Deactivate a directory for use with rv by removing the scripts in `rv/scripts` sourced within the .Rprofile
 pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
     let rprofile_path = dir.join(".Rprofile");

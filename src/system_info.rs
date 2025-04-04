@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! For R we will need some information on what is the current OS.
 //! We can get that information from the `os_info` crate but we don't want to expose its type
 //! to the library/CLI.
@@ -8,19 +10,14 @@ use serde::Serialize;
 /// For R we only care about Windows, MacOS and Linux
 #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
 pub enum OsType {
-    /// Windows OS
     Windows,
-    /// MacOS
     MacOs,
-    /// Linux Os, including its distribution
     Linux(&'static str),
     // TODO: we should error before we get that and remove that variant
-    /// Other OSs not supported by R
     Other(Type),
 }
 
 impl OsType {
-    /// Get the OS family as a string
     pub fn family(&self) -> &'static str {
         match self {
             OsType::Windows => "windows",
@@ -43,21 +40,17 @@ impl OsType {
     }
 }
 
-/// Information about the current system used to determine paths in the cache, library, and package url
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct SystemInfo {
-    /// the OS type
     pub os_type: OsType,
     // AFAIK we need that for ubuntu distrib name for posit binaries
     codename: Option<String>,
     // AFAIK we need that for mac os version name (eg big sur etc) for CRAN urls
-    /// Version of the operating system
     pub version: Version,
     arch: Option<String>,
 }
 
 impl SystemInfo {
-    /// Create a new SystemInfo object
     pub fn new(
         os_type: OsType,
         arch: Option<String>,
@@ -103,17 +96,14 @@ impl SystemInfo {
         }
     }
 
-    /// get the operating system family
     pub fn os_family(&self) -> &'static str {
         self.os_type.family()
     }
 
-    /// Get the system codename
     pub fn codename(&self) -> Option<&str> {
         self.codename.as_deref()
     }
 
-    /// Get the system architecture
     pub fn arch(&self) -> Option<&str> {
         self.arch.as_deref()
     }

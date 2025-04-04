@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
@@ -294,7 +296,6 @@ impl LockedPackage {
     }
 }
 
-/// The lockfile contains the version of the lockfile, the R version used, and a list of packages and their sources
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Lockfile {
     version: i64,
@@ -304,7 +305,6 @@ pub struct Lockfile {
 }
 
 impl Lockfile {
-    /// Creates a new lockfile with the given R version with no packages
     pub fn new(r_version: &str) -> Self {
         Self {
             version: CURRENT_LOCKFILE_VERSION,
@@ -339,7 +339,6 @@ impl Lockfile {
         Ok(())
     }
 
-    /// Creates a new lockfile from a vector of resolved dependencies
     pub fn from_resolved(r_version: &[u32; 2], deps: Vec<ResolvedDependency>) -> Self {
         let mut packages: Vec<_> = deps
             .into_iter()
@@ -372,7 +371,6 @@ impl Lockfile {
         out
     }
 
-    /// Saves the lockfile to the given path
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), LockfileError> {
         self.validate()?;
 
@@ -388,7 +386,6 @@ impl Lockfile {
         Ok(())
     }
 
-    /// Reads in a lockfile from the given path
     pub fn load(path: impl AsRef<Path>) -> Result<Self, LockfileError> {
         let content = fs::read_to_string(path).map_err(|e| LockfileError {
             source: LockfileErrorKind::Io(e),
@@ -438,8 +435,6 @@ impl Lockfile {
         }
     }
 
-    /// Returns whether the lockfile is enough to resolve all the deps given or whether
-    /// we'll need to look up the databases
     pub fn can_resolve(&self, deps: &[ConfigDependency]) -> bool {
         for d in deps {
             if let Some(pkg) = self.get_package(d.name(), Some(d)) {
@@ -454,7 +449,6 @@ impl Lockfile {
         true
     }
 
-    /// Gets a set of all the package names listed in the lockfile
     pub fn package_names(&self) -> HashSet<&str> {
         let mut out = HashSet::new();
         for p in &self.packages {
@@ -463,7 +457,6 @@ impl Lockfile {
         out
     }
 
-    /// Returns the parsed Version of the R version listed in the lockfile
     pub fn r_version(&self) -> Version {
         Version::from_str(&self.r_version.to_string()).unwrap()
     }

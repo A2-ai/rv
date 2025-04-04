@@ -5,20 +5,28 @@ use toml_edit::{Array, DocumentMut, Formatted, Value};
 
 use crate::{config::ConfigLoadError, Config};
 
-/// Reads in the config to a toml_edit DocumentMut if it is a valid config file
-pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
-    let config_file = config_file.as_ref();
-    let _ = Config::from_file(config_file).map_err(|e| AddError {
-        path: config_file.into(),
+
+/// Add packages to the config file at path as Simple ConfigDependencies
+pub fn add_packages(path: impl AsRef<Path>, packages: Vec<String>) -> Result<String, AddError> {
+    let path = path.as_ref();
+    let content = fs::read_to_string(path)
+        .map_err(|e| AddError {
+            path: path.into(),
+            source: Box::new(AddErrorKind::Io(e)),
+        })?;
+    // Verify the config file is valid before parsing as DocumentMut
+    content.parse::<Config>().map_err(|e| AddError {
+        path: path.into(),
         source: Box::new(AddErrorKind::ConfigLoad(e)),
     })?;
-    let config_content = fs::read_to_string(config_file).unwrap(); // Verified config could be loaded above
 
-    Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
+    let mut config_doc = content.parse::<DocumentMut>().unwrap();
+    add_pkgs_to_config(&mut config_doc, packages)?;
+
+    Ok(config_doc.to_string())
 }
 
-/// Add packages to the config file as simple ConfigDependencies
-pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
+fn add_pkgs_to_config(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
 
@@ -87,13 +95,15 @@ pub enum AddErrorKind {
 
 #[cfg(test)]
 mod tests {
-    use crate::{add_packages, read_and_verify_config};
+    use std::fs;
+
+    use super::add_pkgs_to_config;
 
     #[test]
     fn add_remove() {
-        let config_file = "src/tests/valid_config/all_fields.toml";
-        let mut doc = read_and_verify_config(&config_file).unwrap();
-        add_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]).unwrap();
+        let config_file = fs::read_to_string("src/tests/valid_config/all_fields.toml").unwrap();
+        let mut doc = config_file.parse::<toml_edit::DocumentMut>().unwrap();
+        add_pkgs_to_config(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]).unwrap();
         insta::assert_snapshot!("add_remove", doc.to_string());
     }
 }

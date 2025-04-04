@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -24,7 +26,6 @@ pub struct ProjectSummary<'a> {
 }
 
 impl<'a> ProjectSummary<'a> {
-    /// Create a new project summary
     pub fn new(
         library: &'a Library,
         resolved_deps: &'a [ResolvedDependency],

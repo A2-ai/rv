@@ -89,7 +89,6 @@ impl LinkMode {
         }
     }
 
-    /// Link files from the source to the destination
     pub fn link_files(
         &self,
         package_name: &str,

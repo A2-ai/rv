@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -69,7 +71,6 @@ impl LocalMetadata {
     }
 }
 
-/// Struct representing the current state of the rv package library
 #[derive(Debug, Clone, PartialEq)]
 pub struct Library {
     /// This is the path where the packages are installed so
@@ -86,7 +87,6 @@ pub struct Library {
 }
 
 impl Library {
-    /// Creates a new library object
     pub fn new(
         project_dir: impl AsRef<Path>,
         system_info: &SystemInfo,
@@ -107,7 +107,6 @@ impl Library {
         }
     }
 
-    /// Gets the path of the library
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -153,7 +152,6 @@ impl Library {
         }
     }
 
-    /// return if the library contains a resolved dependency
     pub fn contains_package(&self, pkg: &ResolvedDependency) -> bool {
         if !self.packages.contains_key(pkg.name.as_ref()) {
             return false;

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -19,9 +21,7 @@ fn find_r_version(output: &str) -> Option<Version> {
         .and_then(|m| Version::from_str(m.as_str()).ok())
 }
 
-/// A trait to abstract the R command line interface
 pub trait RCmd: Send + Sync {
-    /// Installs a package and returns the combined output of stdout and stderr
     fn install(
         &self,
         folder: impl AsRef<Path>,
@@ -29,7 +29,6 @@ pub trait RCmd: Send + Sync {
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError>;
 
-    /// Checks a package and returns the combined output of stdout and stderr
     fn check(
         &self,
         file_path: &Path,
@@ -38,7 +37,6 @@ pub trait RCmd: Send + Sync {
         env_var: Vec<(&str, &str)>,
     ) -> Result<String, CheckError>;
 
-    /// Builds a package and returns the combined output of stdout and stderr
     fn build(
         &self,
         file_path: &Path,
@@ -48,11 +46,9 @@ pub trait RCmd: Send + Sync {
         env_var: Vec<(&str, &str)>,
     ) -> Result<String, BuildError>;
 
-    /// Returns the version of R
     fn version(&self) -> Result<Version, VersionError>;
 }
 
-/// A struct to abstract the R command line interface
 #[derive(Debug, Clone, PartialEq)]
 pub struct RCommandLine {
     /// specifies the path to the R executable on the system. None indicates using "R" on the $PATH

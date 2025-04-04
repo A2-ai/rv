@@ -38,7 +38,6 @@ pub struct ResolvedDependency<'d> {
 }
 
 impl<'d> ResolvedDependency<'d> {
-    /// Return whether the package is installed or not for the given type
     pub fn is_installed(&self) -> bool {
         match self.kind {
             PackageType::Source => self.installation_status.source_available(),
@@ -46,12 +45,10 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
-    /// Return whether the package is a local package or now
     pub fn is_local(&self) -> bool {
         matches!(self.source, Source::Local { .. })
     }
 
-    /// We found the dependency from the lockfile
     pub fn from_locked_package(
         package: &'d LockedPackage,
         installation_status: InstallationStatus,
@@ -88,7 +85,6 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
-    /// We found the dependency from the repository
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &str,
@@ -180,7 +176,6 @@ impl<'d> ResolvedDependency<'d> {
         (res, deps)
     }
 
-    /// We found the package from a local path
     pub fn from_local_package(
         package: &Package,
         source: Source,
@@ -217,7 +212,6 @@ impl<'d> ResolvedDependency<'d> {
         (res, deps)
     }
 
-    /// We found the package from a url
     pub fn from_url_package(
         package: &Package,
         kind: PackageType,
@@ -270,7 +264,6 @@ impl fmt::Debug for ResolvedDependency<'_> {
     }
 }
 
-/// A dependency that we could not
 #[derive(Debug, PartialEq, Clone)]
 pub struct UnresolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,

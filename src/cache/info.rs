@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::fmt;
 use std::path::PathBuf;
 
@@ -46,7 +48,6 @@ impl fmt::Display for CacheRepositoryInfo {
 }
 
 #[derive(Debug, Serialize)]
-/// Cache information for the current project
 pub struct CacheInfo {
     root: PathBuf,
     repositories: Vec<CacheRepositoryInfo>,
@@ -55,7 +56,6 @@ pub struct CacheInfo {
 }
 
 impl CacheInfo {
-    /// Create a new cache info object
     pub fn new(config: &Config, cache: &DiskCache, resolved: Vec<ResolvedDependency>) -> Self {
         let root = cache.root.clone();
         let repositories = config

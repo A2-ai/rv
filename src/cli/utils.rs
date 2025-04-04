@@ -1,4 +1,4 @@
-/// format an error to a string
+#![allow(missing_docs)]
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     let mut out = format!("{err}");
 

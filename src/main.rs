@@ -6,7 +6,7 @@ use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, GitExecutor,
+    activate, add_packages, deactivate, CacheInfo, Config, GitExecutor,
     Http, Lockfile, ProjectSummary, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
     Version,
 };
@@ -317,11 +317,10 @@ fn try_main() -> Result<()> {
             no_sync,
         } => {
             // load config to verify structure is valid
-            let mut doc = read_and_verify_config(&cli.config_file)?;
-            add_packages(&mut doc, packages)?;
+            let contents = add_packages(&cli.config_file, packages)?;
             // write the update if not dry run
             if !dry_run {
-                write(&cli.config_file, doc.to_string())?;
+                write(&cli.config_file, &contents)?;
             }
             // if no sync, exit early
             if no_sync {
@@ -331,7 +330,7 @@ fn try_main() -> Result<()> {
             let mut context = CliContext::new(&cli.config_file)?;
             // if dry run, the config won't have been editied to reflect the added changes so must be added
             if dry_run {
-                context.config = doc.to_string().parse::<Config>()?;
+                context.config = contents.parse::<Config>()?;
             }
             _sync(
                 context,

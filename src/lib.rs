@@ -27,7 +27,7 @@ pub mod cli;
 pub mod consts;
 
 pub use activate::{activate, deactivate};
-pub use add::{add_packages, read_and_verify_config};
+pub use add::add_packages;
 pub use cache::{utils::hash_string, CacheInfo, DiskCache, InstallationStatus, PackagePaths};
 pub use config::{Config, ConfigDependency, Repository};
 pub use git::{CommandExecutor, GitExecutor, GitRepository};

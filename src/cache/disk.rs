@@ -17,9 +17,7 @@ use crate::{SystemInfo, Version};
 #[derive(Debug, Clone)]
 /// Expected paths to the package in the cache for both source and binary. Does not guarantee a package will exist at the location
 pub struct PackagePaths {
-    /// Path to the binary package
     pub binary: PathBuf,
-    /// Path to the source package
     pub source: PathBuf,
 }
 
@@ -173,7 +171,6 @@ impl DiskCache {
         (path, false)
     }
 
-    /// Get the paths to a package in the cache
     pub fn get_package_paths(
         &self,
         source: &Source,

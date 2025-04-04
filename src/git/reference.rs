@@ -1,14 +1,12 @@
+#![allow(missing_docs)]
 use std::fmt;
 
 /// What a git URL can point to
 /// If it's coming from a lockfile, it will always be a commit
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitReference<'g> {
-    /// A specific branch
     Branch(&'g str),
-    /// A specific tag.
     Tag(&'g str),
-    /// The commit hash
     Commit(&'g str),
     /// We don't know what it is.
     /// Used for Remotes

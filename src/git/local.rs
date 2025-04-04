@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,7 +10,6 @@ use crate::git::CommandExecutor;
 
 const HEAD_LINE_START: &str = "HEAD branch: ";
 
-/// A git repository, including the path to it and the executor to use
 pub struct GitRepository {
     path: PathBuf,
     executor: Box<dyn CommandExecutor>,
@@ -23,7 +23,6 @@ impl GitRepository {
         Ok(())
     }
 
-    /// Open a git repository at a given path
     pub fn open(
         path: impl AsRef<Path>,
         url: &str,
@@ -72,7 +71,6 @@ impl GitRepository {
         })
     }
 
-    /// Fetch the given reference from the git url if it doesn't exist locally
     pub fn fetch(&self, url: &str, reference: &GitReference) -> Result<(), std::io::Error> {
         // Before fetching, checks whether the oid exists locally
         if let Some(oid) = self.ref_as_oid(reference.reference()) {
@@ -134,7 +132,6 @@ impl GitRepository {
         Ok(())
     }
 
-    /// Checkout a given oid
     pub fn checkout(&self, oid: &Oid) -> Result<(), std::io::Error> {
         if let Ok(head_oid) = self.rev_parse("HEAD") {
             // If HEAD is already our reference, no need to checkout
@@ -168,7 +165,6 @@ impl GitRepository {
         Ok(())
     }
 
-    /// checkout a branch
     pub fn checkout_branch(&self, branch_name: &str) -> Result<(), std::io::Error> {
         log::debug!(
             "Doing git checkout -b {branch_name} in {}",
@@ -219,7 +215,6 @@ impl GitRepository {
         self.checkout_branch(&branch_name)
     }
 
-    /// Checks if we have that reference in the local repo.
     pub fn get_description_file_content(
         &self,
         url: &str,
@@ -249,7 +244,7 @@ impl GitRepository {
         ))
     }
 
-    /// Does a sparse checkout with just DESCRIPTION file checkout.
+    /// Does a sparse checkout of just DESCRIPTION file checkout to speed up resolution
     pub fn sparse_checkout(
         &self,
         url: &str,
@@ -281,7 +276,6 @@ impl GitRepository {
         Ok(())
     }
 
-    /// Repo may be sparsely checked out to speed up resolution, but after resolution, sparse checkout is disabled
     pub fn disable_sparse_checkout(&self) -> Result<(), std::io::Error> {
         log::debug!("Disabling sparse checkout in {}", self.path.display());
         self.executor.execute(
@@ -315,7 +309,6 @@ impl GitRepository {
         Ok(Oid::new(output))
     }
 
-    /// Convert a reference to an Oid
     pub fn ref_as_oid(&self, reference: &str) -> Option<Oid> {
         self.rev_parse(reference).ok()
     }
