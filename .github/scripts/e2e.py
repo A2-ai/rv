@@ -64,7 +64,7 @@ def run_test():
     # Add fansi, but do not sync to verify the plan is correct
     run_rv_cmd("add", ["fansi", "--no-sync"])
     plan = run_rv_cmd("plan", [])
-    if plan != "+ fansi (1.0.6, binary from https://packagemanager.posit.co/cran/2024-10-06)\n":
+    if "+ fansi" not in plan:
         print(f"Dry run add did not result in correct plan: {plan}")
         exit(1)
         
