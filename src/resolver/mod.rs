@@ -188,6 +188,12 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
+            // For some type of packages we will always refresh directly from the source
+            // eg a branch might have added commits
+            if package.source.could_have_changed() {
+                return None;
+            }
+
             let installation_status =
                 cache.get_installation_status(&item.name, &package.version, &package.source);
             let resolved_dep =
