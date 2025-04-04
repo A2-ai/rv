@@ -108,6 +108,16 @@ impl Source {
         }
     }
 
+    /// Some sources might have changed remotely so we will want to fetch them to be sure it
+    /// hasn't changed (eg a git branch having new commits)
+    pub fn could_have_changed(&self) -> bool {
+        match self {
+            Source::Git { tag, branch, .. } => tag.is_some() || branch.is_some(),
+            Source::Url { .. } => true,
+            _ => false,
+        }
+    }
+
     pub fn is_matching(&self, dep: &ConfigDependency) -> bool {
         // TODO: verify all that + add tests
         match (self, dep) {

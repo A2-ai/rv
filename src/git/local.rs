@@ -72,22 +72,26 @@ impl GitRepository {
 
     pub fn fetch(&self, url: &str, reference: &GitReference) -> Result<(), std::io::Error> {
         // Before fetching, checks whether the oid exists locally
-        if let Some(oid) = self.ref_as_oid(reference.reference()) {
-            if self
-                .executor
-                .execute(
-                    Command::new("git")
-                        .arg("cat-file")
-                        .arg("-e")
-                        .arg(oid.as_str())
-                        .current_dir(&self.path),
-                )
-                .is_ok()
-            {
-                log::debug!(
-                    "No need to fetch {url}, reference {reference:?} is already found locally"
-                );
-                return Ok(());
+        // We only do that for commits since tag/branches could have changed remotely
+        // so finding a reference locally is not meaningful
+        if let GitReference::Commit(c) = reference {
+            if let Some(oid) = self.ref_as_oid(c) {
+                if self
+                    .executor
+                    .execute(
+                        Command::new("git")
+                            .arg("cat-file")
+                            .arg("-e")
+                            .arg(oid.as_str())
+                            .current_dir(&self.path),
+                    )
+                    .is_ok()
+                {
+                    log::debug!(
+                        "No need to fetch {url}, reference {reference:?} is already found locally"
+                    );
+                    return Ok(());
+                }
             }
         }
 
