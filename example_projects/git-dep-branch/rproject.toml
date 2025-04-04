@@ -5,5 +5,5 @@ repositories = [
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
 ]
 dependencies = [
-    { name = "rv.git.pkgA", git = "https://github.com/A2-ai/rv.git.pkgA", branch = "main", install_suggestions = true},
+    { name = "rv.git.pkgA", git = "https://github.com/A2-ai/rv.git.pkgA", branch = "test-branch", install_suggestions = true},
 ]
