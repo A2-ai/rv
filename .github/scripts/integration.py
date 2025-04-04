@@ -41,7 +41,7 @@ def run_r_test(library_path, test_folder):
         print(f"Command failed with error: {result.stderr}")
         exit(1)
         
-    if result.stderr != "":
+    if "All ok" not in result.stdout:
         print(f"Test failed with result:\n{result.stderr}")
         exit(1)
         
