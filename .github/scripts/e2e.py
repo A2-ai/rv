@@ -48,6 +48,10 @@ def run_test():
     run_rv_cmd("init", [PROJ_PATH])
     os.chdir(PROJ_PATH)
     load_r_profile()
+    # Print the content of rproject.toml
+    with open("rproject.toml", "r") as file:
+        print(">> Content of rproject.toml:")
+        print(file.read())
     
     # Add R6 and verify it loads (and .Rprofile loading sets .libPaths)
     run_rv_cmd("add", ["R6"])
