@@ -71,7 +71,7 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     let new_content = content
         .lines()
         .filter(|line| line != &format!(r#"source("{}")"#, activate_path.display()))
-        .filter(|line| line != &format!(r#"source("{}"#, rvr_path.display()))
+        .filter(|line| line != &format!(r#"source("{}")"#, rvr_path.display()))
         .collect::<Vec<_>>()
         .join("\n");
 
