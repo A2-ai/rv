@@ -1,0 +1,13 @@
+[project]
+name = "explicit-dep"
+r_version = "4.4"
+
+repositories = [
+    { alias = "rv-test-repo1", url = "https://a2-ai.github.io/rv-test-repo/repo1" },
+    { alias = "rv-test-repo2", url = "https://a2-ai.github.io/rv-test-repo/repo2" }
+]
+
+dependencies = [
+    "rv.git.pkgD",
+    { name = "rv.git.pkgA", repository = "rv-test-repo2" },
+]
