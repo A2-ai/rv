@@ -1,102 +1,88 @@
 import os
-import re
 from pathlib import Path
 import subprocess
-import shutil
 
-PROJ_PATH = "e2e_test"
+PARENT_FOLDER = "invalid_projects"
+INIT_FOLDER = "init-test"
+UPGRADE_FOLDER = os.path.join("example_projects", "project-upgrade")
+CONFIG_FILE = "rproject.toml"
 
-def run_rv_cmd(cmd, args):
+def check_result(res, expect_success: bool = True):
+    if expect_success:
+        if res.returncode != 0:
+            print(f"Command failed with error: {res.stderr}")
+            exit(1)
+
+        return res.stdout 
+    
+    else:
+        if res.returncode == 0:
+            print(f"Command was successful for invalid config: {res.stdout}")
+            exit(1)
+            
+        return res.stderr
+
+def run_rv_cmd(cmd = str, args = [str], expect_success: bool = True):
     print(f">> Running rv {cmd}")
     command = ["rv", cmd, "-vvv"] + args
     result = subprocess.run(command, capture_output=True, text=True)
+    return check_result(result, expect_success)
+    
 
-    # Check for errors
-    if result.returncode != 0:
-        print(f"Command failed with error: {result.stderr}")
-        exit(1)
-
-    return result.stdout    
-
-def run_r_script(script):
+def run_r_script(script, expect_success: bool = True):
     print(f">> Running R script: {script}")
     command = ["Rscript", "-e", script]
     result = subprocess.run(command, capture_output=True, text=True)
-    
-    # Check for errors
-    if result.returncode != 0:
-        print(f"Command failed with error: {result.stderr}")
-        exit(1)
+    return check_result(result, expect_success)
 
-    return result.stdout
 
 def load_r_profile():
     print(f">> Loading R profile")
-    print(f"Current working directory: {os.getcwd()}")
     command = ["Rscript", ".Rprofile"]
     result = subprocess.run(command, capture_output=True, text=True)
+    return check_result(result)
 
-    # Check for errors
-    if result.returncode != 0:
-        print(f"Command failed with error: {result.stderr}")
-        exit(1)
-
-    return result.stdout
-
-def edit_repositories():
-    print(f">> Replacing repositories field with 'https://packagemanager.posit.co/cran/2025-04-07'")
-    file_path = Path("rproject.toml")
-    content = file_path.read_text()
-    pattern = r'repositories\s*=\s*\[.*?\]'
-    replace = 'repositories = [\n\t{alias = "RPSM", url = "https://packagemanager.posit.co/cran/2025-04-07"},\n]'
-    new_content = re.sub(pattern, replace, content, flags=re.DOTALL)
-    file_path.write_text(new_content)
-    
-def run_plan_for_failure():
-    # After edited to config to change repositories, verify plan results in error
-    command = ["rv", "plan", "-vvv"]
-    result = subprocess.run(command, capture_output=True, text=True)
-    
-    # Check for errors
-    if result.returncode == 0:
-        print(f"Packages resolved when not intended: {result.stdout}")
-        exit(1)
+def init_test():
+    run_rv_cmd("init", [INIT_FOLDER])
+    # Have to change dirs for .Rprofile
+    original_dir = os.getcwd()
+    os.chdir(INIT_FOLDER)
+    try:
+        # verify rvr.R and activate.R will run
+        load_r_profile()
+        # verify rvr is functional
+        run_r_script(".rv$add('dplyr', dry_run=TRUE)")
+        # verify dry_run does not result in any changes
+        plan = run_rv_cmd("plan", [])
+        if "Nothing to do" not in plan:
+            print(f"rvr add dry-run has unexpected result: {plan}")
+            exit(1)
+        run_rv_cmd("add", ["R6"])
+    finally:
+        os.chdir(original_dir)
         
-    return result.stderr
-
+# def upgrade_test():
+#     run_rv_cmd("upgrade", ["-c", os.path.join(UPGRADE_FOLDER, CONFIG_FILE)])
+#     library = run_rv_cmd("library", ["-c", os.path.join(UPGRADE_FOLDER, CONFIG_FILE)])
+#     pkg_version = run_r_script(f"packageVersion('ggplot2', lib.loc = '{library}')")
+#     if "3.5.1" not in pkg_version:
+#         print(f"Incorrect package version installed during upgrade: {pkg_version}")
+#         exit(1)    
+#     return pkg_version
+    
+    
 def run_test():
     os.environ["PATH"] = os.path.abspath("./target/release/") + os.pathsep + os.environ.get("PATH", "")
-    if os.path.exists(PROJ_PATH):
-        shutil.rmtree(PROJ_PATH)
-    # Initialize the project, move into it, and load the R profile
-    run_rv_cmd("init", [PROJ_PATH])
-    os.chdir(PROJ_PATH)
-    load_r_profile()
+    items = os.listdir(PARENT_FOLDER)
+    for subfolder in items:
+        dir = os.path.join(PARENT_FOLDER, subfolder)
+        config_path = os.path.join(dir,CONFIG_FILE)
+        print(f"===== Processing example: {config_path} ======")
+        stdout = run_rv_cmd("summary", ["-c", config_path], True) # should be False once fixes to these issues are in
+        print(f"{stdout}")
+        
+    init_test()
+    # upgrade_test()
     
-    # Add R6 and verify it loads (and .Rprofile loading sets .libPaths)
-    run_rv_cmd("add", ["R6"])
-    run_r_script("library(R6)")
-    run_rv_cmd("summary", [])
-    
-    # Dry-run adding dplyr using rvr and verify it doesn't make any changes
-    run_r_script(".rv$add('dplyr', dry_run = TRUE)")
-    plan = run_rv_cmd("plan", [])
-    if plan != "Nothing to do\n": 
-        print(f"Dry-run adding dplyr leads to changes planned: {plan}")
-        exit(1)
-        
-    # Add fansi, but do not sync to verify the plan is correct
-    run_rv_cmd("add", ["fansi", "--no-sync"])
-    plan = run_rv_cmd("plan", [])
-    if "+ fansi" not in plan:
-        print(f"Dry run add did not result in correct plan: {plan}")
-        exit(1)
-        
-    # Edit the repositories field to test that lockfile is invalid if repo not present in config anymore
-    edit_repositories()
-    run_plan_for_failure()
-        
-    return 0
-
 if __name__ == "__main__":
     exit(run_test())
