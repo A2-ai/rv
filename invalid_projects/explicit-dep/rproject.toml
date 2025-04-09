@@ -1,3 +1,5 @@
+# NOTE: This config should fail to resolve since there is no resolvable version available for rv.git.pkgA
+
 [project]
 name = "explicit-dep"
 r_version = "4.4"
@@ -8,6 +10,6 @@ repositories = [
 ]
 
 dependencies = [
-    "rv.git.pkgD",
-    { name = "rv.git.pkgA", repository = "rv-test-repo2" },
+    "rv.git.pkgD", # This package has a dependency constraint of rv.git.pkgA >= 0.0.5
+    { name = "rv.git.pkgA", repository = "rv-test-repo2" }, # only 0.0.4 is available in repo2
 ]
