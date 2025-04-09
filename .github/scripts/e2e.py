@@ -4,7 +4,7 @@ import subprocess
 
 PARENT_FOLDER = "invalid_projects"
 INIT_FOLDER = "init-test"
-UPGRADE_FOLDER = os.path.join("example_projects", "project-upgrade")
+UPGRADE_FOLDER = os.path.join(PARENT_FOLDER, "lock-repos")
 CONFIG_FILE = "rproject.toml"
 
 def check_result(res, expect_success: bool = True):
