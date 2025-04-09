@@ -75,14 +75,14 @@ def upgrade_test():
 def run_test():
     os.environ["PATH"] = os.path.abspath("./target/release/") + os.pathsep + os.environ.get("PATH", "")
     items = os.listdir(PARENT_FOLDER)
-    # for subfolder in items:
-    #     dir = os.path.join(PARENT_FOLDER, subfolder)
-    #     config_path = os.path.join(dir,CONFIG_FILE)
-    #     print(f"===== Processing example: {config_path} ======")
-    #     stdout = run_rv_cmd("summary", ["-c", config_path], True) # should be False once fixes to these issues are in
-    #     print(f"{stdout}")
-    # 
-    # init_test()
+    for subfolder in items:
+        dir = os.path.join(PARENT_FOLDER, subfolder)
+        config_path = os.path.join(dir,CONFIG_FILE)
+        print(f"===== Processing example: {config_path} ======")
+        stdout = run_rv_cmd("summary", ["-c", config_path], True) # should be False once fixes to these issues are in
+        print(f"{stdout}")
+    
+    init_test()
     upgrade_test()
     
 if __name__ == "__main__":
