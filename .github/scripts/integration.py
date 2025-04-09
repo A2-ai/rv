@@ -21,8 +21,35 @@ def run_cmd(cmd, path, json = False):
 
     return result.stdout
 
+def install_tinytest():
+    print(">> Installing tinytest")
+    result = subprocess.run(["Rscript", "-e", "install.packages('.github/r_pkgs/tinytest_1.4.1.tar.gz')"], check=True)
+    if result.returncode != 0:
+        print(f"Command failed with error: {result.stderr}")
+        exit(1)
+
+    return result.stdout
+
+def run_r_test(library_path, test_folder):
+    print(">> Running R test")
+    library_path = library_path.removesuffix("\n")
+    test_folder = test_folder.replace("\\", "/")
+    # Print results to stdout for test success and stderr for test failure
+    test_cmd = f"Rscript -e \"lib_loc <- '{library_path}'; res <- tinytest::run_test_dir('{test_folder}', verbose = FALSE); write(capture.output(res), ifelse(all(as.logical(res)), stdout(), stderr()))\""
+    result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Command failed with error: {result.stderr}")
+        exit(1)
+        
+    if "All ok" not in result.stdout:
+        print(f"Test failed with result:\n{result.stderr}")
+        exit(1)
+        
+    return result.stdout
+
 
 def run_examples():
+    install_tinytest()
     items = os.listdir(PARENT_FOLDER)
     for subfolder in items:
         # This one needs lots of system deps, skipping in CI
@@ -51,6 +78,10 @@ def run_examples():
             print(f"No folders found in library for {subfolder}")
             return 1
 
+        test_folder = os.path.join(PARENT_FOLDER, subfolder, "tests")
+        if os.path.exists(test_folder):
+            res = run_r_test(library_path, test_folder)
+            print(f"Tests passed with result: {res}")
     return 0
 
 if __name__ == "__main__":
