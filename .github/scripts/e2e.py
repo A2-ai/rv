@@ -65,8 +65,8 @@ def upgrade_test():
     config_path = os.path.join(UPGRADE_FOLDER, CONFIG_FILE)
     res = run_rv_cmd("upgrade", ["-c", config_path])
     library = run_rv_cmd("library", ["-c", os.path.join(UPGRADE_FOLDER, CONFIG_FILE)]).strip()
-    pkg_version = run_r_script(f"packageVersion('ggplot2', lib.loc = '{library}')")
-    if "3.5.1" not in pkg_version:
+    pkg_version = run_r_script(f"packageVersion('rv.git.pkgA', lib.loc = '{library}')")
+    if "0.0.4" not in pkg_version:
         print(f"Incorrect package version installed during upgrade: {pkg_version}")
         exit(1)    
     return pkg_version
