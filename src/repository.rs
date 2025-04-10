@@ -17,7 +17,7 @@ pub struct RepositoryDatabase {
     // depending on the R version but we keep the Vec so the resolver code can work
     // for both binary and source
     // But each major.minor R version will get different binary package database
-    pub binary_packages: HashMap<[u32; 2], HashMap<String, Vec<Package>>>,
+    pub(crate) binary_packages: HashMap<[u32; 2], HashMap<String, Vec<Package>>>,
 }
 
 impl RepositoryDatabase {
