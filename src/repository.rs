@@ -11,8 +11,8 @@ use crate::package::{Version, VersionRequirement};
 /// All of the binary and source packages in the repository specified by the url.
 #[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
 pub struct RepositoryDatabase {
-    pub(crate) url: String,
-    pub source_packages: HashMap<String, Vec<Package>>,
+    pub url: String,
+    pub(crate) source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
     // for both binary and source
