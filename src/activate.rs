@@ -21,11 +21,14 @@ pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), Act
         });
     }
 
-    write_activate_file(dir)?;
-    add_rprofile_source_call(dir, ACTIVATE_FILE_NAME)?;
+    let is_home = is_home_dir(&dir.canonicalize()?);
+    let (activate_source_path, rvr_source_path) = scripts_as_paths(is_home);
+
+    write_activate_file(dir, is_home)?;
+    add_rprofile_source_call(dir, activate_source_path)?;
     write_rvr_file(dir)?;
     if !no_r_environment {
-        add_rprofile_source_call(dir, RVR_FILE_NAME)?;
+        add_rprofile_source_call(dir, rvr_source_path)?;
     }
     Ok(())
 }
@@ -61,11 +64,14 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         return Ok(());
     }
 
+    let is_home = is_home_dir(&dir.canonicalize()?);
+    let (activate_path, rvr_path) = scripts_as_paths(is_home);
+
     let content = read_to_string(&rprofile_path)?;
     let new_content = content
         .lines()
-        .filter(|line| line != &format!(r#"source("{ACTIVATE_FILE_NAME}")"#))
-        .filter(|line| line != &format!(r#"source("{RVR_FILE_NAME}"#))
+        .filter(|line| line != &format!(r#"source("{}")"#, activate_path.display()))
+        .filter(|line| line != &format!(r#"source("{}")"#, rvr_path.display()))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -74,13 +80,24 @@ pub fn deactivate(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
     Ok(())
 }
 
-fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
-    let dir = dir.as_ref().canonicalize()?;
-
-    let template = ACTIVATE_FILE_TEMPLATE.to_string();
-    let global_wd_content = if etcetera::home_dir()
-        .map(|home| home == dir)
+fn is_home_dir(dir: impl AsRef<Path>) -> bool {
+    etcetera::home_dir()
+        .map(|home| home == dir.as_ref())
         .unwrap_or(false)
+}
+
+fn scripts_as_paths(is_home: bool) -> (PathBuf, PathBuf) {
+    if is_home {
+        let home = PathBuf::from("~");
+        (home.join(ACTIVATE_FILE_NAME), home.join(RVR_FILE_NAME))
+    } else {
+        (ACTIVATE_FILE_NAME.into(), RVR_FILE_NAME.into())
+    }
+}
+
+fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), ActivateError> {
+    let template = ACTIVATE_FILE_TEMPLATE.to_string();
+    let global_wd_content = if is_home
     {
         r#"
         owd <- getwd()
@@ -97,17 +114,17 @@ fn write_activate_file(dir: impl AsRef<Path>) -> Result<(), ActivateError> {
         .replace("%global wd content%", global_wd_content);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
-    let activate_file_name = &dir.join(ACTIVATE_FILE_NAME);
+    let activate_file_name = dir.as_ref().join(ACTIVATE_FILE_NAME);
     if let Some(parent) = activate_file_name.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let activate_content = read_to_string(activate_file_name).unwrap_or_default();
+    let activate_content = read_to_string(&activate_file_name).unwrap_or_default();
     if content == activate_content {
         return Ok(());
     }
 
     // Write the content of activate file
-    write(activate_file_name, content)?;
+    write(&activate_file_name, content)?;
     Ok(())
 }
 
