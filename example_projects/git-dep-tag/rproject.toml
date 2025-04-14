@@ -6,5 +6,5 @@ repositories = [
 ]
 dependencies = [
     # This has a remote on github::a2-ai/rv.git.pkgA
-    { name = "rv.git.pkgB", git = "https://github.com/A2-ai/rv.git.pkgB/", tag ="v1.0", install_suggestions = true},
+    { name = "rv.git.pkgB", git = "https://github.com/A2-ai/rv.git.pkgB/", tag ="v4.0", install_suggestions = true},
 ]

@@ -1,0 +1,12 @@
+#NOTE: do not remove/update the lockfile for this project since we are testing 
+# if a repository is no longer contained in the lockfile results in an error
+
+[project]
+name = "lock-repos"
+r_version = "4.4"
+repositories = [
+    {alias = "rv-test-repo", url = "https://a2-ai.github.io/rv-test-repo/repo2"}
+]
+dependencies = [
+    "rv.git.pkgA"
+]

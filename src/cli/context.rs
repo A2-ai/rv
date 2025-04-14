@@ -87,7 +87,9 @@ impl CliContext {
         let can_resolve = self
             .lockfile
             .as_ref()
-            .and_then(|l| Some(l.can_resolve(self.config.dependencies())))
+            .and_then(|l| {
+                Some(l.can_resolve(self.config.dependencies(), self.config.repositories()))
+            })
             .unwrap_or(false);
 
         if !can_resolve {

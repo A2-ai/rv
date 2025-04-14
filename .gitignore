@@ -3,6 +3,7 @@
 out
 src/tests/RCMD/
 example_projects/*/rv
+invalid_projects/*/rv
 example_projects/*/rv.lock
 !example_projects/archive/rv.lock
 from*/

@@ -3,7 +3,7 @@ name = "test"
 r_version = "4.4"
 repositories = []
 # The lockfile is generated without install_suggestions = true
-# so a new call to the resolution should
+# so a new call to the resolution should invalidate the lockfile
 dependencies = [
     { name = "A3", install_suggestions = true }
 ]
