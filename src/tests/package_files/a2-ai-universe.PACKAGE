@@ -1,0 +1,79 @@
+Package: blake3r
+Version: 0.0.1
+License: MIT + file LICENSE
+NeedsCompilation: yes
+Filesize: 76790
+SHA256: 67321cc83ede2eec61675a2ed6f9ce775b3ad9ad74cfeb30c05b23fff1246f2b
+Suggests: testthat (>= 3.0.0), withr
+MD5sum: 457f75b7d91c0078c8152075112ed78e
+
+Package: dvs
+Version: 0.0.2
+License: MIT + file LICENSE
+NeedsCompilation: yes
+Filesize: 125099
+SHA256: 3b11d11a7325096240896d937a0b32294b792f9e2d4aa5fcc453e9f0e26fdf84
+Imports: rlang
+Suggests: testthat (>= 3.0.0), fs, jsonlite, withr, stringr, yaml, processx
+MD5sum: 0a21818065b768998be9ce4cd12dcec8
+
+Package: ghqc
+Version: 0.3.3
+License: GPL (>= 3) + file LICENSE
+NeedsCompilation: no
+Filesize: 528606
+SHA256: 10a053cf7e163f4b9a497825360824d59e2835de736546e364a0adc6ac1705d8
+Depends: R (>= 2.10)
+Imports: httpuv, rstudioapi, withr, glue, rlang, cli, fs, yaml
+Suggests: gert, pak (>= 0.8.0)
+MD5sum: 2f5f8594e04aa59e803f8558cc13b378
+
+Package: ghqc.app
+Version: 0.4.2
+License: GPL (>= 3) + file LICENSE
+NeedsCompilation: no
+Filesize: 219789
+SHA256: 573969afb132477ce095d6f6457b00e63b0556629cd2ea7618b9ff1473619fda
+Imports: fs (>= 1.6.3), gert (>= 2.0.1), gh (>= 1.4.0), glue (>= 1.6.2), httr2 (>= 1.0.0), miniUI (>= 0.1.1.1), kableExtra (>= 1.3.4), purrr (>= 1.0.2), rlang (>= 1.1.3), shiny (>= 1.8.0), stringr (>= 1.5.1), waiter (>= 0.2.5), withr (>= 3.0.0), yaml (>= 2.3.7), shinyjs (>= 2.1.0), dplyr (>= 1.1.4), diffobj (>= 0.3.5), processx (>= 3.8.3), rmarkdown (>= 2.24), rvest (>= 1.0.3), digest (>= 0.6.34), jsTreeR (>= 2.5.0), log4r (>= 0.4.3), rprojroot (>= 2.0.3), gitcreds (>= 0.1.2), shinyvalidate, xml2
+Suggests: testthat (>= 3.0.0), httptest, knitr, shinytest2
+MD5sum: 87f39863cce17374bf003e67f1fa5bbb
+
+Package: osinfo
+Version: 0.0.1
+License: MIT + file LICENSE
+NeedsCompilation: yes
+Filesize: 75188
+SHA256: a484d15fa8d399f285c6a1028acc955097ece83f57711c15b6b0d2abf969675f
+Suggests: testthat (>= 3.0.0)
+MD5sum: 9cdcbce44bc9a706f526dd2d21c32745
+
+Package: reportifyr
+Version: 0.2.5
+License: GPL (>= 3)
+NeedsCompilation: no
+Filesize: 2158407
+SHA256: 158dc8af3afac28980bb0b3b215eb3a9ae8ba1f40cd848828b0b1c9a74718a9d
+Depends: R (>= 2.10)
+Imports: assertthat, cli, digest, dplyr, flextable, gert, ggplot2, here, jsonlite, log4r, officer, processx, purrr, rlang, rstudioapi, tictoc, yaml
+Suggests: knitr, rmarkdown, testthat (>= 3.0.0)
+MD5sum: 83b8ba80aa6e9b08d6bdee34cd025c66
+
+Package: scicalc
+Version: 0.1.1
+License: MIT + file LICENSE
+NeedsCompilation: no
+Filesize: 249727
+SHA256: 1f9fd1eb2db72b8e8dc596e036804c47f7df4a5d85f7e0f386b48d70a41fff99
+Imports: arrow, checkmate, digest, dplyr, fs, haven, magrittr, readr, readxl, rlang, stats, stringr
+Suggests: knitr, rmarkdown, testthat (>= 3.0.0), ggplot2, here, purrr, pzfx, tools, tidyr
+MD5sum: efb885d0359014a526522422a88f2523
+
+Package: slurmtools
+Version: 0.1.2
+License: GPL (>= 3)
+NeedsCompilation: no
+Filesize: 844260
+SHA256: 6400ec1d6c1a2a91ec6b28e203d8e16de038797145c68a68c8672e5fc4432894
+Imports: brio, dplyr, fs, glue, jsonlite, processx, purrr, rlang, tibble, utils, whisker, withr, here, cli, stringi, hms, lifecycle
+Suggests: knitr, rmarkdown, testthat (>= 3.0.0), bbr
+MD5sum: 907b2a050c09f5627b6a8b94250d162f

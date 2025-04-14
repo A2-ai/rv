@@ -136,6 +136,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     let mut resolver = Resolver::new(
         &context.project_dir,
         &context.databases,
+        context
+            .config
+            .repositories()
+            .iter()
+            .map(|x| x.url())
+            .collect(),
         &context.r_version,
         context.lockfile.as_ref(),
     );
@@ -204,7 +210,7 @@ fn _sync(
             if changes.is_empty() {
                 println!("Nothing to do");
             }
-            if !dry_run {
+            if !dry_run && context.config.use_lockfile() {
                 if resolved.is_empty() {
                     // delete the lockfiles if there are no dependencies
                     let lockfile_path = context.lockfile_path();

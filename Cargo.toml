@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
@@ -30,7 +30,7 @@ filetime = "0.2.25"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"
-ureq = "3"
+ureq = { version = "3", features = ["platform-verifier"] }
 sha2 = "0.10"
 crossbeam = "0.8.4"
 indicatif = "0.17.11"

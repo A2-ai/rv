@@ -5,6 +5,9 @@ use std::{fs, io, io::Write, time::Duration};
 
 use crate::fs::untar_archive;
 use ureq::http::{HeaderName, HeaderValue};
+use ureq::Agent;
+
+use ureq::tls::{RootCerts, TlsConfig};
 
 /// Downloads a remote content to the given writer.
 /// Returns the number of bytes written to the writer, 0 for a 404 or an empty 200
@@ -13,7 +16,17 @@ pub fn download<W: Write>(
     writer: &mut W,
     headers: Vec<(&str, String)>,
 ) -> Result<u64, HttpError> {
-    let mut request_builder = ureq::get(url);
+    let agent = Agent::config_builder()
+        .tls_config(
+            TlsConfig::builder()
+                .root_certs(RootCerts::PlatformVerifier)
+                .build(),
+        )
+        .timeout_global(Some(Duration::from_secs(200)))
+        .build()
+        .new_agent();
+
+    let mut request_builder = agent.get(url);
 
     {
         let req_headers = request_builder.headers_mut().unwrap();
@@ -24,15 +37,10 @@ pub fn download<W: Write>(
             );
         }
     }
-
-    let request = request_builder
-        .config()
-        .timeout_global(Some(Duration::from_secs(200)))
-        .build();
     log::trace!("Starting download of file from {url}");
     let start_time = Instant::now();
 
-    match request.call() {
+    match request_builder.call() {
         Ok(mut res) => {
             let mut reader = BufReader::new(res.body_mut().with_config().reader());
             let out = std::io::copy(&mut reader, writer).map_err(|e| HttpError {
