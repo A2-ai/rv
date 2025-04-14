@@ -157,7 +157,14 @@ impl Source {
             (
                 Source::Repository { repository: r1 },
                 ConfigDependency::Detailed { repository: r2, .. },
-            ) => Some(r1) == r2.as_ref(),
+            ) => {
+                // We are only comparing the repositories here
+                if let Some(r) = r2 {
+                    r == r1
+                } else {
+                    true
+                }
+            }
             (Source::Repository { .. }, ConfigDependency::Simple(..)) => true,
             _ => false,
         }
@@ -302,6 +309,20 @@ impl LockedPackage {
     pub fn install_suggests(&self) -> bool {
         !self.suggests.is_empty()
     }
+
+    pub fn is_matching(&self, dep: &ConfigDependency, repo_urls: &HashSet<&str>) -> bool {
+        if dep.install_suggestions() && !self.install_suggests() {
+            return false;
+        }
+
+        if let Source::Repository { ref repository } = self.source {
+            if !repo_urls.contains(repository.as_str()) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -416,7 +437,7 @@ impl Lockfile {
     ) -> Option<&LockedPackage> {
         if let Some(p) = self.packages.iter().find(|p| p.name == name) {
             if let Some(d) = dep {
-                if p.source.is_matching(d) && p.install_suggests() == d.install_suggestions() {
+                if p.source.is_matching(d) {
                     return Some(p);
                 }
             } else {
@@ -449,16 +470,8 @@ impl Lockfile {
         let repo_urls = repos.iter().map(|x| x.url()).collect::<HashSet<_>>();
         for d in deps {
             if let Some(pkg) = self.get_package(d.name(), Some(d)) {
-                if d.install_suggestions() && !pkg.install_suggests() {
+                if !pkg.is_matching(d, &repo_urls) {
                     return false;
-                }
-                match pkg.source {
-                    Source::Repository { ref repository } => {
-                        if !repo_urls.contains(repository.as_str()) {
-                            return false;
-                        }
-                    }
-                    _ => ()
                 }
             } else {
                 return false;

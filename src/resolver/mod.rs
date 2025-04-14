@@ -95,6 +95,8 @@ pub struct Resolver<'d> {
     /// The last should get priority over previous repositories
     /// (db, force_source)
     repositories: &'d [(RepositoryDatabase, bool)],
+    /// We might not have loaded the databases but we still want their urls
+    repo_urls: HashSet<&'d str>,
     r_version: &'d Version,
     /// If we have a lockfile for the resolver, we will skip looking at the database for any package
     /// listed in it
@@ -107,12 +109,14 @@ impl<'d> Resolver<'d> {
     pub fn new(
         project_dir: impl AsRef<Path>,
         repositories: &'d [(RepositoryDatabase, bool)],
+        repo_urls: HashSet<&'d str>,
         r_version: &'d Version,
         lockfile: Option<&'d Lockfile>,
     ) -> Self {
         Self {
             project_dir: project_dir.as_ref().into(),
             repositories,
+            repo_urls,
             r_version,
             lockfile,
             show_progress_bar: false,
@@ -388,9 +392,10 @@ impl<'d> Resolver<'d> {
                 parent: None,
                 remote: None,
                 local_path: d.local_path(),
-                matching_in_lockfile: self
-                    .lockfile
-                    .map(|l| l.get_package(d.name(), Some(d)).is_some()),
+                matching_in_lockfile: self.lockfile.and_then(|l| {
+                    l.get_package(d.name(), Some(d))
+                        .map(|p| p.is_matching(d, &self.repo_urls))
+                }),
             })
             .collect();
 
@@ -657,7 +662,7 @@ mod tests {
             }
             res
         } else {
-            let mut repo = RepositoryDatabase::new("");
+            let mut repo = RepositoryDatabase::new("http://cran");
             repo.parse_source(parts[1]);
             vec![(repo, false)]
         };
@@ -732,8 +737,13 @@ mod tests {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p, &dbs);
             let (_cache_dir, cache) = setup_cache(&r_version);
-            let resolver =
-                Resolver::new(Path::new("."), &repositories, &r_version, Some(&lockfile));
+            let resolver = Resolver::new(
+                Path::new("."),
+                &repositories,
+                repositories.iter().map(|(x, _)| x.url.as_str()).collect(),
+                &r_version,
+                Some(&lockfile),
+            );
             let resolution = resolver.resolve(
                 &config.dependencies(),
                 config.prefer_repositories_for(),

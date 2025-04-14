@@ -136,6 +136,12 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     let mut resolver = Resolver::new(
         &context.project_dir,
         &context.databases,
+        context
+            .config
+            .repositories()
+            .iter()
+            .map(|x| x.url())
+            .collect(),
         &context.r_version,
         context.lockfile.as_ref(),
     );
