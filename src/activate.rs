@@ -114,17 +114,17 @@ fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), Activ
         .replace("%global wd content%", global_wd_content);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
-    let activate_file_name = &dir.as_ref().join(ACTIVATE_FILE_NAME);
+    let activate_file_name = dir.as_ref().join(ACTIVATE_FILE_NAME);
     if let Some(parent) = activate_file_name.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let activate_content = read_to_string(activate_file_name).unwrap_or_default();
+    let activate_content = read_to_string(&activate_file_name).unwrap_or_default();
     if content == activate_content {
         return Ok(());
     }
 
     // Write the content of activate file
-    write(activate_file_name, content)?;
+    write(&activate_file_name, content)?;
     Ok(())
 }
 
