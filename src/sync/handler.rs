@@ -125,20 +125,19 @@ impl<'a> SyncHandler<'a> {
         let deps_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name.as_ref(), d)).collect();
 
         for name in self.library.packages.keys() {
-            if deps_by_name
-                .get(name.as_str())
-                .map(|d| self.library.contains_package(d))
-                .unwrap_or(false)
-            {
-                // If we don't have a lockfile, we cannot trust anything present in the library
-                if self.has_lockfile {
-                    deps_seen.insert(name.as_str());
-                } else if matches!(deps_by_name[name.as_str()].source, Source::Local { .. }) {
-                    deps_to_copy.insert(name.as_str());
+            if let Some(dep) = deps_by_name.get(name.as_str()) {
+                // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
+                if self.library.contains_package(dep) && dep.from_lockfile {
+                    // If we don't have a lockfile, we cannot trust anything present in the library
+                    if self.has_lockfile {
+                        deps_seen.insert(name.as_str());
+                    } else if matches!(deps_by_name[name.as_str()].source, Source::Local { .. }) {
+                        deps_to_copy.insert(name.as_str());
+                    }
+                    continue;
                 }
-            } else {
-                deps_to_remove.insert((name.as_str(), true));
             }
+            deps_to_remove.insert((name.as_str(), true));
         }
 
         // Lastly, remove any package that we can't really access
