@@ -135,7 +135,7 @@ where
 pub struct VersionRequirement {
     /// The version that the operator is compared against
     pub version: Version,
-    op: Operator,
+    pub op: Operator,
 }
 
 impl VersionRequirement {
