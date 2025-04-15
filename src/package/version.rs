@@ -2,9 +2,10 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
+use std::hash::Hash;
 use std::str::FromStr;
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum Operator {
     Equal,
     Greater,
@@ -99,6 +100,12 @@ impl PartialEq for Version {
     }
 }
 
+impl Hash for Version {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.original.hash(state);
+    }
+}
+
 impl Eq for Version {}
 
 impl Ord for Version {
@@ -127,7 +134,8 @@ where
 /// A package can require specific version for some versions.
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==
-#[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
+#[serde(try_from = "String")]
 pub struct VersionRequirement {
     pub(crate) version: Version,
     op: Operator,
@@ -150,7 +158,7 @@ impl VersionRequirement {
 }
 
 impl FromStr for VersionRequirement {
-    type Err = ();
+    type Err = String;
 
     // s is for format `(>= 4.5)`
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -184,6 +192,14 @@ impl FromStr for VersionRequirement {
             version: version.unwrap(),
             op: op.unwrap(),
         })
+    }
+}
+
+impl TryFrom<String> for VersionRequirement {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 

@@ -3,7 +3,7 @@ use serde::Deserialize;
 use crate::cache::InstallationStatus;
 use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
-use crate::package::{InstallationDependencies, Package, PackageRemote, PackageType};
+use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
 use crate::{Http, HttpDownload, Version, VersionRequirement};
 use std::borrow::Cow;
@@ -20,8 +20,8 @@ pub struct ResolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
     pub(crate) version: Cow<'d, Version>,
     pub(crate) source: Source,
-    pub(crate) dependencies: Vec<Cow<'d, str>>,
-    pub(crate) suggests: Vec<Cow<'d, str>>,
+    pub(crate) dependencies: Vec<Cow<'d, Dependency>>,
+    pub(crate) suggests: Vec<Cow<'d, Dependency>>,
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
@@ -59,13 +59,9 @@ impl<'d> ResolvedDependency<'d> {
             dependencies: package
                 .dependencies
                 .iter()
-                .map(|d| Cow::Borrowed(d.as_str()))
+                .map(|d| Cow::Borrowed(d))
                 .collect(),
-            suggests: package
-                .suggests
-                .iter()
-                .map(|s| Cow::Borrowed(s.as_str()))
-                .collect(),
+            suggests: package.suggests.iter().map(|d| Cow::Borrowed(d)).collect(),
             // TODO: what should we do here?
             kind: if package.force_source {
                 PackageType::Source
@@ -113,16 +109,8 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Borrowed(&package.name),
             version: Cow::Borrowed(&package.version),
             source,
-            dependencies: deps
-                .direct
-                .iter()
-                .map(|d| Cow::Borrowed(d.name()))
-                .collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|d| Cow::Borrowed(d.name()))
-                .collect(),
+            dependencies: deps.direct.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            suggests: deps.suggests.iter().map(|d| Cow::Borrowed(*d)).collect(),
             kind: package_type,
             force_source,
             install_suggests,
@@ -148,15 +136,11 @@ impl<'d> ResolvedDependency<'d> {
         let deps = package.dependencies_to_install(install_suggests);
 
         let res = Self {
-            dependencies: deps
-                .direct
-                .iter()
-                .map(|d| Cow::Owned(d.name().to_string()))
-                .collect(),
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|s| Cow::Owned(s.name().to_string()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind: PackageType::Source,
             force_source: true,
@@ -183,15 +167,11 @@ impl<'d> ResolvedDependency<'d> {
     ) -> (Self, InstallationDependencies) {
         let deps = package.dependencies_to_install(install_suggests);
         let res = Self {
-            dependencies: deps
-                .direct
-                .iter()
-                .map(|d| Cow::Owned(d.name().to_string()))
-                .collect(),
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|s| Cow::Owned(s.name().to_string()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind: PackageType::Source,
             force_source: true,
@@ -219,15 +199,11 @@ impl<'d> ResolvedDependency<'d> {
     ) -> (Self, InstallationDependencies) {
         let deps = package.dependencies_to_install(install_suggests);
         let res = Self {
-            dependencies: deps
-                .direct
-                .iter()
-                .map(|d| Cow::Owned(d.name().to_string()))
-                .collect(),
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|s| Cow::Owned(s.name().to_string()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind,
             force_source: false,

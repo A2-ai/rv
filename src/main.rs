@@ -158,9 +158,22 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
+
         for d in resolution.failed {
             eprintln!("    {d}");
         }
+
+        for (name, requirements) in resolution.req_failures {
+            eprintln!(
+                "    {name}: {}",
+                requirements
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
         ::std::process::exit(1)
     }
 
