@@ -123,7 +123,7 @@ pub enum MigrateSubcommand {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum SyncMode {
     Default,
     FullUpgrade,
@@ -132,7 +132,11 @@ enum SyncMode {
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
-fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
+fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Vec<ResolvedDependency<'a>> {
+    let lockfile = match sync_mode {
+        SyncMode::Default => &context.lockfile,
+        SyncMode::FullUpgrade => &None,
+    };
     let mut resolver = Resolver::new(
         &context.project_dir,
         &context.databases,
@@ -143,13 +147,13 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
             .map(|x| x.url())
             .collect(),
         &context.r_version,
-        context.lockfile.as_ref(),
+        lockfile.as_ref(),
     );
     if context.show_progress_bar {
         resolver.show_progress_bar();
     }
 
-    let resolution = resolver.resolve(
+    let mut resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
@@ -164,6 +168,14 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
         ::std::process::exit(1)
     }
 
+    if sync_mode == &SyncMode::FullUpgrade && context.lockfile.is_some() {
+        for dep in resolution.found.iter_mut() {
+            if context.lockfile.as_ref().unwrap().contains_resolved_dep(dep) {
+                dep.from_lockfile = true;
+            }
+        }
+    }
+
     resolution.found
 }
 
@@ -176,12 +188,8 @@ fn _sync(
     if !has_logs_enabled {
         context.show_progress_bar();
     }
-    match sync_mode {
-        SyncMode::Default => (),
-        SyncMode::FullUpgrade => context.lockfile = None,
-    }
     context.load_databases_if_needed()?;
-    let resolved = resolve_dependencies(&context);
+    let resolved = resolve_dependencies(&context, &sync_mode);
 
     match timeit!(
         if dry_run {
@@ -396,7 +404,7 @@ fn try_main() -> Result<()> {
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
-                resolve_dependencies(&context),
+                resolve_dependencies(&context, &SyncMode::Default),
             );
             if json {
                 println!(
@@ -451,7 +459,7 @@ fn try_main() -> Result<()> {
         Command::Summary { json } => {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
-            let resolved = resolve_dependencies(&context);
+            let resolved = resolve_dependencies(&context, &SyncMode::Default);
             let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,
