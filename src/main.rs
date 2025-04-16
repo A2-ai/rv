@@ -176,11 +176,11 @@ fn _sync(
     if !has_logs_enabled {
         context.show_progress_bar();
     }
-    context.load_databases_if_needed()?;
     match sync_mode {
         SyncMode::Default => (),
         SyncMode::FullUpgrade => context.lockfile = None,
     }
+    context.load_databases_if_needed()?;
     let resolved = resolve_dependencies(&context);
 
     match timeit!(
