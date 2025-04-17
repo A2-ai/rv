@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -137,6 +138,7 @@ fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Ve
         SyncMode::Default => &context.lockfile,
         SyncMode::FullUpgrade => &None,
     };
+
     let mut resolver = Resolver::new(
         &context.project_dir,
         &context.databases,
@@ -149,6 +151,7 @@ fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Ve
         &context.r_version,
         lockfile.as_ref(),
     );
+
     if context.show_progress_bar {
         resolver.show_progress_bar();
     }
@@ -168,12 +171,18 @@ fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Ve
         ::std::process::exit(1)
     }
 
+    // If upgrade and there is a lockfile, we want to adjust the resolved dependencies s.t. if the resolved dep has the same
+    // name and version in the lockfile, we say that it was resolved from the lockfile
     if sync_mode == &SyncMode::FullUpgrade && context.lockfile.is_some() {
-        for dep in resolution.found.iter_mut() {
-            if context.lockfile.as_ref().unwrap().contains_resolved_dep(dep) {
-                dep.from_lockfile = true;
-            }
-        }
+        resolution
+            .found
+            .par_iter_mut()
+            .map(|dep| {
+                if context.lockfile.as_ref().unwrap().contains_resolved_dep(dep) {
+                    dep.from_lockfile = true;
+                }
+            })
+            .collect::<Vec<_>>();
     }
 
     resolution.found
@@ -188,7 +197,14 @@ fn _sync(
     if !has_logs_enabled {
         context.show_progress_bar();
     }
-    context.load_databases_if_needed()?;
+
+    // If the sync mode is an upgrade, we want to load the databases even if we resolve from the lockfile 
+    // because we ignore the lockfile during initial resolution
+    match sync_mode {
+        SyncMode::Default => context.load_databases_if_needed()?,
+        SyncMode::FullUpgrade => context.load_databases()?,
+    }
+
     let resolved = resolve_dependencies(&context, &sync_mode);
 
     match timeit!(
