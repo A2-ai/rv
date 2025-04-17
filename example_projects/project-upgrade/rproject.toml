@@ -4,7 +4,8 @@
 name = "project-upgrade"
 r_version = "4.4"
 repositories = [
-    {alias = "PPM", url = "https://packagemanager.posit.co/cran/2024-12-22"}
+    {alias = "PPM", url = "https://packagemanager.posit.co/cran/2025-04-12"},
+    {alias = "PPM-old", url = "https://packagemanager.posit.co/cran/2025-04-01"}
 ]
 
 dependencies = [

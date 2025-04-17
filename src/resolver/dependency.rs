@@ -27,7 +27,7 @@ pub struct ResolvedDependency<'d> {
     pub(crate) kind: PackageType,
     pub(crate) installation_status: InstallationStatus,
     pub(crate) path: Option<Cow<'d, str>>,
-    pub(crate) from_lockfile: bool,
+    pub from_lockfile: bool,
     pub(crate) from_remote: bool,
     // Remotes are only for local/git deps so the values will always be owned
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
