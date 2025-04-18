@@ -29,7 +29,7 @@ impl Resolution<'_> {
             solver.add_package(&package.name, &package.version);
             for dep in &package.dependencies {
                 if let Some(req) = dep.version_requirement() {
-                    solver.add_requirement(&dep.name(), req, &package.name);
+                    solver.add_requirement(dep.name(), req, &package.name);
                 }
             }
         }

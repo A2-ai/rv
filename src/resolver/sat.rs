@@ -108,7 +108,7 @@ impl<'d> DependencySolver<'d> {
             // Find all versions of the required package that satisfy the requirement
             if let Some(pkgs) = self.packages.get(req.package) {
                 for required_pkg in pkgs {
-                    if req.requirement.is_satisfied(&required_pkg.version) {
+                    if req.requirement.is_satisfied(required_pkg.version) {
                         if let Some(&required_var) =
                             pkg_version_to_var.get(&(required_pkg.name, required_pkg.version))
                         {
@@ -175,6 +175,11 @@ impl<'d> DependencySolver<'d> {
         var_index: i32,
         num_vars: i32,
     ) -> bool {
+        // Quick check for empty clauses - formula is unsatisfiable
+        if formula.iter().any(|clause| clause.is_empty()) {
+            return false;
+        }
+
         // If all variables have been assigned, check if formula is satisfied
         if var_index > num_vars {
             return self.is_satisfied(formula, assignment);
@@ -254,11 +259,7 @@ impl<'d> DependencySolver<'d> {
         current_clauses
             .iter()
             .filter_map(|(idx, _)| {
-                if let Some(req_idx) = clauses_to_req.get(idx) {
-                    Some(self.requirements[*req_idx].clone())
-                } else {
-                    None
-                }
+                clauses_to_req.get(idx).map(|req_idx| self.requirements[*req_idx].clone())
             })
             .collect()
     }
@@ -289,12 +290,18 @@ impl<'d> DependencySolver<'d> {
     }
 
     pub fn solve(&self) -> Result<HashMap<&'d str, &'d Version>, Vec<PackageRequirement<'d>>> {
+        log::debug!(
+            "Solving dependencies for {} packages and {} version requirements",
+            self.packages.len(),
+            self.requirements.len()
+        );
         let pkg_version_to_var = self.get_variable_mappings();
         let (clauses, clauses_to_req) = self.create_clauses(&pkg_version_to_var);
 
         let var_to_pkg_version: HashMap<_, _> =
             pkg_version_to_var.iter().map(|(k, v)| (v, k)).collect();
 
+        log::debug!("Starting SAT solving");
         let assignment = self.solve_sat(&clauses, var_to_pkg_version.len() as i32);
 
         // No solution exists
@@ -357,6 +364,7 @@ mod tests {
         let resolver = get_resolver(&packages, &[]);
         let result = resolver.solve().unwrap();
         assert_eq!(result.len(), 1);
+        assert_eq!(result["A"].original, "1.0.0");
     }
 
     #[test]
@@ -368,6 +376,7 @@ mod tests {
         let resolver = get_resolver(&packages, &[]);
         let result = resolver.solve().unwrap();
         assert_eq!(result.len(), 1);
+        assert_eq!(result["A"].original, "1.0.0");
     }
 
     #[test]

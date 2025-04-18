@@ -59,9 +59,9 @@ impl<'d> ResolvedDependency<'d> {
             dependencies: package
                 .dependencies
                 .iter()
-                .map(|d| Cow::Borrowed(d))
+                .map(Cow::Borrowed)
                 .collect(),
-            suggests: package.suggests.iter().map(|d| Cow::Borrowed(d)).collect(),
+            suggests: package.suggests.iter().map(Cow::Borrowed).collect(),
             // TODO: what should we do here?
             kind: if package.force_source {
                 PackageType::Source

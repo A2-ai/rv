@@ -1,0 +1,17 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "repo1", url = "http://repo1" },
+    { alias = "repo2", url = "http://repo2" }
+]
+dependencies = [
+    # Present in both repos but it should pick it up from repo1
+    "rv.git.pkgA",
+]
+---
+repos = [
+    {name = "repo1", source = "test_repo1", force_source = false},
+    {name = "repo2", source = "test_repo2", force_source = false},
+]
+---
