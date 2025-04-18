@@ -7,6 +7,8 @@ use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 mod dependency;
+mod result;
+mod sat;
 
 use crate::fs::untar_archive;
 use crate::git::{GitReference, GitRemote};
@@ -18,18 +20,7 @@ use crate::package::{
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Resolution<'d> {
-    pub found: Vec<ResolvedDependency<'d>>,
-    pub failed: Vec<UnresolvedDependency<'d>>,
-}
-
-impl Resolution<'_> {
-    pub fn is_success(&self) -> bool {
-        self.failed.is_empty()
-    }
-}
+pub use result::Resolution;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct QueueItem<'d> {
@@ -206,7 +197,9 @@ impl<'d> Resolver<'d> {
                 .dependencies
                 .iter()
                 .chain(&package.suggests)
-                .map(|p| QueueItem::name_and_parent_only(Cow::Borrowed(p), item.name.clone()))
+                .map(|p| {
+                    QueueItem::name_and_parent_only(Cow::Borrowed(p.name()), item.name.clone())
+                })
                 .collect();
             Some((resolved_dep, items))
         } else {
@@ -381,6 +374,14 @@ impl<'d> Resolver<'d> {
     ) -> Resolution<'d> {
         let mut result = Resolution::default();
         let mut processed = HashSet::with_capacity(dependencies.len() * 10);
+        // Top level dependencies can require specific repos.
+        // We should not try to resolve those from anywhere else even if they dependencies of other
+        // packages
+        let repo_required: HashSet<_> = dependencies
+            .iter()
+            .filter(|d| d.r_repository().is_some())
+            .map(|d| d.name())
+            .collect();
         let mut queue: VecDeque<_> = dependencies
             .iter()
             .map(|d| QueueItem {
@@ -400,9 +401,9 @@ impl<'d> Resolver<'d> {
             .collect();
 
         while let Some(item) = queue.pop_front() {
-            // If we have already found that dependency, skip it
-            // TODO: maybe different version req? we can cross that bridge later
-            if processed.contains(item.name.as_ref()) {
+            // If we have already found that dependency and it has a forced repo, skip it
+            if processed.contains(item.name.as_ref()) && repo_required.contains(item.name.as_ref())
+            {
                 continue;
             }
 
@@ -571,6 +572,9 @@ impl<'d> Resolver<'d> {
                 }
             }
         }
+
+        result.finalize();
+
         result
     }
 }
@@ -754,6 +758,7 @@ mod tests {
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), resolution.found.clone());
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();
+            println!("{:#?}", resolution);
             for d in resolution.found {
                 out.push_str(&format!("{d:?}"));
                 out.push_str("\n");
@@ -763,6 +768,22 @@ mod tests {
                 out.push_str("--- unresolved --- \n");
                 for d in resolution.failed {
                     out.push_str(&d.to_string());
+                    out.push_str("\n");
+                }
+            }
+
+            if !resolution.req_failures.is_empty() {
+                out.push_str("--- requirement failures --- \n");
+                for (pkg_name, requirements) in resolution.req_failures {
+                    out.push_str(&pkg_name);
+                    out.push_str(" : ");
+                    out.push_str(
+                        &requirements
+                            .iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
                     out.push_str("\n");
                 }
             }

@@ -1,0 +1,21 @@
+Package: dummy
+Version: 0.0.0.9001
+Imports: R6
+License: MIT + file LICENSE
+MD5sum: b7f25d09ecab0c56f94f1238ddd604e6
+
+Package: rv.git.pkgA
+Version: 0.0.5
+License: MIT + file LICENSE
+MD5sum: f3dee39a353a0a872ec673557a856258
+
+Package: rv.git.pkgD
+Version: 0.0.1
+Depends: rv.git.pkgA (>= 0.0.5)
+License: MIT + file LICENSE
+MD5sum: ad2ae403ef70f3d622e4f7a6d51a3f2b
+
+Package: rv.git.pkgE
+Version: 0.0.0.1
+Depends: rv.git.pkgA (< 0.0.5)
+MD5sum: 5affcc1e4d9097f3ff62366c72bef1c1

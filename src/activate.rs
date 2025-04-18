@@ -97,8 +97,7 @@ fn scripts_as_paths(is_home: bool) -> (PathBuf, PathBuf) {
 
 fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), ActivateError> {
     let template = ACTIVATE_FILE_TEMPLATE.to_string();
-    let global_wd_content = if is_home
-    {
+    let global_wd_content = if is_home {
         r#"
         owd <- getwd()
         setwd("~")

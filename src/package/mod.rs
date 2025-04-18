@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
+use toml_edit::{InlineTable, Value};
 
 mod description;
 mod parser;
@@ -30,8 +31,9 @@ impl fmt::Display for PackageType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
-pub(crate) enum Dependency {
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Dependency {
     Simple(String),
     Pinned {
         name: String,
@@ -55,6 +57,18 @@ impl Dependency {
             } => Some(requirement),
         }
     }
+
+    pub(crate) fn as_toml_value(&self) -> Value {
+        match self {
+            Self::Simple(name) => Value::from(name.as_str()),
+            Self::Pinned { name, requirement } => {
+                let mut table = InlineTable::new();
+                table.insert("name", Value::from(name.as_str()));
+                table.insert("requirement", Value::from(&requirement.to_string()));
+                Value::InlineTable(table)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
@@ -76,7 +90,7 @@ pub struct Package {
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct InstallationDependencies<'a> {
     pub(crate) direct: Vec<&'a Dependency>,
     pub(crate) suggests: Vec<&'a Dependency>,
