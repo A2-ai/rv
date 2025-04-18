@@ -175,6 +175,12 @@ impl<'d> DependencySolver<'d> {
         var_index: i32,
         num_vars: i32,
     ) -> bool {
+
+        // Quick check for empty clauses - formula is unsatisfiable
+        if formula.iter().any(|clause| clause.is_empty()) {
+            return false;
+        }
+
         // If all variables have been assigned, check if formula is satisfied
         if var_index > num_vars {
             return self.is_satisfied(formula, assignment);
@@ -289,12 +295,14 @@ impl<'d> DependencySolver<'d> {
     }
 
     pub fn solve(&self) -> Result<HashMap<&'d str, &'d Version>, Vec<PackageRequirement<'d>>> {
+        log::debug!("Solving dependencies for {} packages and {} version requirements", self.packages.len(), self.requirements.len());
         let pkg_version_to_var = self.get_variable_mappings();
-        let (clauses, clauses_to_req) = self.create_clauses(&pkg_version_to_var);
+        let (mut clauses, clauses_to_req) = self.create_clauses(&pkg_version_to_var);
 
         let var_to_pkg_version: HashMap<_, _> =
             pkg_version_to_var.iter().map(|(k, v)| (v, k)).collect();
 
+        log::debug!("Starting SAT solving");
         let assignment = self.solve_sat(&clauses, var_to_pkg_version.len() as i32);
 
         // No solution exists
