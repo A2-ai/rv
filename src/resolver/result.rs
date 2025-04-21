@@ -32,6 +32,15 @@ impl<'d> Resolution<'d> {
         self.found.push(dep);
     }
 
+    /// If we already found something matching, we skip trying to get it.
+    /// This is only called when we would look up a repo for a package without a version requirement
+    pub(crate) fn found_in_repo(&self, name: &str) -> bool {
+        self.found
+            .iter()
+            .find(|d| d.source.is_repo() && d.name == name)
+            .is_some()
+    }
+
     pub fn finalize(&mut self) {
         let mut solver = DependencySolver::default();
         for package in &self.found {

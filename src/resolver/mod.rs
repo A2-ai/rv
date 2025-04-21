@@ -503,6 +503,12 @@ impl<'d> Resolver<'d> {
                 None
                 | Some(ConfigDependency::Detailed { .. })
                 | Some(ConfigDependency::Simple(_)) => {
+                    // If we already have something that will satisfy the dependency, no need
+                    // to look it up again
+                    if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
+                        continue;
+                    }
+
                     if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
                         result.add_found(resolved_dep);
                         queue.extend(items);

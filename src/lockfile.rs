@@ -89,6 +89,10 @@ impl Source {
         matches!(self, Source::Git { .. } | Source::Url { .. })
     }
 
+    pub fn is_repo(&self) -> bool {
+        matches!(self, Source::Repository { .. })
+    }
+
     /// The key to use in the cache: URL for a package repository, git URL for a git repository
     /// and for local the actual path
     pub fn source_path(&self) -> &str {
