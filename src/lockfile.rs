@@ -325,14 +325,9 @@ impl LockedPackage {
     }
 
     // check if a resolved_dep has the same name and version
+    #[inline]
     fn is_matching_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
-        if self.name == dep.name.as_ref() && 
-            self.version == dep.version.original.to_owned()
-        {
-            true
-        } else {
-            false
-        }
+        self.name == dep.name.as_ref() && self.version == dep.version.as_ref().original
     }
 }
 

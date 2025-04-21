@@ -156,7 +156,7 @@ fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Ve
         resolver.show_progress_bar();
     }
 
-    let mut resolution = resolver.resolve(
+    let resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
@@ -173,19 +173,22 @@ fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Ve
 
     // If upgrade and there is a lockfile, we want to adjust the resolved dependencies s.t. if the resolved dep has the same
     // name and version in the lockfile, we say that it was resolved from the lockfile
-    if sync_mode == &SyncMode::FullUpgrade && context.lockfile.is_some() {
+    let resolved = if sync_mode == &SyncMode::FullUpgrade && context.lockfile.is_some() {
         resolution
             .found
-            .par_iter_mut()
-            .map(|dep| {
-                if context.lockfile.as_ref().unwrap().contains_resolved_dep(dep) {
+            .into_iter()
+            .map(|mut dep| {
+                if context.lockfile.as_ref().unwrap().contains_resolved_dep(&dep) {
                     dep.from_lockfile = true;
                 }
+                dep
             })
-            .collect::<Vec<_>>();
-    }
+            .collect::<Vec<_>>()
+    } else {
+        resolution.found
+    };
 
-    resolution.found
+    resolved
 }
 
 fn _sync(
