@@ -259,7 +259,9 @@ impl<'d> DependencySolver<'d> {
         current_clauses
             .iter()
             .filter_map(|(idx, _)| {
-                clauses_to_req.get(idx).map(|req_idx| self.requirements[*req_idx].clone())
+                clauses_to_req
+                    .get(idx)
+                    .map(|req_idx| self.requirements[*req_idx].clone())
             })
             .collect()
     }

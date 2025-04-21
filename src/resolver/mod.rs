@@ -436,7 +436,7 @@ impl<'d> Resolver<'d> {
             processed.insert(item.name.to_string());
 
             // But first, we check if the item has a remote and use that instead
-            // We will the remote result around _if_ the item has a version requirement and is in
+            // We will keep the remote result around _if_ the item has a version requirement and is in
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
             // .contains would need to allocate, so using iter().any() instead
@@ -758,7 +758,6 @@ mod tests {
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), resolution.found.clone());
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();
-            println!("{:#?}", resolution);
             for d in resolution.found {
                 out.push_str(&format!("{d:?}"));
                 out.push_str("\n");

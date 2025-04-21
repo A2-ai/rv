@@ -56,11 +56,7 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Borrowed(&package.name),
             version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
             source: package.source.clone(),
-            dependencies: package
-                .dependencies
-                .iter()
-                .map(Cow::Borrowed)
-                .collect(),
+            dependencies: package.dependencies.iter().map(Cow::Borrowed).collect(),
             suggests: package.suggests.iter().map(Cow::Borrowed).collect(),
             // TODO: what should we do here?
             kind: if package.force_source {
