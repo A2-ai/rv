@@ -95,4 +95,34 @@ impl<'d> Resolution<'d> {
     pub fn is_success(&self) -> bool {
         self.failed.is_empty() && self.req_failures.is_empty()
     }
+
+    pub fn req_error_messages(&self) -> Vec<String> {
+        self.req_failures
+            .iter()
+            .map(|(name, reqs)| {
+                let versions_msg = self
+                    .found
+                    .iter()
+                    .filter(|f| f.name == name.as_str())
+                    .map(|x| format!("        * {} (from {})", x.version.original, x.source))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let reqs_msg = reqs
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                if versions_msg.is_empty() {
+                    format!("{}:\n  - {} and no versions were found", name, reqs_msg)
+                } else {
+                    format!(
+                        "{}:\n  - {} and the following version(s) were found:\n{}",
+                        name, reqs_msg, versions_msg
+                    )
+                }
+            })
+            .collect()
+    }
 }
