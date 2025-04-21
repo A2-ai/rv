@@ -22,7 +22,16 @@ pub struct Resolution<'d> {
     pub req_failures: HashMap<String, Vec<RequirementFailure>>,
 }
 
-impl Resolution<'_> {
+impl<'d> Resolution<'d> {
+    pub fn add_found(&mut self, dep: ResolvedDependency<'d>) {
+        for f in &self.found {
+            if f == &dep {
+                return;
+            }
+        }
+        self.found.push(dep);
+    }
+
     pub fn finalize(&mut self) {
         let mut solver = DependencySolver::default();
         for package in &self.found {

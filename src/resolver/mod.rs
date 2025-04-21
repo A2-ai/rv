@@ -412,7 +412,7 @@ impl<'d> Resolver<'d> {
                 match self.local_lookup(&item) {
                     Ok((resolved_dep, items)) => {
                         processed.insert(resolved_dep.name.to_string());
-                        result.found.push(resolved_dep);
+                        result.add_found(resolved_dep);
                         queue.extend(items);
                         continue;
                     }
@@ -426,7 +426,7 @@ impl<'d> Resolver<'d> {
             // Look at lockfile before doing anything else
             if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed.insert(resolved_dep.name.to_string());
-                result.found.push(resolved_dep);
+                result.add_found(resolved_dep);
                 queue.extend(items);
                 continue;
             }
@@ -473,7 +473,7 @@ impl<'d> Resolver<'d> {
                                 if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
                                 } else {
-                                    result.found.push(resolved_dep);
+                                    result.add_found(resolved_dep);
                                     queue.extend(items);
                                 }
                             }
@@ -504,12 +504,12 @@ impl<'d> Resolver<'d> {
                 | Some(ConfigDependency::Detailed { .. })
                 | Some(ConfigDependency::Simple(_)) => {
                     if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
-                        result.found.push(resolved_dep);
+                        result.add_found(resolved_dep);
                         queue.extend(items);
                     } else {
                         // Fallback to the remote result otherwise
                         if let Some((resolved_dep, items)) = remote_result {
-                            result.found.push(resolved_dep);
+                            result.add_found(resolved_dep);
                             queue.extend(items);
                         } else {
                             log::debug!("Didn't find {}", item.name);
@@ -520,7 +520,7 @@ impl<'d> Resolver<'d> {
                 Some(ConfigDependency::Url { url, .. }) => {
                     match self.url_lookup(&item, url.as_ref(), cache, http_download) {
                         Ok((resolved_dep, items)) => {
-                            result.found.push(resolved_dep);
+                            result.add_found(resolved_dep);
                             queue.extend(items);
                         }
                         Err(e) => {
@@ -560,7 +560,7 @@ impl<'d> Resolver<'d> {
                         cache,
                     ) {
                         Ok((resolved_dep, items)) => {
-                            result.found.push(resolved_dep);
+                            result.add_found(resolved_dep);
                             queue.extend(items);
                         }
                         Err(e) => {
