@@ -22,7 +22,7 @@ pub struct ResolvedDependency<'d> {
     pub name: Cow<'d, str>,
     pub version: Cow<'d, Version>,
     pub source: Source,
-    pub(crate) dependencies: Vec<Cow<'d, str>>,
+    pub dependencies: Vec<Cow<'d, str>>,
     pub(crate) suggests: Vec<Cow<'d, str>>,
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
