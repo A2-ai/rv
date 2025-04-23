@@ -54,5 +54,5 @@ pub mod internal {
     pub use crate::lockfile::Source;
     pub use crate::package::{parse_dependencies, parse_description_file, parse_package_file, Dependency, Operator,};
     pub use crate::repository_urls::get_distro_name;
-    pub use crate::sync::LinkMode;
+    pub use crate::sync::{LinkMode, SyncChange};
 }

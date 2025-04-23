@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crate::package::PackageType;
 use std::time::Duration;
 
