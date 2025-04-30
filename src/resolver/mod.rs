@@ -7,6 +7,8 @@ use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 mod dependency;
+mod result;
+mod sat;
 
 use crate::fs::untar_archive;
 use crate::git::{GitReference, GitRemote};
@@ -18,18 +20,7 @@ use crate::package::{
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Resolution<'d> {
-    pub found: Vec<ResolvedDependency<'d>>,
-    pub failed: Vec<UnresolvedDependency<'d>>,
-}
-
-impl Resolution<'_> {
-    pub fn is_success(&self) -> bool {
-        self.failed.is_empty()
-    }
-}
+pub use result::Resolution;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct QueueItem<'d> {
@@ -206,7 +197,9 @@ impl<'d> Resolver<'d> {
                 .dependencies
                 .iter()
                 .chain(&package.suggests)
-                .map(|p| QueueItem::name_and_parent_only(Cow::Borrowed(p), item.name.clone()))
+                .map(|p| {
+                    QueueItem::name_and_parent_only(Cow::Borrowed(p.name()), item.name.clone())
+                })
                 .collect();
             Some((resolved_dep, items))
         } else {
@@ -381,6 +374,14 @@ impl<'d> Resolver<'d> {
     ) -> Resolution<'d> {
         let mut result = Resolution::default();
         let mut processed = HashSet::with_capacity(dependencies.len() * 10);
+        // Top level dependencies can require specific repos.
+        // We should not try to resolve those from anywhere else even if they dependencies of other
+        // packages
+        let repo_required: HashSet<_> = dependencies
+            .iter()
+            .filter(|d| d.r_repository().is_some())
+            .map(|d| d.name())
+            .collect();
         let mut queue: VecDeque<_> = dependencies
             .iter()
             .map(|d| QueueItem {
@@ -400,9 +401,9 @@ impl<'d> Resolver<'d> {
             .collect();
 
         while let Some(item) = queue.pop_front() {
-            // If we have already found that dependency, skip it
-            // TODO: maybe different version req? we can cross that bridge later
-            if processed.contains(item.name.as_ref()) {
+            // If we have already found that dependency and it has a forced repo, skip it
+            if processed.contains(item.name.as_ref()) && repo_required.contains(item.name.as_ref())
+            {
                 continue;
             }
 
@@ -411,7 +412,7 @@ impl<'d> Resolver<'d> {
                 match self.local_lookup(&item) {
                     Ok((resolved_dep, items)) => {
                         processed.insert(resolved_dep.name.to_string());
-                        result.found.push(resolved_dep);
+                        result.add_found(resolved_dep);
                         queue.extend(items);
                         continue;
                     }
@@ -425,7 +426,7 @@ impl<'d> Resolver<'d> {
             // Look at lockfile before doing anything else
             if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed.insert(resolved_dep.name.to_string());
-                result.found.push(resolved_dep);
+                result.add_found(resolved_dep);
                 queue.extend(items);
                 continue;
             }
@@ -435,7 +436,7 @@ impl<'d> Resolver<'d> {
             processed.insert(item.name.to_string());
 
             // But first, we check if the item has a remote and use that instead
-            // We will the remote result around _if_ the item has a version requirement and is in
+            // We will keep the remote result around _if_ the item has a version requirement and is in
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
             // .contains would need to allocate, so using iter().any() instead
@@ -472,7 +473,7 @@ impl<'d> Resolver<'d> {
                                 if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
                                 } else {
-                                    result.found.push(resolved_dep);
+                                    result.add_found(resolved_dep);
                                     queue.extend(items);
                                 }
                             }
@@ -502,13 +503,19 @@ impl<'d> Resolver<'d> {
                 None
                 | Some(ConfigDependency::Detailed { .. })
                 | Some(ConfigDependency::Simple(_)) => {
+                    // If we already have something that will satisfy the dependency, no need
+                    // to look it up again
+                    if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
+                        continue;
+                    }
+
                     if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
-                        result.found.push(resolved_dep);
+                        result.add_found(resolved_dep);
                         queue.extend(items);
                     } else {
                         // Fallback to the remote result otherwise
                         if let Some((resolved_dep, items)) = remote_result {
-                            result.found.push(resolved_dep);
+                            result.add_found(resolved_dep);
                             queue.extend(items);
                         } else {
                             log::debug!("Didn't find {}", item.name);
@@ -519,7 +526,7 @@ impl<'d> Resolver<'d> {
                 Some(ConfigDependency::Url { url, .. }) => {
                     match self.url_lookup(&item, url.as_ref(), cache, http_download) {
                         Ok((resolved_dep, items)) => {
-                            result.found.push(resolved_dep);
+                            result.add_found(resolved_dep);
                             queue.extend(items);
                         }
                         Err(e) => {
@@ -559,7 +566,7 @@ impl<'d> Resolver<'d> {
                         cache,
                     ) {
                         Ok((resolved_dep, items)) => {
-                            result.found.push(resolved_dep);
+                            result.add_found(resolved_dep);
                             queue.extend(items);
                         }
                         Err(e) => {
@@ -571,6 +578,9 @@ impl<'d> Resolver<'d> {
                 }
             }
         }
+
+        result.finalize();
+
         result
     }
 }
@@ -763,6 +773,22 @@ mod tests {
                 out.push_str("--- unresolved --- \n");
                 for d in resolution.failed {
                     out.push_str(&d.to_string());
+                    out.push_str("\n");
+                }
+            }
+
+            if !resolution.req_failures.is_empty() {
+                out.push_str("--- requirement failures --- \n");
+                for (pkg_name, requirements) in resolution.req_failures {
+                    out.push_str(&pkg_name);
+                    out.push_str(" : ");
+                    out.push_str(
+                        &requirements
+                            .iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
                     out.push_str("\n");
                 }
             }

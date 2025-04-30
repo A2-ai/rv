@@ -158,9 +158,16 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
     );
     if !resolution.is_success() {
         eprintln!("Failed to resolve all dependencies");
+        let req_error_messages = resolution.req_error_messages();
+
         for d in resolution.failed {
             eprintln!("    {d}");
         }
+
+        if !req_error_messages.is_empty() {
+            eprintln!("{}", req_error_messages.join("\n"));
+        }
+
         ::std::process::exit(1)
     }
 

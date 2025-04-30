@@ -1,0 +1,5 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+rv.git.pkgA=0.0.5 (repository(url: http://repo1), type=source, path='', from_lockfile=false, from_remote=false)

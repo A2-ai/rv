@@ -28,12 +28,12 @@ impl<'a> BuildPlan<'a> {
         for dep in deps {
             let mut all_deps = HashSet::new();
 
-            let mut queue = VecDeque::from_iter(dep.dependencies.iter().map(|x| x.as_ref()));
+            let mut queue = VecDeque::from_iter(dep.dependencies.iter().map(|x| x.name()));
             while let Some(dep_name) = queue.pop_front() {
                 all_deps.insert(dep_name);
                 for d in &by_name[dep_name].dependencies {
-                    if !all_deps.contains(d.as_ref()) {
-                        queue.push_back(d.as_ref());
+                    if !all_deps.contains(d.name()) {
+                        queue.push_back(d.name());
                     }
                 }
             }
@@ -112,14 +112,17 @@ mod tests {
     use super::*;
     use crate::cache::InstallationStatus;
     use crate::lockfile::Source;
-    use crate::package::PackageType;
+    use crate::package::{Dependency, PackageType};
     use std::borrow::Cow;
     use std::str::FromStr;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {
         ResolvedDependency {
             name: Cow::from(name),
-            dependencies: dependencies.into_iter().map(Cow::from).collect(),
+            dependencies: dependencies
+                .into_iter()
+                .map(|x| Cow::Owned(Dependency::Simple(x.to_string())))
+                .collect(),
             suggests: Vec::new(),
             version: Cow::Owned(Version::from_str("0.1.0").unwrap()),
             source: Source::Repository {

@@ -1,0 +1,20 @@
+[project]
+name = "remote"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"},
+    { alias = "repo2", url = "http://repo2" }
+]
+dependencies = [
+    # This one has a gsm dep of >= 2.2.2 with a remote set
+    { name = "gsm.app", git = "https://github.com/Gilead-BioStats/gsm.app", tag ="v2.3.0"},
+    # This requires gsm < 2.0.0 so it will conflict
+    { name = "requires.old.gsm" , repository = "repo2" },
+]
+
+---
+repos = [
+    {name = "repo2", source = "test_repo2", force_source = false},
+    {name = "custom", binary = "cran-binary", force_source = false}
+]
+---

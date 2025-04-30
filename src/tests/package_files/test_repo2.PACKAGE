@@ -1,0 +1,10 @@
+Package: rv.git.pkgA
+Version: 0.0.4
+License: MIT + file LICENSE
+MD5sum: ad249f40ffe49e2310bd4f0c38328603
+
+Package: requires.old.gsm
+Version: 0.0.1
+Depends: gsm (< 2.0.0)
+License: MIT + file LICENSE
+MD5sum: ad2ae403ef70f3d622e4f7a6d51a3f2b
