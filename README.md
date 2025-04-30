@@ -99,3 +99,8 @@ For more complex edits, including specific sources and other configuration, you 
 This means if you installed a package from a repository, but later remove that repository from the configuration file, the package will still be installed from the original repository.
 
 To upgrade packages to be the latest versions available from the sources listed, use `rv upgrade`. If you'd like to see what will occur when you were to upgrade, run `rv upgrade --dry-run` or `rv plan --upgrade`.
+
+## Contributing
+
+### Snapshot testing
+Snapshots require R version 4.4.x.

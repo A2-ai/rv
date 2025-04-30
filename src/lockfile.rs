@@ -41,6 +41,9 @@ pub enum Source {
         /// Only for tarballs
         sha: Option<String>,
     },
+    Builtin {
+        builtin: bool,
+    },
 }
 
 impl Source {
@@ -80,6 +83,9 @@ impl Source {
                     table.insert("sha", Value::from(s));
                 }
             }
+            Self::Builtin { .. } => {
+                table.insert("builtin", Value::from(true));
+            }
         };
 
         table
@@ -101,6 +107,7 @@ impl Source {
             Source::Local { ref path, .. } => path.to_str().unwrap(),
             Source::Git { ref git, .. } => git.as_str(),
             Source::Url { ref url, .. } => url.as_str(),
+            Source::Builtin { .. } => "",
         }
     }
 
@@ -170,6 +177,7 @@ impl Source {
                 }
             }
             (Source::Repository { .. }, ConfigDependency::Simple(..)) => true,
+            (Source::Builtin { .. }, ConfigDependency::Simple(..)) => true,
             _ => false,
         }
     }
@@ -199,6 +207,9 @@ impl fmt::Debug for Source {
             }
             Self::Url { url, sha } => {
                 write!(f, "url(url: {url}, sha:{sha})")
+            }
+            Self::Builtin { .. } => {
+                write!(f, "builtin")
             }
         }
     }
@@ -230,6 +241,9 @@ impl fmt::Display for Source {
             }
             Self::Url { url, .. } => {
                 write!(f, "{url}")
+            }
+            Self::Builtin { .. } => {
+                write!(f, "builtin")
             }
         }
     }

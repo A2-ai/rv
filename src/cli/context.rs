@@ -1,13 +1,16 @@
 //! CLI context that gets instantiated for a few commands and passed around
+
 use crate::cli::utils::write_err;
 use crate::{
     consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
     DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
 };
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
+use crate::package::Package;
 use crate::utils::create_spinner;
 use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
@@ -23,6 +26,7 @@ pub struct CliContext {
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
     pub r_cmd: RCommandLine,
+    pub builtin_packages: HashMap<String, Package>,
     pub show_progress_bar: bool,
 }
 
@@ -57,6 +61,13 @@ impl CliContext {
         let mut library = Library::new(&project_dir, &cache.system_info, r_version.major_minor());
         library.find_content();
 
+        // We can only fetch the builtin packages if we have the right R
+        let builtin_packages = if r_version.hazy_match(&config.r_version()) {
+            cache.get_builtin_packages_versions(r_cmd.clone())?
+        } else {
+            HashMap::new()
+        };
+
         Ok(Self {
             config,
             cache,
@@ -67,6 +78,7 @@ impl CliContext {
             databases: Vec::new(),
             r_cmd,
             show_progress_bar: false,
+            builtin_packages,
         })
     }
 

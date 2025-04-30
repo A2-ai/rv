@@ -143,6 +143,7 @@ fn resolve_dependencies(context: &CliContext) -> Vec<ResolvedDependency> {
             .map(|x| x.url())
             .collect(),
         &context.r_version,
+        &context.builtin_packages,
         context.lockfile.as_ref(),
     );
     if context.show_progress_bar {

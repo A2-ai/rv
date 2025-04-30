@@ -1,0 +1,15 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "repo1", url = "http://repo1" },
+]
+dependencies = [
+    # This requires survival >= 6.0.0, there is a built in survival but not at that version
+    "higher-base-pkg",
+]
+---
+repos = [
+     {name = "repo1", source = "test_repo1", force_source = false},
+ ]
+---

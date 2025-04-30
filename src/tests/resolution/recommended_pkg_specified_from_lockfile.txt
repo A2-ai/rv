@@ -1,0 +1,24 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "repo1", url = "http://repo1" },
+]
+dependencies = [
+    # This requires survival >= 6.0.0, there is a survival in the lockfile but that doesn't satisfy the req
+    "higher-base-pkg",
+]
+---
+repos = [
+     {name = "repo1", source = "test_repo1", force_source = false},
+ ]
+---
+version = 1
+r_version = "4.4"
+
+[[packages]]
+name = "survival"
+version = "2.5.1"
+source = { builtin = true }
+force_source = false
+dependencies = []

@@ -104,6 +104,7 @@ impl<'a> SyncHandler<'a> {
             Source::Url { .. } => {
                 sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
+            Source::Builtin { .. } => Ok(()),
         }
     }
 

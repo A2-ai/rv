@@ -18,6 +18,7 @@ pub const PACKAGE_DB_FILENAME: &str = "packages.bin";
 pub const NUM_CPUS_ENV_VAR_NAME: &str = "RV_NUM_CPUS";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
+// Those will have the same version as R
 pub(crate) const BASE_PACKAGES: [&str; 14] = [
     "base",
     "compiler",
@@ -36,6 +37,7 @@ pub(crate) const BASE_PACKAGES: [&str; 14] = [
 ];
 
 // List obtained from the REPL: `rownames(installed.packages(priority="recommended"))`
+// Those are versioned separately from R and some packages might have version requirements on them
 pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
     "boot",
     "class",

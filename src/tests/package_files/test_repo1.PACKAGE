@@ -19,3 +19,10 @@ Package: rv.git.pkgE
 Version: 0.0.0.1
 Depends: rv.git.pkgA (< 0.0.5)
 MD5sum: 5affcc1e4d9097f3ff62366c72bef1c1
+
+Package: higher-base-pkg
+Version: 0.0.1
+Depends: survival (>= 6.0.0)
+
+Package: survival
+Version: 6.0.0
