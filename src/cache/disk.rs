@@ -235,7 +235,7 @@ impl DiskCache {
 
     pub fn get_builtin_packages_versions(
         &self,
-        r_cmd: impl RCmd,
+        r_cmd: &impl RCmd,
     ) -> std::io::Result<HashMap<String, Package>> {
         let version = r_cmd.version().expect("to work");
         let filename = format!("builtin-{}.bin", version.original);

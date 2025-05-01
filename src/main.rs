@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
 use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
@@ -33,7 +33,7 @@ pub enum Command {
         project_directory: PathBuf,
         #[clap(short = 'r', long)]
         /// Specify a non-default R version
-        r_version: Option<String>,
+        r_version: Option<Version>,
         #[clap(long)]
         /// Do no populated repositories
         no_repositories: bool,
@@ -54,6 +54,10 @@ pub enum Command {
     Plan {
         #[clap(short, long)]
         upgrade: bool,
+        /// Specify a R version different from the one in the config.
+        /// The command will not error even if this R version is not found
+        #[clap(long)]
+        r_version: Option<Version>,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync,
@@ -303,11 +307,7 @@ fn try_main() -> Result<()> {
             force,
         } => {
             let r_version = if let Some(r) = r_version {
-                // Make sure input is a valid version format. NOT checking if it is a valid R version on system in init
-                if r.parse::<Version>().is_err() {
-                    bail!("R version specified could not be parsed as a valid version")
-                }
-                r
+                r.original
             } else {
                 // if r version is not provided, get the major.minor of the R version on the path
                 let [major, minor] = match (RCommandLine { r: None }).version() {
@@ -340,7 +340,7 @@ fn try_main() -> Result<()> {
             );
         }
         Command::Library => {
-            let context = CliContext::new(&cli.config_file)?;
+            let context = CliContext::new(&cli.config_file, None)?;
             let path_str = context.library_path().to_string_lossy();
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
@@ -349,17 +349,17 @@ fn try_main() -> Result<()> {
             };
             println!("{path_out}");
         }
-        Command::Plan { upgrade } => {
-            let upgrade = if upgrade {
+        Command::Plan { upgrade, r_version } => {
+            let upgrade = if upgrade || r_version.is_some() {
                 ResolveMode::FullUpgrade
             } else {
                 ResolveMode::Default
             };
-            let context = CliContext::new(&cli.config_file)?;
+            let context = CliContext::new(&cli.config_file, r_version)?;
             _sync(context, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
-            let context = CliContext::new(&cli.config_file)?;
+            let context = CliContext::new(&cli.config_file, None)?;
             _sync(
                 context,
                 false,
@@ -384,7 +384,7 @@ fn try_main() -> Result<()> {
                 println!("Packages successfully added");
                 return Ok(());
             }
-            let mut context = CliContext::new(&cli.config_file)?;
+            let mut context = CliContext::new(&cli.config_file, None)?;
             // if dry run, the config won't have been edited to reflect the added changes so must be added
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
@@ -397,7 +397,7 @@ fn try_main() -> Result<()> {
             )?;
         }
         Command::Upgrade { dry_run } => {
-            let context = CliContext::new(&cli.config_file)?;
+            let context = CliContext::new(&cli.config_file, None)?;
             _sync(
                 context,
                 dry_run,
@@ -410,7 +410,7 @@ fn try_main() -> Result<()> {
             r_version,
             repositories,
         } => {
-            let context = CliContext::new(&cli.config_file)?;
+            let context = CliContext::new(&cli.config_file, None)?;
             if library {
                 let path_str = context.library_path().to_string_lossy();
                 let path_out = if cfg!(windows) {
@@ -435,7 +435,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Cache { json } => {
-            let mut context = CliContext::new(&cli.config_file)?;
+            let mut context = CliContext::new(&cli.config_file, None)?;
             context.load_databases()?;
             let info = CacheInfo::new(
                 &context.config,
@@ -493,7 +493,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Summary { json } => {
-            let mut context = CliContext::new(&cli.config_file)?;
+            let mut context = CliContext::new(&cli.config_file, None)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context, &ResolveMode::Default);
             let summary = ProjectSummary::new(

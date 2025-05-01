@@ -1,20 +1,19 @@
 //! CLI context that gets instantiated for a few commands and passed around
 
 use crate::cli::utils::write_err;
-use crate::{
-    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
-    DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
-};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-
 use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::utils::create_spinner;
+use crate::{
+    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
+    DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
+};
 use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use rayon::prelude::*;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct CliContext {
@@ -31,10 +30,26 @@ pub struct CliContext {
 }
 
 impl CliContext {
-    pub fn new(config_file: &PathBuf) -> Result<Self> {
+    pub fn new(config_file: &PathBuf, r_version: Option<Version>) -> Result<Self> {
         let config = Config::from_file(config_file)?;
-        let r_version = config.r_version().clone();
-        let r_cmd = find_r_version_command(&r_version)?;
+
+        // This can only be set to false if the user passed a r_version to rv plan
+        let mut r_version_found = true;
+        let (r_version, r_cmd) = if let Some(v) = r_version {
+            // we try to find it but no big deal if it isn't there
+            let r_cmd = match find_r_version_command(&v) {
+                Ok(r) => r,
+                Err(_) => {
+                    r_version_found = false;
+                    RCommandLine::default()
+                }
+            };
+            (v, r_cmd)
+        } else {
+            let r_version = config.r_version().clone();
+            let r_cmd = find_r_version_command(&r_version)?;
+            (r_version, r_cmd)
+        };
 
         let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
             Ok(c) => c,
@@ -62,8 +77,8 @@ impl CliContext {
         library.find_content();
 
         // We can only fetch the builtin packages if we have the right R
-        let builtin_packages = if r_version.hazy_match(&config.r_version()) {
-            cache.get_builtin_packages_versions(r_cmd.clone())?
+        let builtin_packages = if r_version_found {
+            cache.get_builtin_packages_versions(&r_cmd)?
         } else {
             HashMap::new()
         };
