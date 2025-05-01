@@ -485,6 +485,16 @@ impl Lockfile {
         true
     }
 
+    pub fn contains_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
+        self.packages
+            .iter()
+            .find(|lock_pkg| {
+                lock_pkg.name == dep.name.as_ref()
+                    && lock_pkg.version == dep.version.as_ref().original
+            })
+            .is_some()
+    }
+
     /// Gets a set of all the package names listed in the lockfile
     pub fn package_names(&self) -> HashSet<&str> {
         let mut out = HashSet::new();
