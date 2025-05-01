@@ -33,7 +33,7 @@ pub trait RCmd: Send + Sync {
     fn version(&self) -> Result<Version, VersionError>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct RCommandLine {
     /// specifies the path to the R executable on the system. None indicates using "R" on the $PATH
     pub r: Option<PathBuf>,
