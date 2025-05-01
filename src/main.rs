@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -125,7 +124,7 @@ pub enum MigrateSubcommand {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum SyncMode {
+enum ResolveMode {
     Default,
     FullUpgrade,
     // TODO: PartialUpgrade -- allow user to specify packages to upgrade
@@ -133,10 +132,13 @@ enum SyncMode {
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
-fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Vec<ResolvedDependency<'a>> {
-    let lockfile = match sync_mode {
-        SyncMode::Default => &context.lockfile,
-        SyncMode::FullUpgrade => &None,
+fn resolve_dependencies<'a>(
+    context: &'a CliContext,
+    resolve_mode: &ResolveMode,
+) -> Vec<ResolvedDependency<'a>> {
+    let lockfile = match resolve_mode {
+        ResolveMode::Default => &context.lockfile,
+        ResolveMode::FullUpgrade => &None,
     };
 
     let mut resolver = Resolver::new(
@@ -173,14 +175,16 @@ fn resolve_dependencies<'a>(context: &'a CliContext, sync_mode: &SyncMode) -> Ve
 
     // If upgrade and there is a lockfile, we want to adjust the resolved dependencies s.t. if the resolved dep has the same
     // name and version in the lockfile, we say that it was resolved from the lockfile
-    let resolved = if sync_mode == &SyncMode::FullUpgrade && context.lockfile.is_some() {
+    let resolved = if resolve_mode == &ResolveMode::FullUpgrade && context.lockfile.is_some() {
         resolution
             .found
             .into_iter()
             .map(|mut dep| {
-                if context.lockfile.as_ref().unwrap().contains_resolved_dep(&dep) {
-                    dep.from_lockfile = true;
-                }
+                dep.from_lockfile = context
+                    .lockfile
+                    .as_ref()
+                    .unwrap()
+                    .contains_resolved_dep(&dep);
                 dep
             })
             .collect::<Vec<_>>()
@@ -195,20 +199,20 @@ fn _sync(
     mut context: CliContext,
     dry_run: bool,
     has_logs_enabled: bool,
-    sync_mode: SyncMode,
+    resolve_mode: ResolveMode,
 ) -> Result<()> {
     if !has_logs_enabled {
         context.show_progress_bar();
     }
 
-    // If the sync mode is an upgrade, we want to load the databases even if we resolve from the lockfile 
+    // If the sync mode is an upgrade, we want to load the databases even if all packages are contained in the lockfile
     // because we ignore the lockfile during initial resolution
-    match sync_mode {
-        SyncMode::Default => context.load_databases_if_needed()?,
-        SyncMode::FullUpgrade => context.load_databases()?,
+    match resolve_mode {
+        ResolveMode::Default => context.load_databases_if_needed()?,
+        ResolveMode::FullUpgrade => context.load_databases()?,
     }
 
-    let resolved = resolve_dependencies(&context, &sync_mode);
+    let resolved = resolve_dependencies(&context, &resolve_mode);
 
     match timeit!(
         if dry_run {
@@ -339,16 +343,21 @@ fn try_main() -> Result<()> {
         }
         Command::Plan { upgrade } => {
             let upgrade = if upgrade {
-                SyncMode::FullUpgrade
+                ResolveMode::FullUpgrade
             } else {
-                SyncMode::Default
+                ResolveMode::Default
             };
             let context = CliContext::new(&cli.config_file)?;
             _sync(context, true, cli.verbose.is_present(), upgrade)?;
         }
         Command::Sync => {
             let context = CliContext::new(&cli.config_file)?;
-            _sync(context, false, cli.verbose.is_present(), SyncMode::Default)?;
+            _sync(
+                context,
+                false,
+                cli.verbose.is_present(),
+                ResolveMode::Default,
+            )?;
         }
         Command::Add {
             packages,
@@ -376,7 +385,7 @@ fn try_main() -> Result<()> {
                 context,
                 dry_run,
                 cli.verbose.is_present(),
-                SyncMode::Default,
+                ResolveMode::Default,
             )?;
         }
         Command::Upgrade { dry_run } => {
@@ -385,7 +394,7 @@ fn try_main() -> Result<()> {
                 context,
                 dry_run,
                 cli.verbose.is_present(),
-                SyncMode::FullUpgrade,
+                ResolveMode::FullUpgrade,
             )?;
         }
         Command::Info {
@@ -423,7 +432,7 @@ fn try_main() -> Result<()> {
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
-                resolve_dependencies(&context, &SyncMode::Default),
+                resolve_dependencies(&context, &ResolveMode::Default),
             );
             if json {
                 println!(
@@ -478,7 +487,7 @@ fn try_main() -> Result<()> {
         Command::Summary { json } => {
             let mut context = CliContext::new(&cli.config_file)?;
             context.load_databases()?;
-            let resolved = resolve_dependencies(&context, &SyncMode::Default);
+            let resolved = resolve_dependencies(&context, &ResolveMode::Default);
             let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,

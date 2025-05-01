@@ -323,12 +323,6 @@ impl LockedPackage {
 
         true
     }
-
-    // check if a resolved_dep has the same name and version
-    #[inline]
-    fn is_matching_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
-        self.name == dep.name.as_ref() && self.version == dep.version.as_ref().original
-    }
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -488,10 +482,12 @@ impl Lockfile {
     }
 
     pub fn contains_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
-        self
-            .packages
+        self.packages
             .iter()
-            .find(|x| x.is_matching_resolved_dep(dep))
+            .find(|lock_pkg| {
+                lock_pkg.name == dep.name.as_ref()
+                    && lock_pkg.version == dep.version.as_ref().original
+            })
             .is_some()
     }
 
