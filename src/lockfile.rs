@@ -107,7 +107,10 @@ impl Source {
 
     pub fn is_git_or_url(&self) -> bool {
         // we treat RUniverse like Git
-        matches!(self, Source::Git { .. } | Source::Url { .. } | Source::RUniverse { .. })
+        matches!(
+            self,
+            Source::Git { .. } | Source::Url { .. } | Source::RUniverse { .. }
+        )
     }
 
     pub fn is_repo(&self) -> bool {
@@ -193,9 +196,7 @@ impl Source {
                 Source::RUniverse { repository: r1, .. },
                 ConfigDependency::Detailed { repository: r2, .. },
             ) => r2.as_ref().map(|r| r == r1).unwrap_or(true),
-            (Source::RUniverse { .. }, ConfigDependency::Simple(..)) => {
-                true
-            },
+            (Source::RUniverse { .. }, ConfigDependency::Simple(..)) => true,
             _ => false,
         }
     }

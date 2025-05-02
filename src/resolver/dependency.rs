@@ -5,7 +5,7 @@ use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
-use crate::{ HttpDownload, Version, VersionRequirement};
+use crate::{HttpDownload, Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -320,7 +320,11 @@ struct RUniverseApi {
 }
 
 impl RUniverseApi {
-    fn query_r_universe_api(pkg_name: &str, repo_url: &str, http: &impl HttpDownload) -> Result<Self, RUniverseApiError> {
+    fn query_r_universe_api(
+        pkg_name: &str,
+        repo_url: &str,
+        http: &impl HttpDownload,
+    ) -> Result<Self, RUniverseApiError> {
         let api_url = format!("{}/api/packages/{}", repo_url, pkg_name);
         let mut writer = Vec::new();
 
