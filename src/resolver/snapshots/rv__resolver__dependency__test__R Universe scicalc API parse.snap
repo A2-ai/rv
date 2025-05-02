@@ -1,0 +1,9 @@
+---
+source: src/resolver/dependency.rs
+expression: api
+---
+RUniverseApi {
+    remote_url: "https://github.com/a2-ai/scicalc",
+    remote_sha: "bc32814c8b9e9ce17ca464e1c403b274edfd546f",
+    remote_subdir: None,
+}

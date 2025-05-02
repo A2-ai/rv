@@ -1,0 +1,11 @@
+---
+source: src/resolver/dependency.rs
+expression: api
+---
+RUniverseApi {
+    remote_url: "https://github.com/apache/arrow",
+    remote_sha: "3ad0370a04ccdae638755b94c3c31c8760a11193",
+    remote_subdir: Some(
+        "r",
+    ),
+}

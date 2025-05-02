@@ -1,0 +1,51 @@
+{
+  "Package": "scicalc",
+  "Title": "Scientific Calculations for Quantitative Clinical Pharmacology\nand Pharmacometrics Analysis",
+  "Version": "0.1.2",
+  "Authors@R": "c( \nperson(\"Matthew\", \"Smith\", , \"matthews@a2-ai.com\", role = c(\"aut\", \"cre\")),\nperson(\"Jenna\", \"Johnson\", , \"jenna@a2-ai.com\", role = \"aut\"),\nperson(\"Devin\", \"Pastoor\", , \"devin@a2-ai.com\", role = \"aut\"),\nperson(\"Wesley\", \"Cummings\", , \"wes@a2-ai.com\", role = \"ctb\"),\nperson(\"Emily\", \"Schapiro\", , \"emily@a2-ai.com\", role = \"ctb\"),\nperson(\"Ryan\", \"Crass\", , \"ryan@a2-ai.com\", role = \"ctb\"),\nperson(\"Jonah\", \"Lyon\", , \"jonah@a2-ai.com\", role = \"ctb\"),\nperson(\"Elizabeth\", \"LeBeau\", ,\"elizabeth@a2-ai.com\", role = \"ctb\")\n)",
+  "Description": "Utility functions helpful for reproducible scientific\ncalculations.",
+  "License": "MIT + file LICENSE",
+  "Encoding": "UTF-8",
+  "Roxygen": "list(markdown = TRUE)",
+  "RoxygenNote": "7.3.2",
+  "Config/testthat/edition": "3",
+  "VignetteBuilder": "knitr",
+  "URL": "https://a2-ai.github.io/scicalc",
+  "Config/pak/sysreqs": "cmake make libicu-dev libssl-dev libx11-dev\nzlib1g-dev",
+  "Repository": "https://a2-ai.r-universe.dev",
+  "RemoteUrl": "https://github.com/a2-ai/scicalc",
+  "RemoteRef": "HEAD",
+  "RemoteSha": "bc32814c8b9e9ce17ca464e1c403b274edfd546f",
+  "NeedsCompilation": "no",
+  "Packaged": {
+    "Date": "2025-04-28 04:55:48 UTC",
+    "User": "root"
+  },
+  "Author": "Matthew Smith [aut, cre],\nJenna Johnson [aut],\nDevin Pastoor [aut],\nWesley Cummings [ctb],\nEmily Schapiro [ctb],\nRyan Crass [ctb],\nJonah Lyon [ctb],\nElizabeth LeBeau [ctb]",
+  "Maintainer": "Matthew Smith <matthews@a2-ai.com>",
+  "MD5sum": "2fbbabff3f9d8851abaded68897e2060",
+  "_user": "a2-ai",
+  "_type": "src",
+  "_file": "scicalc_0.1.2.tar.gz",
+  "_fileid": "47a544ba4be2590fe09767af8d6c237d54b96f0aa0200a35d5a8f4fea096d3d4",
+  "_filesize": 250298,
+  "_sha256": "47a544ba4be2590fe09767af8d6c237d54b96f0aa0200a35d5a8f4fea096d3d4",
+  "_created": "2025-04-28T04:55:48.000Z",
+  "_published": "2025-04-28T04:59:46.478Z",
+  "_status": "success",
+  "_buildurl": "https://github.com/r-universe/a2-ai/actions/runs/14700532567",
+  "_upstream": "https://github.com/a2-ai/scicalc",
+  "_commit": {
+    "id": "bc32814c8b9e9ce17ca464e1c403b274edfd546f",
+    "author": "Matthew D. Smith <47441066+mduncans@users.noreply.github.com>",
+    "committer": "GitHub <noreply@github.com>",
+    "message": "Merge pull request #8 from A2-ai/xlsm_files\n\nadded ability to read xlsm files through read_excel.",
+    "time": 1739210729
+  },
+  "_maintainer": {
+    "name": "Matthew Smith",
+    "email": "matthews@a2-ai.com",
+    "login": "mduncans",
+    "uuid": 47441066
+  }
+}

@@ -155,7 +155,9 @@ impl Library {
         }
 
         match pkg.source {
-            Source::Git { ref sha, .. } | Source::Url { ref sha, .. } => self
+            Source::Git { ref sha, .. }
+            | Source::Url { ref sha, .. }
+            | Source::RUniverse { ref sha, .. } => self
                 .non_repo_packages
                 .get(pkg.name.as_ref())
                 .map(|m| m.sha().unwrap() == sha.as_str())
