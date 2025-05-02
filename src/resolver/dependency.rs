@@ -5,7 +5,7 @@ use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
-use crate::{Http, HttpDownload, Version, VersionRequirement};
+use crate::{ HttpDownload, Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -83,6 +83,7 @@ impl<'d> ResolvedDependency<'d> {
         install_suggests: bool,
         force_source: bool,
         installation_status: InstallationStatus,
+        http_download: &impl HttpDownload,
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
 
@@ -95,7 +96,7 @@ impl<'d> ResolvedDependency<'d> {
         // and git info. The repository is used while the locked version and version in the PACKAGES database match,
         // switching to using git once it is no longer available
         if repo_url.contains("r-universe.dev") {
-            match RUniverseApi::query_r_universe_api(&package.name, repo_url) {
+            match RUniverseApi::query_r_universe_api(&package.name, repo_url, http_download) {
                 Ok(r) => source = Source::RUniverse {
                     repository: repo_url.to_string(),
                     git: r.remote_url.to_string(),
@@ -319,8 +320,7 @@ struct RUniverseApi {
 }
 
 impl RUniverseApi {
-    fn query_r_universe_api(pkg_name: &str, repo_url: &str) -> Result<Self, RUniverseApiError> {
-        let http = Http {};
+    fn query_r_universe_api(pkg_name: &str, repo_url: &str, http: &impl HttpDownload) -> Result<Self, RUniverseApiError> {
         let api_url = format!("{}/api/packages/{}", repo_url, pkg_name);
         let mut writer = Vec::new();
 
@@ -386,7 +386,7 @@ mod test {
         insta::assert_debug_snapshot!("R Universe arrow API parse", api);
 
         // test without path element
-        let content = fs::read_to_string("src/tests/r_universe/scicalc.api").unwrap();
+        let content = fs::read_to_string("src/tests/r_universe/osinfo.api").unwrap();
         let api: RUniverseApi = serde_json::from_str(&content).unwrap();
         insta::assert_debug_snapshot!("R Universe scicalc API parse", api);
     }
