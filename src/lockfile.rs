@@ -123,17 +123,15 @@ impl Source {
         match self {
             Source::Repository { ref repository } => repository.as_str(),
             Source::Local { ref path, .. } => path.to_str().unwrap(),
-            Source::Git { ref git, .. } => git.as_str(),
+            Source::Git { ref git, .. } | Source::RUniverse { ref git, .. } => git.as_str(),
             Source::Url { ref url, .. } => url.as_str(),
-            Source::RUniverse { ref git, .. } => git.as_str(),
         }
     }
 
     pub fn sha(&self) -> &str {
         match self {
-            Source::Git { ref sha, .. } => sha.as_str(),
+            Source::Git { ref sha, .. } | Source::RUniverse { ref sha, .. } => sha.as_str(),
             Source::Url { ref sha, .. } => sha.as_str(),
-            Source::RUniverse { ref sha, .. } => sha.as_str(),
             _ => unreachable!("handle other cases"),
         }
     }
