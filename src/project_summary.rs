@@ -319,17 +319,22 @@ impl<'a> DependencySummary<'a> {
             };
         };
 
-        let status = match cache.get_installation_status(
-            &resolved_dep.name,
-            &resolved_dep.version.original,
-            &resolved_dep.source,
-        ) {
-            // If the package has a binary in the cache, we can use it independent of if the package is binary or not
-            InstallationStatus::Both | InstallationStatus::Binary => DependencyStatus::InCache,
-            // If the dependency is not a binary and we have the source in the cache, we can compile it
-            InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
-            // If the dependency is absent or only source when we want a binary, we report it as missing
-            _ => DependencyStatus::Missing,
+        // If the package is resolved as builtin, then we consider it installed
+        let status = if let Source::Builtin { .. } = resolved_dep.source {
+            DependencyStatus::Installed
+        } else {
+            match cache.get_installation_status(
+                &resolved_dep.name,
+                &resolved_dep.version.original,
+                &resolved_dep.source,
+            ) {
+                // If the package has a binary in the cache, we can use it independent of if the package is binary or not
+                InstallationStatus::Both | InstallationStatus::Binary => DependencyStatus::InCache,
+                // If the dependency is not a binary and we have the source in the cache, we can compile it
+                InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
+                // If the dependency is absent or only source when we want a binary, we report it as missing
+                _ => DependencyStatus::Missing,
+            }
         };
 
         Self {
@@ -418,9 +423,10 @@ fn is_binary_package(
     repo_dbs: &[(RepositoryDatabase, bool)],
     r_version: &Version,
 ) -> bool {
-    // We only will say a package is a binary if its from a repository
+    // We only will say a package is a binary if its from a repository or its built in
     let repository = match &resolved_dep.source {
         Source::Repository { repository } => repository,
+        Source::Builtin { .. } => return true,
         _ => return false,
     };
     let ver_req = Some(VersionRequirement::new(
