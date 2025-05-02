@@ -1,0 +1,22 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "posit", url = "http://posit" },
+]
+dependencies = [
+    # It should resolve to the version from the repository
+    {name = "MASS", repository = "posit"}
+]
+---
+ repos = [{name = "posit", source = "posit-src", force_source = false}]
+---
+version = 2
+r_version = "4.4"
+
+[[packages]]
+name = "MASS"
+version = "7.3-64"
+source = { builtin = true }
+force_source = false
+dependencies = []

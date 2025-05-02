@@ -39,6 +39,13 @@ pub(crate) struct QueueItem<'d> {
 }
 
 impl<'d> QueueItem<'d> {
+    fn has_required_repo(&self) -> bool {
+        self.dep.is_some_and(|d| match d {
+            ConfigDependency::Detailed { repository, .. } => repository.is_some(),
+            _ => false,
+        })
+    }
+
     fn name_and_parent_only(name: Cow<'d, str>, parent: Cow<'d, str>) -> Self {
         Self {
             name,
@@ -459,12 +466,15 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // First let's check if it's a builtin package if the R version is matching
-            if let Some((resolved_dep, items)) = self.builtin_lookup(&item) {
-                processed.insert(resolved_dep.name.to_string());
-                result.add_found(resolved_dep);
-                queue.extend(items);
-                continue;
+            // First let's check if it's a builtin package if the R version is matching if the package
+            // is not listed from a specific repo
+            if !item.has_required_repo() {
+                if let Some((resolved_dep, items)) = self.builtin_lookup(&item) {
+                    processed.insert(resolved_dep.name.to_string());
+                    result.add_found(resolved_dep);
+                    queue.extend(items);
+                    continue;
+                }
             }
 
             // Look at lockfile
@@ -795,8 +805,13 @@ mod tests {
             // let builtin_packages = cache.get_builtin_packages_versions(r_cmd.clone()).unwrap();
             let mut builtin_packages = HashMap::new();
             let mut survival = Package::default();
+            survival.name = "survival".to_string();
             survival.version = Version::from_str("2.1.1").unwrap();
             builtin_packages.insert("survival".to_string(), survival);
+            let mut mass = Package::default();
+            mass.name = "MASS".to_string();
+            mass.version = Version::from_str("7.3-60").unwrap();
+            builtin_packages.insert("MASS".to_string(), mass);
 
             let resolver = Resolver::new(
                 Path::new("."),

@@ -9,4 +9,4 @@ randomForest=4.7-1.2 (repository(url: http://cran), type=binary, path='', from_l
 e1071=1.7-16 (repository(url: http://cran), type=binary, path='', from_lockfile=false, from_remote=false)
 class=7.3-22 (repository(url: http://cran), type=binary, path='', from_lockfile=false, from_remote=false)
 proxy=0.4-27 (repository(url: http://cran), type=binary, path='', from_lockfile=false, from_remote=false)
-MASS=7.3-61 (repository(url: http://cran), type=binary, path='', from_lockfile=false, from_remote=false)
+MASS=7.3-60 (builtin, type=binary, path='', from_lockfile=false, from_remote=false)
