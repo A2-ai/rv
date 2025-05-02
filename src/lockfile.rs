@@ -99,6 +99,10 @@ impl Source {
         matches!(self, Source::Repository { .. })
     }
 
+    pub fn is_builtin(&self) -> bool {
+        matches!(self, Source::Builtin { .. })
+    }
+
     /// The key to use in the cache: URL for a package repository, git URL for a git repository
     /// and for local the actual path
     pub fn source_path(&self) -> &str {
