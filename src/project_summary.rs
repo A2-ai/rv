@@ -104,7 +104,9 @@ impl<'a> RemoteInfo<'a> {
 
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (alias, (url, bin_count, src_count)) in &self.repositories {
+        let mut repos = self.repositories.iter().collect::<Vec<_>>();
+        repos.sort_by_key(|(a, _)| *a);
+        for (alias, (url, bin_count, src_count)) in repos {
             writeln!(
                 f,
                 "{alias} ({url}): {bin_count} binary packages, {src_count} source packages"
@@ -210,6 +212,9 @@ impl fmt::Display for DependencyInfo<'_> {
 
         let mut pkg_source = String::from("Package Sources: \n");
         let mut install_summary = String::from("\nInstallation Summary: \n");
+
+        let mut dependencies = self.dependencies.iter().collect::<Vec<_>>();
+        dependencies.sort_by_key(|(a, _)| *a);
         for (s, dep_vec) in &self.dependencies {
             let counts = Counts::new(dep_vec);
             pkg_source.push_str(&format!(
@@ -320,21 +325,17 @@ impl<'a> DependencySummary<'a> {
         };
 
         // If the package is resolved as builtin, then we consider it installed
-        let status = if let Source::Builtin { .. } = resolved_dep.source {
-            DependencyStatus::Installed
-        } else {
-            match cache.get_installation_status(
-                &resolved_dep.name,
-                &resolved_dep.version.original,
-                &resolved_dep.source,
-            ) {
-                // If the package has a binary in the cache, we can use it independent of if the package is binary or not
-                InstallationStatus::Both | InstallationStatus::Binary => DependencyStatus::InCache,
-                // If the dependency is not a binary and we have the source in the cache, we can compile it
-                InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
-                // If the dependency is absent or only source when we want a binary, we report it as missing
-                _ => DependencyStatus::Missing,
-            }
+        let status = match cache.get_installation_status(
+            &resolved_dep.name,
+            &resolved_dep.version.original,
+            &resolved_dep.source,
+        ) {
+            // If the package has a binary in the cache, we can use it independent of if the package is binary or not
+            InstallationStatus::Both | InstallationStatus::Binary => DependencyStatus::InCache,
+            // If the dependency is not a binary and we have the source in the cache, we can compile it
+            InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
+            // If the dependency is absent or only source when we want a binary, we report it as missing
+            _ => DependencyStatus::Missing,
         };
 
         Self {
