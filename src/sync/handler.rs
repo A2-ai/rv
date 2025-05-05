@@ -92,7 +92,7 @@ impl<'a> SyncHandler<'a> {
             Source::Repository { .. } => {
                 sources::repositories::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
-            Source::Git { .. } => sources::git::install_package(
+            Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,
                 &self.staging_path,
                 self.cache,

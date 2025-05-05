@@ -1,0 +1,48 @@
+{
+  "Package": "osinfo",
+  "Title": "Get the os info in a cross platform way",
+  "Version": "0.0.1",
+  "Authors@R": "person(\"Devin\", \"Pastoor\", , \"devin.pastoor@gmail.com\", role = c(\"aut\", \"cre\"))",
+  "Description": "Get the os info in a cross platform way.",
+  "License": "MIT + file LICENSE",
+  "Encoding": "UTF-8",
+  "Roxygen": "list(markdown = TRUE)",
+  "RoxygenNote": "7.3.2",
+  "Config/rextendr/version": "0.3.1.9001",
+  "SystemRequirements": "Cargo (Rust's package manager), rustc",
+  "Config/testthat/edition": "3",
+  "Repository": "https://a2-ai.r-universe.dev",
+  "RemoteUrl": "https://github.com/a2-ai/osinfo",
+  "RemoteRef": "HEAD",
+  "RemoteSha": "f815095b7b04cbf57da0e0c0a55ef5e03c16f477",
+  "NeedsCompilation": "yes",
+  "Packaged": {
+    "Date": "2025-04-15 02:52:43 UTC",
+    "User": "root"
+  },
+  "Author": "Devin Pastoor [aut, cre]",
+  "Maintainer": "Devin Pastoor <devin.pastoor@gmail.com>",
+  "MD5sum": "890f6690dbcdfe35d361c3a44281effd",
+  "_user": "a2-ai",
+  "_type": "src",
+  "_file": "osinfo_0.0.1.tar.gz",
+  "_fileid": "1117a0127fa57a199e65d38b678b4c51ab19600ccbe5c6dfa8549d021237199a",
+  "_filesize": 74951,
+  "_sha256": "1117a0127fa57a199e65d38b678b4c51ab19600ccbe5c6dfa8549d021237199a",
+  "_created": "2025-04-15T02:52:43.000Z",
+  "_published": "2025-04-15T02:58:03.350Z",
+  "_upstream": "https://github.com/a2-ai/osinfo",
+  "_commit": {
+    "id": "f815095b7b04cbf57da0e0c0a55ef5e03c16f477",
+    "author": "Devin Pastoor <devin@a2-ai.com>",
+    "committer": "GitHub <noreply@github.com>",
+    "message": "Update DESCRIPTION",
+    "time": 1734308570
+  },
+  "_maintainer": {
+    "name": "Devin Pastoor",
+    "email": "devin.pastoor@gmail.com",
+    "login": "dpastoor",
+    "uuid": 3196313
+  }
+}

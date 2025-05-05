@@ -230,6 +230,7 @@ impl<'d> Resolver<'d> {
         &self,
         item: &QueueItem<'d>,
         cache: &'d DiskCache,
+        http_download: &impl HttpDownload,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
@@ -264,6 +265,7 @@ impl<'d> Resolver<'d> {
                             repository: repo.url.clone(),
                         },
                     ),
+                    http_download,
                 );
                 return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
             }
@@ -563,7 +565,9 @@ impl<'d> Resolver<'d> {
                         continue;
                     }
 
-                    if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
+                    if let Some((resolved_dep, items)) =
+                        self.repositories_lookup(&item, cache, http_download)
+                    {
                         result.add_found(resolved_dep);
                         queue.extend(items);
                     } else {
@@ -672,10 +676,21 @@ mod tests {
     impl HttpDownload for FakeHttp {
         fn download<W: Write>(
             &self,
-            _: &str,
-            _: &mut W,
+            url: &str,
+            w: &mut W,
             _: Vec<(&str, String)>,
         ) -> Result<u64, HttpError> {
+            // if its an api query, we return the api string
+            if url.contains("r-universe.dev/api") {
+                let path = format!(
+                    "src/tests/r_universe/{}.api",
+                    url.split('/').last().unwrap_or("")
+                );
+                let content = fs::read_to_string(path).unwrap();
+
+                w.write_all(content.as_bytes())
+                    .map_err(|e| HttpError::from_io(url, e))?;
+            }
             Ok(0)
         }
 
@@ -821,6 +836,7 @@ mod tests {
                 &builtin_packages,
                 Some(&lockfile),
             );
+
             let resolution = resolver.resolve(
                 &config.dependencies(),
                 config.prefer_repositories_for(),

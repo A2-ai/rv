@@ -79,7 +79,7 @@ pub struct HttpError {
 }
 
 impl HttpError {
-    fn from_io(url: &str, e: io::Error) -> Self {
+    pub(crate) fn from_io(url: &str, e: io::Error) -> Self {
         Self {
             url: url.to_string(),
             source: HttpErrorKind::Io(e),

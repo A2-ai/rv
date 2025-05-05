@@ -5,7 +5,7 @@ use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
-use crate::{Http, HttpDownload, Version, VersionRequirement};
+use crate::{HttpDownload, Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -83,6 +83,7 @@ impl<'d> ResolvedDependency<'d> {
         install_suggests: bool,
         force_source: bool,
         installation_status: InstallationStatus,
+        http_download: &impl HttpDownload,
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
 
@@ -95,8 +96,12 @@ impl<'d> ResolvedDependency<'d> {
         // and git info. The repository is used while the locked version and version in the PACKAGES database match,
         // switching to using git once it is no longer available
         if repo_url.contains("r-universe.dev") {
-            match RUniverseApi::query_r_universe_api(package, repo_url) {
-                Ok(r) => source = Source::Git { git: r.remote_url, sha: r.remote_sha, directory: None, tag: None, branch: None },
+            match RUniverseApi::query_r_universe_api(&package.name, repo_url, http_download) {
+                Ok(r) => source = Source::RUniverse {
+                    repository: repo_url.to_string(),
+                    git: r.remote_url.to_string(),
+                    sha: r.remote_sha.to_string(),
+                    directory: r.remote_subdir },
                 Err(e) => log::warn!("Could not properly lock {} due to: {e:?}. Falling back to standard repository. Library may not be able to be recreated.", package.name),
             }
         }
@@ -337,12 +342,16 @@ impl fmt::Display for UnresolvedDependency<'_> {
 struct RUniverseApi {
     remote_url: String,
     remote_sha: String,
+    remote_subdir: Option<String>,
 }
 
 impl RUniverseApi {
-    fn query_r_universe_api(package: &Package, repo_url: &str) -> Result<Self, RUniverseApiError> {
-        let http = Http {};
-        let api_url = format!("{}/api/packages/{}", repo_url, package.name);
+    fn query_r_universe_api(
+        pkg_name: &str,
+        repo_url: &str,
+        http: &impl HttpDownload,
+    ) -> Result<Self, RUniverseApiError> {
+        let api_url = format!("{}/api/packages/{}", repo_url, pkg_name);
         let mut writer = Vec::new();
 
         http.download(&api_url, &mut writer, Vec::new())?;
@@ -391,4 +400,24 @@ pub enum RUniverseApiErrorKind {
     Utf8(#[from] Utf8Error),
     #[error(transparent)]
     Parse(#[from] serde_json::Error),
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+
+    use super::RUniverseApi;
+
+    #[test]
+    fn runiverse_api() {
+        // test with path element
+        let content = fs::read_to_string("src/tests/r_universe/arrow.api").unwrap();
+        let api: RUniverseApi = serde_json::from_str(&content).unwrap();
+        insta::assert_debug_snapshot!("R Universe arrow API parse", api);
+
+        // test without path element
+        let content = fs::read_to_string("src/tests/r_universe/osinfo.api").unwrap();
+        let api: RUniverseApi = serde_json::from_str(&content).unwrap();
+        insta::assert_debug_snapshot!("R Universe scicalc API parse", api);
+    }
 }

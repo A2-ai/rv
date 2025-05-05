@@ -177,7 +177,7 @@ impl DiskCache {
         version: Option<&str>,
     ) -> PackagePaths {
         match source {
-            Source::Git { git, sha, .. } => PackagePaths {
+            Source::Git { git, sha, .. } | Source::RUniverse { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git),
                 binary: self.get_repo_root_binary_dir(git).join(&sha[..10]),
             },
@@ -211,7 +211,7 @@ impl DiskCache {
         source: &Source,
     ) -> InstallationStatus {
         let (source_path, binary_path) = match source {
-            Source::Git { .. } | Source::Url { .. } => {
+            Source::Git { .. } | Source::Url { .. } | Source::RUniverse { .. } => {
                 let paths = self.get_package_paths(source, None, None);
                 (paths.source, paths.binary.join(pkg_name))
             }

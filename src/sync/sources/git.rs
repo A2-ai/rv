@@ -19,6 +19,7 @@ pub(crate) fn install_package(
     if !pkg.installation_status.binary_available() {
         let (repo_url, sha) = match &pkg.source {
             Source::Git { git, sha, .. } => (git, sha),
+            Source::RUniverse { git, sha, .. } => (git, sha),
             _ => unreachable!(),
         };
 
@@ -33,6 +34,10 @@ pub(crate) fn install_package(
         // If we have a directory, don't forget to set it before building it
         let source_path = match &pkg.source {
             Source::Git {
+                directory: Some(dir),
+                ..
+            }
+            | Source::RUniverse {
                 directory: Some(dir),
                 ..
             } => pkg_paths.source.join(dir),

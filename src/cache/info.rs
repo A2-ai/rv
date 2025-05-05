@@ -79,7 +79,7 @@ impl CacheInfo {
             }
             let paths = cache.get_package_paths(&d.source, None, None);
             match d.source {
-                Source::Git { git, .. } => {
+                Source::Git { git, .. } | Source::RUniverse { git, .. } => {
                     git_paths.push(CacheUrlInfo {
                         url: git,
                         source_path: paths.source,

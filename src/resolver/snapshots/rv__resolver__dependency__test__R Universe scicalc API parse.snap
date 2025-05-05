@@ -1,0 +1,9 @@
+---
+source: src/resolver/dependency.rs
+expression: api
+---
+RUniverseApi {
+    remote_url: "https://github.com/a2-ai/osinfo",
+    remote_sha: "f815095b7b04cbf57da0e0c0a55ef5e03c16f477",
+    remote_subdir: None,
+}
