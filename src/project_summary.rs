@@ -104,7 +104,9 @@ impl<'a> RemoteInfo<'a> {
 
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (alias, (url, bin_count, src_count)) in &self.repositories {
+        let mut repos = self.repositories.iter().collect::<Vec<_>>();
+        repos.sort_by_key(|(a, _)| *a);
+        for (alias, (url, bin_count, src_count)) in repos {
             writeln!(
                 f,
                 "{alias} ({url}): {bin_count} binary packages, {src_count} source packages"
@@ -210,6 +212,9 @@ impl fmt::Display for DependencyInfo<'_> {
 
         let mut pkg_source = String::from("Package Sources: \n");
         let mut install_summary = String::from("\nInstallation Summary: \n");
+
+        let mut dependencies = self.dependencies.iter().collect::<Vec<_>>();
+        dependencies.sort_by_key(|(a, _)| *a);
         for (s, dep_vec) in &self.dependencies {
             let counts = Counts::new(dep_vec);
             pkg_source.push_str(&format!(
@@ -319,6 +324,7 @@ impl<'a> DependencySummary<'a> {
             };
         };
 
+        // If the package is resolved as builtin, then we consider it installed
         let status = match cache.get_installation_status(
             &resolved_dep.name,
             &resolved_dep.version.original,
@@ -418,9 +424,10 @@ fn is_binary_package(
     repo_dbs: &[(RepositoryDatabase, bool)],
     r_version: &Version,
 ) -> bool {
-    // We only will say a package is a binary if its from a repository
+    // We only will say a package is a binary if its from a repository or its built in
     let repository = match &resolved_dep.source {
         Source::Repository { repository } => repository,
+        Source::Builtin { .. } => return true,
         _ => return false,
     };
     let ver_req = Some(VersionRequirement::new(

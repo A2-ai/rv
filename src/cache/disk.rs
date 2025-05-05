@@ -222,7 +222,7 @@ impl DiskCache {
             // TODO: can we cache local somehow?
             Source::Local { .. } => return InstallationStatus::Absent,
             // TODO: check if we have specific versions
-            Source::Builtin { .. } => return InstallationStatus::Absent,
+            Source::Builtin { .. } => return InstallationStatus::Binary,
         };
 
         match (source_path.is_dir(), binary_path.is_dir()) {
