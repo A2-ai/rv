@@ -89,7 +89,7 @@ impl Source {
                 if let Some(s) = sha {
                     table.insert("sha", Value::from(s));
                 }
-            
+            }
             Self::RUniverse {
                 repository,
                 git,
@@ -102,6 +102,7 @@ impl Source {
                 if let Some(d) = directory {
                     table.insert("directory", Value::from(d));
                 }
+            }
             Self::Builtin { .. } => {
                 table.insert("builtin", Value::from(true));
             }
@@ -243,6 +244,7 @@ impl fmt::Debug for Source {
                 directory,
             } => {
                 write!(f, "runiverse(repo: {repository}, url: {git}, sha: {sha}, directory: {directory:?})")
+            }
             Self::Builtin { .. } => {
                 write!(f, "builtin")
             }
@@ -279,6 +281,7 @@ impl fmt::Display for Source {
             }
             Self::RUniverse { git, sha, .. } => {
                 write!(f, "{git} (commit: {sha})")
+            }
             Self::Builtin { .. } => {
                 write!(f, "builtin")
             }
