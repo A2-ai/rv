@@ -31,7 +31,7 @@ def run_examples():
         subfolder_path = os.path.join(PARENT_FOLDER, subfolder, "rproject.toml")
         print(f"===== Processing example: {subfolder_path} =====")
 
-        # The git packages depend on each other but we don't want
+        # The git packages depend on each other but we don't want rv to use the cache for them
         if "git" in subfolder_path:
             out = run_cmd("cache", subfolder_path, ["--json"])
             if out:
@@ -43,7 +43,10 @@ def run_examples():
                 print("Cache command didn't return anything")
 
         run_cmd("sync", subfolder_path)
-        run_cmd("plan", subfolder_path)
+        plan_result = run_cmd("plan", subfolder_path)
+        if "Nothing to do" not in plan_result and not ("git" in subfolder_path or "no-lockfile" in subfolder_path or "url" in subfolder_path):
+            print(f"Plan after sync has changes planned for {subfolder}")
+            return 1
         library_path = run_cmd("library", subfolder_path)
         folder_count = len(os.listdir(library_path.strip()))
 
