@@ -1,4 +1,3 @@
-use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -6,11 +5,14 @@ use std::fmt;
 use std::path::Path;
 use toml_edit::{InlineTable, Value};
 
+mod builtin;
 mod description;
 mod parser;
 mod remotes;
 mod version;
 
+use crate::consts::BASE_PACKAGES;
+pub use builtin::{get_builtin_versions_from_library, BuiltinPackages};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
 pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
@@ -120,9 +122,7 @@ impl Package {
         let suggests = if install_suggestions {
             self.suggests
                 .iter()
-                .filter(|p| {
-                    !BASE_PACKAGES.contains(&p.name()) && !RECOMMENDED_PACKAGES.contains(&p.name())
-                })
+                .filter(|p| !BASE_PACKAGES.contains(&p.name()))
                 .collect()
         } else {
             Vec::new()
@@ -131,9 +131,7 @@ impl Package {
         InstallationDependencies {
             direct: out
                 .into_iter()
-                .filter(|p| {
-                    !BASE_PACKAGES.contains(&p.name()) && !RECOMMENDED_PACKAGES.contains(&p.name())
-                })
+                .filter(|p| !BASE_PACKAGES.contains(&p.name()))
                 .collect(),
             suggests,
         }

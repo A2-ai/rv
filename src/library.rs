@@ -186,6 +186,7 @@ impl Library {
                 }
             }
             Source::Repository { .. } => &self.packages[pkg.name.as_ref()] == pkg.version.as_ref(),
+            Source::Builtin { .. } => true,
         }
     }
 }

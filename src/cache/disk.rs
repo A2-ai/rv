@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Formatter;
@@ -11,7 +12,8 @@ use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
 use crate::lockfile::Source;
-use crate::{SystemInfo, Version};
+use crate::package::{get_builtin_versions_from_library, BuiltinPackages, Package};
+use crate::{RCmd, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
@@ -196,6 +198,7 @@ impl DiskCache {
                 ),
             },
             Source::Local { .. } => unreachable!("Not used for local paths"),
+            Source::Builtin { .. } => unreachable!("Not used for builtin packages"),
         }
     }
 
@@ -218,6 +221,8 @@ impl DiskCache {
             }
             // TODO: can we cache local somehow?
             Source::Local { .. } => return InstallationStatus::Absent,
+            // TODO: check if we have specific versions
+            Source::Builtin { .. } => return InstallationStatus::Binary,
         };
 
         match (source_path.is_dir(), binary_path.is_dir()) {
@@ -225,6 +230,22 @@ impl DiskCache {
             (true, false) => InstallationStatus::Source,
             (false, true) => InstallationStatus::Binary,
             (false, false) => InstallationStatus::Absent,
+        }
+    }
+
+    pub fn get_builtin_packages_versions(
+        &self,
+        r_cmd: impl RCmd,
+    ) -> std::io::Result<HashMap<String, Package>> {
+        let version = r_cmd.version().expect("to work");
+        let filename = format!("builtin-{}.bin", version.original);
+        let path = self.root.join(&filename);
+        if let Some(builtin) = BuiltinPackages::load(&path) {
+            Ok(builtin.packages)
+        } else {
+            let builtin = get_builtin_versions_from_library(r_cmd)?;
+            builtin.persist(&path)?;
+            Ok(builtin.packages)
         }
     }
 }

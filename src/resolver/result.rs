@@ -37,8 +37,7 @@ impl<'d> Resolution<'d> {
     pub(crate) fn found_in_repo(&self, name: &str) -> bool {
         self.found
             .iter()
-            .find(|d| d.source.is_repo() && d.name == name)
-            .is_some()
+            .any(|d| d.source.is_repo() && d.name == name)
     }
 
     pub fn finalize(&mut self) {

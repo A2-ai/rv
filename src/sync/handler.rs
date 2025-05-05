@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::consts::RECOMMENDED_PACKAGES;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
@@ -104,6 +105,7 @@ impl<'a> SyncHandler<'a> {
             Source::Url { .. } => {
                 sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
             }
+            Source::Builtin { .. } => Ok(()),
         }
     }
 
@@ -138,6 +140,15 @@ impl<'a> SyncHandler<'a> {
                 }
             }
             deps_to_remove.insert((name.as_str(), true));
+        }
+
+        // Skip builtin versions
+        for name in RECOMMENDED_PACKAGES {
+            if let Some(dep) = deps_by_name.get(name) {
+                if dep.source.is_builtin() {
+                    deps_seen.insert(name);
+                }
+            }
         }
 
         // Lastly, remove any package that we can't really access

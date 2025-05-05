@@ -151,6 +151,7 @@ fn resolve_dependencies<'a>(
             .map(|x| x.url())
             .collect(),
         &context.r_version,
+        &context.builtin_packages,
         lockfile.as_ref(),
     );
 

@@ -3,8 +3,9 @@ use crate::{CommandExecutor, ConfigDependency, DiskCache, Lockfile, RepositoryDa
 
 use fs_err as fs;
 use std::borrow::Cow;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 mod dependency;
 mod result;
@@ -15,8 +16,8 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    is_binary_package, parse_description_file, parse_description_file_in_folder, PackageRemote,
-    PackageType,
+    is_binary_package, parse_description_file, parse_description_file_in_folder, Package,
+    PackageRemote, PackageType,
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
@@ -38,6 +39,13 @@ pub(crate) struct QueueItem<'d> {
 }
 
 impl<'d> QueueItem<'d> {
+    fn has_required_repo(&self) -> bool {
+        self.dep.is_some_and(|d| match d {
+            ConfigDependency::Detailed { repository, .. } => repository.is_some(),
+            _ => false,
+        })
+    }
+
     fn name_and_parent_only(name: Cow<'d, str>, parent: Cow<'d, str>) -> Self {
         Self {
             name,
@@ -89,6 +97,8 @@ pub struct Resolver<'d> {
     /// We might not have loaded the databases but we still want their urls
     repo_urls: HashSet<&'d str>,
     r_version: &'d Version,
+    /// The base + recommended package versions for the R version we are using
+    builtin_packages: &'d HashMap<String, Package>,
     /// If we have a lockfile for the resolver, we will skip looking at the database for any package
     /// listed in it
     lockfile: Option<&'d Lockfile>,
@@ -102,6 +112,7 @@ impl<'d> Resolver<'d> {
         repositories: &'d [(RepositoryDatabase, bool)],
         repo_urls: HashSet<&'d str>,
         r_version: &'d Version,
+        builtin_packages: &'d HashMap<String, Package>,
         lockfile: Option<&'d Lockfile>,
     ) -> Self {
         Self {
@@ -110,6 +121,7 @@ impl<'d> Resolver<'d> {
             repo_urls,
             r_version,
             lockfile,
+            builtin_packages,
             show_progress_bar: false,
         }
     }
@@ -189,10 +201,17 @@ impl<'d> Resolver<'d> {
                 return None;
             }
 
+            if let Some(req) = &item.version_requirement {
+                if !req.is_satisfied(&Version::from_str(&package.version).unwrap()) {
+                    return None;
+                }
+            }
+
             let installation_status =
                 cache.get_installation_status(&item.name, &package.version, &package.source);
             let resolved_dep =
                 ResolvedDependency::from_locked_package(package, installation_status);
+
             let items = package
                 .dependencies
                 .iter()
@@ -365,6 +384,30 @@ impl<'d> Resolver<'d> {
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
+    fn builtin_lookup(
+        &self,
+        item: &QueueItem<'d>,
+    ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+        if let Some(package) = self.builtin_packages.get(item.name.as_ref()) {
+            if let Some(ref req) = item.version_requirement {
+                if req.is_satisfied(&package.version) {
+                    let (resolved_dep, deps) =
+                        ResolvedDependency::from_builtin_package(package, item.install_suggestions);
+                    Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+                } else {
+                    None
+                }
+            } else {
+                // if there's no version requirement, we are fine with what's builtin
+                let (resolved_dep, deps) =
+                    ResolvedDependency::from_builtin_package(package, item.install_suggestions);
+                Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+            }
+        } else {
+            None
+        }
+    }
+
     /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
@@ -425,7 +468,18 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // Look at lockfile before doing anything else
+            // First let's check if it's a builtin package if the R version is matching if the package
+            // is not listed from a specific repo
+            if !item.has_required_repo() {
+                if let Some((resolved_dep, items)) = self.builtin_lookup(&item) {
+                    processed.insert(resolved_dep.name.to_string());
+                    result.add_found(resolved_dep);
+                    queue.extend(items);
+                    continue;
+                }
+            }
+
+            // Look at lockfile
             if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed.insert(resolved_dep.name.to_string());
                 result.add_found(resolved_dep);
@@ -602,7 +656,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::config::Config;
-    use crate::consts::DESCRIPTION_FILENAME;
+    use crate::consts::{BASE_PACKAGES, DESCRIPTION_FILENAME};
     use crate::http::HttpError;
     use crate::package::{parse_package_file, Package};
     use crate::repository::RepositoryDatabase;
@@ -762,11 +816,24 @@ mod tests {
             let p = path.unwrap().path();
             let (config, r_version, repositories, lockfile) = extract_test_elements(&p, &dbs);
             let (_cache_dir, cache) = setup_cache(&r_version);
+            // let r_cmd = RCommandLine { r: None };
+            // let builtin_packages = cache.get_builtin_packages_versions(r_cmd.clone()).unwrap();
+            let mut builtin_packages = HashMap::new();
+            let mut survival = Package::default();
+            survival.name = "survival".to_string();
+            survival.version = Version::from_str("2.1.1").unwrap();
+            builtin_packages.insert("survival".to_string(), survival);
+            let mut mass = Package::default();
+            mass.name = "MASS".to_string();
+            mass.version = Version::from_str("7.3-60").unwrap();
+            builtin_packages.insert("MASS".to_string(), mass);
+
             let resolver = Resolver::new(
                 Path::new("."),
                 &repositories,
                 repositories.iter().map(|(x, _)| x.url.as_str()).collect(),
                 &r_version,
+                &builtin_packages,
                 Some(&lockfile),
             );
 
@@ -780,7 +847,12 @@ mod tests {
             // let new_lockfile = Lockfile::from_resolved(&r_version.major_minor(), resolution.found.clone());
             // println!("{}", new_lockfile.as_toml_string());
             let mut out = String::new();
-            for d in resolution.found {
+            // Base packages would be noise for the resolution
+            for d in resolution
+                .found
+                .iter()
+                .filter(|x| !BASE_PACKAGES.contains(&x.name.as_ref()))
+            {
                 out.push_str(&format!("{d:?}"));
                 out.push_str("\n");
             }

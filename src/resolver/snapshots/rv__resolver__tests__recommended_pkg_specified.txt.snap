@@ -1,0 +1,6 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+higher-base-pkg=0.0.1 (repository(url: http://repo1), type=source, path='', from_lockfile=false, from_remote=false)
+survival=6.0.0 (repository(url: http://repo1), type=source, path='', from_lockfile=false, from_remote=false)
