@@ -217,6 +217,32 @@ impl<'d> ResolvedDependency<'d> {
 
         (res, deps)
     }
+
+    pub fn from_builtin_package(
+        package: &'d Package,
+        install_suggests: bool,
+    ) -> (Self, InstallationDependencies<'d>) {
+        let deps = package.dependencies_to_install(install_suggests);
+
+        let res = Self {
+            name: Cow::Borrowed(&package.name),
+            version: Cow::Borrowed(&package.version),
+            source: Source::Builtin { builtin: true },
+            dependencies: deps.direct.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            suggests: deps.suggests.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            kind: PackageType::Binary,
+            force_source: false,
+            install_suggests,
+            path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
+            from_lockfile: false,
+            installation_status: InstallationStatus::Binary,
+            remotes: HashMap::new(),
+            from_remote: false,
+            local_resolved_path: None,
+        };
+
+        (res, deps)
+    }
 }
 
 impl fmt::Debug for ResolvedDependency<'_> {

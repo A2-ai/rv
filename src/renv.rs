@@ -7,8 +7,8 @@ use std::{
 
 use serde::{Deserialize, Deserializer};
 
+use crate::consts::RECOMMENDED_PACKAGES;
 use crate::{
-    consts::RECOMMENDED_PACKAGES,
     package::{deserialize_version, Operator, Version, VersionRequirement},
     Repository, RepositoryDatabase,
 };

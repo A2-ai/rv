@@ -28,22 +28,7 @@ pub trait RCmd: Send + Sync {
         destination: impl AsRef<Path>,
     ) -> Result<String, InstallError>;
 
-    fn check(
-        &self,
-        file_path: &Path,
-        result_path: &Path,
-        args: Vec<&str>,
-        env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error>;
-
-    fn build(
-        &self,
-        file_path: &Path,
-        library: &Path,
-        output_path: &Path,
-        args: Vec<&str>,
-        env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error>;
+    fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
 
     fn version(&self) -> Result<Version, VersionError>;
 }
@@ -211,25 +196,32 @@ impl RCmd for RCommandLine {
         Ok(output)
     }
 
-    fn check(
-        &self,
-        _file_path: &Path,
-        _result_path: &Path,
-        _args: Vec<&str>,
-        _env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error> {
-        todo!()
-    }
+    fn get_r_library(&self) -> Result<PathBuf, LibraryError> {
+        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+            .arg("RHOME")
+            .output()
+            .map_err(|e| LibraryError {
+                source: LibraryErrorKind::Io(e),
+            })?;
 
-    fn build(
-        &self,
-        _file_path: &Path,
-        _library: &Path,
-        _output_path: &Path,
-        _args: Vec<&str>,
-        _env_var: Vec<(&str, &str)>,
-    ) -> Result<(), std::io::Error> {
-        todo!()
+        let stdout = std::str::from_utf8(if cfg!(windows) {
+            &output.stderr
+        } else {
+            &output.stdout
+        })
+        .map_err(|e| LibraryError {
+            source: LibraryErrorKind::Utf8(e),
+        })?;
+
+        let lib_path = PathBuf::from(stdout.trim()).join("library");
+
+        if lib_path.is_dir() {
+            Ok(lib_path)
+        } else {
+            Err(LibraryError {
+                source: LibraryErrorKind::NotFound,
+            })
+        }
     }
 
     fn version(&self) -> Result<Version, VersionError> {
@@ -316,6 +308,22 @@ pub enum VersionErrorKind {
         "Specified R version ({0}) does not match any available versions found on the system ({1})"
     )]
     NotCompatible(String, String),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to get R version")]
+#[non_exhaustive]
+pub struct LibraryError {
+    pub source: LibraryErrorKind,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub enum LibraryErrorKind {
+    Io(#[from] std::io::Error),
+    Utf8(#[from] std::str::Utf8Error),
+    #[error("Library for current R not found")]
+    NotFound,
 }
 
 #[allow(unused_imports, unused_variables)]

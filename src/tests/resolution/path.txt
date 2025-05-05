@@ -1,9 +1,12 @@
 [project]
 name = "path"
 r_version = "4.5"
-repositories = []
+repositories = [
+    { alias = "posit", url = "http://posit" },
+    ]
 dependencies = [
-    "MASS",
+    # It should resolve to the version from the repository, the one version with a path to 4.5.0
+    {name = "MASS", repository = "posit"}
 ]
 ---
 repos = [{name = "posit", source = "posit-src", force_source = false}]

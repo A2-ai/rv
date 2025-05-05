@@ -5,7 +5,7 @@
 > [!WARNING]
 > `rv` is still in development and may not be fully documented. For additional information, issues, or feature requests, please create an issue or contact us directly.
 
-# How it works
+## How it works
 
 `rv` has several top level commands to provide the user with as much flexibility as possible. The two primary commands are:
 ```
@@ -37,10 +37,16 @@ Running `rv sync` will synchronize the library, lock file, and configuration fil
 
 Additional example projects with more configurations can be found in the `example_projects' directory of this repository
 
-# Installation
+## Installation
 
 See the [installation documentation](docs/installation.md) for information on how to install `rv`.
 
-# Usage
+## Usage
 
+To upgrade packages to be the latest versions available from the sources listed, use `rv upgrade`. If you'd like to see what will occur when you were to upgrade, run `rv upgrade --dry-run` or `rv plan --upgrade`.
+
+## Contributing
+
+### Snapshot testing
+Snapshots require R version 4.4.x.
 See the [usage documentation](docs/usage.md) for information on how to use `rv`.
