@@ -62,6 +62,12 @@ just run <args>
 
 e.g. `just run sync` or `just run add --dry-run`.
 
+If you'd like to install the current version of the project as a binary, you can run:
+
+```bash
+just install
+```
+
 ### Unit testing
 
 Run the unit tests with:

@@ -4,3 +4,5 @@ run *args:
 test:
     cargo test
 
+install:
+    cargo install --path . --features cli
