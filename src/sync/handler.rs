@@ -129,12 +129,14 @@ impl<'a> SyncHandler<'a> {
         for name in self.library.packages.keys() {
             if let Some(dep) = deps_by_name.get(name.as_str()) {
                 // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
-                if self.library.contains_package(dep) && dep.from_lockfile {
-                    // If we don't have a lockfile, we cannot trust anything present in the library
-                    if self.has_lockfile {
-                        deps_seen.insert(name.as_str());
-                    } else if matches!(deps_by_name[name.as_str()].source, Source::Local { .. }) {
+                if self.library.contains_package(dep) {
+                    if matches!(deps_by_name[name.as_str()].source, Source::Local { .. }) {
                         deps_to_copy.insert(name.as_str());
+                        deps_seen.insert(name.as_str());
+                    }
+                    // If we don't have a lockfile, we cannot trust anything present in the library
+                    else if dep.from_lockfile {
+                        deps_seen.insert(name.as_str());
                     }
                     continue;
                 }
