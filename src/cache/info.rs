@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use crate::lockfile::Source;
-use crate::{hash_string, Config, DiskCache, ResolvedDependency};
+use crate::{Config, DiskCache, ResolvedDependency, hash_string};
 use serde::Serialize;
 
 /// Both for git and remote urls

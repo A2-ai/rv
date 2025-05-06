@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use crate::package::{parse_package_file, Package, PackageType};
+use crate::package::{Package, PackageType, parse_package_file};
 use crate::package::{Version, VersionRequirement};
 
 #[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]

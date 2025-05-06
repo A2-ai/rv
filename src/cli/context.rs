@@ -6,10 +6,10 @@ use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::utils::create_spinner;
 use crate::{
-    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit, Config,
-    DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
+    Config, DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
+    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -63,8 +63,8 @@ impl CliContext {
             if let Some(lockfile) = Lockfile::load(&lockfile_path)? {
                 if !lockfile.r_version().hazy_match(&r_version) {
                     log::debug!(
-                    "R version in config file and lockfile are not compatible. Ignoring lockfile."
-                );
+                        "R version in config file and lockfile are not compatible. Ignoring lockfile."
+                    );
                     None
                 } else {
                     Some(lockfile)
@@ -83,7 +83,9 @@ impl CliContext {
         let builtin_packages = if r_version_found {
             cache.get_builtin_packages_versions(&r_cmd)?
         } else {
-            log::warn!("R version not found: there may be issues with resolution regarding recommended packages");
+            log::warn!(
+                "R version not found: there may be issues with resolution regarding recommended packages"
+            );
             HashMap::new()
         };
 

@@ -12,11 +12,11 @@ mod remotes;
 mod version;
 
 use crate::consts::BASE_PACKAGES;
-pub use builtin::{get_builtin_versions_from_library, BuiltinPackages};
+pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
 pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
-pub use version::{deserialize_version, Operator, Version, VersionRequirement};
+pub use version::{Operator, Version, VersionRequirement, deserialize_version};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode)]
 pub enum PackageType {
@@ -54,9 +54,7 @@ impl Dependency {
     pub(crate) fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
-            Dependency::Pinned {
-                ref requirement, ..
-            } => Some(requirement),
+            Dependency::Pinned { requirement, .. } => Some(requirement),
         }
     }
 

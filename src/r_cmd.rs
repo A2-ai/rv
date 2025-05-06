@@ -5,8 +5,8 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
-use crate::sync::{LinkError, LinkMode};
 use crate::Version;
+use crate::sync::{LinkError, LinkMode};
 use regex::Regex;
 
 static R_VERSION_RE: LazyLock<Regex> =

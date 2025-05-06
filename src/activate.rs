@@ -166,7 +166,7 @@ impl From<io::Error> for ActivateError {
 mod tests {
     use crate::activate::RVR_FILE_NAME;
 
-    use super::{activate, ACTIVATE_FILE_NAME};
+    use super::{ACTIVATE_FILE_NAME, activate};
 
     #[test]
     fn test_activation() {

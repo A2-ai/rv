@@ -12,7 +12,7 @@ use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
 use crate::lockfile::Source;
-use crate::package::{get_builtin_versions_from_library, BuiltinPackages, Package};
+use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::{RCmd, SystemInfo, Version};
 
 #[derive(Debug, Clone)]

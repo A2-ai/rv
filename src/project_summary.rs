@@ -8,11 +8,11 @@ use serde::Serialize;
 
 use crate::utils::get_max_workers;
 use crate::{
+    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
+    Version, VersionRequirement,
     cache::InstallationStatus,
     lockfile::Source,
     package::{Operator, PackageType},
-    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
-    Version, VersionRequirement,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -406,11 +406,7 @@ impl Counts {
 }
 
 fn when_non_zero(s: &str, arg_of_interest: usize) -> &str {
-    if arg_of_interest != 0 {
-        s
-    } else {
-        ""
-    }
+    if arg_of_interest != 0 { s } else { "" }
 }
 
 // Determine if pkg is in the lockfile, if lockfile is None, we assume all packages are in the lockfile

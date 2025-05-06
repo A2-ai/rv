@@ -7,10 +7,10 @@ use fs_err as fs;
 use crate::cache::InstallationStatus;
 use crate::http::Http;
 use crate::package::PackageType;
-use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
+use crate::sync::errors::SyncError;
 use crate::{
-    get_tarball_urls, is_binary_package, DiskCache, HttpDownload, RCmd, ResolvedDependency,
+    DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls, is_binary_package,
 };
 
 pub(crate) fn install_package(
@@ -55,7 +55,11 @@ pub(crate) fn install_package(
                 if let Err(e) =
                     http.download_and_untar(&tarball_url.source, &pkg_paths.source, false)
                 {
-                    log::warn!("Failed to download/untar source package from {}: {e:?}, falling back to {}", tarball_url.source, tarball_url.archive);
+                    log::warn!(
+                        "Failed to download/untar source package from {}: {e:?}, falling back to {}",
+                        tarball_url.source,
+                        tarball_url.archive
+                    );
                     log::debug!(
                         "Downloading package {} ({}) from archive",
                         pkg.name,
@@ -76,7 +80,11 @@ pub(crate) fn install_package(
                     &pkg_paths.binary,
                     false,
                 ) {
-                    log::warn!("Failed to download/untar binary package from {}: {e:?}, falling back to {}", tarball_url.binary.clone().unwrap(), tarball_url.source);
+                    log::warn!(
+                        "Failed to download/untar binary package from {}: {e:?}, falling back to {}",
+                        tarball_url.binary.clone().unwrap(),
+                        tarball_url.source
+                    );
                     download_and_install_source_or_archive()?;
                 } else {
                     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just

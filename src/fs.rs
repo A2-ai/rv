@@ -145,7 +145,7 @@ pub(crate) fn untar_archive<R: Read>(
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "not tar.gz or a .zip archive",
-            ))
+            ));
         }
     }
 

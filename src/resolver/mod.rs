@@ -16,8 +16,8 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    is_binary_package, parse_description_file, parse_description_file_in_folder, Package,
-    PackageRemote, PackageType,
+    Package, PackageRemote, PackageType, is_binary_package, parse_description_file,
+    parse_description_file_in_folder,
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
@@ -667,7 +667,7 @@ mod tests {
     use crate::config::Config;
     use crate::consts::{BASE_PACKAGES, DESCRIPTION_FILENAME};
     use crate::http::HttpError;
-    use crate::package::{parse_package_file, Package};
+    use crate::package::{Package, parse_package_file};
     use crate::repository::RepositoryDatabase;
     use crate::{DiskCache, SystemInfo};
 

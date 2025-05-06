@@ -131,18 +131,18 @@ impl Source {
     /// and for local the actual path
     pub fn source_path(&self) -> &str {
         match self {
-            Source::Repository { ref repository } => repository.as_str(),
-            Source::Local { ref path, .. } => path.to_str().unwrap(),
-            Source::Git { ref git, .. } | Source::RUniverse { ref git, .. } => git.as_str(),
-            Source::Url { ref url, .. } => url.as_str(),
+            Source::Repository { repository } => repository.as_str(),
+            Source::Local { path, .. } => path.to_str().unwrap(),
+            Source::Git { git, .. } | Source::RUniverse { git, .. } => git.as_str(),
+            Source::Url { url, .. } => url.as_str(),
             Source::Builtin { .. } => "",
         }
     }
 
     pub fn sha(&self) -> &str {
         match self {
-            Source::Git { ref sha, .. } | Source::RUniverse { ref sha, .. } => sha.as_str(),
-            Source::Url { ref sha, .. } => sha.as_str(),
+            Source::Git { sha, .. } | Source::RUniverse { sha, .. } => sha.as_str(),
+            Source::Url { sha, .. } => sha.as_str(),
             _ => unreachable!("handle other cases"),
         }
     }
@@ -222,7 +222,10 @@ impl fmt::Debug for Source {
                 tag,
                 branch,
             } => {
-                write!(f, "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?})")
+                write!(
+                    f,
+                    "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?})"
+                )
             }
             Self::Repository { repository } => {
                 write!(f, "repository(url: {repository})")
@@ -243,7 +246,10 @@ impl fmt::Debug for Source {
                 sha,
                 directory,
             } => {
-                write!(f, "runiverse(repo: {repository}, url: {git}, sha: {sha}, directory: {directory:?})")
+                write!(
+                    f,
+                    "runiverse(repo: {repository}, url: {git}, sha: {sha}, directory: {directory:?})"
+                )
             }
             Self::Builtin { .. } => {
                 write!(f, "builtin")

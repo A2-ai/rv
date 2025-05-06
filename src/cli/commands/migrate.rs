@@ -1,11 +1,11 @@
 use std::{fs::File, io::Write, path::Path};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::{
+    DiskCache, RenvLock, Repository, SystemInfo,
     cli::context::load_databases,
     renv::{ResolvedRenv, UnresolvedRenv},
-    DiskCache, RenvLock, Repository, SystemInfo,
 };
 
 const RENV_CONFIG_TEMPLATE: &str = r#"# this config was migrated from %renv_file% on %time%

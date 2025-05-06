@@ -5,9 +5,9 @@ use fs_err as fs;
 use crate::fs::{mtime_recursive, untar_archive};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
-use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
-use crate::{is_binary_package, RCmd, ResolvedDependency};
+use crate::sync::errors::SyncError;
+use crate::{RCmd, ResolvedDependency, is_binary_package};
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,

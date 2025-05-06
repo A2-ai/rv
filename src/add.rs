@@ -3,7 +3,7 @@ use std::path::Path;
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, Value};
 
-use crate::{config::ConfigLoadError, Config};
+use crate::{Config, config::ConfigLoadError};
 
 pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
     let config_file = config_file.as_ref();

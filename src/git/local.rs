@@ -4,8 +4,8 @@ use std::process::Command;
 use fs_err as fs;
 
 use crate::consts::DESCRIPTION_FILENAME;
-use crate::git::reference::{GitReference, Oid};
 use crate::git::CommandExecutor;
+use crate::git::reference::{GitReference, Oid};
 
 const HEAD_LINE_START: &str = "HEAD branch: ";
 
