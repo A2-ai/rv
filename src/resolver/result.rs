@@ -40,6 +40,12 @@ impl<'d> Resolution<'d> {
             .any(|d| d.source.is_repo() && d.name == name)
     }
 
+    pub(crate) fn remove_found(&mut self, name: &str) {
+        if let Some(index) = self.found.iter().position(|dep| dep.name == name) {
+            self.found.remove(index);
+        }
+    }
+
     pub fn finalize(&mut self) {
         let mut solver = DependencySolver::default();
         for package in &self.found {

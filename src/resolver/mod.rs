@@ -427,6 +427,12 @@ impl<'d> Resolver<'d> {
             .filter(|d| d.r_repository().is_some())
             .map(|d| d.name())
             .collect();
+        let dependencies_only: HashSet<_> = dependencies
+            .iter()
+            .filter(|d| d.dependencies_only())
+            .map(|d| d.name())
+            .collect();
+
         let mut queue: VecDeque<_> = dependencies
             .iter()
             .map(|d| QueueItem {
@@ -637,6 +643,9 @@ impl<'d> Resolver<'d> {
             }
         }
 
+        for name in dependencies_only {
+            result.remove_found(name);
+        }
         result.finalize();
 
         result

@@ -54,12 +54,16 @@ pub enum ConfigDependency {
         name: String,
         #[serde(default)]
         install_suggestions: bool,
+        #[serde(default)]
+        dependencies_only: bool,
     },
     Local {
         path: PathBuf,
         name: String,
         #[serde(default)]
         install_suggestions: bool,
+        #[serde(default)]
+        dependencies_only: bool,
     },
     Url {
         url: String,
@@ -68,6 +72,8 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         force_source: Option<bool>,
+        #[serde(default)]
+        dependencies_only: bool,
     },
     Detailed {
         name: String,
@@ -76,6 +82,8 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         force_source: Option<bool>,
+        #[serde(default)]
+        dependencies_only: bool,
     },
 }
 
@@ -108,6 +116,24 @@ impl ConfigDependency {
         match self {
             ConfigDependency::Local { path, .. } => Some(path.clone()),
             _ => None,
+        }
+    }
+
+    pub fn dependencies_only(&self) -> bool {
+        match self {
+            ConfigDependency::Git {
+                dependencies_only, ..
+            } => *dependencies_only,
+            ConfigDependency::Local {
+                dependencies_only, ..
+            } => *dependencies_only,
+            ConfigDependency::Url {
+                dependencies_only, ..
+            } => *dependencies_only,
+            ConfigDependency::Detailed {
+                dependencies_only, ..
+            } => *dependencies_only,
+            ConfigDependency::Simple(_) => false,
         }
     }
 
