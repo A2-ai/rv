@@ -168,47 +168,230 @@ impl<'d> DependencySolver<'d> {
         true
     }
 
-    fn solve_sat_recursive(
+    /// Pick the variable that appears in most clauses
+    fn get_most_constrained_variable(
         &self,
         formula: &Formula,
-        assignment: &mut HashMap<Literal, bool>,
-        var_index: i32,
+        assignment: &HashMap<Literal, bool>,
         num_vars: i32,
-    ) -> bool {
-        // Quick check for empty clauses - formula is unsatisfiable
-        if formula.iter().any(|clause| clause.is_empty()) {
-            return false;
+    ) -> i32 {
+        let mut var_counts = HashMap::new();
+
+        // Count appearance of variables in unresolved clauses
+        for clause in formula {
+            let mut clause_satisfied = false;
+            for lit in clause {
+                let var = lit.abs();
+                if assignment.contains_key(&var) {
+                    let val = assignment[&var];
+                    if (*lit > 0 && val) || (*lit < 0 && !val) {
+                        clause_satisfied = true;
+                        break;
+                    }
+                }
+            }
+
+            if !clause_satisfied {
+                for &lit in clause {
+                    let var = lit.abs();
+                    if !assignment.contains_key(&var) {
+                        *var_counts.entry(var).or_insert(0) += 1;
+                    }
+                }
+            }
         }
 
-        // If all variables have been assigned, check if formula is satisfied
-        if var_index > num_vars {
-            return self.is_satisfied(formula, assignment);
-        }
+        // If no variable was found, just pick the first unassigned one
+        // TODO: come up with a test to check if that's actually needed
+        let mut first_var = 0;
+        let mut best_var = 0;
+        let mut max_count = 0;
 
-        // Try assigning True to current variable
-        assignment.insert(var_index, true);
-        if self.solve_sat_recursive(formula, assignment, var_index + 1, num_vars) {
-            return true;
+        for var in 1..=num_vars {
+            if !assignment.contains_key(&var) {
+                if first_var == 0 {
+                    first_var = var;
+                }
+                let count = *var_counts.get(&var).unwrap_or(&0);
+                if count > max_count {
+                    max_count = count;
+                    best_var = var;
+                }
+            }
         }
-
-        // Try assigning False to current variable
-        assignment.insert(var_index, false);
-        if self.solve_sat_recursive(formula, assignment, var_index + 1, num_vars) {
-            return true;
-        }
-
-        // Backtrack: remove the current variable assignment
-        assignment.remove(&var_index);
-        false
+        if best_var != 0 { best_var } else { first_var }
     }
 
-    fn solve_sat(&self, formula: &Formula, num_vars: i32) -> HashMap<Literal, bool> {
-        let mut assignment = HashMap::new();
-        if self.solve_sat_recursive(formula, &mut assignment, 1, num_vars) {
-            assignment
-        } else {
-            HashMap::new()
+    /// Unit propagation will try to find all the units (eg clauses with a single unassigned
+    /// literal) and set them to true. It then recurses since setting things to true might have
+    /// created new units.
+    /// If it finds a conflict, it will return None. Otherwise it returns a list of changes to
+    /// assignments.
+    fn unit_propagation(
+        &self,
+        formula: &Formula,
+        assignment: &HashMap<Literal, bool>,
+    ) -> Option<Vec<(Literal, bool)>> {
+        let mut result = Vec::new();
+        let mut current_assignment = assignment.clone();
+        let mut changed = true;
+
+        while changed {
+            changed = false;
+
+            for clause in formula {
+                if clause.is_empty() {
+                    return None;
+                }
+
+                let mut satisfied = false;
+                let mut unassigned_lit = 0;
+                let mut unassigned_count = 0;
+
+                for &lit in clause {
+                    let var = lit.abs();
+
+                    if current_assignment.contains_key(&var) {
+                        let val = current_assignment[&var];
+                        if (lit > 0 && val) || (lit < 0 && !val) {
+                            satisfied = true;
+                            break;
+                        }
+                    } else {
+                        unassigned_count += 1;
+                        unassigned_lit = lit;
+                    }
+                }
+
+                if satisfied {
+                    continue;
+                }
+
+                if unassigned_count == 0 {
+                    return None;
+                }
+
+                if unassigned_count == 1 {
+                    let var = unassigned_lit.abs();
+                    let val = unassigned_lit > 0;
+
+                    if let Some(&existing_val) = current_assignment.get(&var) {
+                        if existing_val != val {
+                            return None;
+                        }
+                    } else {
+                        current_assignment.insert(var, val);
+                        result.push((var, val));
+                        changed = true;
+                    }
+                }
+            }
         }
+        Some(result)
+    }
+
+    fn solve_sat_iterative(&self, formula: &Formula, num_vars: i32) -> HashMap<Literal, bool> {
+        let mut assignment = HashMap::new();
+        let mut decision_stack = Vec::new();
+        let max_iterations = 100000;
+        let mut iterations = 0;
+
+        // Try to solve as much as possible before even starting the loop
+        if let Some(unit_assignments) = self.unit_propagation(formula, &assignment) {
+            for (var, val) in unit_assignments {
+                assignment.insert(var, val);
+            }
+        } else {
+            // Conflict straight at the beginning!
+            return HashMap::new();
+        }
+
+        while iterations < max_iterations {
+            iterations += 1;
+            // Check if all variables are assigned and it's valid
+            if assignment.len() as i32 == num_vars && self.is_satisfied(formula, &assignment) {
+                return assignment;
+            }
+
+            // If the formula has become unsatisfiable, we want to backtrack to see if we can fix
+            // things
+            if formula.iter().any(|clause| {
+                clause.iter().all(|&lit| {
+                    let var = lit.abs();
+                    assignment.contains_key(&var)
+                        && ((lit > 0 && !assignment[&var]) || (lit < 0 && assignment[&var]))
+                })
+            }) {
+                if let Some((var, val)) = decision_stack.pop() {
+                    assignment.remove(&var);
+
+                    if val {
+                        // Since we try true first, let's try false now
+                        assignment.insert(var, false);
+                        decision_stack.push((var, false));
+
+                        // After a new decision, apply unit propagation
+                        if let Some(unit_assignments) = self.unit_propagation(formula, &assignment)
+                        {
+                            for (prop_var, prop_val) in unit_assignments {
+                                assignment.insert(prop_var, prop_val);
+                            }
+                        } else {
+                            // Conflict detected by unit propagation - remove the failed assignment
+                            assignment.remove(&var);
+                            decision_stack.pop();
+                            continue;
+                        }
+                    }
+                    continue;
+                } else {
+                    // No more options to try, formula is unsatisfiable
+                    return HashMap::new();
+                }
+            }
+
+            let next_var = self.get_most_constrained_variable(formula, &assignment, num_vars);
+
+            // If we couldn't find an unassigned variable, but not all are assigned, something's wrong
+            if next_var == 0 && (assignment.len() as i32) < num_vars {
+                log::error!("Internal solver error: no variable to select but not all assigned");
+                break;
+            }
+
+            // Try assigning true first
+            assignment.insert(next_var, true);
+            decision_stack.push((next_var, true));
+
+            if let Some(unit_assignments) = self.unit_propagation(formula, &assignment) {
+                for (var, val) in unit_assignments {
+                    assignment.insert(var, val);
+                }
+            } else {
+                // Conflict detected by unit propagation - backtrack immediately
+                assignment.remove(&next_var);
+                decision_stack.pop();
+
+                // Try false instead
+                assignment.insert(next_var, false);
+                decision_stack.push((next_var, false));
+
+                // Apply unit propagation for the alternative value
+                if let Some(unit_assignments) = self.unit_propagation(formula, &assignment) {
+                    for (var, val) in unit_assignments {
+                        assignment.insert(var, val);
+                    }
+                } else {
+                    // Conflict with both values - backtrack further
+                    assignment.remove(&next_var);
+                    decision_stack.pop();
+                    continue;
+                }
+            }
+        }
+
+        // If we reached here, we hit the iteration limit
+        log::warn!("Solver hit iteration limit: possible infinite loop");
+        HashMap::new()
     }
 
     /// This will run the SAT solver multiple times while removing clauses to see which ones are
@@ -246,7 +429,10 @@ impl<'d> DependencySolver<'d> {
 
             // Check if still unsatisfiable
             let num_vars = self.packages.values().fold(0, |acc, pkgs| acc + pkgs.len()) as i32;
-            if self.solve_sat(&all_test_clauses, num_vars).is_empty() {
+            if self
+                .solve_sat_iterative(&all_test_clauses, num_vars)
+                .is_empty()
+            {
                 // Still unsatisfiable, we can remove this clause from our MUS
                 current_clauses.remove(i);
             } else {
@@ -304,7 +490,7 @@ impl<'d> DependencySolver<'d> {
             pkg_version_to_var.iter().map(|(k, v)| (v, k)).collect();
 
         log::debug!("Starting SAT solving");
-        let assignment = self.solve_sat(&clauses, var_to_pkg_version.len() as i32);
+        let assignment = self.solve_sat_iterative(&clauses, var_to_pkg_version.len() as i32);
 
         // No solution exists
         if assignment.is_empty() {
@@ -481,5 +667,86 @@ mod tests {
         let resolver = get_resolver(&packages, &requirements);
         let result = resolver.solve().unwrap_err();
         assert_eq!(result.len(), 2);
+        assert_eq!(result[0].package, "A");
+        assert_eq!(result[1].package, "A");
+    }
+
+    #[test]
+    fn deep_dependency_chain() {
+        let packages = vec![
+            ("A", Version::from_str("1.0.0").unwrap()),
+            ("A", Version::from_str("2.0.0").unwrap()),
+            ("B", Version::from_str("1.0.0").unwrap()),
+            ("C", Version::from_str("1.0.0").unwrap()),
+            ("D", Version::from_str("1.0.0").unwrap()),
+            ("E", Version::from_str("1.0.0").unwrap()),
+        ];
+
+        let requirements = vec![
+            (
+                "A",
+                VersionRequirement::from_str("(>= 2.0.0)").unwrap(),
+                "B",
+            ),
+            (
+                "B",
+                VersionRequirement::from_str("(>= 1.0.0)").unwrap(),
+                "C",
+            ),
+            (
+                "C",
+                VersionRequirement::from_str("(>= 1.0.0)").unwrap(),
+                "D",
+            ),
+            (
+                "D",
+                VersionRequirement::from_str("(>= 1.0.0)").unwrap(),
+                "E",
+            ),
+        ];
+
+        let resolver = get_resolver(&packages, &requirements);
+        let result = resolver.solve().unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result["A"].original, "2.0.0");
+    }
+
+    #[test]
+    fn diamond_dependency() {
+        let packages = vec![
+            ("A", Version::from_str("1.0.0").unwrap()),
+            ("B", Version::from_str("1.0.0").unwrap()),
+            ("C", Version::from_str("1.0.0").unwrap()),
+            ("D", Version::from_str("1.0.0").unwrap()),
+            ("D", Version::from_str("2.0.0").unwrap()),
+        ];
+
+        let requirements = vec![
+            (
+                "B",
+                VersionRequirement::from_str("(>= 1.0.0)").unwrap(),
+                "A",
+            ),
+            (
+                "C",
+                VersionRequirement::from_str("(>= 1.0.0)").unwrap(),
+                "A",
+            ),
+            (
+                "D",
+                VersionRequirement::from_str("(>= 2.0.0)").unwrap(),
+                "B",
+            ),
+            (
+                "D",
+                VersionRequirement::from_str("(>= 1.0.0)").unwrap(),
+                "C",
+            ),
+        ];
+
+        let resolver = get_resolver(&packages, &requirements);
+        let result = resolver.solve().unwrap();
+        assert_eq!(result.len(), 4);
+        assert_eq!(result["D"].original, "2.0.0");
     }
 }
