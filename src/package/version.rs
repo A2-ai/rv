@@ -70,15 +70,17 @@ impl Version {
 }
 
 impl FromStr for Version {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts: Vec<u32> = s
+        let mut parts: Vec<_> = s
             .trim()
             .replace('-', ".")
             .split('.')
-            .map(|x| x.parse().unwrap())
-            .collect();
+            .map(|x| x.parse::<u32>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| format!("{s} cannot be parsed as a version"))?;
+
         parts.resize(10, 0);
 
         Ok(Self {

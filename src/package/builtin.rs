@@ -32,7 +32,7 @@ impl BuiltinPackages {
     }
 }
 
-pub fn get_builtin_versions_from_library(r_cmd: impl RCmd) -> std::io::Result<BuiltinPackages> {
+pub fn get_builtin_versions_from_library(r_cmd: &impl RCmd) -> std::io::Result<BuiltinPackages> {
     match r_cmd.get_r_library() {
         Ok(p) => {
             let mut builtins = BuiltinPackages::default();
