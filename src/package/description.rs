@@ -1,7 +1,7 @@
-use crate::consts::DESCRIPTION_FILENAME;
-use crate::package::parser::parse_package_file;
-use crate::package::Package;
 use crate::Version;
+use crate::consts::DESCRIPTION_FILENAME;
+use crate::package::Package;
+use crate::package::parser::parse_package_file;
 use std::fs;
 use std::fs::File;
 use std::io::BufRead;

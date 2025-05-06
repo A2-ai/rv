@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::lockfile::Source;
-use crate::package::{deserialize_version, Version};
+use crate::package::{Version, deserialize_version};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -241,7 +241,7 @@ impl Config {
                 return Err(ConfigLoadError {
                     path: path.as_ref().into(),
                     source: ConfigLoadErrorKind::Io(e),
-                })
+                });
             }
         };
         Self::from_str(&content)

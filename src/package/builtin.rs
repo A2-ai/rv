@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use crate::package::{parse_description_file_in_folder, Package};
 use crate::RCmd;
+use crate::package::{Package, parse_description_file_in_folder};
 
 #[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct BuiltinPackages {

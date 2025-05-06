@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use anyhow::Result;
 use fs_err::{self as fs, read_to_string, write};
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, CliContext};
+use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv};
 use rv::{
-    activate, add_packages, deactivate, read_and_verify_config, CacheInfo, Config, GitExecutor,
-    Http, Lockfile, ProjectSummary, RCmd, RCommandLine, ResolvedDependency, Resolver, SyncHandler,
-    Version,
+    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
+    ResolvedDependency, Resolver, SyncHandler, Version, activate, add_packages, deactivate,
+    read_and_verify_config,
 };
 
 #[derive(Parser)]

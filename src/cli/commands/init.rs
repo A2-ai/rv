@@ -216,8 +216,8 @@ mod tests {
     use std::str::FromStr;
 
     use crate::{
-        cli::commands::init::{CONFIG_FILENAME, GITIGNORE_PATH, LIBRARY_PATH},
         Repository, Version,
+        cli::commands::init::{CONFIG_FILENAME, GITIGNORE_PATH, LIBRARY_PATH},
     };
 
     use super::{init, strip_linux_url};

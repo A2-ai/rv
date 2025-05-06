@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crate::library::LocalMetadata;
 use crate::package::PackageType;
-use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
+use crate::sync::errors::SyncError;
 use crate::{DiskCache, RCmd, ResolvedDependency};
 
 pub(crate) fn install_package(

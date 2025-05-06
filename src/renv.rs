@@ -9,8 +9,8 @@ use serde::{Deserialize, Deserializer};
 
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::{
-    package::{deserialize_version, Operator, Version, VersionRequirement},
     Repository, RepositoryDatabase,
+    package::{Operator, Version, VersionRequirement, deserialize_version},
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -97,7 +97,7 @@ impl RenvLock {
                 return Err(FromJsonFileError {
                     path: path.into(),
                     source: FromJsonFileErrorKind::Io(e),
-                })
+                });
             }
         };
 

@@ -97,12 +97,18 @@ impl<'d> ResolvedDependency<'d> {
         // switching to using git once it is no longer available
         if repo_url.contains("r-universe.dev") {
             match RUniverseApi::query_r_universe_api(&package.name, repo_url, http_download) {
-                Ok(r) => source = Source::RUniverse {
-                    repository: repo_url.to_string(),
-                    git: r.remote_url.to_string(),
-                    sha: r.remote_sha.to_string(),
-                    directory: r.remote_subdir },
-                Err(e) => log::warn!("Could not properly lock {} due to: {e:?}. Falling back to standard repository. Library may not be able to be recreated.", package.name),
+                Ok(r) => {
+                    source = Source::RUniverse {
+                        repository: repo_url.to_string(),
+                        git: r.remote_url.to_string(),
+                        sha: r.remote_sha.to_string(),
+                        directory: r.remote_subdir,
+                    }
+                }
+                Err(e) => log::warn!(
+                    "Could not properly lock {} due to: {e:?}. Falling back to standard repository. Library may not be able to be recreated.",
+                    package.name
+                ),
             }
         }
 

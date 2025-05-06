@@ -1,8 +1,8 @@
 use crate::git::{GitReference, GitRemote};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
-use crate::sync::errors::SyncError;
 use crate::sync::LinkMode;
+use crate::sync::errors::SyncError;
 use crate::{CommandExecutor, DiskCache, RCmd, ResolvedDependency};
 use std::path::Path;
 

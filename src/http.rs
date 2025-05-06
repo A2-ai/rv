@@ -4,8 +4,8 @@ use std::time::Instant;
 use std::{fs, io, io::Write, time::Duration};
 
 use crate::fs::untar_archive;
-use ureq::http::{HeaderName, HeaderValue};
 use ureq::Agent;
+use ureq::http::{HeaderName, HeaderValue};
 
 use ureq::tls::{RootCerts, TlsConfig};
 
