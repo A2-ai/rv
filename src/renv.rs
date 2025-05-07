@@ -149,7 +149,7 @@ impl RenvLock {
             }
         }
 
-        //alphabetize to match with plan/sync
+        // alphabetize to match with plan/sync
         resolved.sort_by_key(|a| &a.package_info.package);
         unresolved.sort_by_key(|a| a.package_info.package.clone());
         (resolved, unresolved)

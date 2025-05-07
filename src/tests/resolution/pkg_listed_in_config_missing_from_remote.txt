@@ -1,0 +1,15 @@
+[project]
+name = "remote"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+]
+dependencies = [
+    # this package is missing the remote for gsm so it will fail by itself
+    { name = "missing.remote", git = "https://github.com/dummy/missing.remote", branch = "main"},
+    # but if we list it directly, it should use it if the version requirement match
+    { name = "gsm", git = "https://github.com/Gilead-BioStats/gsm", tag ="v2.2.2", install_suggestions = true},
+]
+---
+repos = [{name = "posit", source = "posit-src", force_source = false}]
+---
