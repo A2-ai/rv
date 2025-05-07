@@ -777,6 +777,7 @@ mod tests {
             ("gsm", "https://github.com/Gilead-BioStats/gsm"),
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
+            ("missing.remote", "https://github.com/dummy/missing.remote"),
         ];
 
         for (dep, url) in &remotes {

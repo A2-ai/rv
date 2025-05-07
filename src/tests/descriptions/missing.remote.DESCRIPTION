@@ -1,0 +1,42 @@
+Package: missing.remote
+Title: a package missing remote
+Version: 1.0.0
+Description: N/A
+License: Apache License (>= 2)
+Depends:
+    R (>= 4.0)
+Imports:
+    bslib,
+    cli,
+    dplyr,
+    favawesome,
+    glue,
+    gsm (>= 2.2.2),
+    htmltools,
+    htmlwidgets,
+    jsonlite,
+    magrittr,
+    purrr,
+    rlang,
+    shiny (>= 1.6.0),
+    shinyjs,
+    yaml
+Suggests:
+    chromote (>= 0.3.1),
+    devtools,
+    here,
+    knitr,
+    pak,
+    rmarkdown,
+    shinytest2,
+    stringr,
+    testthat (>= 3.0.0),
+    usethis,
+    withr
+Config/testthat/edition: 3
+Encoding: UTF-8
+Language: en-US
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+VignetteBuilder: knitr
