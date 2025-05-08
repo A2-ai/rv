@@ -183,7 +183,9 @@ fn get_linux_url(
 
     // if the url already contains __linux__, then we assume the user supplied the distro name purposefully
     if url.contains("__linux__") {
-        return Some(format!("{url}/src/contrib/{file_path}?r_version={r_major}.{r_minor}{arch_query}"));
+        return Some(format!(
+            "{url}/src/contrib/{file_path}?r_version={r_major}.{r_minor}{arch_query}"
+        ));
     }
     let mut parts = url.split('/').collect::<Vec<_>>();
     // split on `/`` will split "https://..." as 3 parts. Want to ensure there is at least one more path element at end of url
