@@ -1,14 +1,18 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
 use fs_err::{self as fs, read_to_string, write};
+use serde::Serialize;
+use serde_json::json;
+
 use rv::cli::utils::timeit;
 use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
-    ResolvedDependency, Resolver, SyncHandler, Version, activate, add_packages, deactivate,
-    read_and_verify_config,
+    ResolvedDependency, Resolver, SyncChange, SyncHandler, Version, activate, add_packages,
+    deactivate, read_and_verify_config,
 };
 
 #[derive(Parser)]
@@ -16,6 +20,10 @@ use rv::{
 pub struct Cli {
     #[command(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
+
+    /// Output in JSON format. This will also ignore the --verbose flag and not log anything.
+    #[clap(long)]
+    json: bool,
 
     /// Path to a config file other than rproject.toml in the current directory
     #[clap(short = 'c', long, default_value = "rproject.toml", global = true)]
@@ -47,8 +55,8 @@ pub enum Command {
         /// Force new init. This will replace content in your rproject.toml
         force: bool,
     },
-    /// Returns the path for the library for the current project/system.
-    /// The path is always in unix format
+    /// Returns the path for the library for the current project/system in UNIX format, even
+    /// on Windows.
     Library,
     /// Dry run of what sync would do
     Plan {
@@ -95,10 +103,7 @@ pub enum Command {
         repositories: bool,
     },
     /// Gives information about where the cache is for that project
-    Cache {
-        #[clap(short, long)]
-        json: bool,
-    },
+    Cache,
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
@@ -136,6 +141,18 @@ enum ResolveMode {
     Default,
     FullUpgrade,
     // TODO: PartialUpgrade -- allow user to specify packages to upgrade
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum OutputFormat {
+    Json,
+    Plain,
+}
+
+impl OutputFormat {
+    fn is_json(&self) -> bool {
+        matches!(self, OutputFormat::Json)
+    }
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
@@ -211,11 +228,33 @@ fn resolve_dependencies<'a>(
     resolved
 }
 
+#[derive(Debug, Default, Serialize)]
+struct SyncChanges {
+    installed: Vec<SyncChange>,
+    removed: Vec<SyncChange>,
+}
+
+impl SyncChanges {
+    fn from_changes(changes: Vec<SyncChange>) -> Self {
+        let mut installed = vec![];
+        let mut removed = vec![];
+        for change in changes {
+            if change.installed {
+                installed.push(change);
+            } else {
+                removed.push(change);
+            }
+        }
+        Self { installed, removed }
+    }
+}
+
 fn _sync(
     mut context: CliContext,
     dry_run: bool,
     has_logs_enabled: bool,
     resolve_mode: ResolveMode,
+    output_format: OutputFormat,
 ) -> Result<()> {
     if !has_logs_enabled {
         context.show_progress_bar();
@@ -254,9 +293,6 @@ fn _sync(
         }
     ) {
         Ok(changes) => {
-            if changes.is_empty() {
-                println!("Nothing to do");
-            }
             if !dry_run && context.config.use_lockfile() {
                 if resolved.is_empty() {
                     // delete the lockfiles if there are no dependencies
@@ -278,8 +314,27 @@ fn _sync(
                 }
             }
 
-            for c in changes {
-                println!("{}", c.print(!dry_run));
+            if changes.is_empty() {
+                if output_format.is_json() {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&SyncChanges::default()).expect("valid json")
+                    );
+                } else {
+                    println!("Nothing to do");
+                }
+            } else {
+                if output_format.is_json() {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&SyncChanges::from_changes(changes))
+                            .expect("valid json")
+                    );
+                } else {
+                    for c in changes {
+                        println!("{}", c.print(!dry_run));
+                    }
+                }
             }
             Ok(())
         }
@@ -294,8 +349,18 @@ fn _sync(
 
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
+    let output_format = if cli.json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Plain
+    };
+    let log_enabled = cli.verbose.is_present() && !output_format.is_json();
     env_logger::Builder::new()
-        .filter_level(cli.verbose.log_level_filter())
+        .filter_level(if cli.json {
+            log::LevelFilter::Off
+        } else {
+            cli.verbose.log_level_filter()
+        })
         .filter(Some("ureq"), log::LevelFilter::Off)
         .filter(Some("rustls"), log::LevelFilter::Off)
         .filter(Some("os_info"), log::LevelFilter::Off)
@@ -313,7 +378,7 @@ fn try_main() -> Result<()> {
             let r_version = if let Some(r) = r_version {
                 r.original
             } else {
-                // if r version is not provided, get the major.minor of the R version on the path
+                // if R version is not provided, get the major.minor of the R version on the path
                 let [major, minor] = match (RCommandLine { r: None }).version() {
                     Ok(r_ver) => r_ver,
                     Err(e) => {
@@ -338,10 +403,18 @@ fn try_main() -> Result<()> {
             };
             init(&project_directory, &r_version, &repositories, &add, force)?;
             activate(&project_directory, no_r_environment)?;
-            println!(
-                "rv project successfully initialized at {}",
-                project_directory.display()
-            );
+
+            if output_format.is_json() {
+                println!(
+                    "{}",
+                    json!({"directory": format!("{}", project_directory.display())})
+                );
+            } else {
+                println!(
+                    "rv project successfully initialized at {}",
+                    project_directory.display()
+                );
+            }
         }
         Command::Library => {
             let context = CliContext::new(&cli.config_file, None)?;
@@ -351,7 +424,12 @@ fn try_main() -> Result<()> {
             } else {
                 path_str.to_string()
             };
-            println!("{path_out}");
+
+            if output_format.is_json() {
+                println!("{}", json!({"directory": path_out}));
+            } else {
+                println!("{path_out}");
+            }
         }
         Command::Plan { upgrade, r_version } => {
             let upgrade = if upgrade || r_version.is_some() {
@@ -360,15 +438,16 @@ fn try_main() -> Result<()> {
                 ResolveMode::Default
             };
             let context = CliContext::new(&cli.config_file, r_version)?;
-            _sync(context, true, cli.verbose.is_present(), upgrade)?;
+            _sync(context, true, log_enabled, upgrade, output_format)?;
         }
         Command::Sync => {
             let context = CliContext::new(&cli.config_file, None)?;
             _sync(
                 context,
                 false,
-                cli.verbose.is_present(),
+                log_enabled,
                 ResolveMode::Default,
+                output_format,
             )?;
         }
         Command::Add {
@@ -385,7 +464,12 @@ fn try_main() -> Result<()> {
             }
             // if no sync, exit early
             if no_sync {
-                println!("Packages successfully added");
+                if output_format.is_json() {
+                    // Nothing to output for JSON format here since we didn't sync anything
+                    println!("{{}}");
+                } else {
+                    println!("Packages successfully added");
+                }
                 return Ok(());
             }
             let mut context = CliContext::new(&cli.config_file, None)?;
@@ -396,8 +480,9 @@ fn try_main() -> Result<()> {
             _sync(
                 context,
                 dry_run,
-                cli.verbose.is_present(),
+                log_enabled,
                 ResolveMode::Default,
+                output_format,
             )?;
         }
         Command::Upgrade { dry_run } => {
@@ -405,8 +490,9 @@ fn try_main() -> Result<()> {
             _sync(
                 context,
                 dry_run,
-                cli.verbose.is_present(),
+                log_enabled,
                 ResolveMode::FullUpgrade,
+                output_format,
             )?;
         }
         Command::Info {
@@ -414,6 +500,8 @@ fn try_main() -> Result<()> {
             r_version,
             repositories,
         } => {
+            // TODO: handle info, eg need to accumulate fields
+            let mut output = Vec::new();
             let context = CliContext::new(&cli.config_file, None)?;
             if library {
                 let path_str = context.library_path().to_string_lossy();
@@ -422,10 +510,10 @@ fn try_main() -> Result<()> {
                 } else {
                     path_str.to_string()
                 };
-                println!("library: {path_out}");
+                output.push(("library", path_out));
             }
             if r_version {
-                println!("r-version: {}", context.r_version.original);
+                output.push(("r-version", context.r_version.original.to_owned()));
             }
             if repositories {
                 let repos = context
@@ -435,10 +523,19 @@ fn try_main() -> Result<()> {
                     .map(|r| format!("({}, {})", r.alias, r.url()))
                     .collect::<Vec<_>>()
                     .join(", ");
-                println!("repositories: {}", repos);
+                output.push(("repositories", repos));
+            }
+
+            if output_format.is_json() {
+                let output: HashMap<_, _> = output.into_iter().collect();
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                for (key, val) in output {
+                    println!("{key}: {val}");
+                }
             }
         }
-        Command::Cache { json } => {
+        Command::Cache => {
             let mut context = CliContext::new(&cli.config_file, None)?;
             context.load_databases()?;
             let info = CacheInfo::new(
@@ -446,7 +543,7 @@ fn try_main() -> Result<()> {
                 &context.cache,
                 resolve_dependencies(&context, &ResolveMode::Default),
             );
-            if json {
+            if output_format.is_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&info).expect("valid json")
@@ -478,21 +575,42 @@ fn try_main() -> Result<()> {
                 "# source(\"renv/activate.R\")",
             );
             write(project_dir.join(".Rprofile"), content)?;
+
             if unresolved.is_empty() {
-                println!(
-                    "{} was successfully migrated to {}",
-                    renv_file.display(),
-                    cli.config_file.display()
-                );
+                if output_format.is_json() {
+                    println!(
+                        "{}",
+                        json!({
+                            "success": true,
+                            "unresolved": [],
+                        })
+                    );
+                } else {
+                    println!(
+                        "{} was successfully migrated to {}",
+                        renv_file.display(),
+                        cli.config_file.display()
+                    );
+                }
             } else {
-                println!(
-                    "{} was migrated to {} with {} unresolved packages: ",
-                    renv_file.display(),
-                    cli.config_file.display(),
-                    unresolved.len()
-                );
-                for u in &unresolved {
-                    eprintln!("    {u}");
+                if output_format.is_json() {
+                    println!(
+                        "{}",
+                        json!({
+                            "success": false,
+                            "unresolved": unresolved.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                        })
+                    );
+                } else {
+                    println!(
+                        "{} was migrated to {} with {} unresolved packages: ",
+                        renv_file.display(),
+                        cli.config_file.display(),
+                        unresolved.len()
+                    );
+                    for u in &unresolved {
+                        eprintln!("    {u}");
+                    }
                 }
             }
         }
@@ -509,7 +627,7 @@ fn try_main() -> Result<()> {
                 &context.cache,
                 context.lockfile.as_ref(),
             );
-            if json {
+            if output_format.is_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&summary).expect("valid json")
@@ -521,12 +639,20 @@ fn try_main() -> Result<()> {
         Command::Activate { no_r_environment } => {
             let dir = std::env::current_dir()?;
             activate(dir, no_r_environment)?;
-            println!("rv activated");
+            if output_format.is_json() {
+                println!("{{}}");
+            } else {
+                println!("rv activated");
+            }
         }
         Command::Deactivate => {
             let dir = std::env::current_dir()?;
             deactivate(dir)?;
-            println!("rv deactivated");
+            if output_format.is_json() {
+                println!("{{}}");
+            } else {
+                println!("rv deactivated");
+            }
         }
     }
 

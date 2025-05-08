@@ -78,10 +78,17 @@ impl fmt::Display for ProjectSummary<'_> {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct RepoInfo<'a> {
+    url: &'a str,
+    binary_count: usize,
+    source_count: usize,
+}
+
 // TODO: Expand with git + url information
 #[derive(Debug, Clone, Serialize)]
 struct RemoteInfo<'a> {
-    repositories: HashMap<String, (&'a str, usize, usize)>,
+    repositories: HashMap<String, RepoInfo<'a>>,
 }
 
 impl<'a> RemoteInfo<'a> {
@@ -92,10 +99,17 @@ impl<'a> RemoteInfo<'a> {
     ) -> Self {
         let mut repositories = HashMap::new();
         for (repo_db, _) in repo_dbs {
-            let bin_count = repo_db.get_binary_count(r_version);
-            let src_count = repo_db.get_source_count();
+            let binary_count = repo_db.get_binary_count(r_version);
+            let source_count = repo_db.get_source_count();
             let id = get_repository_alias(&repo_db.url, repos);
-            repositories.insert(id, (repo_db.url.as_str(), bin_count, src_count));
+            repositories.insert(
+                id,
+                RepoInfo {
+                    url: repo_db.url.as_str(),
+                    binary_count,
+                    source_count,
+                },
+            );
         }
 
         Self { repositories }
@@ -106,10 +120,11 @@ impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut repos = self.repositories.iter().collect::<Vec<_>>();
         repos.sort_by_key(|(a, _)| *a);
-        for (alias, (url, bin_count, src_count)) in repos {
+        for (alias, repo) in repos {
             writeln!(
                 f,
-                "{alias} ({url}): {bin_count} binary packages, {src_count} source packages"
+                "{alias} ({}): {} binary packages, {} source packages",
+                repo.url, repo.binary_count, repo.source_count
             )?;
         }
         Ok(())
@@ -299,11 +314,13 @@ enum DependencyStatus {
 
 #[derive(Debug, Clone, Serialize)]
 struct DependencySummary<'a> {
+    #[serde(rename = "name")]
     _name: &'a str, // for eventual ability to list pkg names
     is_binary: bool,
     status: DependencyStatus,
 }
 
+// TODO: implement custom Serialize for this
 impl<'a> DependencySummary<'a> {
     pub fn new(
         resolved_dep: &'a ResolvedDependency,

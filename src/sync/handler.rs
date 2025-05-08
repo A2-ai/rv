@@ -313,7 +313,7 @@ impl<'a> SyncHandler<'a> {
                                 let sync_change = SyncChange::installed(
                                     &dep.name,
                                     &dep.version.original,
-                                    &dep.source.to_string(),
+                                    dep.source.clone(),
                                     dep.kind,
                                     start.elapsed(),
                                 );
