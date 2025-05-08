@@ -1,13 +1,34 @@
-use crate::package::PackageType;
 use std::time::Duration;
 
-#[derive(Debug)]
+use crate::lockfile::Source;
+use crate::package::PackageType;
+use serde::{Serialize, Serializer};
+
+fn serialize_duration_as_ms<S>(
+    duration: &Option<Duration>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match duration {
+        Some(duration) => serializer.serialize_u64(duration.as_millis() as u64),
+        None => serializer.serialize_none(),
+    }
+}
+#[derive(Debug, Serialize)]
 pub struct SyncChange {
     pub name: String,
+    #[serde(skip)]
     pub installed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<PackageType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<Source>,
+    #[serde(serialize_with = "serialize_duration_as_ms")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timing: Option<Duration>,
 }
 
@@ -15,7 +36,7 @@ impl SyncChange {
     pub fn installed(
         name: &str,
         version: &str,
-        source: &str,
+        source: Source,
         kind: PackageType,
         timing: Duration,
     ) -> Self {
@@ -24,7 +45,7 @@ impl SyncChange {
             installed: true,
             kind: Some(kind),
             timing: Some(timing),
-            source: Some(source.to_string()),
+            source: Some(source),
             version: Some(version.to_string()),
         }
     }
@@ -47,7 +68,7 @@ impl SyncChange {
                 self.name,
                 self.version.as_ref().unwrap(),
                 self.kind.unwrap(),
-                self.source.as_ref().unwrap(),
+                self.source.as_ref().map(|x| x.to_string()).unwrap(),
             );
 
             if include_timings {

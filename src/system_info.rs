@@ -2,8 +2,10 @@
 //! We can get that information from the `os_info` crate but we don't want to expose its type
 //! to the library/CLI.
 //! Instead, we encode the data we care about in an enum that can easily be shared
+
 use os_info::{Type, Version};
 use serde::Serialize;
+use std::fmt;
 
 /// For R we only care about Windows, MacOS and Linux
 #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
@@ -34,12 +36,21 @@ impl OsType {
     }
 }
 
+fn serialize_display<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: fmt::Display,
+    S: serde::Serializer,
+{
+    serializer.collect_str(value)
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct SystemInfo {
     pub os_type: OsType,
     // AFAIK we need that for ubuntu distrib name for posit binaries
     codename: Option<String>,
     // AFAIK we need that for mac os version name (eg big sur etc) for CRAN urls
+    #[serde(serialize_with = "serialize_display")]
     pub version: Version,
     arch: Option<String>,
 }
