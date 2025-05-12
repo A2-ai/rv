@@ -57,7 +57,6 @@ impl CliContext {
         };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
-        fs::create_dir_all(project_dir.join(RV_DIR_NAME))?;
         let lockfile_path = project_dir.join(LOCKFILE_NAME);
         let lockfile = if lockfile_path.exists() && config.use_lockfile() {
             if let Some(lockfile) = Lockfile::load(&lockfile_path)? {
@@ -76,7 +75,12 @@ impl CliContext {
             None
         };
 
-        let mut library = Library::new(&project_dir, &cache.system_info, r_version.major_minor());
+        let mut library = if let Some(p) = config.library() {
+            Library::new_custom(&project_dir, p)
+        } else {
+            Library::new(&project_dir, &cache.system_info, r_version.major_minor())
+        };
+        fs::create_dir_all(&library.path)?;
         library.find_content();
 
         // We can only fetch the builtin packages if we have the right R
@@ -140,7 +144,11 @@ impl CliContext {
     }
 
     pub fn staging_path(&self) -> PathBuf {
-        self.project_dir.join(RV_DIR_NAME).join(STAGING_DIR_NAME)
+        if self.library.custom {
+            self.project_dir.join(STAGING_DIR_NAME)
+        } else {
+            self.project_dir.join(RV_DIR_NAME).join(STAGING_DIR_NAME)
+        }
     }
 }
 

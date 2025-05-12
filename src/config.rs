@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use serde::Deserialize;
+
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
-use serde::Deserialize;
+
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -228,6 +230,7 @@ fn default_true() -> bool {
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    pub(crate) library: Option<PathBuf>,
     #[serde(default = "default_true")]
     pub(crate) use_lockfile: bool,
     pub(crate) project: Project,
@@ -333,6 +336,10 @@ impl Config {
 
     pub fn use_lockfile(&self) -> bool {
         self.use_lockfile
+    }
+
+    pub fn library(&self) -> Option<&PathBuf> {
+        self.library.as_ref()
     }
 }
 
