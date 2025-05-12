@@ -76,6 +76,10 @@ pub enum Command {
     Summary {
         #[clap(short, long)]
         json: bool,
+        /// Specify a R version different from the one in the config.
+        /// The command will not error even if this R version is not found
+        #[clap(long)]
+        r_version: Option<Version>,
     },
     /// Simple information about the project
     Info {
@@ -492,8 +496,8 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Summary { json } => {
-            let mut context = CliContext::new(&cli.config_file, None)?;
+        Command::Summary { json , r_version} => {
+            let mut context = CliContext::new(&cli.config_file, r_version)?;
             context.load_databases()?;
             let resolved = resolve_dependencies(&context, &ResolveMode::Default);
             let summary = ProjectSummary::new(
