@@ -1,17 +1,27 @@
 # Installation
 
-## For Unix-like systems (macOS, Linux)
+## Mac
+
+### Homebrew (mac)
+
+```
+brew tap a2-ai/homebrew-tap
+brew install rv
+```
+
+## For Unix-like systems (Linux, macOS)
 
 ### Download the latest release
 
 ```shell
-curl -sSL https://github.com/a2-ai/rv/blob/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/a2-ai/rv/blob/main/scripts/install.sh | bash
 ```
 
 ### Verify installation
 ```shell
 rv --version
 ```
+
 
 ## For Windows
 

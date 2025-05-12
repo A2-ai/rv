@@ -47,6 +47,29 @@ impl<'d> Resolution<'d> {
     }
 
     pub fn finalize(&mut self) {
+        // First we go through the failed dependencies to see if something that would match was found
+        // (for example it can happen if someone puts a dep in a git package and specify that dep
+        // directly in rproject.toml instead of remotes)
+        let mut actually_found = HashSet::new();
+        for (i, failed) in self.failed.iter().enumerate() {
+            for pkg in &self.found {
+                if pkg.name == failed.name {
+                    if let Some(req) = &failed.version_requirement {
+                        if req.is_satisfied(&pkg.version) {
+                            actually_found.insert(i);
+                        }
+                    } else {
+                        actually_found.insert(i);
+                    }
+                }
+            }
+        }
+        let mut actually_found = actually_found.into_iter().collect::<Vec<_>>();
+        actually_found.reverse();
+        for i in actually_found {
+            self.failed.remove(i);
+        }
+
         let mut solver = DependencySolver::default();
         for package in &self.found {
             solver.add_package(&package.name, &package.version);
