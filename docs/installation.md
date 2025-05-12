@@ -14,7 +14,7 @@ brew install rv
 ### Download the latest release
 
 ```shell
-curl -sSL https://raw.githubusercontent.com/a2-ai/rv/blob/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/A2-ai/rv/refs/heads/main/scripts/install.sh | bash
 ```
 
 ### Verify installation

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Ensure target directory exists and cd into it
 mkdir -p ~/.local/bin && cd ~/.local/bin
@@ -36,3 +37,22 @@ curl -L -o rv_latest.tar.gz "$asset_url" &&
     chmod +x rv &&
     echo "rv installed successfully to ~/.local/bin" ||
     (echo "Installation failed." >&2 && exit 1)
+
+# Add ~/.local/bin to PATH if not already present
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo "Adding ~/.local/bin to your PATH..."
+    if [[ "$SHELL" == *"bash"* ]]; then
+        printf '\n%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+        echo "Please source ~/.bashrc or open a new terminal."
+    elif [[ "$SHELL" == *"zsh"* ]]; then
+        printf '\n%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+        echo "Please source ~/.zshrc or open a new terminal."
+    elif [[ "$SHELL" == *"fish"* ]]; then
+        printf '\n%s\n' 'fish_add_path "$HOME/.local/bin"' >> ~/.config/fish/config.fish
+        echo "~/.local/bin added to fish path. Changes will apply to new fish shells."
+    else
+        echo "Could not detect shell. Please add ~/.local/bin to your PATH manually."
+    fi
+else
+    echo "~/.local/bin is already in your PATH."
+fi

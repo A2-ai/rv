@@ -35,7 +35,7 @@ dependencies = [
 
 Running `rv sync` will synchronize the library, lock file, and configuration file by installing `dplyr`, `ggplot2`, any dependencies those packages require, and the suggested packages for `ggplot2`. Running `rv plan` will give you a preview of what `rv sync` will do.
 
-Additional example projects with more configurations can be found in the `example_projects' directory of this repository
+Additional example projects with more configurations can be found in the [example_projects](example_projects)  directory of this repository.
 
 ## Installation
 
@@ -43,10 +43,39 @@ See the [installation documentation](docs/installation.md) for information on ho
 
 ## Usage
 
-To upgrade packages to be the latest versions available from the sources listed, use `rv upgrade`. If you'd like to see what will occur when you were to upgrade, run `rv upgrade --dry-run` or `rv plan --upgrade`.
+See the [usage documentation](docs/usage.md) for information on how to use `rv`.
 
 ## Contributing
 
+### Getting started
+
+To get started with the development of `rv`, you'll need:
+
+- [Rust](https://rustup.rs/)
+- [Just](https://github.com/casey/just)
+
+After installing Rust, you can build the project by running:
+
+```bash
+just run <args>
+```
+
+e.g. `just run sync` or `just run add --dry-run`.
+
+If you'd like to install the current version of the project as a binary, you can run:
+
+```bash
+just install
+```
+
+### Unit testing
+
+Run the unit tests with:
+
+```bash
+just test
+```
+
 ### Snapshot testing
+
 Snapshots require R version 4.4.x.
-See the [usage documentation](docs/usage.md) for information on how to use `rv`.
