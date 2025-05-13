@@ -5,7 +5,7 @@ pub const LOCKFILE_NAME: &str = "rv.lock";
 
 pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
-pub const STAGING_DIR_NAME: &str = "staging";
+pub const STAGING_DIR_NAME: &str = "__rv__staging";
 pub(crate) const LIBRARY_METADATA_FILENAME: &str = ".rv.metadata";
 
 /// How long are the package databases cached for
