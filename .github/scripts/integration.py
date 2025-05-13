@@ -4,6 +4,7 @@ import subprocess
 import shutil
 
 PARENT_FOLDER = "example_projects"
+SKIP_PLAN_CHECK = ["git", "no-lockfile", "url", "custom-lib-path"]
 
 def run_cmd(cmd, path, json = False):
     additional_args = ["--json"] if json else []
@@ -44,7 +45,7 @@ def run_examples():
 
         run_cmd("sync", subfolder_path)
         plan_result = run_cmd("plan", subfolder_path)
-        if "Nothing to do" not in plan_result and not ("git" in subfolder_path or "no-lockfile" in subfolder_path or "url" in subfolder_path):
+        if "Nothing to do" not in plan_result and not any([True for s in SKIP_PLAN_CHECK if s in subfolder_path]):
             print(f"Plan after sync has changes planned for {subfolder}")
             return 1
         library_path = run_cmd("library", subfolder_path)

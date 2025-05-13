@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use crate::consts::{
-    DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME,
-};
+use crate::consts::{DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME};
 use crate::fs::mtime_recursive;
 use crate::lockfile::Source;
 use crate::package::parse_version;
@@ -73,7 +71,7 @@ impl LocalMetadata {
 pub struct Library {
     /// This is the path where the packages are installed so
     /// rv/library/{R version}/{arch}/{codename?}/
-    path: PathBuf,
+    pub path: PathBuf,
     pub packages: HashMap<String, Version>,
     /// We keep track of all packages not coming from a package repository
     pub non_repo_packages: HashMap<String, LocalMetadata>,
@@ -81,6 +79,7 @@ pub struct Library {
     /// This is likely a broken symlink and we should remove that folder/reinstall it
     /// It could also be something that is not a R package added by another tool
     pub broken: HashSet<String>,
+    pub custom: bool,
 }
 
 impl Library {
@@ -101,6 +100,21 @@ impl Library {
             packages: HashMap::new(),
             non_repo_packages: HashMap::new(),
             broken: HashSet::new(),
+            custom: false,
+        }
+    }
+
+    pub fn new_custom(project_dir: impl AsRef<Path>, path: impl AsRef<Path>) -> Library {
+        let mut path = path.as_ref().to_path_buf();
+        if path.is_relative() {
+            path = project_dir.as_ref().join(path);
+        }
+        Self {
+            path,
+            packages: HashMap::new(),
+            non_repo_packages: HashMap::new(),
+            broken: HashSet::new(),
+            custom: true,
         }
     }
 
@@ -115,6 +129,11 @@ impl Library {
     /// and we should not consider them installed.
     pub fn find_content(&mut self) {
         if !self.path.is_dir() {
+            return;
+        }
+
+        if self.custom {
+            log::debug!("Using custom library path. Ignoring library content.");
             return;
         }
 
@@ -150,7 +169,7 @@ impl Library {
     }
 
     pub fn contains_package(&self, pkg: &ResolvedDependency) -> bool {
-        if !self.packages.contains_key(pkg.name.as_ref()) {
+        if self.custom || !self.packages.contains_key(pkg.name.as_ref()) {
             return false;
         }
 
