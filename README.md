@@ -43,7 +43,8 @@ See the [installation documentation](docs/installation.md) for information on ho
 
 ## Usage
 
-See the [usage documentation](docs/usage.md) for information on how to use `rv`.
+See the [usage documentation](docs/usage.md) for information on how to use `rv` and how to [configure](docs/config.md) it with
+the `rproject.toml` file.
 
 ## Contributing
 
@@ -52,12 +53,14 @@ See the [usage documentation](docs/usage.md) for information on how to use `rv`.
 To get started with the development of `rv`, you'll need:
 
 - [Rust](https://rustup.rs/)
-- [Just](https://github.com/casey/just)
+- and optionally [Just](https://github.com/casey/just)
 
 After installing Rust, you can build the project by running:
 
 ```bash
 just run <args>
+// or
+cargo run --features=cli --release -- ...
 ```
 
 e.g. `just run sync` or `just run add --dry-run`.
@@ -66,6 +69,8 @@ If you'd like to install the current version of the project as a binary, you can
 
 ```bash
 just install
+// or
+cargo install --path . --features cli
 ```
 
 ### Unit testing
@@ -74,6 +79,8 @@ Run the unit tests with:
 
 ```bash
 just test
+// or
+cargo test --features=cli
 ```
 
 ### Snapshot testing
