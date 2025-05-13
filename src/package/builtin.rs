@@ -1,11 +1,11 @@
+use crate::RCmd;
+use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
+use crate::package::{Package, parse_description_file_in_folder};
 use bincode::{Decode, Encode};
 use fs_err as fs;
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
-
-use crate::RCmd;
-use crate::package::{Package, parse_description_file_in_folder};
 
 #[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct BuiltinPackages {
@@ -40,7 +40,11 @@ pub fn get_builtin_versions_from_library(r_cmd: &impl RCmd) -> std::io::Result<B
                 let entry = entry?;
                 match parse_description_file_in_folder(entry.path()) {
                     Ok(p) => {
-                        builtins.packages.insert(p.name.clone(), p);
+                        if BASE_PACKAGES.contains(&p.name.as_str())
+                            || RECOMMENDED_PACKAGES.contains(&p.name.as_str())
+                        {
+                            builtins.packages.insert(p.name.clone(), p);
+                        }
                     }
                     Err(e) => {
                         log::error!(
