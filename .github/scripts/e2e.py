@@ -19,7 +19,7 @@ def run_cmd(cmd = [str]):
 
 def run_rv_cmd(cmd = str, args = [str]):
     print(f">> Running rv {cmd}")
-    command = ["rv", cmd, "-vvv"] + args
+    command = ["./target/release/rv", cmd, "-vvv"] + args
     return run_cmd(command)
     
 
