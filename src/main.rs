@@ -22,7 +22,7 @@ pub struct Cli {
     verbose: clap_verbosity_flag::Verbosity,
 
     /// Output in JSON format. This will also ignore the --verbose flag and not log anything.
-    #[clap(long)]
+    #[clap(long, global = true)]
     json: bool,
 
     /// Path to a config file other than rproject.toml in the current directory
