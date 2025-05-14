@@ -1,6 +1,6 @@
 # rv
 
-`rv` is a new way to manage and install your R packages in a reproducible, fast, and declaritive way. 
+`rv` is a new way to manage and install your R packages in a reproducible, fast, and declarative way. 
 
 > [!WARNING]
 > `rv` is still in development and may not be fully documented. For additional information, issues, or feature requests, please create an issue or contact us directly.
