@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
-use crate::consts::{DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME};
+use crate::consts::{
+    DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME,
+};
 use crate::fs::mtime_recursive;
 use crate::lockfile::Source;
 use crate::package::parse_version;

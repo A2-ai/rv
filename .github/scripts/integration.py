@@ -7,9 +7,8 @@ PARENT_FOLDER = "example_projects"
 SKIP_PLAN_CHECK = ["git", "no-lockfile", "url", "custom-lib-path"]
 
 def run_cmd(cmd, path, json = False):
-    additional_args = ["--json"] if json else []
     print(f">> Running rv {cmd}")
-    command = ["./target/release/rv", cmd, "--config-file", path, "-vvv"] + additional_args
+    command = ["./target/release/rv", "--config-file", path, "-vvv"] + (["--json"] if json else []) + [cmd]
     result = subprocess.run(command, capture_output=True, text=True)
     if not json:
         print(result.stdout)
@@ -34,7 +33,7 @@ def run_examples():
 
         # The git packages depend on each other but we don't want rv to use the cache for them
         if "git" in subfolder_path:
-            out = run_cmd("cache", subfolder_path, ["--json"])
+            out = run_cmd("cache", subfolder_path, True)
             if out:
                 cache_data = json.loads(out)
                 for obj in cache_data.get("git", []):

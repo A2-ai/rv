@@ -7,7 +7,6 @@ use serde::Deserialize;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
 
-
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Author {

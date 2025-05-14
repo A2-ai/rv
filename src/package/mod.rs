@@ -18,7 +18,8 @@ pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version};
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PackageType {
     Source,
     Binary,

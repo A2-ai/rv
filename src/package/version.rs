@@ -1,5 +1,5 @@
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hash;
@@ -43,12 +43,21 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Encode, Decode, Deserialize)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
     parts: [u32; 10],
     pub original: String,
+}
+
+impl Serialize for Version {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.original)
+    }
 }
 
 impl Version {
