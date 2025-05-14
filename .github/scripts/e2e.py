@@ -19,7 +19,7 @@ def run_cmd(cmd = [str]):
 
 def run_rv_cmd(cmd = str, args = [str]):
     print(f">> Running rv {cmd}")
-    command = ["./target/release/rv", cmd, "-vvv"] + args
+    command = ["rv", cmd, "-vvv"] + args
     return run_cmd(command)
     
 
@@ -75,9 +75,11 @@ def check_r_profile():
     
 
 def run_test():
+    os.environ["PATH"] = f"{os.path.abspath('./target/release')}:{os.environ.get('PATH', '')}"
     run_rv_cmd("init", [INIT_FOLDER, "--no-repositories", "--force"])
     original_dir = os.getcwd()
     os.chdir(INIT_FOLDER)
+    
     
     try: 
         add_repo(CONFIG_FILE, RV_REPO_2)
