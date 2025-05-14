@@ -123,10 +123,7 @@ impl CliContext {
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
         let can_resolve = self
             .lockfile
-            .as_ref()
-            .and_then(|l| {
-                Some(l.can_resolve(self.config.dependencies(), self.config.repositories()))
-            })
+            .as_ref().map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
             .unwrap_or(false);
 
         if !can_resolve {
@@ -160,7 +157,7 @@ pub(crate) fn load_databases(
         .par_iter()
         .map(|r| {
             // 1. Generate path to add to URL to get the src PACKAGE and binary PACKAGE for current OS
-            let (path, exists) = cache.get_package_db_entry(&r.url());
+            let (path, exists) = cache.get_package_db_entry(r.url());
             // 2. Check in cache whether we have the database and is not expired
             if exists {
                 // load the archive
@@ -173,7 +170,7 @@ pub(crate) fn load_databases(
                     fs::remove_file(&path)?;
                 }
                 log::debug!("Need to download PACKAGES file for {}", r.url());
-                let mut db = RepositoryDatabase::new(&r.url());
+                let mut db = RepositoryDatabase::new(r.url());
                 // download files, parse them and persist to disk
                 let mut source_package = Vec::new();
                 let (source_url, binary_url) =
@@ -206,7 +203,7 @@ pub(crate) fn load_databases(
                         // UNSAFE: we trust the PACKAGES data to be valid UTF-8
                         db.parse_binary(
                             unsafe { std::str::from_utf8_unchecked(&binary_package) },
-                            cache.r_version.clone(),
+                            cache.r_version,
                         );
                     }
                 }

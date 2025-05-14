@@ -278,7 +278,7 @@ fn _sync(
                 &context.project_dir,
                 &context.library,
                 &context.cache,
-                &context.staging_path(),
+                context.staging_path(),
             );
             if dry_run {
                 handler.dry_run();
@@ -321,17 +321,15 @@ fn _sync(
                 } else {
                     println!("Nothing to do");
                 }
+            } else if output_format.is_json() {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&SyncChanges::from_changes(changes))
+                        .expect("valid json")
+                );
             } else {
-                if output_format.is_json() {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&SyncChanges::from_changes(changes))
-                            .expect("valid json")
-                    );
-                } else {
-                    for c in changes {
-                        println!("{}", c.print(!dry_run));
-                    }
+                for c in changes {
+                    println!("{}", c.print(!dry_run));
                 }
             }
             Ok(())
@@ -397,7 +395,7 @@ fn try_main() -> Result<()> {
             let repositories = if no_repositories {
                 Vec::new()
             } else {
-                find_r_repositories().unwrap_or(Vec::new())
+                find_r_repositories().unwrap_or_default()
             };
             init(&project_directory, &r_version, &repositories, &add, force)?;
             activate(&project_directory, no_r_environment)?;
@@ -590,25 +588,23 @@ fn try_main() -> Result<()> {
                         cli.config_file.display()
                     );
                 }
+            } else if output_format.is_json() {
+                println!(
+                    "{}",
+                    json!({
+                        "success": false,
+                        "unresolved": unresolved.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    })
+                );
             } else {
-                if output_format.is_json() {
-                    println!(
-                        "{}",
-                        json!({
-                            "success": false,
-                            "unresolved": unresolved.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                        })
-                    );
-                } else {
-                    println!(
-                        "{} was migrated to {} with {} unresolved packages: ",
-                        renv_file.display(),
-                        cli.config_file.display(),
-                        unresolved.len()
-                    );
-                    for u in &unresolved {
-                        eprintln!("    {u}");
-                    }
+                println!(
+                    "{} was migrated to {} with {} unresolved packages: ",
+                    renv_file.display(),
+                    cli.config_file.display(),
+                    unresolved.len()
+                );
+                for u in &unresolved {
+                    eprintln!("    {u}");
                 }
             }
         }
@@ -619,7 +615,7 @@ fn try_main() -> Result<()> {
             let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,
-                &context.config.repositories(),
+                context.config.repositories(),
                 &context.databases,
                 &context.r_version,
                 &context.cache,

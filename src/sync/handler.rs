@@ -141,7 +141,7 @@ impl<'a> SyncHandler<'a> {
                             deps_to_copy.insert(name.as_str());
                             deps_seen.insert(name.as_str());
                         }
-                        _ => ()
+                        _ => (),
                     }
                     continue;
                 }

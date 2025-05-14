@@ -80,7 +80,7 @@ fn render_config(
                 r.alias,
                 r.url(),
                 if r.force_source {
-                    format!(r#", force_source = true"#)
+                    r#", force_source = true"#.to_string()
                 } else {
                     String::new()
                 }
@@ -103,7 +103,7 @@ fn render_config(
         .replace("%renv_file%", renv_file)
         .replace("%time%", &time.to_string())
         .replace("%project_name%", project_name)
-        .replace("%r_version%", &r_version)
+        .replace("%r_version%", r_version)
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
 }

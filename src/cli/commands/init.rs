@@ -61,11 +61,11 @@ pub fn init(
             source: InitErrorKind::Io(e),
         })?
         .iter()
-        .last()
+        .next_back()
         .map(|x| x.to_string_lossy().to_string())
         .unwrap_or("my rv project".to_string());
 
-    let config = render_config(&project_name, &r_version, &repositories, dependencies);
+    let config = render_config(&project_name, r_version, repositories, dependencies);
 
     write(proj_dir.join(CONFIG_FILENAME), config)?;
     Ok(())

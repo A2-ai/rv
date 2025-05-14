@@ -566,13 +566,9 @@ impl Lockfile {
     }
 
     pub fn contains_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
-        self.packages
-            .iter()
-            .find(|lock_pkg| {
-                lock_pkg.name == dep.name.as_ref()
-                    && lock_pkg.version == dep.version.as_ref().original
-            })
-            .is_some()
+        self.packages.iter().any(|lock_pkg| {
+            lock_pkg.name == dep.name.as_ref() && lock_pkg.version == dep.version.as_ref().original
+        })
     }
 
     /// Gets a set of all the package names listed in the lockfile
