@@ -5,7 +5,7 @@ use std::str::FromStr;
 use serde::Deserialize;
 
 use crate::lockfile::Source;
-use crate::package::{Version, deserialize_version_option};
+use crate::package::{Version, deserialize_option_version};
 use crate::r_cmd::VersionError;
 use crate::{RCmd, RCommandLine};
 
@@ -192,7 +192,7 @@ impl ConfigDependency {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
-    #[serde(deserialize_with = "deserialize_version_option")]
+    #[serde(deserialize_with = "deserialize_option_version", default)]
     /// r_version must be set, unless r_path is set
     r_version: Option<Version>,
     #[serde(default)]
@@ -263,11 +263,20 @@ impl Config {
     pub(crate) fn finalize(&mut self) -> Result<(), ConfigLoadError> {
         // if r_path is set, we check what version is on the path
         if let Some(r_path) = &self.r_path {
-            let cmd_ver = RCommandLine { r: Some(r_path.clone()) }.version()?;
+            let cmd_ver = RCommandLine {
+                r: Some(r_path.clone()),
+            }
+            .version()?;
             // if the r_version is set in the config, ensure the versions match
             if let Some(config_ver) = &self.project.r_version {
-                if &cmd_ver != config_ver {
-                    return Err(ConfigLoadError { path: Path::new(".").into(), source: ConfigLoadErrorKind::VersionDoesNotMatch })
+                if !config_ver.hazy_match(&cmd_ver) {
+                    return Err(ConfigLoadError {
+                        path: Path::new(".").into(),
+                        source: ConfigLoadErrorKind::VersionDoesNotMatch {
+                            config_version: config_ver.clone(),
+                            path_version: cmd_ver.clone(),
+                        },
+                    });
                 }
             // if the r_version is not set, set it as the version found on the path
             } else {
@@ -276,7 +285,10 @@ impl Config {
         // if r_path is not set, r_version must be
         } else {
             if self.project.r_version == None {
-                return Err(ConfigLoadError { path: Path::new(".").into(), source: ConfigLoadErrorKind::VersionNotSet })
+                return Err(ConfigLoadError {
+                    path: Path::new(".").into(),
+                    source: ConfigLoadErrorKind::VersionNotSet,
+                });
             }
         }
 
@@ -407,9 +419,12 @@ pub enum ConfigLoadErrorKind {
     #[error("Invalid config: {0}")]
     InvalidConfig(String),
     VersionError(#[from] VersionError),
-    #[error("r_version does not match version found at r_path")]
-    VersionDoesNotMatch,
-    #[error("r_version (or r_path) must be set")]
+    #[error("r_version ({config_version}) does not match version found at r_path ({path_version})")]
+    VersionDoesNotMatch {
+        path_version: Version,
+        config_version: Version,
+    },
+    #[error("r_version or r_path must be set")]
     VersionNotSet,
 }
 

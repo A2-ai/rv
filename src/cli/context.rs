@@ -48,7 +48,9 @@ impl CliContext {
         } else {
             let r_version = config.r_version().clone();
             let r_cmd = if let Some(r_path) = &config.r_path {
-                RCommandLine {r: Some(r_path.clone())}
+                RCommandLine {
+                    r: Some(r_path.clone()),
+                }
             } else {
                 find_r_version_command(&r_version)?
             };
@@ -127,7 +129,8 @@ impl CliContext {
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
         let can_resolve = self
             .lockfile
-            .as_ref().map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
+            .as_ref()
+            .map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
             .unwrap_or(false);
 
         if !can_resolve {

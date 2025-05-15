@@ -131,7 +131,7 @@ impl PartialOrd for Version {
     }
 }
 
-pub fn deserialize_version_option<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
+pub fn deserialize_option_version<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
