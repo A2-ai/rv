@@ -49,7 +49,6 @@ pub enum ConfigDependency {
     Git {
         // It can be http or git
         git: String,
-        // TODO: validate that either commit, branch or tag is set
         commit: Option<String>,
         tag: Option<String>,
         branch: Option<String>,
