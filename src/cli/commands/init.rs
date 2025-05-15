@@ -5,6 +5,7 @@ use std::{
 };
 
 use fs_err::write;
+use url::Url;
 
 use crate::{consts::{LIBRARY_ROOT_DIR_NAME, STAGING_DIR_NAME}, Repository};
 
@@ -138,7 +139,11 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
             let mut parts = line.splitn(2, '\t');
             let alias = parts.next()?.to_string();
             let url = strip_linux_url(parts.next()?);
-            Some(Repository::new(alias, url, false))
+            if url.parse::<Url>().is_ok() {
+                Some(Repository::new(alias, url, false))
+            } else {
+                None
+            }
         })
         .collect::<Vec<_>>())
 }

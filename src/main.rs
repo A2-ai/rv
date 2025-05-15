@@ -395,8 +395,17 @@ fn try_main() -> Result<()> {
             let repositories = if no_repositories {
                 Vec::new()
             } else {
-                find_r_repositories().unwrap_or_default()
+                match find_r_repositories() {
+                    Ok(repos) if !repos.is_empty() => repos,
+                    _ => {
+                        eprintln!(
+                            "WARNING: Could not set default repositories. Set with your company preferred package URL or public url (i.e. `https://packagemanager.posit.co/cran/latest`)\n"
+                        );
+                        Vec::new()
+                    }
+                }
             };
+
             init(&project_directory, &r_version, &repositories, &add, force)?;
             activate(&project_directory, no_r_environment)?;
 
