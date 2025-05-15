@@ -96,3 +96,38 @@ jobs:
           cargo build --all-features --release
       - name: run rv sync on all example projects
         run: python .github/scripts/integration.py
+
+  e2e:
+    name: e2e-test
+    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # - name: Set up SSH with repository-specific key
+      #   uses: webfactory/ssh-agent@v0.8.0
+      #   with:
+      #     ssh-private-key: ${{ secrets.INTERNAL_SSH_KEY }}
+
+      # - name: Add GitHub to known_hosts
+      #   run: |
+      #     ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Build System Info
+        run: rustc --version
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.4.2"
+
+      - name: build binary
+        run: |
+          cargo build --all-features --release
+
+      - name: run rv e2e tests
+        run: python .github/scripts/e2e.py
