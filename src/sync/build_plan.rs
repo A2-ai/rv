@@ -115,6 +115,7 @@ mod tests {
     use crate::package::{Dependency, PackageType};
     use std::borrow::Cow;
     use std::str::FromStr;
+    use url::Url;
 
     fn get_resolved_dep<'a>(name: &'a str, dependencies: Vec<&'a str>) -> ResolvedDependency<'a> {
         ResolvedDependency {
@@ -126,7 +127,7 @@ mod tests {
             suggests: Vec::new(),
             version: Cow::Owned(Version::from_str("0.1.0").unwrap()),
             source: Source::Repository {
-                repository: "".to_string(),
+                repository: Url::parse("https://something.com").unwrap(),
             },
             install_suggests: false,
             force_source: false,

@@ -2,10 +2,12 @@
 name = "rv"
 version = "0.6.1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 toml = "0.8"
 serde_json = "1"
+url = { version = "2", features = ["serde"] }
 # To write the lockfile in the way we want + add/remove things from rproject.toml
 toml_edit = "0.22.22"
 serde = { version = "1", features = ["derive"] }
@@ -19,23 +21,29 @@ cachedir = "0.3"
 os_info = "3.9.1"
 # We use bincode to serialize package databases to disk
 bincode = "2"
+# Error handling
 thiserror = "2"
 fs-err = "3"
+# FS things
 walkdir = "2"
-os_pipe = "1"
 tempfile = "3"
 reflink-copy = "0.1"
-log = "0.4"
 filetime = "0.2.25"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"
+zip = "3"
+# HTTP requests
 ureq = { version = "3", features = ["platform-verifier"] }
 sha2 = "0.10"
+# For rv sync
 crossbeam = "0.8.4"
-indicatif = "0.17.11"
 num_cpus = "1.16.0"
-zip = "2"
+# some of the progress bars happen in the library
+indicatif = "0.17.11"
+# To pipe stdout and stderr to a single output for R compilation
+os_pipe = "1"
+log = "0.4"
 
 clap = { version = "4", features = ["derive"], optional = true }
 clap-verbosity-flag = { version = "3", optional = true }

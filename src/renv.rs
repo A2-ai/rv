@@ -5,13 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Deserializer};
-
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::{
     Repository, RepositoryDatabase,
     package::{Operator, Version, VersionRequirement, deserialize_version},
 };
+use serde::{Deserialize, Deserializer};
+use url::Url;
 
 #[derive(Debug, PartialEq, Clone)]
 // as enum since logic to resolve depends on this
@@ -165,7 +165,7 @@ impl RenvLock {
             .iter()
             .map(|r| Repository {
                 alias: r.name.to_string(),
-                url: r.url.to_string(),
+                url: Url::parse(&r.url).expect("valid URL"),
                 force_source: false,
             })
             .collect::<Vec<_>>()
@@ -397,7 +397,7 @@ mod tests {
         let mut res = Vec::new();
 
         for r in repositories {
-            let mut repo = RepositoryDatabase::new(&r.url);
+            let mut repo = RepositoryDatabase::new(r.url.as_str());
             let path = format!("src/tests/package_files/{}.PACKAGE", &r.alias);
             let text = std::fs::read_to_string(path).unwrap();
             if r.alias.contains("binary") {

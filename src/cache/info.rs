@@ -79,16 +79,23 @@ impl CacheInfo {
             }
             let paths = cache.get_package_paths(&d.source, None, None);
             match d.source {
-                Source::Git { git, .. } | Source::RUniverse { git, .. } => {
+                Source::Git { git, .. } => {
                     git_paths.push(CacheUrlInfo {
-                        url: git,
+                        url: git.as_str().to_string(),
+                        source_path: paths.source,
+                        binary_path: paths.binary,
+                    });
+                }
+                Source::RUniverse { git, .. } => {
+                    git_paths.push(CacheUrlInfo {
+                        url: git.as_str().to_string(),
                         source_path: paths.source,
                         binary_path: paths.binary,
                     });
                 }
                 Source::Url { url, .. } => {
                     url_paths.push(CacheUrlInfo {
-                        url,
+                        url: url.as_str().to_string(),
                         source_path: paths.source,
                         binary_path: paths.binary,
                     });

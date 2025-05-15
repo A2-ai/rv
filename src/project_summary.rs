@@ -449,7 +449,7 @@ fn is_binary_package(
     ));
     repo_dbs
         .iter()
-        .find(|(db, _)| &db.url == repository)
+        .find(|(db, _)| &db.url == repository.as_str())
         .and_then(|(db, _)| {
             db.find_package(
                 &resolved_dep.name,
@@ -470,9 +470,8 @@ fn is_binary_package(
 // - builtin: "builtin"
 fn get_dep_id(dep: &ResolvedDependency, repos: &[Repository]) -> String {
     match &dep.source {
-        Source::Repository { repository } | Source::RUniverse { repository, .. } => {
-            get_repository_alias(repository, repos)
-        }
+        Source::Repository { repository } => get_repository_alias(repository.as_str(), repos),
+        Source::RUniverse { repository, .. } => get_repository_alias(repository.as_str(), repos),
         Source::Git { git, .. } => git.to_string(),
         Source::Local { path, .. } => path.to_string_lossy().to_string(),
         Source::Url { url, .. } => url.to_string(),

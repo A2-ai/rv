@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use url::Url;
 
 mod dependency;
 mod result;
@@ -254,7 +255,7 @@ impl<'d> Resolver<'d> {
             ) {
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
                     package,
-                    &repo.url,
+                    &Url::parse(&repo.url).unwrap(),
                     package_type,
                     item.install_suggestions,
                     force_source,
@@ -262,7 +263,7 @@ impl<'d> Resolver<'d> {
                         &package.name,
                         &package.version.original,
                         &Source::Repository {
-                            repository: repo.url.clone(),
+                            repository: Url::parse(&repo.url).unwrap(),
                         },
                     ),
                     http_download,
@@ -351,7 +352,7 @@ impl<'d> Resolver<'d> {
     fn url_lookup(
         &self,
         item: &QueueItem<'d>,
-        url: &str,
+        url: &Url,
         cache: &'d DiskCache,
         http_downloader: &'d impl HttpDownload,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
@@ -376,7 +377,7 @@ impl<'d> Resolver<'d> {
                 PackageType::Source
             },
             Source::Url {
-                url: url.to_string(),
+                url: url.clone(),
                 sha,
             },
             item.install_suggestions,
@@ -519,7 +520,7 @@ impl<'d> Resolver<'d> {
                     } => {
                         match self.git_lookup(
                             &item,
-                            url,
+                            &url,
                             directory.as_deref(),
                             reference
                                 .clone()
@@ -588,7 +589,7 @@ impl<'d> Resolver<'d> {
                     }
                 }
                 Some(ConfigDependency::Url { url, .. }) => {
-                    match self.url_lookup(&item, url.as_ref(), cache, http_download) {
+                    match self.url_lookup(&item, url, cache, http_download) {
                         Ok((resolved_dep, items)) => {
                             result.add_found(resolved_dep);
                             queue.extend(items);
@@ -685,27 +686,27 @@ mod tests {
     impl HttpDownload for FakeHttp {
         fn download<W: Write>(
             &self,
-            url: &str,
+            url: &Url,
             w: &mut W,
             _: Vec<(&str, String)>,
         ) -> Result<u64, HttpError> {
             // if its an api query, we return the api string
-            if url.contains("r-universe.dev/api") {
+            if url.as_str().contains("r-universe.dev/api") {
                 let path = format!(
                     "src/tests/r_universe/{}.api",
-                    url.split('/').last().unwrap_or("")
+                    url.as_str().split('/').last().unwrap_or("")
                 );
                 let content = fs::read_to_string(path).unwrap();
 
                 w.write_all(content.as_bytes())
-                    .map_err(|e| HttpError::from_io(url, e))?;
+                    .map_err(|e| HttpError::from_io(url.as_str(), e))?;
             }
             Ok(0)
         }
 
         fn download_and_untar(
             &self,
-            _: &str,
+            _: &Url,
             _: impl AsRef<Path>,
             _: bool,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
@@ -792,7 +793,7 @@ mod tests {
 
         // And a custom one for url deps
         let url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz";
-        let url_path = cache.get_url_download_path(url);
+        let url_path = cache.get_url_download_path(&Url::parse(&url).unwrap());
         fs::create_dir_all(&url_path).unwrap();
         fs::copy(
             "src/tests/descriptions/dplyr.DESCRIPTION",

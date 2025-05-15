@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::Deserialize;
+use url::Url;
 
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
@@ -20,7 +21,7 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    pub(crate) url: String,
+    pub(crate) url: Url,
     #[serde(default)]
     pub force_source: bool,
 }
@@ -28,13 +29,13 @@ pub struct Repository {
 impl Repository {
     /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {
-        self.url.trim_end_matches("/")
+        self.url.as_str().trim_end_matches("/")
     }
 
     pub fn new(alias: String, url: String, force_source: bool) -> Self {
         Self {
             alias,
-            url,
+            url: Url::parse(&url).expect("valid URL"),
             force_source,
         }
     }
@@ -46,6 +47,7 @@ impl Repository {
 pub enum ConfigDependency {
     Simple(String),
     Git {
+        // It can be http or git
         git: String,
         // TODO: validate that either commit, branch or tag is set
         commit: Option<String>,
@@ -67,7 +69,7 @@ pub enum ConfigDependency {
         dependencies_only: bool,
     },
     Url {
-        url: String,
+        url: Url,
         name: String,
         #[serde(default)]
         install_suggestions: bool,
@@ -139,12 +141,6 @@ impl ConfigDependency {
     }
 
     pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
-        // git: String,
-        // // TODO: validate that either commit, branch or tag is set
-        // commit: Option<String>,
-        // tag: Option<String>,
-        // branch: Option<String>,
-        // directory: Option<String>,
         match self.clone() {
             ConfigDependency::Git {
                 git,
@@ -203,7 +199,7 @@ pub(crate) struct Project {
     #[serde(default)]
     suggests: Vec<ConfigDependency>,
     #[serde(default)]
-    urls: HashMap<String, String>,
+    urls: HashMap<String, Url>,
     #[serde(default)]
     dependencies: Vec<ConfigDependency>,
     #[serde(default)]
@@ -296,6 +292,15 @@ impl Config {
                         errors.push("A git dependency is missing a URL.".to_string());
                         continue;
                     }
+                    // If it's not a git URL we should be able to parse it as a URL
+                    if !git.starts_with("git@") {
+                        if let Err(_) = Url::parse(git) {
+                            errors.push(format!(
+                                "Git dependency has {git} as URL but it isn't a valid URL."
+                            ));
+                            continue;
+                        }
+                    }
                     match (tag.is_some(), branch.is_some(), commit.is_some()) {
                         (true, false, false) | (false, true, false) | (false, false, true) => (),
                         _ => {
@@ -383,6 +388,16 @@ mod tests {
             let res = Config::from_file(path.unwrap().path());
             println!("{res:?}");
             assert!(res.is_ok());
+        }
+    }
+
+    #[test]
+    fn errors_on_invalid_config_files() {
+        let paths = std::fs::read_dir("src/tests/invalid_config/").unwrap();
+        for path in paths {
+            let res = Config::from_file(path.unwrap().path());
+            println!("{res:?}");
+            assert!(res.is_err());
         }
     }
 }

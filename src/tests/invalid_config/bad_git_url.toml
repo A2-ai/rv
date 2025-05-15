@@ -1,0 +1,23 @@
+[project]
+name = "project_name"
+# Can specify which version of R is required, could be used later in rv as R version manager?
+r_version = "4.4.1"
+description = ""
+authors = [{name = "Bob", email="hello@acme.org", maintainer = true}]
+license = "MIT"
+keywords = []
+
+# Are suggested deps also enforcing repository? Only used if you're making a library
+suggests = []
+
+# Order matters
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org"},
+    { alias = "mpn", url = "https://mpn.metworx.com/snapshots/stable/2020-09-20"},
+]
+
+dependencies = [
+    "dplyr",
+    { name = "some-package", git = "https", tag = "v0.1.1", install_suggestions = true },
+]
+

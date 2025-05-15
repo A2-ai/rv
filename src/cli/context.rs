@@ -14,6 +14,7 @@ use fs_err as fs;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use url::Url;
 
 #[derive(Debug)]
 pub struct CliContext {
@@ -123,7 +124,8 @@ impl CliContext {
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
         let can_resolve = self
             .lockfile
-            .as_ref().map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
+            .as_ref()
+            .map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
             .unwrap_or(false);
 
         if !can_resolve {
@@ -173,8 +175,11 @@ pub(crate) fn load_databases(
                 let mut db = RepositoryDatabase::new(r.url());
                 // download files, parse them and persist to disk
                 let mut source_package = Vec::new();
-                let (source_url, binary_url) =
-                    get_package_file_urls(r.url(), &cache.r_version, &cache.system_info);
+                let (source_url, binary_url) = get_package_file_urls(
+                    &Url::parse(r.url()).unwrap(),
+                    &cache.r_version,
+                    &cache.system_info,
+                );
                 let bytes_read = timeit!(
                     "Downloaded source PACKAGES",
                     http::download(&source_url, &mut source_package, Vec::new())?

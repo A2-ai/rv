@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use filetime::FileTime;
 use fs_err as fs;
+use url::Url;
 
 use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
@@ -137,8 +138,8 @@ impl DiskCache {
     }
 
     /// We will download them in a separate path, we don't know if we have source or binary
-    pub fn get_url_download_path(&self, url: &str) -> PathBuf {
-        let encoded = hash_string(&url.to_ascii_lowercase());
+    pub fn get_url_download_path(&self, url: &Url) -> PathBuf {
+        let encoded = hash_string(&url.as_str().to_ascii_lowercase());
         self.root.join("urls").join(encoded)
     }
 
@@ -177,22 +178,26 @@ impl DiskCache {
         version: Option<&str>,
     ) -> PackagePaths {
         match source {
-            Source::Git { git, sha, .. } | Source::RUniverse { git, sha, .. } => PackagePaths {
+            Source::Git { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git),
-                binary: self.get_repo_root_binary_dir(git).join(&sha[..10]),
+                binary: self.get_repo_root_binary_dir(git.as_str()).join(&sha[..10]),
+            },
+            Source::RUniverse { git, sha, .. } => PackagePaths {
+                source: self.get_git_clone_path(git.as_str()),
+                binary: self.get_repo_root_binary_dir(git.as_str()).join(&sha[..10]),
             },
             Source::Url { url, sha } => PackagePaths {
                 source: self.get_url_download_path(url).join(&sha[..10]),
-                binary: self.get_repo_root_binary_dir(url).join(&sha[..10]),
+                binary: self.get_repo_root_binary_dir(url.as_str()).join(&sha[..10]),
             },
             Source::Repository { repository } => PackagePaths {
                 source: self.get_source_package_path(
-                    repository,
+                    repository.as_str(),
                     pkg_name.unwrap(),
                     version.unwrap(),
                 ),
                 binary: self.get_binary_package_path(
-                    repository,
+                    repository.as_str(),
                     pkg_name.unwrap(),
                     version.unwrap(),
                 ),

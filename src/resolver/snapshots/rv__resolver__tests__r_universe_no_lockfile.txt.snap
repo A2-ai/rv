@@ -2,4 +2,4 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-osinfo=0.0.1 (runiverse(repo: http://r-universe.dev, url: https://github.com/a2-ai/osinfo, sha: f815095b7b04cbf57da0e0c0a55ef5e03c16f477, directory: None), type=source, path='', from_lockfile=false, from_remote=false)
+osinfo=0.0.1 (repository(url: http://r-universe.dev/), type=source, path='', from_lockfile=false, from_remote=false)

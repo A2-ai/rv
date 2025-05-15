@@ -1,6 +1,6 @@
 ---
 source: src/add.rs
-expression: read_to_string(&config_file).unwrap()
+expression: doc.to_string()
 ---
 [project]
 name = "project_name"
@@ -16,7 +16,7 @@ suggests = []
 
 # Order matters
 repositories = [
-    { alias = "cran", url = "whatever it is"},
+    { alias = "cran", url = "https://cran.r-project.org"},
     { alias = "mpn", url = "https://mpn.metworx.com/snapshots/stable/2020-09-20"},
 ]
 
@@ -26,10 +26,7 @@ dependencies = [
     { name = "some-package", path = "../mpn", install_suggestions = true },
     { name = "some-package", git = "https://github.com/A2-ai/scicalc", tag = "v0.1.1", install_suggestions = true },
     { name = "some-package", git = "https://github.com/A2-ai/scicalc", commit = "bc50e550e432c3c620714f30dd59115801f89995", install_suggestions = true },
+    { name = "some-package", git = "git@github.com:username/repo.git", commit = "bc50e550e432c3c620714f30dd59115801f89995", install_suggestions = true },
     "pkg1",
     "pkg2",
 ]
-
-[project.urls]
-homepage = ""
-issues = ""

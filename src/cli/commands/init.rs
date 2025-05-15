@@ -229,8 +229,8 @@ mod tests {
         let project_directory = tempdir().unwrap();
         let r_version = Version::from_str("4.4.1").unwrap();
         let repositories = vec![
-            Repository::new("test1".to_string(), "this is test1".to_string(), true),
-            Repository::new("test2".to_string(), "this is test2".to_string(), false),
+            Repository::new("test1".to_string(), "http://test1.com".to_string(), true),
+            Repository::new("test2".to_string(), "http://test2.com".to_string(), false),
         ];
         let dependencies = vec!["dplyr".to_string()];
         init(
@@ -241,7 +241,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let dir = project_directory.path();
+        let dir = &project_directory.keep();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
         assert!(dir.join(CONFIG_FILENAME).exists());

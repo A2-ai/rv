@@ -3,7 +3,7 @@ name = "r-universe"
 r_version = "4.4"
 
 dependencies = [
-    "scicalc"
+    "osinfo"
 ]
 
 repositories = [
