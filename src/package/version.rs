@@ -131,6 +131,21 @@ impl PartialOrd for Version {
     }
 }
 
+pub fn deserialize_version_option<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<String> = Deserialize::deserialize(deserializer)?;
+    if let Some(ver) = &v {
+        match Version::from_str(&ver) {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Err(serde::de::Error::custom("Invalid version number")),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn deserialize_version<'de, D>(deserializer: D) -> Result<Version, D::Error>
 where
     D: serde::Deserializer<'de>,
