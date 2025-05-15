@@ -6,9 +6,8 @@ use std::{
 
 use fs_err::write;
 
-use crate::Repository;
+use crate::{consts::{LIBRARY_ROOT_DIR_NAME, STAGING_DIR_NAME}, Repository};
 
-const GITIGNORE_CONTENT: &str = "library/\nstaging/\n";
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 const CONFIG_FILENAME: &str = "rproject.toml";
@@ -182,7 +181,9 @@ fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError
         return Ok(());
     }
 
-    write(path, GITIGNORE_CONTENT)?;
+    let content = format!("{LIBRARY_ROOT_DIR_NAME}\n{STAGING_DIR_NAME}\n");
+
+    write(path, content)?;
     Ok(())
 }
 
@@ -240,7 +241,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let dir = &project_directory.into_path();
+        let dir = project_directory.path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
         assert!(dir.join(CONFIG_FILENAME).exists());

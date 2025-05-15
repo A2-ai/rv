@@ -65,7 +65,7 @@ impl<'d> Resolution<'d> {
             }
         }
         let mut actually_found = actually_found.into_iter().collect::<Vec<_>>();
-        actually_found.reverse();
+        actually_found.sort_unstable_by(|a, b| b.cmp(a));
         for i in actually_found {
             self.failed.remove(i);
         }
