@@ -534,6 +534,9 @@ fn try_main() -> Result<()> {
         Command::Cache => {
             let mut context = CliContext::new(&cli.config_file, None)?;
             context.load_databases()?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
@@ -611,6 +614,9 @@ fn try_main() -> Result<()> {
         Command::Summary { r_version } => {
             let mut context = CliContext::new(&cli.config_file, r_version)?;
             context.load_databases()?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
             let resolved = resolve_dependencies(&context, &ResolveMode::Default);
             let summary = ProjectSummary::new(
                 &context.library,
