@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde::Deserialize;
-use url::Url;
-
+use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
+use serde::Deserialize;
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,9 +27,8 @@ pub struct Repository {
 }
 
 impl Repository {
-    /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {
-        self.url.as_str().trim_end_matches("/")
+        self.url.as_str()
     }
 
     pub fn new(alias: String, url: String, force_source: bool) -> Self {
@@ -48,7 +47,7 @@ pub enum ConfigDependency {
     Simple(String),
     Git {
         // It can be http or git
-        git: String,
+        git: GitUrl,
         commit: Option<String>,
         tag: Option<String>,
         branch: Option<String>,
@@ -286,27 +285,12 @@ impl Config {
                     branch,
                     commit,
                     ..
-                } => {
-                    if git.trim().is_empty() {
-                        errors.push("A git dependency is missing a URL.".to_string());
-                        continue;
+                } => match (tag.is_some(), branch.is_some(), commit.is_some()) {
+                    (true, false, false) | (false, true, false) | (false, false, true) => (),
+                    _ => {
+                        errors.push(format!("A git dependency `{git}` requires ons and only one of tag/branch/commit set. "));
                     }
-                    // If it's not a git URL we should be able to parse it as a URL
-                    if !git.starts_with("git@") {
-                        if let Err(_) = Url::parse(git) {
-                            errors.push(format!(
-                                "Git dependency has {git} as URL but it isn't a valid URL."
-                            ));
-                            continue;
-                        }
-                    }
-                    match (tag.is_some(), branch.is_some(), commit.is_some()) {
-                        (true, false, false) | (false, true, false) | (false, false, true) => (),
-                        _ => {
-                            errors.push(format!("A git dependency `{git}` requires one and only one of tag/branch/commit set. "));
-                        }
-                    }
-                }
+                },
                 _ => (),
             }
         }

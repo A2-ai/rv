@@ -81,14 +81,14 @@ impl CacheInfo {
             match d.source {
                 Source::Git { git, .. } => {
                     git_paths.push(CacheUrlInfo {
-                        url: git.as_str().to_string(),
+                        url: git.url().to_string(),
                         source_path: paths.source,
                         binary_path: paths.binary,
                     });
                 }
                 Source::RUniverse { git, .. } => {
                     git_paths.push(CacheUrlInfo {
-                        url: git.as_str().to_string(),
+                        url: git.url().to_string(),
                         source_path: paths.source,
                         binary_path: paths.binary,
                     });

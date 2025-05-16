@@ -13,6 +13,7 @@ mod result;
 mod sat;
 
 use crate::fs::untar_archive;
+use crate::git::url::GitUrl;
 use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
@@ -278,15 +279,15 @@ impl<'d> Resolver<'d> {
     fn git_lookup(
         &self,
         item: &QueueItem<'d>,
-        repo_url: &str,
+        repo_url: &GitUrl,
         directory: Option<&str>,
         git_ref: GitReference,
         git_executor: &'d (impl CommandExecutor + Clone + 'static),
         cache: &'d DiskCache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        let clone_path = cache.get_git_clone_path(repo_url);
+        let clone_path = cache.get_git_clone_path(repo_url.url());
 
-        let mut remote = GitRemote::new(repo_url);
+        let mut remote = GitRemote::new(repo_url.url());
         if let Some(d) = directory {
             remote.set_directory(d);
         }
@@ -322,7 +323,7 @@ impl<'d> Resolver<'d> {
                 } else {
                     // If it's coming from a remote, only store the sha
                     Source::Git {
-                        git: repo_url.to_string(),
+                        git: repo_url.clone(),
                         sha,
                         directory: None,
                         tag: None,
@@ -520,7 +521,7 @@ impl<'d> Resolver<'d> {
                     } => {
                         match self.git_lookup(
                             &item,
-                            &url,
+                            url,
                             directory.as_deref(),
                             reference
                                 .clone()
@@ -571,7 +572,6 @@ impl<'d> Resolver<'d> {
                     if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
                         continue;
                     }
-
                     if let Some((resolved_dep, items)) =
                         self.repositories_lookup(&item, cache, http_download)
                     {
@@ -738,7 +738,7 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&format!("http://{}", r.name));
+                let mut repo = RepositoryDatabase::new(&format!("http://{}/", r.name));
                 if let Some(p) = r.source {
                     repo.source_packages = dbs[&p].clone();
                 }
@@ -751,7 +751,7 @@ mod tests {
             }
             res
         } else {
-            let mut repo = RepositoryDatabase::new("http://cran");
+            let mut repo = RepositoryDatabase::new("http://cran/");
             repo.parse_source(parts[1]);
             vec![(repo, false)]
         };

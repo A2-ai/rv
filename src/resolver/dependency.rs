@@ -8,6 +8,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::cache::InstallationStatus;
+use crate::git::url::GitUrl;
 use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
@@ -102,7 +103,7 @@ impl<'d> ResolvedDependency<'d> {
                 Ok(r) => {
                     source = Source::RUniverse {
                         repository: repo_url.clone(),
-                        git: r.remote_url.clone(),
+                        git: r.remote_url,
                         sha: r.remote_sha.to_string(),
                         directory: r.remote_subdir,
                     }
@@ -348,7 +349,7 @@ impl fmt::Display for UnresolvedDependency<'_> {
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct RUniverseApi {
-    remote_url: Url,
+    remote_url: GitUrl,
     remote_sha: String,
     remote_subdir: Option<String>,
 }

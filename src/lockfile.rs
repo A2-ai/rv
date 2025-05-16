@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
+use crate::git::url::GitUrl;
 use crate::package::Dependency;
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
@@ -24,12 +25,12 @@ pub enum Source {
     /// we keep the repository url alongside the git info, but is treated as a Git source
     RUniverse {
         repository: Url,
-        git: Url,
+        git: GitUrl,
         sha: String,
         directory: Option<String>,
     },
     Git {
-        git: String,
+        git: GitUrl,
         sha: String,
         directory: Option<String>,
         /// We keep tag and branch around to quickly compare with the config file, eg
@@ -67,7 +68,7 @@ impl Source {
                 tag,
                 branch,
             } => {
-                table.insert("git", Value::from(git.as_str()));
+                table.insert("git", Value::from(git.url()));
                 table.insert("sha", Value::from(sha));
                 if let Some(d) = directory {
                     table.insert("directory", Value::from(d));
@@ -84,10 +85,7 @@ impl Source {
                 table.insert("sha", Value::from(sha));
             }
             Self::Repository { repository } => {
-                table.insert(
-                    "repository",
-                    Value::from(repository.as_str().trim_end_matches("/")),
-                );
+                table.insert("repository", Value::from(repository.as_str()));
             }
             Self::Local { path, sha } => {
                 table.insert("path", Value::from(path.display().to_string()));
@@ -102,7 +100,7 @@ impl Source {
                 directory,
             } => {
                 table.insert("repository", Value::from(repository.as_str()));
-                table.insert("git", Value::from(git.as_str()));
+                table.insert("git", Value::from(git.url()));
                 table.insert("sha", Value::from(sha));
                 if let Some(d) = directory {
                     table.insert("directory", Value::from(d));
@@ -138,8 +136,7 @@ impl Source {
         match self {
             Source::Repository { repository } => repository.as_str(),
             Source::Local { path, .. } => path.to_str().unwrap(),
-            Source::Git { git, .. } => git.as_str(),
-            Source::RUniverse { git, .. } => git.as_str(),
+            Source::Git { git, .. } | Source::RUniverse { git, .. } => git.url(),
             Source::Url { url, .. } => url.as_str(),
             Source::Builtin { .. } => "",
         }

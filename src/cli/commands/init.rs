@@ -7,7 +7,10 @@ use std::{
 use fs_err::write;
 use url::Url;
 
-use crate::{consts::{LIBRARY_ROOT_DIR_NAME, STAGING_DIR_NAME}, Repository};
+use crate::{
+    Repository,
+    consts::{LIBRARY_ROOT_DIR_NAME, STAGING_DIR_NAME},
+};
 
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";

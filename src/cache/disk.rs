@@ -179,12 +179,12 @@ impl DiskCache {
     ) -> PackagePaths {
         match source {
             Source::Git { git, sha, .. } => PackagePaths {
-                source: self.get_git_clone_path(git),
-                binary: self.get_repo_root_binary_dir(git.as_str()).join(&sha[..10]),
+                source: self.get_git_clone_path(git.url()),
+                binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
             },
             Source::RUniverse { git, sha, .. } => PackagePaths {
-                source: self.get_git_clone_path(git.as_str()),
-                binary: self.get_repo_root_binary_dir(git.as_str()).join(&sha[..10]),
+                source: self.get_git_clone_path(git.url()),
+                binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
             },
             Source::Url { url, sha } => PackagePaths {
                 source: self.get_url_download_path(url).join(&sha[..10]),

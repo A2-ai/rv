@@ -449,7 +449,7 @@ fn is_binary_package(
     ));
     repo_dbs
         .iter()
-        .find(|(db, _)| &db.url == repository.as_str())
+        .find(|(db, _)| db.url == repository.as_str())
         .and_then(|(db, _)| {
             db.find_package(
                 &resolved_dep.name,
