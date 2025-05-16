@@ -6,12 +6,14 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use url::Url;
 
 mod dependency;
 mod result;
 mod sat;
 
 use crate::fs::untar_archive;
+use crate::git::url::GitUrl;
 use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
@@ -254,7 +256,7 @@ impl<'d> Resolver<'d> {
             ) {
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
                     package,
-                    &repo.url,
+                    &Url::parse(&repo.url).unwrap(),
                     package_type,
                     item.install_suggestions,
                     force_source,
@@ -262,7 +264,7 @@ impl<'d> Resolver<'d> {
                         &package.name,
                         &package.version.original,
                         &Source::Repository {
-                            repository: repo.url.clone(),
+                            repository: Url::parse(&repo.url).unwrap(),
                         },
                     ),
                     http_download,
@@ -277,15 +279,15 @@ impl<'d> Resolver<'d> {
     fn git_lookup(
         &self,
         item: &QueueItem<'d>,
-        repo_url: &str,
+        repo_url: &GitUrl,
         directory: Option<&str>,
         git_ref: GitReference,
         git_executor: &'d (impl CommandExecutor + Clone + 'static),
         cache: &'d DiskCache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        let clone_path = cache.get_git_clone_path(repo_url);
+        let clone_path = cache.get_git_clone_path(repo_url.url());
 
-        let mut remote = GitRemote::new(repo_url);
+        let mut remote = GitRemote::new(repo_url.url());
         if let Some(d) = directory {
             remote.set_directory(d);
         }
@@ -321,7 +323,7 @@ impl<'d> Resolver<'d> {
                 } else {
                     // If it's coming from a remote, only store the sha
                     Source::Git {
-                        git: repo_url.to_string(),
+                        git: repo_url.clone(),
                         sha,
                         directory: None,
                         tag: None,
@@ -351,7 +353,7 @@ impl<'d> Resolver<'d> {
     fn url_lookup(
         &self,
         item: &QueueItem<'d>,
-        url: &str,
+        url: &Url,
         cache: &'d DiskCache,
         http_downloader: &'d impl HttpDownload,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
@@ -376,7 +378,7 @@ impl<'d> Resolver<'d> {
                 PackageType::Source
             },
             Source::Url {
-                url: url.to_string(),
+                url: url.clone(),
                 sha,
             },
             item.install_suggestions,
@@ -570,7 +572,6 @@ impl<'d> Resolver<'d> {
                     if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
                         continue;
                     }
-
                     if let Some((resolved_dep, items)) =
                         self.repositories_lookup(&item, cache, http_download)
                     {
@@ -588,7 +589,7 @@ impl<'d> Resolver<'d> {
                     }
                 }
                 Some(ConfigDependency::Url { url, .. }) => {
-                    match self.url_lookup(&item, url.as_ref(), cache, http_download) {
+                    match self.url_lookup(&item, url, cache, http_download) {
                         Ok((resolved_dep, items)) => {
                             result.add_found(resolved_dep);
                             queue.extend(items);
@@ -685,27 +686,27 @@ mod tests {
     impl HttpDownload for FakeHttp {
         fn download<W: Write>(
             &self,
-            url: &str,
+            url: &Url,
             w: &mut W,
             _: Vec<(&str, String)>,
         ) -> Result<u64, HttpError> {
             // if its an api query, we return the api string
-            if url.contains("r-universe.dev/api") {
+            if url.as_str().contains("r-universe.dev/api") {
                 let path = format!(
                     "src/tests/r_universe/{}.api",
-                    url.split('/').last().unwrap_or("")
+                    url.as_str().split('/').last().unwrap_or("")
                 );
                 let content = fs::read_to_string(path).unwrap();
 
                 w.write_all(content.as_bytes())
-                    .map_err(|e| HttpError::from_io(url, e))?;
+                    .map_err(|e| HttpError::from_io(url.as_str(), e))?;
             }
             Ok(0)
         }
 
         fn download_and_untar(
             &self,
-            _: &str,
+            _: &Url,
             _: impl AsRef<Path>,
             _: bool,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
@@ -737,7 +738,7 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&format!("http://{}", r.name));
+                let mut repo = RepositoryDatabase::new(&format!("http://{}/", r.name));
                 if let Some(p) = r.source {
                     repo.source_packages = dbs[&p].clone();
                 }
@@ -750,7 +751,7 @@ mod tests {
             }
             res
         } else {
-            let mut repo = RepositoryDatabase::new("http://cran");
+            let mut repo = RepositoryDatabase::new("http://cran/");
             repo.parse_source(parts[1]);
             vec![(repo, false)]
         };
@@ -792,7 +793,7 @@ mod tests {
 
         // And a custom one for url deps
         let url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz";
-        let url_path = cache.get_url_download_path(url);
+        let url_path = cache.get_url_download_path(&Url::parse(&url).unwrap());
         fs::create_dir_all(&url_path).unwrap();
         fs::copy(
             "src/tests/descriptions/dplyr.DESCRIPTION",

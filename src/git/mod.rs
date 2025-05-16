@@ -3,6 +3,7 @@ use std::process::Command;
 mod local;
 mod reference;
 mod remote;
+pub(crate) mod url;
 
 pub trait CommandExecutor {
     fn execute(&self, command: &mut Command) -> Result<String, std::io::Error>;

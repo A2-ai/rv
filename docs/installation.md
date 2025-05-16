@@ -13,15 +13,13 @@ brew install rv
 
 ### Download the latest release
 
+You can use the script or download the archive from the [GitHub releases page](https://github.com/a2-ai/rv/releases/latest).
+
 ```shell
 curl -sSL https://raw.githubusercontent.com/A2-ai/rv/refs/heads/main/scripts/install.sh | bash
-```
 
-### Verify installation
-```shell
 rv --version
 ```
-
 
 ## For Windows
 
@@ -33,9 +31,6 @@ For now, you can download the latest `x86_64-pc-windows-msvc` zip archive from t
 
 ```powershell
 $env:Path += ";C:\path\to\rv"
-```
 
-### Verify installation
-```powershell
 .\rv.exe --version
 ```

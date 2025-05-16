@@ -1,0 +1,5 @@
+[project]
+name = "init-test"
+r_version = "4.4"
+repositories = [ { alias = "bad-url", url = "htp:/my-bad-url.c" } ]
+dependencies = [ "R6" ]

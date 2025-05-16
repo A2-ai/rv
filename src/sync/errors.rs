@@ -18,7 +18,7 @@ pub enum SyncErrorKind {
     Io(#[from] io::Error),
     #[error("Failed to link files from cache: {0:?})")]
     LinkError(LinkError),
-    #[error("Failed to install R package: {0:?})")]
+    #[error("Failed to install R package: {0})")]
     InstallError(InstallError),
     #[error("Failed to download package: {0:?})")]
     HttpError(HttpError),

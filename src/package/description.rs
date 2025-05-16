@@ -71,7 +71,7 @@ mod tests {
         println!("{:#?}", package.remotes);
         match &package.remotes["gsm=gilead-biostats/gsm@v2.2.2"] {
             (name, PackageRemote::Git { url, .. }) => {
-                assert_eq!(url, "https://github.com/gilead-biostats/gsm");
+                assert_eq!(url.url(), "https://github.com/gilead-biostats/gsm");
                 assert_eq!(name, &Some("gsm".to_string()));
             }
             _ => panic!("Should have gotten a git repo"),

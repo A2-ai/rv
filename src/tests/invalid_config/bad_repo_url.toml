@@ -1,0 +1,11 @@
+[project]
+name = "project_name"
+r_version = "4.4.1"
+
+repositories = [
+    { alias = "cran", url = "@CRAN@"},
+]
+
+dependencies = [
+]
+

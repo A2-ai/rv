@@ -13,14 +13,12 @@ if [ "$arch" = "arm64" ]; then arch="aarch64"; elif [ "$arch" = "x86_64" ]; then
 if [ "$os" = "darwin" ]; then
     os_pattern="apple-darwin"
 else
-    os_pattern=$os
+    os_pattern="unknown-linux-gnu"
 fi
 
 # Fetch the latest release data from GitHub API and extract the download URL for the matching asset
 echo "Fetching download URL for $arch-$os_pattern..."
-asset_url=$(curl -s https://api.github.com/repos/a2-ai/rv/releases/latest |
-    jq -r --arg arch "$arch" --arg os_pattern "$os_pattern" \
-        '.assets[] | select(.name | contains($arch) and contains($os_pattern) and endswith(".tar.gz")) | .browser_download_url' | head -n 1)
+asset_url=$(curl -s https://api.github.com/repos/a2-ai/rv/releases/latest | grep -o "https://github.com/A2-ai/rv/releases/download/.*$arch-$os_pattern.tar.gz")
 
 # Check if URL was found
 if [ -z "$asset_url" ]; then

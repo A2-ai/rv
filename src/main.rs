@@ -395,8 +395,17 @@ fn try_main() -> Result<()> {
             let repositories = if no_repositories {
                 Vec::new()
             } else {
-                find_r_repositories().unwrap_or_default()
+                match find_r_repositories() {
+                    Ok(repos) if !repos.is_empty() => repos,
+                    _ => {
+                        eprintln!(
+                            "WARNING: Could not set default repositories. Set with your company preferred package URL or public url (i.e. `https://packagemanager.posit.co/cran/latest`)\n"
+                        );
+                        Vec::new()
+                    }
+                }
             };
+
             init(&project_directory, &r_version, &repositories, &add, force)?;
             activate(&project_directory, no_r_environment)?;
 
@@ -534,6 +543,9 @@ fn try_main() -> Result<()> {
         Command::Cache => {
             let mut context = CliContext::new(&cli.config_file, None)?;
             context.load_databases()?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
@@ -611,6 +623,9 @@ fn try_main() -> Result<()> {
         Command::Summary { r_version } => {
             let mut context = CliContext::new(&cli.config_file, r_version)?;
             context.load_databases()?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
             let resolved = resolve_dependencies(&context, &ResolveMode::Default);
             let summary = ProjectSummary::new(
                 &context.library,

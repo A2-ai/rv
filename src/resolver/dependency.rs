@@ -1,16 +1,19 @@
-use serde::Deserialize;
-
-use crate::cache::InstallationStatus;
-use crate::http::HttpError;
-use crate::lockfile::{LockedPackage, Source};
-use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
-use crate::resolver::QueueItem;
-use crate::{HttpDownload, Version, VersionRequirement};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::{FromStr, Utf8Error};
+
+use serde::Deserialize;
+use url::Url;
+
+use crate::cache::InstallationStatus;
+use crate::git::url::GitUrl;
+use crate::http::HttpError;
+use crate::lockfile::{LockedPackage, Source};
+use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
+use crate::resolver::QueueItem;
+use crate::{HttpDownload, Version, VersionRequirement};
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -78,7 +81,7 @@ impl<'d> ResolvedDependency<'d> {
 
     pub fn from_package_repository(
         package: &'d Package,
-        repo_url: &str,
+        repo_url: &Url,
         package_type: PackageType,
         install_suggests: bool,
         force_source: bool,
@@ -88,19 +91,19 @@ impl<'d> ResolvedDependency<'d> {
         let deps = package.dependencies_to_install(install_suggests);
 
         let mut source = Source::Repository {
-            repository: repo_url.to_string(),
+            repository: repo_url.clone(),
         };
         // If repository is r-universe, treat as a git repo since r-universe does not have archive
 
         // TODO: If/when the need arises to not treat r-universe as a git repo, the potential spec is to keep both the repository
         // and git info. The repository is used while the locked version and version in the PACKAGES database match,
         // switching to using git once it is no longer available
-        if repo_url.contains("r-universe.dev") {
+        if repo_url.as_str().contains("r-universe.dev") {
             match RUniverseApi::query_r_universe_api(&package.name, repo_url, http_download) {
                 Ok(r) => {
                     source = Source::RUniverse {
-                        repository: repo_url.to_string(),
-                        git: r.remote_url.to_string(),
+                        repository: repo_url.clone(),
+                        git: r.remote_url,
                         sha: r.remote_sha.to_string(),
                         directory: r.remote_subdir,
                     }
@@ -346,7 +349,7 @@ impl fmt::Display for UnresolvedDependency<'_> {
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct RUniverseApi {
-    remote_url: String,
+    remote_url: GitUrl,
     remote_sha: String,
     remote_subdir: Option<String>,
 }
@@ -354,10 +357,11 @@ struct RUniverseApi {
 impl RUniverseApi {
     fn query_r_universe_api(
         pkg_name: &str,
-        repo_url: &str,
+        repo_url: &Url,
         http: &impl HttpDownload,
     ) -> Result<Self, RUniverseApiError> {
-        let api_url = format!("{}/api/packages/{}", repo_url, pkg_name);
+        let api_url =
+            Url::parse(&format!("{}/api/packages/{}", repo_url, pkg_name)).expect("valid URL");
         let mut writer = Vec::new();
 
         http.download(&api_url, &mut writer, Vec::new())?;

@@ -4,7 +4,7 @@ import subprocess
 import shutil
 
 PARENT_FOLDER = "example_projects"
-SKIP_PLAN_CHECK = ["git", "no-lockfile", "url", "custom-lib-path"]
+SKIP_PLAN_CHECK = ["no-lockfile", "url", "custom-lib-path"]
 
 def run_cmd(cmd, path, json = False):
     print(f">> Running rv {cmd}")

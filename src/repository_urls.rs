@@ -1,5 +1,6 @@
 use crate::consts::PACKAGE_FILENAME;
 use crate::{OsType, ResolvedDependency, SystemInfo};
+use url::Url;
 
 /// This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
 fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
@@ -202,9 +203,9 @@ fn get_linux_url(
 }
 
 pub struct TarballUrls {
-    pub source: String,
-    pub binary: Option<String>,
-    pub archive: String,
+    pub source: Url,
+    pub binary: Option<Url>,
+    pub archive: Url,
 }
 
 pub fn get_tarball_urls(
@@ -218,22 +219,24 @@ pub fn get_tarball_urls(
     let path = dep.path.as_deref();
 
     TarballUrls {
-        source: get_source_tarball_path(url, name, version, path),
-        binary: get_binary_tarball_path(url, name, version, path, r_version, sysinfo),
-        archive: get_archive_tarball_path(url, name, version),
+        source: Url::parse(&get_source_tarball_path(url, name, version, path)).expect("valid URL"),
+        binary: get_binary_tarball_path(url, name, version, path, r_version, sysinfo)
+            .map(|u| Url::parse(&u).unwrap()),
+        archive: Url::parse(&get_archive_tarball_path(url, name, version)).expect("valid URL"),
     }
 }
 
 /// Gets the source/binary url for the given filename, usually PACKAGES
 /// Use `get_tarball_urls` if you want to get the package tarballs URLs
 pub fn get_package_file_urls(
-    url: &str,
+    url: &Url,
     r_version: &[u32; 2],
     sysinfo: &SystemInfo,
-) -> (String, Option<String>) {
+) -> (Url, Option<Url>) {
     (
-        get_source_path(url, PACKAGE_FILENAME),
-        get_binary_path(url, PACKAGE_FILENAME, r_version, sysinfo),
+        Url::parse(&get_source_path(url.as_str(), PACKAGE_FILENAME)).expect("valid URL"),
+        get_binary_path(url.as_str(), PACKAGE_FILENAME, r_version, sysinfo)
+            .map(|u| Url::parse(&u).unwrap()),
     )
 }
 
