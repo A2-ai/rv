@@ -1,12 +1,40 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use url::Url;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HttpUrl(Url);
+
+impl<'de> Deserialize<'de> for HttpUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s.starts_with("http://") || s.starts_with("https://") {
+            if let Ok(url) = Url::parse(&s) {
+                return Ok(Self(url));
+            }
+        }
+
+        Err(serde::de::Error::custom("Invalid URL"))
+    }
+}
+
+impl Deref for HttpUrl {
+    type Target = Url;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,7 +49,7 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    pub(crate) url: Url,
+    pub(crate) url: HttpUrl,
     #[serde(default)]
     pub force_source: bool,
 }
@@ -31,10 +59,10 @@ impl Repository {
         self.url.as_str()
     }
 
-    pub fn new(alias: String, url: String, force_source: bool) -> Self {
+    pub fn new(alias: String, url: Url, force_source: bool) -> Self {
         Self {
             alias,
-            url: Url::parse(&url).expect("valid URL"),
+            url: HttpUrl(url),
             force_source,
         }
     }
@@ -67,7 +95,7 @@ pub enum ConfigDependency {
         dependencies_only: bool,
     },
     Url {
-        url: Url,
+        url: HttpUrl,
         name: String,
         #[serde(default)]
         install_suggestions: bool,
@@ -378,8 +406,9 @@ mod tests {
     fn errors_on_invalid_config_files() {
         let paths = std::fs::read_dir("src/tests/invalid_config/").unwrap();
         for path in paths {
+            println!("{path:?}");
             let res = Config::from_file(path.unwrap().path());
-            println!("{res:?}");
+            println!("{res:#?}");
             assert!(res.is_err());
         }
     }

@@ -29,10 +29,13 @@ impl TryFrom<&str> for GitUrl {
         }
 
         // Try to parse as a standard URL
-        match Url::parse(s2) {
-            Ok(url) => Ok(GitUrl::Http(url)),
-            Err(_) => Err(format!("Invalid URL format for git: {s}")),
+        if s2.starts_with("http://") || s2.starts_with("https://") {
+            if let Ok(url) = Url::parse(s2) {
+                return Ok(GitUrl::Http(url));
+            }
         }
+
+        Err(format!("Invalid URL format for git: {s}"))
     }
 }
 

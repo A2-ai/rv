@@ -163,10 +163,12 @@ impl RenvLock {
         self.r
             .repositories
             .iter()
-            .map(|r| Repository {
-                alias: r.name.to_string(),
-                url: Url::parse(&r.url).expect("valid URL"),
-                force_source: false,
+            .map(|r| {
+                Repository::new(
+                    r.name.to_string(),
+                    Url::parse(&r.url).expect("valid URL"),
+                    false,
+                )
             })
             .collect::<Vec<_>>()
     }

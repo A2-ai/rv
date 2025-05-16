@@ -193,7 +193,7 @@ impl Source {
                 true
             }
             (Source::Url { url: url1, .. }, ConfigDependency::Url { url: url2, .. }) => {
-                url1 == url2
+                url1 == &**url2
             }
             (Source::Local { path: p1, .. }, ConfigDependency::Local { path: p2, .. }) => p1 == p2,
             (
