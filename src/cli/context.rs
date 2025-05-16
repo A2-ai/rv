@@ -48,7 +48,13 @@ impl CliContext {
             (v, r_cmd)
         } else {
             let r_version = config.r_version().clone();
-            let r_cmd = find_r_version_command(&r_version)?;
+            let r_cmd = if let Some(r_path) = &config.r_path {
+                RCommandLine {
+                    r: Some(r_path.clone()),
+                }
+            } else {
+                find_r_version_command(&r_version)?
+            };
             (r_version, r_cmd)
         };
 

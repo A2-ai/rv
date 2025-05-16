@@ -258,7 +258,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let dir = &project_directory.path();
+        let dir = project_directory.path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
         assert!(dir.join(CONFIG_FILENAME).exists());
