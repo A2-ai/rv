@@ -14,6 +14,7 @@ use fs_err as fs;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use url::Url;
 
 #[derive(Debug)]
 pub struct CliContext {
@@ -123,7 +124,8 @@ impl CliContext {
     pub fn load_databases_if_needed(&mut self) -> Result<()> {
         let can_resolve = self
             .lockfile
-            .as_ref().map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
+            .as_ref()
+            .map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
             .unwrap_or(false);
 
         if !can_resolve {
@@ -173,8 +175,11 @@ pub(crate) fn load_databases(
                 let mut db = RepositoryDatabase::new(r.url());
                 // download files, parse them and persist to disk
                 let mut source_package = Vec::new();
-                let (source_url, binary_url) =
-                    get_package_file_urls(r.url(), &cache.r_version, &cache.system_info);
+                let (source_url, binary_url) = get_package_file_urls(
+                    &Url::parse(r.url()).unwrap(),
+                    &cache.r_version,
+                    &cache.system_info,
+                );
                 let bytes_read = timeit!(
                     "Downloaded source PACKAGES",
                     http::download(&source_url, &mut source_package, Vec::new())?
@@ -187,10 +192,10 @@ pub(crate) fn load_databases(
                 db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
 
                 let mut binary_package = Vec::new();
-                log::debug!("checking for binary packages URL: {:?}", binary_url);
                 // we do not know for certain that the Some return of get_binary_path will be a valid url,
                 // but we do know that if it returns None there is not a binary PACKAGES file
                 if let Some(url) = binary_url {
+                    log::debug!("checking for binary packages URL: {url}");
                     let bytes_read = timeit!(
                         format!("Downloaded binary PACKAGES from URL: {url}"),
                         // we can just set bytes_read to 0 if the download fails
@@ -206,6 +211,8 @@ pub(crate) fn load_databases(
                             cache.r_version,
                         );
                     }
+                } else {
+                    log::debug!("No binary URL.")
                 }
 
                 db.persist(&path)?;

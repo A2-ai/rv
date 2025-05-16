@@ -1,3 +1,4 @@
+use crate::git::url::GitUrl;
 use bincode::{Decode, Encode};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -26,7 +27,7 @@ impl RemoteType {
 #[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub enum PackageRemote {
     Git {
-        url: String,
+        url: GitUrl,
         // Could be a tag, a branch or a commit but we can't know
         // We'll figure it out when cloning the repo later
         // We'll also need to handle the magic `*release`
@@ -61,7 +62,7 @@ fn parse_github_like_url(base_url: &str, content: &str) -> (String, PackageRemot
         let (pkg_name, directory) = extract_pkg_name_and_directory(parts[0]);
 
         let remote = PackageRemote::Git {
-            url: format!("{}{}", base_url, parts[0]),
+            url: GitUrl::try_from(format!("{}{}", base_url, parts[0]).as_str()).expect("valid url"),
             reference: Some(parts[1].to_string()),
             pull_request: None,
             directory,
@@ -72,7 +73,7 @@ fn parse_github_like_url(base_url: &str, content: &str) -> (String, PackageRemot
         let (pkg_name, directory) = extract_pkg_name_and_directory(parts[0]);
 
         let remote = PackageRemote::Git {
-            url: format!("{}{}", base_url, parts[0]),
+            url: GitUrl::try_from(format!("{}{}", base_url, parts[0]).as_str()).expect("valid url"),
             reference: None,
             pull_request: Some(parts[1].to_string()),
             directory,
@@ -82,7 +83,7 @@ fn parse_github_like_url(base_url: &str, content: &str) -> (String, PackageRemot
         let (pkg_name, directory) = extract_pkg_name_and_directory(content);
 
         let remote = PackageRemote::Git {
-            url: format!("{}{}", base_url, content),
+            url: GitUrl::try_from(format!("{}{}", base_url, content).as_str()).expect("valid url"),
             reference: None,
             pull_request: None,
             directory,
@@ -185,6 +186,7 @@ mod tests {
         ];
 
         for t in testcases {
+            println!("{t}");
             let (name, remote) = parse_remote(t);
             insta::with_settings!({
                 description => t,

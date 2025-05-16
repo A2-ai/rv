@@ -91,6 +91,11 @@ jobs:
           echo "C:\R\bin" >> $env:GITHUB_PATH
           Get-ChildItem -Path "C:\R\bin" -Force
           R.exe --version
+      - name: Make sure libcurl is installed
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev
       - name: build binary
         run: |
           cargo build --all-features --release

@@ -2,7 +2,7 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-rv.git.pkgD=0.0.1 (repository(url: http://repo1), type=source, path='', from_lockfile=false, from_remote=false)
-rv.git.pkgA=0.0.4 (repository(url: http://repo2), type=source, path='', from_lockfile=false, from_remote=false)
+rv.git.pkgD=0.0.1 (repository(url: http://repo1/), type=source, path='', from_lockfile=false, from_remote=false)
+rv.git.pkgA=0.0.4 (repository(url: http://repo2/), type=source, path='', from_lockfile=false, from_remote=false)
 --- requirement failures --- 
 rv.git.pkgA : rv.git.pkgD requires (>= 0.0.5)

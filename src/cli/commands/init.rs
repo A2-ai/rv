@@ -5,8 +5,12 @@ use std::{
 };
 
 use fs_err::write;
+use url::Url;
 
-use crate::{consts::{LIBRARY_ROOT_DIR_NAME, STAGING_DIR_NAME}, Repository};
+use crate::{
+    Repository,
+    consts::{LIBRARY_ROOT_DIR_NAME, STAGING_DIR_NAME},
+};
 
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
@@ -138,7 +142,11 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
             let mut parts = line.splitn(2, '\t');
             let alias = parts.next()?.to_string();
             let url = strip_linux_url(parts.next()?);
-            Some(Repository::new(alias, url, false))
+            if let Ok(url) = Url::parse(&url) {
+                Some(Repository::new(alias, url, false))
+            } else {
+                None
+            }
         })
         .collect::<Vec<_>>())
 }
@@ -223,14 +231,23 @@ mod tests {
 
     use super::{init, strip_linux_url};
     use tempfile::tempdir;
+    use url::Url;
 
     #[test]
     fn test_init_content() {
         let project_directory = tempdir().unwrap();
         let r_version = Version::from_str("4.4.1").unwrap();
         let repositories = vec![
-            Repository::new("test1".to_string(), "this is test1".to_string(), true),
-            Repository::new("test2".to_string(), "this is test2".to_string(), false),
+            Repository::new(
+                "test1".to_string(),
+                Url::parse("http://test1.com").unwrap(),
+                true,
+            ),
+            Repository::new(
+                "test2".to_string(),
+                Url::parse("http://test2.com").unwrap(),
+                false,
+            ),
         ];
         let dependencies = vec!["dplyr".to_string()];
         init(
@@ -241,7 +258,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let dir = project_directory.path();
+        let dir = &project_directory.path();
         assert!(dir.join(LIBRARY_PATH).exists());
         assert!(dir.join(GITIGNORE_PATH).exists());
         assert!(dir.join(CONFIG_FILENAME).exists());

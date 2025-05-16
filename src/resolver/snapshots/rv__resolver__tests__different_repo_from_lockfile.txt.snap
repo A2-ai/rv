@@ -2,4 +2,4 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-R6=2.5.1 (repository(url: http://test), type=binary, path='', from_lockfile=false, from_remote=false)
+R6=2.5.1 (repository(url: http://test/), type=binary, path='', from_lockfile=false, from_remote=false)

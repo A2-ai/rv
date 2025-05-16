@@ -18,8 +18,8 @@ pub(crate) fn install_package(
     // We will have the source version since we needed to clone it to get the DESCRIPTION file
     if !pkg.installation_status.binary_available() {
         let (repo_url, sha) = match &pkg.source {
-            Source::Git { git, sha, .. } => (git, sha),
-            Source::RUniverse { git, sha, .. } => (git, sha),
+            Source::Git { git, sha, .. } => (git.url(), sha),
+            Source::RUniverse { git, sha, .. } => (git.url(), sha),
             _ => unreachable!(),
         };
 

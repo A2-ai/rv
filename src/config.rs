@@ -1,11 +1,40 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde::Deserialize;
-
+use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
+use serde::{Deserialize, Deserializer};
+use url::Url;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HttpUrl(Url);
+
+impl<'de> Deserialize<'de> for HttpUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s.starts_with("http://") || s.starts_with("https://") {
+            if let Ok(url) = Url::parse(&s) {
+                return Ok(Self(url));
+            }
+        }
+
+        Err(serde::de::Error::custom("Invalid URL"))
+    }
+}
+
+impl Deref for HttpUrl {
+    type Target = Url;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,21 +49,20 @@ struct Author {
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
-    pub(crate) url: String,
+    pub(crate) url: HttpUrl,
     #[serde(default)]
     pub force_source: bool,
 }
 
 impl Repository {
-    /// Returns the URL, always without a trailing URL
     pub fn url(&self) -> &str {
-        self.url.trim_end_matches("/")
+        self.url.as_str()
     }
 
-    pub fn new(alias: String, url: String, force_source: bool) -> Self {
+    pub fn new(alias: String, url: Url, force_source: bool) -> Self {
         Self {
             alias,
-            url,
+            url: HttpUrl(url),
             force_source,
         }
     }
@@ -46,8 +74,8 @@ impl Repository {
 pub enum ConfigDependency {
     Simple(String),
     Git {
-        git: String,
-        // TODO: validate that either commit, branch or tag is set
+        // It can be http or git
+        git: GitUrl,
         commit: Option<String>,
         tag: Option<String>,
         branch: Option<String>,
@@ -67,7 +95,7 @@ pub enum ConfigDependency {
         dependencies_only: bool,
     },
     Url {
-        url: String,
+        url: HttpUrl,
         name: String,
         #[serde(default)]
         install_suggestions: bool,
@@ -139,12 +167,6 @@ impl ConfigDependency {
     }
 
     pub(crate) fn as_git_source_with_sha(&self, sha: String) -> Source {
-        // git: String,
-        // // TODO: validate that either commit, branch or tag is set
-        // commit: Option<String>,
-        // tag: Option<String>,
-        // branch: Option<String>,
-        // directory: Option<String>,
         match self.clone() {
             ConfigDependency::Git {
                 git,
@@ -203,7 +225,7 @@ pub(crate) struct Project {
     #[serde(default)]
     suggests: Vec<ConfigDependency>,
     #[serde(default)]
-    urls: HashMap<String, String>,
+    urls: HashMap<String, Url>,
     #[serde(default)]
     dependencies: Vec<ConfigDependency>,
     #[serde(default)]
@@ -291,18 +313,12 @@ impl Config {
                     branch,
                     commit,
                     ..
-                } => {
-                    if git.trim().is_empty() {
-                        errors.push("A git dependency is missing a URL.".to_string());
-                        continue;
+                } => match (tag.is_some(), branch.is_some(), commit.is_some()) {
+                    (true, false, false) | (false, true, false) | (false, false, true) => (),
+                    _ => {
+                        errors.push(format!("A git dependency `{git}` requires ons and only one of tag/branch/commit set. "));
                     }
-                    match (tag.is_some(), branch.is_some(), commit.is_some()) {
-                        (true, false, false) | (false, true, false) | (false, false, true) => (),
-                        _ => {
-                            errors.push(format!("A git dependency `{git}` requires one and only one of tag/branch/commit set. "));
-                        }
-                    }
-                }
+                },
                 _ => (),
             }
         }
@@ -383,6 +399,17 @@ mod tests {
             let res = Config::from_file(path.unwrap().path());
             println!("{res:?}");
             assert!(res.is_ok());
+        }
+    }
+
+    #[test]
+    fn errors_on_invalid_config_files() {
+        let paths = std::fs::read_dir("src/tests/invalid_config/").unwrap();
+        for path in paths {
+            println!("{path:?}");
+            let res = Config::from_file(path.unwrap().path());
+            println!("{res:#?}");
+            assert!(res.is_err());
         }
     }
 }
