@@ -2,7 +2,7 @@
 > While Bioconductor is not fully supported yet, `rv` is still able to install packages from Bioconductor.
 > Bioconductor is a collection of CRAN-like repositiories, in which tools like `BiocManager` set the various repositories based on the R version.
 > To use Bioconductor with `rv`, you can set your repositories section to include these repositories, 
-> where the version corresponds to the release for your R version (https://www.bioconductor.org/about/release-announcements/)
+> where the [version corresponds to the release for your R version](https://www.bioconductor.org/about/release-announcements/)
 > ```
 > repositories = [
 >     { alias = "BioCsoft", url = "https://bioconductor.org/packages/3.20/bioc" },
