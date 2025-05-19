@@ -1,9 +1,23 @@
+> [!NOTE]
+> While Bioconductor is not fully supported yet, `rv` is still able to install packages from Bioconductor.
+> Bioconductor is a collection of CRAN-like repositiories, in which tools like `BiocManager` set the various repositories based on the R version.
+> To use Bioconductor with `rv`, you can set your repositories section to include these repositories, 
+> where the version corresponds to the release for your R version (https://www.bioconductor.org/about/release-announcements/)
+> ```
+> repositories = [
+>     { alias = "BioCsoft", url = "https://bioconductor.org/packages/3.20/bioc" },
+>     { alias = "BioCann", url = "https://bioconductor.org/packages/3.20/data/annotation" },
+>     { alias = "BioCexp", url = "https://bioconductor.org/packages/3.20/data/experiment" },
+>     { alias = "BioCworkflows", url = "https://bioconductor.org/packages/3.20/data/annotation" },
+>     { alias = "BioCbooks", url = "https://bioconductor.org/packages/3.20/books" },
+> ]
+> ```
+
 # Configuration
 
 `rv` will read a `rproject.toml` in the current directory, or you can run `rv` from another directory by setting the `--config-file` argument.
 
 Here's a snippet detailing every field in that configuration file.
-
 
 ```toml
 # If this is set to false, the lockfile won't be used for resolution. Defaults to true
