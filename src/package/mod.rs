@@ -116,7 +116,13 @@ impl Package {
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
         out.extend(self.imports.iter());
-        out.extend(self.linking_to.iter());
+
+        // The deps in linkingTo can be listed already in depends
+        for dep in &self.linking_to {
+            if out.iter().find(|x| x.name() == dep.name()).is_none() {
+                out.push(dep);
+            }
+        }
 
         let suggests = if install_suggestions {
             self.suggests
