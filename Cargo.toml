@@ -67,6 +67,11 @@ cli = [
 insta = "1"
 mockito = "1"
 
+[profile.release]
+codegen-units = 1
+lto = true
+
+
 [[bin]]
 name = "rv"
 required-features = ["cli"]
