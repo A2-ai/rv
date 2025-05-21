@@ -14,6 +14,7 @@ use crate::cache::utils::{
 };
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
+use crate::system_req::get_system_requirements;
 use crate::{RCmd, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
@@ -251,6 +252,22 @@ impl DiskCache {
             let builtin = get_builtin_versions_from_library(r_cmd)?;
             builtin.persist(&path)?;
             Ok(builtin.packages)
+        }
+    }
+
+    pub fn get_system_requirements(&self) -> HashMap<String, Vec<String>> {
+        let (distrib, version) = self.system_info.sysreq_data();
+        let key = format!("sysreq-{distrib}-{version}.json",);
+        let path = self.root.join(&key);
+        // TODO: Handle expiration, what would be a reasonable time?
+        if path.exists() {
+            let content = fs::read_to_string(&path).expect("to work");
+            serde_json::from_str(&content).unwrap()
+        } else {
+            let sysreq = get_system_requirements(&self.system_info);
+            let content = serde_json::to_string(&sysreq).unwrap();
+            fs::write(&path, content).expect("to work");
+            sysreq
         }
     }
 }

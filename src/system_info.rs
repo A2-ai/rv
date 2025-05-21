@@ -66,7 +66,7 @@ impl SystemInfo {
             os_type,
             arch,
             codename,
-            version: Version::from_string(version),
+            version: Version::Custom(version.to_string()),
         }
     }
 
@@ -110,5 +110,25 @@ impl SystemInfo {
 
     pub fn arch(&self) -> Option<&str> {
         self.arch.as_deref()
+    }
+
+    /// Returns (distrib name, version)
+    pub fn sysreq_data(&self) -> (&'static str, String) {
+        match self.os_type {
+            OsType::Linux(distrib) => match distrib {
+                "suse" => ("sle", self.version.to_string()),
+                "ubuntu" => {
+                    let version = match self.version {
+                        Version::Semantic(year, month, _) => {
+                            format!("{year}.{}{month}", if month < 10 { "0" } else { "" })
+                        }
+                        _ => unreachable!(),
+                    };
+                    (distrib, version)
+                }
+                _ => (distrib, self.version.to_string()),
+            },
+            _ => ("invalid", String::new()),
+        }
     }
 }

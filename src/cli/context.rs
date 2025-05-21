@@ -7,7 +7,7 @@ use crate::package::Package;
 use crate::utils::create_spinner;
 use crate::{
     Config, DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
-    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, timeit,
+    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, system_req, timeit,
 };
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
@@ -27,6 +27,9 @@ pub struct CliContext {
     pub lockfile: Option<Lockfile>,
     pub r_cmd: RCommandLine,
     pub builtin_packages: HashMap<String, Package>,
+    // Taken from posit API. Only for some linux distrib, it will remain empty
+    // on mac/windows/arch etc
+    pub system_dependencies: HashMap<String, Vec<String>>,
     pub show_progress_bar: bool,
 }
 
@@ -105,6 +108,7 @@ impl CliContext {
             r_cmd,
             show_progress_bar: false,
             builtin_packages,
+            system_dependencies: HashMap::new(),
         })
     }
 
@@ -131,6 +135,18 @@ impl CliContext {
         if !can_resolve {
             self.load_databases()?;
         }
+        Ok(())
+    }
+
+    pub fn load_system_requirements(&mut self) -> Result<()> {
+        if !system_req::is_supported(&self.cache.system_info) {
+            return Ok(());
+        }
+
+        let pb = create_spinner(self.show_progress_bar, "Loading system requirements...");
+        let reset_pb = || pb.finish_and_clear();
+        self.system_dependencies = self.cache.get_system_requirements();
+        reset_pb();
         Ok(())
     }
 

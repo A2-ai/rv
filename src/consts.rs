@@ -16,6 +16,7 @@ pub const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
 pub const PACKAGE_DB_FILENAME: &str = "packages.bin";
 
 pub const NUM_CPUS_ENV_VAR_NAME: &str = "RV_NUM_CPUS";
+pub const SYS_REQ_URL_ENV_VAR_NAME: &str = "RV_SYS_REQ_URL";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R
