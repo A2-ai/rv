@@ -114,9 +114,10 @@ fn get_binary_path(
 
 fn get_windows_url(url: &Url, file_path: &[&str], r_version: &[u32; 2]) -> Url {
     let mut new_url = url.clone();
-    let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
-    segments.extend(["bin", "windows", "contrib", &format!("{}.{}", r_version[0], r_version[1])].iter().chain(file_path));
-    drop(segments);
+    {
+        let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
+        segments.extend(["bin", "windows", "contrib", &format!("{}.{}", r_version[0], r_version[1])].iter().chain(file_path));
+    }
     new_url
 }
 
@@ -138,21 +139,21 @@ fn get_mac_url(
     let arch = sysinfo.arch()?;
 
     let mut new_url = url.clone();
-    let mut segments = new_url.path_segments_mut().ok()?;
-    segments.extend(["bin", "macosx"].iter());
+
+    {
+        let mut segments = new_url.path_segments_mut().ok()?;
+        segments.extend(["bin", "macosx"].iter());
 
 
-    // The additional path element containing the arch is officially introduced for R > 4.3.
-    // Some sources (PPM for example) start to include arch earlier for arm64.
-    // Therefore, we only do not include the additional path element for x86_64 with R <= 4.2
-    if !(arch == "x86_64" && r_version <= &[4, 2]) {
-        segments.push(&format!("big-sur-{arch}"));
+        // The additional path element containing the arch is officially introduced for R > 4.3.
+        // Some sources (PPM for example) start to include arch earlier for arm64.
+        // Therefore, we only do not include the additional path element for x86_64 with R <= 4.2
+        if !(arch == "x86_64" && r_version <= &[4, 2]) {
+            segments.push(&format!("big-sur-{arch}"));
+        }
+
+        segments.extend(["contrib", &format!("{}.{}", r_version[0], r_version[1])].iter().chain(file_path));
     }
-
-    segments.extend(["contrib", &format!("{}.{}", r_version[0], r_version[1])].iter().chain(file_path));
-
-    // need to drop segments to end mutable borrow in order to properly return new_url
-    drop(segments);
 
     Some(new_url)
 }
