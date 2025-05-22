@@ -52,10 +52,24 @@ fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
     }
 }
 
+fn get_source_path(url: &Url, file_path: &[&str]) -> Url {
+    // even if __linux__ is contained within the url, source content will be returned because no query string for PPM and PRISM
+    let mut new_url = url.clone();
+    let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
+    segments.extend(["src", "contrib"].iter().chain(file_path));
+    drop(segments);
+    new_url
+}
+
+// Archived packages under the format <base url>/src/contrib/Archive/<pkg name>/<pkg name>_<pkg version>.tar.gz
+fn get_archive_tarball_path(url: &Url, name: &str, version: &str) -> Url {
+    let file_name = format!("{name}_{version}.tar.gz");
+    get_source_path(url, &["Archive", name, &file_name])
+}
+
 /// # Get the path to the binary version of the file provided, when available.
 ///
 /// ## Given a CRAN-type repository URL, the location of the file wanted depends on the operating system.
-/// Nuances are also encoded for the few recognized repositories in RepoServer's variants.
 ///
 /// ### Windows
 /// Windows binaries are found under `/bin/windows/contrib/<R version major>.<R version minor>`
@@ -80,7 +94,8 @@ fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
 /// Thus the full path segment is `__linux__/<distribution codename>/<snapshot date>/src/contrib/<file name>?r_version=<R version major>.<R version minor>&arch=<system arch>`
 fn get_binary_path(
     url: &Url,
-    file_path: &str,
+    // file_path must contain the file name and prepended by any additional path elements (Path arg in PACKAGES file)
+    file_path: &[&str],
     r_version: &[u32; 2],
     sysinfo: &SystemInfo,
 ) -> Option<Url> {
@@ -97,46 +112,10 @@ fn get_binary_path(
     }
 }
 
-fn get_binary_tarball_path(
-    url: &Url,
-    name: &str,
-    version: &str,
-    path: Option<&str>,
-    r_version: &[u32; 2],
-    sysinfo: &SystemInfo,
-) -> Option<Url> {
-    let path = path.map(|x| format!("{x}/")).unwrap_or_default();
-    let ext = sysinfo.os_type.tarball_extension();
-    let file_path = format!("{path}{name}_{version}.{ext}");
-
-    get_binary_path(url, &file_path, r_version, sysinfo)
-}
-
-fn get_source_path(url: &Url, file_path: &str) -> Url {
-    // even if __linux__ is contained within the url, source content will be returned because no query string for PPM and PRISM
+fn get_windows_url(url: &Url, file_path: &[&str], r_version: &[u32; 2]) -> Url {
     let mut new_url = url.clone();
     let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
-    segments.extend(["src", "contrib", file_path]);
-    drop(segments);
-    new_url
-}
-
-fn get_source_tarball_path(url: &Url, name: &str, version: &str, path: Option<&str>) -> Url {
-    let path = path.map(|x| format!("{x}/")).unwrap_or_default();
-    let file_path = format!("{path}{name}_{version}.tar.gz");
-    get_source_path(url, &file_path)
-}
-
-// Archived packages under the format <base url>/src/contrib/Archive/<pkg name>/<pkg name>_<pkg version>.tar.gz
-fn get_archive_tarball_path(url: &Url, name: &str, version: &str) -> Url {
-    let file_path = format!("Archive/{name}/{name}_{version}.tar.gz");
-    get_source_path(url, &file_path)
-}
-
-fn get_windows_url(url: &Url, file_path: &str, r_version: &[u32; 2]) -> Url {
-    let mut new_url = url.clone();
-    let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
-    segments.extend(["bin", "windows", "contrib", &format!("{}.{}", r_version[0], r_version[1]), file_path]);
+    segments.extend(["bin", "windows", "contrib", &format!("{}.{}", r_version[0], r_version[1])].iter().chain(file_path));
     drop(segments);
     new_url
 }
@@ -151,7 +130,7 @@ fn get_windows_url(url: &Url, file_path: &str, r_version: &[u32; 2]) -> Url {
 /// While CRAN itself only started supporting arm64 binaries at R/4.2, many repositories (including PPM) support binaries for older versions
 fn get_mac_url(
     url: &Url,
-    file_path: &str,
+    file_path: &[&str],
     r_version: &[u32; 2],
     sysinfo: &SystemInfo,
 ) -> Option<Url> {
@@ -170,7 +149,7 @@ fn get_mac_url(
         segments.push(&format!("big-sur-{arch}"));
     }
 
-    segments.extend(["contrib", &format!("{}.{}", r_version[0], r_version[1]), file_path]);
+    segments.extend(["contrib", &format!("{}.{}", r_version[0], r_version[1])].iter().chain(file_path));
 
     // need to drop segments to end mutable borrow in order to properly return new_url
     drop(segments);
@@ -180,7 +159,7 @@ fn get_mac_url(
 
 fn get_linux_url(
     url: &Url,
-    file_path: &str,
+    file_path: &[&str],
     r_version: &[u32; 2],
     sysinfo: &SystemInfo,
     distro: &str,
@@ -198,7 +177,8 @@ fn get_linux_url(
 
     let path_segs = url.path_segments()?.collect::<Vec<_>>();
     if path_segs.iter().any(|s| *s == "__linux__") {
-        new_url.path_segments_mut().ok()?.extend(&["src", "contrib", file_path]);
+        let segments = ["src", "contrib"].iter().chain(file_path);
+        new_url.path_segments_mut().ok()?.extend(segments);
         insert_query_strings(&mut new_url);
         return Some(new_url)
     }
@@ -211,8 +191,11 @@ fn get_linux_url(
     segments.push("__linux__");
     segments.push(&distro_name);
     segments.push(edition);
+    segments.extend(["src", "contrib"]);
+    segments.extend(file_path);
 
-    new_url.path_segments_mut().ok()?.clear().extend(segments.into_iter().chain(["src", "contrib", file_path]));
+
+    new_url.path_segments_mut().ok()?.clear().extend(segments);
 
     insert_query_strings(&mut new_url);
 
@@ -235,9 +218,26 @@ pub fn get_tarball_urls(
         let name = &dep.name;
         let version = &dep.version.original;
         let path = dep.path.as_deref();
+        let ext = sysinfo.os_type.tarball_extension();
+
+        let file_path = path
+            .map(|p| p.split('/')
+                .into_iter()
+                .collect::<Vec<_>>()
+            )
+            .unwrap_or_default();
+
+            let mut binary_file_path = file_path.clone();
+            let binary_name = format!("{name}_{version}.{ext}");
+            binary_file_path.push(&binary_name);
+
+            let mut source_file_path = file_path.clone();
+            let source_name = format!("{name}_{version}.tar.gz");
+            source_file_path.push(&source_name);
+
         Ok(TarballUrls { 
-            source: get_source_tarball_path(repository, name, version, path), 
-            binary: get_binary_tarball_path(repository, name, version, path, r_version, sysinfo), 
+            source: get_source_path(repository, &source_file_path), 
+            binary: get_binary_path(repository, &binary_file_path, r_version, sysinfo), 
             archive: get_archive_tarball_path(repository, name, version),
         })
     } else {
@@ -253,8 +253,8 @@ pub fn get_package_file_urls(
     sysinfo: &SystemInfo,
 ) -> (Url, Option<Url>) {
     (
-        get_source_path(url, PACKAGE_FILENAME),
-        get_binary_path(url, PACKAGE_FILENAME, r_version, sysinfo)
+        get_source_path(url, &[PACKAGE_FILENAME]),
+        get_binary_path(url, &[PACKAGE_FILENAME], r_version, sysinfo)
     )
 }
 
@@ -264,12 +264,12 @@ mod tests {
 
     use super::*;
     static PPM_URL: LazyLock<Url> = LazyLock::new(|| Url::parse("https://packagemanager.posit.co/cran/latest").unwrap());
-    static TEST_FILE_NAME: &str = "test-file";
+    static TEST_FILE_NAME: [&str; 1] = ["test-file"];
 
     #[test]
     fn test_source_url() {
-        let source_url = get_source_path(&PPM_URL, TEST_FILE_NAME);
-        let ref_url = format!("{}/src/contrib/{}", &PPM_URL.as_str(), TEST_FILE_NAME);
+        let source_url = get_source_path(&PPM_URL, &TEST_FILE_NAME);
+        let ref_url = format!("{}/src/contrib/{}", &PPM_URL.as_str(), TEST_FILE_NAME[0]);
         assert_eq!(source_url.as_str(), ref_url);
     }
     #[test]
@@ -281,7 +281,7 @@ mod tests {
             "22.04",
         );
         assert_eq!(
-            get_binary_path(&PPM_URL, TEST_FILE_NAME, &[3, 5], &sysinfo),
+            get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[3, 5], &sysinfo),
             None
         );
     }
@@ -289,25 +289,25 @@ mod tests {
     #[test]
     fn test_windows_url() {
         let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
-        let source_url = get_binary_path(&PPM_URL, TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
-        let ref_url = format!("{}/bin/windows/contrib/4.4/{}", PPM_URL.as_str(), TEST_FILE_NAME);
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
+        let ref_url = format!("{}/bin/windows/contrib/4.4/{}", PPM_URL.as_str(), TEST_FILE_NAME[0]);
         assert_eq!(source_url.as_str(), ref_url)
     }
 
     #[test]
     fn test_mac_x86_64_r41_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
-        let source_url = get_binary_path(&PPM_URL, TEST_FILE_NAME, &[4, 1], &sysinfo).unwrap();
-        let ref_url = format!("{}/bin/macosx/contrib/4.1/{}", PPM_URL.as_str(), TEST_FILE_NAME);
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 1], &sysinfo).unwrap();
+        let ref_url = format!("{}/bin/macosx/contrib/4.1/{}", PPM_URL.as_str(), TEST_FILE_NAME[0]);
         assert_eq!(source_url.as_str(), ref_url);
     }
     #[test]
     fn test_mac_arm64_r41_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("arm64".to_string()), None, "");
-        let source_url = get_binary_path(&PPM_URL, TEST_FILE_NAME, &[4, 1], &sysinfo).unwrap();
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 1], &sysinfo).unwrap();
         let ref_url = format!(
             "{}/bin/macosx/big-sur-arm64/contrib/4.1/{}",
-            PPM_URL.as_str(), TEST_FILE_NAME
+            PPM_URL.as_str(), TEST_FILE_NAME[0]
         );
         assert_eq!(source_url.as_str(), ref_url);
     }
@@ -315,10 +315,10 @@ mod tests {
     #[test]
     fn test_mac_x86_64_r44_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
-        let source_url = get_binary_path(&PPM_URL, TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
         let ref_url = format!(
             "{}/bin/macosx/big-sur-x86_64/contrib/4.4/{}",
-            PPM_URL.as_str(), TEST_FILE_NAME,
+            PPM_URL.as_str(), TEST_FILE_NAME[0],
         );
         assert_eq!(source_url.as_str(), ref_url);
     }
@@ -326,10 +326,10 @@ mod tests {
     #[test]
     fn test_mac_arm64_r44_url() {
         let sysinfo = SystemInfo::new(OsType::MacOs, Some("arm64".to_string()), None, "");
-        let source_url = get_binary_path(&PPM_URL, TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
         let ref_url = format!(
             "{}/bin/macosx/big-sur-arm64/contrib/4.4/{}",
-            PPM_URL.as_str(), TEST_FILE_NAME
+            PPM_URL.as_str(), TEST_FILE_NAME[0]
         );
         assert_eq!(source_url.as_str(), ref_url);
     }
@@ -342,8 +342,16 @@ mod tests {
             Some("jammy".to_string()),
             "22.04",
         );
-        let source_url = get_binary_path(&PPM_URL, TEST_FILE_NAME, &[4, 2], &sysinfo).unwrap();
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 2], &sysinfo).unwrap();
         let ref_url = "https://packagemanager.posit.co/cran/__linux__/jammy/latest/src/contrib/test-file?r_version=4.2&arch=x86_64".to_string();
         assert_eq!(source_url.as_str(), ref_url)
+    }
+
+    #[test]
+    // also test the additional path elements being handled properly
+    fn test_archive_url() {
+        let source_url = get_archive_tarball_path(&PPM_URL, "name", "version");
+        let ref_url = format!("{}/src/contrib/Archive/name/name_version.tar.gz", PPM_URL.as_str());
+        assert_eq!(source_url.as_str(), ref_url);
     }
 }
