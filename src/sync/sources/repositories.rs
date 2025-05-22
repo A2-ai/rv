@@ -43,7 +43,8 @@ pub(crate) fn install_package(
                 pkg.version.original
             );
 
-            let tarball_url = get_tarball_urls(pkg, &cache.r_version, &cache.system_info).expect("Dependency has source Repository");
+            let tarball_url = get_tarball_urls(pkg, &cache.r_version, &cache.system_info)
+                .expect("Dependency has source Repository");
             let http = Http {};
 
             let download_and_install_source_or_archive = || -> Result<(), SyncError> {
