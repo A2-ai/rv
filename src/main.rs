@@ -71,7 +71,7 @@ pub enum Command {
     Sync,
     /// Add simple packages to the project and sync
     Add {
-        #[clap(value_parser)]
+        #[clap(value_parser, required = true)]
         packages: Vec<String>,
         #[clap(long)]
         /// Do not make any changes, only report what would happen if those packages were added         

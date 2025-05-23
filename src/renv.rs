@@ -58,6 +58,8 @@ struct PackageInfo {
     #[serde(default)]
     remote_sha: Option<String>, // when source is GitHub
     #[serde(default)]
+    remote_subdir: Option<String>, // when source is GitHub
+    #[serde(default)]
     remote_url: Option<String>, // when source is Local
     #[serde(default)]
     requirements: Vec<String>,
@@ -129,10 +131,8 @@ impl RenvLock {
                     repository_database,
                     &self.r.version,
                 ),
-                RenvSource::GitHub => {
-                    resolve_github(package_info).map(|(git, sha)| Source::Git { git, sha })
-                }
-                RenvSource::Local => resolve_local(package_info).map(Source::Local),
+                RenvSource::GitHub => resolve_github(package_info),
+                RenvSource::Local => resolve_local(package_info),
                 RenvSource::Other(source) => {
                     Err(format!("Source ({source}) is not supported").into())
                 }
@@ -186,7 +186,7 @@ impl RenvLock {
 //     "Hash": "470851b6d5d0ac559e9d01bb352b4021"
 // },
 fn resolve_repository<'a>(
-    pkg_info: &PackageInfo,
+    pkg_info: &'a PackageInfo,
     repositories: &'a [RenvRepository],
     repository_database: &[(RepositoryDatabase, bool)],
     r_version: &Version,
@@ -209,7 +209,8 @@ fn resolve_repository<'a>(
     if let (Some(git), Some(sha)) = (&pkg_info.remote_url, &pkg_info.remote_sha) {
         return Ok(Source::Git {
             git: git.to_string(),
-            sha: sha.to_string(),
+            sha: sha,
+            directory: pkg_info.remote_subdir.as_ref().map(|s| s.as_str()),
         });
     }
 
@@ -287,7 +288,7 @@ fn resolve_repository<'a>(
 //       "withr",
 //       "yaml"
 //     ],
-fn resolve_github(pkg_info: &PackageInfo) -> Result<(String, String), Box<dyn Error>> {
+fn resolve_github(pkg_info: &PackageInfo) -> Result<Source, Box<dyn Error>> {
     let host = pkg_info
         .remote_host
         .as_ref()
@@ -301,12 +302,17 @@ fn resolve_github(pkg_info: &PackageInfo) -> Result<(String, String), Box<dyn Er
         .as_ref()
         .ok_or("RemoteUsername not found")?;
     let sha = &pkg_info.remote_sha.as_ref().ok_or("RemoteSha not found")?;
+    let directory = pkg_info.remote_subdir.as_ref().map(|s| s.as_str());
     let base_url = host
         .trim_start_matches("https://")
         .trim_start_matches("api.")
         .trim_end_matches("api/v3");
-    let url = format!("https://{base_url}/{org}/{repo}");
-    Ok((url, sha.to_string()))
+    let git = format!("https://{base_url}/{org}/{repo}");
+    Ok(Source::Git {
+        git,
+        sha,
+        directory,
+    })
 }
 
 // Expected local sourced package, installed via renv::install, format from renv.lock
@@ -318,9 +324,9 @@ fn resolve_github(pkg_info: &PackageInfo) -> Result<(String, String), Box<dyn Er
 //       "RemoteUrl": "~/projects/rv.git.pkgA_0.0.0.9000.tar.gz",
 //       "Hash": "39e317a9ec5437bd5ce021ad56da04b6"
 //     }
-fn resolve_local(pkg_info: &PackageInfo) -> Result<PathBuf, Box<dyn Error>> {
+fn resolve_local(pkg_info: &PackageInfo) -> Result<Source, Box<dyn Error>> {
     let path = pkg_info.remote_url.as_ref().ok_or("RemoteUrl not found")?;
-    Ok(PathBuf::from(path))
+    Ok(Source::Local(PathBuf::from(path)))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -336,10 +342,18 @@ impl fmt::Display for ResolvedRenv<'_> {
             Source::Repository(r) => {
                 write!(f, r#"{{ name = "{name}", repository = "{}" }}"#, r.name)
             }
-            Source::Git { git, sha } => {
+            Source::Git {
+                git,
+                sha,
+                directory,
+            } => {
                 write!(
                     f,
-                    r#"{{ name = "{name}", git = "{git}", commit = "{sha}" }}"#
+                    r#"{{ name = "{name}", git = "{git}", commit = "{sha}"{} }}"#,
+                    directory
+                        .as_ref()
+                        .map(|d| format!(", directory = {d}"))
+                        .unwrap_or_default()
                 )
             }
             Source::Local(path) => {
@@ -352,7 +366,11 @@ impl fmt::Display for ResolvedRenv<'_> {
 #[derive(Debug, Clone, PartialEq)]
 enum Source<'a> {
     Repository(&'a RenvRepository),
-    Git { git: String, sha: String },
+    Git {
+        git: String,
+        sha: &'a str,
+        directory: Option<&'a str>,
+    },
     Local(PathBuf),
 }
 
