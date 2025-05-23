@@ -21,6 +21,7 @@ pub struct SyncHandler<'a> {
     project_dir: &'a Path,
     library: &'a Library,
     cache: &'a DiskCache,
+    system_dependencies: &'a HashMap<String, Vec<String>>,
     staging_path: PathBuf,
     dry_run: bool,
     show_progress_bar: bool,
@@ -33,12 +34,14 @@ impl<'a> SyncHandler<'a> {
         project_dir: &'a Path,
         library: &'a Library,
         cache: &'a DiskCache,
+        system_dependencies: &'a HashMap<String, Vec<String>>,
         staging_path: impl AsRef<Path>,
     ) -> Self {
         Self {
             project_dir,
             library,
             cache,
+            system_dependencies,
             staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
             show_progress_bar: false,
@@ -321,6 +324,10 @@ impl<'a> SyncHandler<'a> {
                                     dep.source.clone(),
                                     dep.kind,
                                     start.elapsed(),
+                                    self.system_dependencies
+                                        .get(dep.name.as_ref())
+                                        .cloned()
+                                        .unwrap_or_default(),
                                 );
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);

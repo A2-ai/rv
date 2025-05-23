@@ -34,7 +34,7 @@ flate2 = "1"
 tar = "0.4"
 zip = "3"
 # HTTP requests
-ureq = { version = "3", features = ["platform-verifier"] }
+ureq = { version = "3", features = ["platform-verifier", "json"] }
 sha2 = "0.10"
 # For rv sync
 crossbeam = "0.8.4"

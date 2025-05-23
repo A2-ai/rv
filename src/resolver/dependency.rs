@@ -20,7 +20,7 @@ use crate::{HttpDownload, Version, VersionRequirement};
 /// will be borrowed
 #[derive(PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
-    pub(crate) name: Cow<'d, str>,
+    pub name: Cow<'d, str>,
     pub(crate) version: Cow<'d, Version>,
     pub(crate) source: Source,
     pub(crate) dependencies: Vec<Cow<'d, Dependency>>,

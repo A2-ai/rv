@@ -10,14 +10,8 @@ use url::Url;
 
 use crate::fs::untar_archive;
 
-/// Downloads a remote content to the given writer.
-/// Returns the number of bytes written to the writer, 0 for a 404 or an empty 200
-pub fn download<W: Write>(
-    url: &Url,
-    writer: &mut W,
-    headers: Vec<(&str, String)>,
-) -> Result<u64, HttpError> {
-    let agent = Agent::config_builder()
+pub fn get_agent() -> Agent {
+    Agent::config_builder()
         .tls_config(
             TlsConfig::builder()
                 .root_certs(RootCerts::PlatformVerifier)
@@ -25,7 +19,17 @@ pub fn download<W: Write>(
         )
         .timeout_global(Some(Duration::from_secs(200)))
         .build()
-        .new_agent();
+        .new_agent()
+}
+
+/// Downloads a remote content to the given writer.
+/// Returns the number of bytes written to the writer, 0 for a 404 or an empty 200
+pub fn download<W: Write>(
+    url: &Url,
+    writer: &mut W,
+    headers: Vec<(&str, String)>,
+) -> Result<u64, HttpError> {
+    let agent = get_agent();
 
     let mut request_builder = agent.get(url.as_str());
 

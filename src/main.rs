@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -12,8 +12,9 @@ use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_ren
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
     ResolvedDependency, Resolver, SyncChange, SyncHandler, Version, activate, add_packages,
-    deactivate, read_and_verify_config,
+    deactivate, read_and_verify_config, system_req,
 };
+use rv::system_req::SysDep;
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -264,6 +265,7 @@ fn _sync(
         ResolveMode::Default => context.load_databases_if_needed()?,
         ResolveMode::FullUpgrade => context.load_databases()?,
     }
+    context.load_system_requirements()?;
 
     let resolved = resolve_dependencies(&context, &resolve_mode);
 
@@ -278,6 +280,7 @@ fn _sync(
                 &context.project_dir,
                 &context.library,
                 &context.cache,
+                &context.system_dependencies,
                 context.staging_path(),
             );
             if dry_run {
@@ -290,7 +293,7 @@ fn _sync(
             handler.handle(&resolved, &context.r_cmd)
         }
     ) {
-        Ok(changes) => {
+        Ok(mut changes) => {
             if !dry_run && context.config.use_lockfile() {
                 if resolved.is_empty() {
                     // delete the lockfiles if there are no dependencies
@@ -312,26 +315,33 @@ fn _sync(
                 }
             }
 
-            if changes.is_empty() {
-                if output_format.is_json() {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&SyncChanges::default()).expect("valid json")
-                    );
-                } else {
-                    println!("Nothing to do");
-                }
-            } else if output_format.is_json() {
+            let all_sys_deps: HashSet<_> = changes
+                .iter()
+                .flat_map(|x| x.sys_deps.iter().map(|x| x.name.as_str()))
+                .collect();
+            let sysdeps_status =
+                system_req::check_installation_status(&context.cache.system_info, &all_sys_deps);
+
+            for change in changes.iter_mut() {
+                change.update_sys_deps_status(&sysdeps_status);
+            }
+
+            if output_format.is_json() {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&SyncChanges::from_changes(changes))
+                    serde_json::to_string_pretty(&SyncChanges::from_changes(changes,))
                         .expect("valid json")
                 );
             } else {
-                for c in changes {
-                    println!("{}", c.print(!dry_run));
+                if changes.is_empty() {
+                    println!("Nothing to do");
+                } else {
+                    for c in changes {
+                        println!("{}", c.print(!dry_run, !sysdeps_status.is_empty()));
+                    }
                 }
             }
+
             Ok(())
         }
         Err(e) => {
@@ -623,10 +633,23 @@ fn try_main() -> Result<()> {
         Command::Summary { r_version } => {
             let mut context = CliContext::new(&cli.config_file, r_version)?;
             context.load_databases()?;
+            context.load_system_requirements()?;
             if !log_enabled {
                 context.show_progress_bar();
             }
             let resolved = resolve_dependencies(&context, &ResolveMode::Default);
+            let project_sys_deps: HashSet<_> = resolved
+                .iter()
+                .flat_map(|x| context.system_dependencies.get(x.name.as_ref()))
+                .flatten()
+                .map(|x| x.as_str())
+                .collect();
+
+            let sys_deps: Vec<_> = system_req::check_installation_status(
+                &context.cache.system_info,
+                &project_sys_deps,
+            ).into_iter().map(|(name, status)| SysDep {name, status}).collect();
+            
             let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,
@@ -635,6 +658,7 @@ fn try_main() -> Result<()> {
                 &context.r_version,
                 &context.cache,
                 context.lockfile.as_ref(),
+                sys_deps,
             );
             if output_format.is_json() {
                 println!(

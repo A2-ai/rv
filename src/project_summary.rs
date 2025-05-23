@@ -6,6 +6,7 @@ use std::{
 
 use serde::Serialize;
 
+use crate::system_req::{SysDep};
 use crate::utils::get_max_workers;
 use crate::{
     DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
@@ -22,6 +23,7 @@ pub struct ProjectSummary<'a> {
     dependency_info: DependencyInfo<'a>,
     cache_root: &'a PathBuf,
     remote_info: RemoteInfo<'a>,
+    sys_deps: Vec<SysDep>,
     max_workers: usize,
 }
 
@@ -35,9 +37,11 @@ impl<'a> ProjectSummary<'a> {
         r_version: &'a Version,
         cache: &'a DiskCache,
         lockfile: Option<&'a Lockfile>,
+        sys_deps: Vec<SysDep>,
     ) -> Self {
         Self {
             r_version,
+            sys_deps,
             system_info: &cache.system_info,
             dependency_info: DependencyInfo::new(
                 library,
@@ -73,6 +77,14 @@ impl fmt::Display for ProjectSummary<'_> {
         )?;
 
         write!(f, "== Dependencies == \n{}\n", self.dependency_info)?;
+        if !self.sys_deps.is_empty() {
+            let mut out = String::new();
+            for d in self.sys_deps.iter() {
+                out.push_str(&format!("{}: {}\n", d.name, d.status));
+            }
+
+            write!(f, "== System Dependencies == \n{}\n", self.dependency_info)?;
+        }
         write!(f, "== Remote == \n{}", self.remote_info)?;
         Ok(())
     }
