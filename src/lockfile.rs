@@ -130,18 +130,6 @@ impl Source {
         matches!(self, Source::Builtin { .. })
     }
 
-    /// The key to use in the cache: URL for a package repository, git URL for a git repository
-    /// and for local the actual path
-    pub fn source_path(&self) -> &str {
-        match self {
-            Source::Repository { repository } => repository.as_str(),
-            Source::Local { path, .. } => path.to_str().unwrap(),
-            Source::Git { git, .. } | Source::RUniverse { git, .. } => git.url(),
-            Source::Url { url, .. } => url.as_str(),
-            Source::Builtin { .. } => "",
-        }
-    }
-
     pub fn sha(&self) -> &str {
         match self {
             Source::Git { sha, .. } | Source::RUniverse { sha, .. } => sha.as_str(),

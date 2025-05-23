@@ -19,7 +19,10 @@ impl<'de> Deserialize<'de> for HttpUrl {
     {
         let s = String::deserialize(deserializer)?;
         if s.starts_with("http://") || s.starts_with("https://") {
-            if let Ok(url) = Url::parse(&s) {
+            if let Ok(mut url) = Url::parse(&s) {
+                // Remove trailing slashes from the path
+                let path = url.path().trim_end_matches('/').to_string();
+                url.set_path(&path);
                 return Ok(Self(url));
             }
         }
@@ -74,7 +77,7 @@ impl Repository {
 pub enum ConfigDependency {
     Simple(String),
     Git {
-        // It can be http or git
+        // It can be http or ssh
         git: GitUrl,
         commit: Option<String>,
         tag: Option<String>,

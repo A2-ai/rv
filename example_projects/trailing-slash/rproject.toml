@@ -1,0 +1,12 @@
+[project]
+name = "trailing-slash"
+r_version = "4.4"
+description = "URL's that ended with a slash should not rely on servers to properly parse (i.e. PRISM does not)"
+
+repositories = [
+    { alias = "stratus", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2025-05-09/" },
+]
+
+dependencies = [
+    "R6"
+]
