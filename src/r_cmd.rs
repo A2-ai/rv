@@ -152,6 +152,7 @@ impl RCmd for RCommandLine {
 
         let mut command = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")));
         command
+            .arg("--vanilla")
             .arg("CMD")
             .arg("INSTALL")
             // This is where it will be installed
@@ -159,7 +160,6 @@ impl RCmd for RCommandLine {
                 "--library={}",
                 destination.as_ref().to_string_lossy()
             ))
-            .arg("--use-vanilla")
             .arg("--strip")
             .arg("--strip-lib")
             .arg(tmp_dir.path())
