@@ -1,4 +1,8 @@
-use std::{fs::File, io::Write, path::Path};
+use std::{
+    fs::File,
+    io::Write,
+    path::{Path, absolute},
+};
 
 use anyhow::{Result, anyhow};
 
@@ -28,8 +32,8 @@ pub fn migrate_renv(
     strict_r_version: bool,
 ) -> Result<Vec<UnresolvedRenv>> {
     // project name is the parent directory of the renv project
-    let project_name = renv_file
-        .as_ref()
+    let abs_renv_file = absolute(renv_file.as_ref())?;
+    let project_name = abs_renv_file
         .parent()
         .and_then(|p| p.to_str())
         .unwrap_or("renv migrated project");
@@ -97,7 +101,8 @@ fn render_config(
         .join(",\n");
     // get time. Try to round to seconds, but if error, leave as unrounded
     let time = jiff::Zoned::now();
-    let time = time.round(jiff::Unit::Day).unwrap_or(time);
+    // Format the time as just the date (YYYY-MM-DD)
+    let time = time.date().to_string();
 
     RENV_CONFIG_TEMPLATE
         .replace("%renv_file%", renv_file)
