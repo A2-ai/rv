@@ -55,9 +55,10 @@ fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
 fn get_source_path(url: &Url, file_path: &[&str]) -> Url {
     // even if __linux__ is contained within the url, source content will be returned because no query string for PPM and PRISM
     let mut new_url = url.clone();
-    let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
-    segments.extend(["src", "contrib"].iter().chain(file_path));
-    drop(segments);
+    {
+        let mut segments = new_url.path_segments_mut().expect("Valid absolute url");
+        segments.extend(["src", "contrib"].iter().chain(file_path));
+    }
     new_url
 }
 
