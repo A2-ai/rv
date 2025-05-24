@@ -5,7 +5,9 @@ use std::str::FromStr;
 
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
-use crate::package::{Version, deserialize_version};
+use crate::package::{Version, deserialize_option_version};
+use crate::r_cmd::VersionError;
+use crate::{RCmd, RCommandLine};
 use serde::{Deserialize, Deserializer};
 use url::Url;
 
@@ -215,8 +217,9 @@ impl ConfigDependency {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
-    #[serde(deserialize_with = "deserialize_version")]
-    r_version: Version,
+    #[serde(deserialize_with = "deserialize_option_version", default)]
+    /// r_version must be set, unless r_path is set
+    r_version: Option<Version>,
     #[serde(default)]
     description: String,
     license: Option<String>,
@@ -254,6 +257,9 @@ fn default_true() -> bool {
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Sets the path to find R at. Mostly used for non-standard R paths or to use the version on the path without specifying an r_version (specify only "R")
+    /// If r_path must be set if r_version is not set. If r_path and r_version are both set, they must be the same version
+    pub(crate) r_path: Option<PathBuf>,
     pub(crate) library: Option<PathBuf>,
     #[serde(default = "default_true")]
     pub(crate) use_lockfile: bool,
@@ -274,11 +280,43 @@ impl Config {
         Self::from_str(&content)
     }
 
-    /// This will do 2 things:
+    /// This will do 4 things:
     /// 1. verify alias used in deps are found
     /// 2. verify git sources are valid (eg no tag and branch at the same time)
     /// 3. replace the alias in the dependency by the URL
+    /// 4. verify r_version and/or r_path is set. If both, verifies they are the same version
     pub(crate) fn finalize(&mut self) -> Result<(), ConfigLoadError> {
+        // if r_path is set, we check what version is on the path
+        if let Some(r_path) = &self.r_path {
+            let cmd_ver = RCommandLine {
+                r: Some(r_path.clone()),
+            }
+            .version()?;
+            // if the r_version is set in the config, ensure the versions match
+            if let Some(config_ver) = &self.project.r_version {
+                if !config_ver.hazy_match(&cmd_ver) {
+                    return Err(ConfigLoadError {
+                        path: Path::new(".").into(),
+                        source: ConfigLoadErrorKind::VersionDoesNotMatch {
+                            config_version: config_ver.clone(),
+                            path_version: cmd_ver.clone(),
+                        },
+                    });
+                }
+            // if the r_version is not set, set it as the version found on the path
+            } else {
+                self.project.r_version = Some(cmd_ver);
+            }
+        // if r_path is not set, r_version must be
+        } else {
+            if self.project.r_version == None {
+                return Err(ConfigLoadError {
+                    path: Path::new(".").into(),
+                    source: ConfigLoadErrorKind::VersionNotSet,
+                });
+            }
+        }
+
         let repo_mapping: HashMap<_, _> = self
             .project
             .repositories
@@ -349,7 +387,8 @@ impl Config {
     }
 
     pub fn r_version(&self) -> &Version {
-        &self.project.r_version
+        // `finalize` will ensure `r_version` is set. Either by the supplied value or the version found at `r_path`
+        self.project.r_version.as_ref().unwrap()
     }
 
     pub fn use_lockfile(&self) -> bool {
@@ -382,6 +421,15 @@ pub struct ConfigLoadError {
     pub source: ConfigLoadErrorKind,
 }
 
+impl From<VersionError> for ConfigLoadError {
+    fn from(error: VersionError) -> Self {
+        Self {
+            path: Path::new(".").into(),
+            source: ConfigLoadErrorKind::VersionError(error),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub enum ConfigLoadErrorKind {
@@ -389,6 +437,14 @@ pub enum ConfigLoadErrorKind {
     Parse(#[from] toml::de::Error),
     #[error("Invalid config: {0}")]
     InvalidConfig(String),
+    VersionError(#[from] VersionError),
+    #[error("r_version ({config_version}) does not match version found at r_path ({path_version})")]
+    VersionDoesNotMatch {
+        path_version: Version,
+        config_version: Version,
+    },
+    #[error("r_version or r_path must be set")]
+    VersionNotSet,
 }
 
 #[cfg(test)]
