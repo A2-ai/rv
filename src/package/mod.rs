@@ -119,7 +119,7 @@ impl Package {
 
         // The deps in linkingTo can be listed already in depends
         for dep in &self.linking_to {
-            if out.iter().find(|x| x.name() == dep.name()).is_none() {
+            if !out.iter().any(|x| x.name() == dep.name()) {
                 out.push(dep);
             }
         }
