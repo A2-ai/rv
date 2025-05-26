@@ -209,8 +209,8 @@ fn resolve_repository<'a>(
     if let (Some(git), Some(sha)) = (&pkg_info.remote_url, &pkg_info.remote_sha) {
         return Ok(Source::Git {
             git: git.to_string(),
-            sha: sha,
-            directory: pkg_info.remote_subdir.as_ref().map(|s| s.as_str()),
+            sha,
+            directory: pkg_info.remote_subdir.as_deref(),
         });
     }
 
@@ -302,7 +302,7 @@ fn resolve_github(pkg_info: &PackageInfo) -> Result<Source, Box<dyn Error>> {
         .as_ref()
         .ok_or("RemoteUsername not found")?;
     let sha = &pkg_info.remote_sha.as_ref().ok_or("RemoteSha not found")?;
-    let directory = pkg_info.remote_subdir.as_ref().map(|s| s.as_str());
+    let directory = pkg_info.remote_subdir.as_deref();
     let base_url = host
         .trim_start_matches("https://")
         .trim_start_matches("api.")
