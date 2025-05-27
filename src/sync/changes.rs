@@ -53,7 +53,7 @@ impl SyncChange {
             timing: Some(timing),
             source: Some(source),
             version: Some(version.to_string()),
-            sys_deps: sys_deps.into_iter().map(|x| SysDep::new(x)).collect(),
+            sys_deps: sys_deps.into_iter().map(SysDep::new).collect(),
         }
     }
 

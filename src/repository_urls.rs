@@ -233,7 +233,7 @@ pub fn get_tarball_urls(
         let ext = sysinfo.os_type.tarball_extension();
 
         let file_path = path
-            .map(|p| p.split('/').into_iter().collect::<Vec<_>>())
+            .map(|p| p.split('/').collect::<Vec<_>>())
             .unwrap_or_default();
 
         let mut binary_file_path = file_path.clone();

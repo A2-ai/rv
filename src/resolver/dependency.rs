@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::{FromStr, Utf8Error};
@@ -48,6 +48,17 @@ impl<'d> ResolvedDependency<'d> {
 
     pub fn is_local(&self) -> bool {
         matches!(self.source, Source::Local { .. })
+    }
+
+    pub fn all_dependencies_names(&'d self) -> Vec<&'d str> {
+        let mut deps: HashSet<_> = self.dependencies.iter().map(|x| x.name()).collect();
+        if self.install_suggests {
+            for s in &self.suggests {
+                deps.insert(s.name());
+            }
+        }
+
+        deps.into_iter().collect()
     }
 
     /// We found the dependency from the lockfile

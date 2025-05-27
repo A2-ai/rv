@@ -38,6 +38,6 @@ pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
-pub use resolver::{ResolvedDependency, Resolver, UnresolvedDependency};
+pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
