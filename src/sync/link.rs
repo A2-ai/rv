@@ -174,6 +174,11 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
 }
 
 fn symlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
+    log::debug!(
+        "Linking package from {} to {} using symlinks",
+        source.display(),
+        library.display()
+    );
     for entry in WalkDir::new(source) {
         let entry = entry?;
         let path = entry.path();
@@ -186,7 +191,20 @@ fn symlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
             continue;
         }
 
-        create_symlink(path, out_path)?;
+        // if symlink not created we want to log which specific entry was problematic before
+        // bubbling up the error
+        match create_symlink(path, &out_path) {
+            Ok(_) => continue,
+            Err(e) => {
+                log::error!(
+                    "Failed to create symlink from {} to {}, error: {}",
+                    path.display(),
+                    out_path.display(),
+                    e
+                );
+                return Err(LinkError::Io(e));
+            }
+        }
     }
 
     Ok(())
