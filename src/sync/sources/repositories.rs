@@ -97,7 +97,7 @@ pub(crate) fn install_package(
                         log::debug!("{} was expected as binary, found to be source.", pkg.name);
                         // Move it to the source destination if we don't have it already
                         if pkg_paths.source.is_dir() {
-                            fs::remove_dir_all(&pkg_paths.binary)?;
+                            remove_dir_all::remove_dir_all(&pkg_paths.binary)?;
                         } else {
                             fs::create_dir_all(&pkg_paths.source)?;
                             fs::rename(&pkg_paths.binary, &pkg_paths.source)?;

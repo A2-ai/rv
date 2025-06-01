@@ -346,7 +346,14 @@ fn _sync(
         }
         Err(e) => {
             if context.staging_path().is_dir() {
-                fs::remove_dir_all(context.staging_path())?;
+                let rmerr = remove_dir_all::remove_dir_all(context.staging_path());
+                if let Err(ne) = rmerr {
+                    log::warn!(
+                        "Failed to remove staging directory {} after sync error: {}",
+                        context.staging_path().display(),
+                        ne
+                    );
+                }
             }
             Err(e.into())
         }

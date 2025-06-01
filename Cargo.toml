@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 license = "MIT"
 
@@ -51,6 +51,7 @@ rayon = { version = "1", optional = true }
 anyhow = { version = "1", optional = true }
 env_logger = { version = "0.11", optional = true }
 jiff = { version = "0.2", optional = true }
+remove_dir_all = { version = "1.0.0", features = ["parallel"] }
 
 
 [features]

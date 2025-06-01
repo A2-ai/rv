@@ -96,7 +96,7 @@ impl LinkMode {
         // If it's already exists for some reasons (eg failed halfway before), delete it first
         let pkg_in_lib = destination.as_ref().join(package_name);
         if pkg_in_lib.is_dir() {
-            fs::remove_dir_all(&pkg_in_lib)?;
+            remove_dir_all::remove_dir_all(&pkg_in_lib)?;
         }
 
         let res = match self {
@@ -114,7 +114,7 @@ impl LinkMode {
             }
             // Cleanup a bit in case it failed halfway through
             if pkg_in_lib.is_dir() {
-                fs::remove_dir_all(&pkg_in_lib)?
+                remove_dir_all::remove_dir_all(&pkg_in_lib)?
             }
             log::warn!(
                 "Failed to {} files: {e}. Falling back to copying files.",

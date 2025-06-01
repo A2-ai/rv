@@ -17,7 +17,7 @@ pub struct GitRepository {
 impl GitRepository {
     pub(crate) fn rm_folder(&self) -> Result<(), std::io::Error> {
         if self.path.is_dir() {
-            fs::remove_dir_all(&self.path)?;
+            remove_dir_all::remove_dir_all(&self.path)?;
         }
         Ok(())
     }
@@ -33,7 +33,7 @@ impl GitRepository {
             .execute(Command::new("git").arg("rev-parse").current_dir(&path))
             .is_err()
         {
-            fs::remove_dir_all(&path)?;
+            remove_dir_all::remove_dir_all(&path)?;
             return Self::init(path, url, executor);
         }
 

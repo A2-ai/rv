@@ -171,7 +171,7 @@ impl HttpDownload for Http {
             let new_destination = destination.join(&sha[..10]);
             let install_dir = new_destination.join(actual_dir.file_name().unwrap());
             if install_dir.is_dir() {
-                fs::remove_dir_all(&install_dir)
+                remove_dir_all::remove_dir_all(&install_dir)
                     .map_err(|e| HttpError::from_io(url.as_str(), e))?;
             }
             fs::create_dir_all(&install_dir).map_err(|e| HttpError::from_io(url.as_str(), e))?;

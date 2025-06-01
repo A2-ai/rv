@@ -120,7 +120,7 @@ impl RCmd for RCommandLine {
         // except if it's the same as the library. This happens for local packages
         if library.as_ref() != destination.as_ref() {
             if destination.as_ref().is_dir() {
-                fs::remove_dir_all(destination.as_ref())
+                remove_dir_all::remove_dir_all(destination.as_ref())
                     .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
             }
             fs::create_dir_all(destination.as_ref())
@@ -138,7 +138,6 @@ impl RCmd for RCommandLine {
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
-
         let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
@@ -182,10 +181,21 @@ impl RCmd for RCommandLine {
         let status = handle.wait().unwrap();
 
         if !status.success() {
-            // Always delete the destination is an error happend
+            log::warn!(
+                "R CMD INSTALL failed with status: {}. Output: {}",
+                status,
+                output
+            );
             if destination.as_ref().is_dir() {
                 // We ignore that error intentionally since we want to keep the one from CLI
-                let _ = fs::remove_dir_all(destination.as_ref());
+                let rm = remove_dir_all::remove_dir_all(destination.as_ref());
+                if let Err(e) = rm {
+                    log::warn!(
+                        "Failed to remove destination directory {} after failed install: {}",
+                        destination.as_ref().display(),
+                        e
+                    );
+                }
             }
 
             return Err(InstallError {

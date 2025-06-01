@@ -177,7 +177,11 @@ impl<'a> SyncHandler<'a> {
     ) -> Result<Vec<SyncChange>, SyncError> {
         // Clean up at all times, even with a dry run
         if self.staging_path.is_dir() {
-            fs::remove_dir_all(&self.staging_path)?;
+            log::debug!(
+                "Removing staging directory {}",
+                self.staging_path.display()
+            );
+            remove_dir_all::remove_dir_all(&self.staging_path)?;
         }
         fs::create_dir_all(self.library.path())?;
 
@@ -194,7 +198,7 @@ impl<'a> SyncHandler<'a> {
                 let p = self.library.path().join(dir_name);
                 if !self.dry_run && notify {
                     log::debug!("Removing {dir_name} from library");
-                    fs::remove_dir_all(&p)?;
+                    remove_dir_all::remove_dir_all(&p)?;
                 }
             }
 
