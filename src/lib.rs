@@ -1,6 +1,7 @@
 mod activate;
 mod add;
 mod cache;
+mod cancellation;
 mod config;
 mod fs;
 mod git;
@@ -27,6 +28,7 @@ pub mod consts;
 pub use activate::{activate, deactivate};
 pub use add::{add_packages, read_and_verify_config};
 pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
+pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};

@@ -1,16 +1,24 @@
-use std::fs;
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
+use std::{fs, thread};
 
-use crate::Version;
 use crate::sync::{LinkError, LinkMode};
+use crate::{Cancellation, Version};
 use regex::Regex;
 
 static R_VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+)\.(\d+)\.(\d+)").unwrap());
+
+/// Since we create process group for our tasks, they won't be shutdown when we exit rv
+/// so we do need to keep some references to them around so we can kill them manually.
+/// We use the pid since we can't clone the handle.
+pub static ACTIVE_R_PROCESS_IDS: LazyLock<Arc<Mutex<HashSet<u32>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashSet::new())));
 
 fn find_r_version(output: &str) -> Option<Version> {
     R_VERSION_RE
@@ -26,11 +34,62 @@ pub trait RCmd: Send + Sync {
         folder: impl AsRef<Path>,
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
+        cancellation: Arc<Cancellation>,
     ) -> Result<String, InstallError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
 
     fn version(&self) -> Result<Version, VersionError>;
+}
+
+/// By default, doing ctrl+c on rv will kill it as well as all its child process.
+/// To allow graceful shutdown, we create a process group in Unix and the equivalent on Windows
+/// so we can control _how_ they get killed, and allow for a soft cancellation (eg we let
+/// ongoing tasks finish but stop enqueuing/processing new ones.
+fn spawn_isolated_r_command(r_path: &Option<PathBuf>) -> Command {
+    let mut command = Command::new(r_path.as_ref().unwrap_or(&PathBuf::from("R")));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            command.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
+
+    command
+}
+
+pub fn kill_all_r_processes() {
+    let process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+
+    for pid in process_ids.iter() {
+        #[cfg(unix)]
+        {
+            unsafe {
+                libc::kill((*pid) as i32, libc::SIGTERM);
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            let _ = Command::new("taskkill")
+                .arg("/PID")
+                .arg(pid.to_string())
+                .arg("/F")
+                .output();
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -115,6 +174,7 @@ impl RCmd for RCommandLine {
         source_folder: impl AsRef<Path>,
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
+        cancellation: Arc<Cancellation>,
     ) -> Result<String, InstallError> {
         // Always delete destination if it exists first to avoid issues with incomplete installs
         // except if it's the same as the library. This happens for local packages
@@ -134,23 +194,18 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::TempDir(e),
         })?;
         let link = LinkMode::symlink_if_possible();
-        link.link_files("tmp_build", source_folder, tmp_dir.path())
+        link.link_files("tmp_build", &source_folder, tmp_dir.path())
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
-
-        let (mut reader, writer) = os_pipe::pipe().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
-        let writer_clone = writer.try_clone().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
 
         let library = library.as_ref().canonicalize().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
 
-        let mut command = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")));
+        let (recv, send) =
+            std::io::pipe().map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
+        let mut command = spawn_isolated_r_command(&self.r);
         command
             .arg("CMD")
             .arg("INSTALL")
@@ -167,35 +222,98 @@ impl RCmd for RCommandLine {
             .env("R_LIBS_SITE", &library)
             .env("R_LIBS_USER", &library)
             .env("_R_SHLIB_STRIP_", "true")
-            .stdout(writer)
-            .stderr(writer_clone);
+            .stdout(
+                send.try_clone()
+                    .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?,
+            )
+            .stderr(send);
 
         let mut handle = command.spawn().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
 
+        let pid = handle.id();
+
+        {
+            let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+            process_ids.insert(pid);
+        }
+
         // deadlock otherwise according to os_pipe docs
         drop(command);
 
-        let mut output = String::new();
-        reader.read_to_string(&mut output).unwrap();
-        let status = handle.wait().unwrap();
+        // Read output in a separate thread to avoid blocking on pipe buffers
+        let output_handle = {
+            let mut recv = recv;
+            thread::spawn(move || {
+                let mut output = String::new();
+                let _ = recv.read_to_string(&mut output);
+                output
+            })
+        };
 
-        if !status.success() {
-            // Always delete the destination is an error happened
-            if destination.as_ref().is_dir() {
-                // We ignore that error intentionally since we want to keep the one from CLI
-                if let Err(e)  = fs::remove_dir_all(destination.as_ref()) {
-                    log::error!("Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually", destination.as_ref().display());
-                }
+        let cleanup = |output| {
+            {
+                let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+                process_ids.remove(&pid);
             }
 
+            if destination.as_ref().is_dir() {
+                if let Err(e) = fs::remove_dir_all(destination.as_ref()) {
+                    log::error!(
+                        "Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually",
+                        destination.as_ref().display()
+                    );
+                }
+            }
             return Err(InstallError {
                 source: InstallErrorKind::InstallationFailed(output),
             });
-        }
+        };
 
-        Ok(output)
+        // Poll for completion or cancellation
+        loop {
+            // Did the command finish?
+            match handle.try_wait() {
+                Ok(Some(status)) => {
+                    {
+                        let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+                        process_ids.remove(&pid);
+                    }
+                    // Process finished, get the output from the reading thread
+                    let output = output_handle.join().unwrap();
+
+                    if !status.success() {
+                        return cleanup(output);
+                    }
+
+                    return Ok(output);
+                }
+                Ok(None) => {
+                    // Process still running, check for cancellation
+                    if cancellation.is_soft_cancellation() {
+                        // On soft cancellation, let R finish naturally
+                        // On hard cancellation, rv will kill
+                        let status = handle.wait().unwrap();
+                        let output = output_handle.join().unwrap();
+
+                        if !status.success() {
+                            return cleanup(output);
+                        }
+
+                        return Ok(output);
+                    }
+
+                    // Sleep briefly to avoid busy waiting
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    return Err(InstallError {
+                        source: InstallErrorKind::Command(e),
+                    });
+                }
+            }
+        }
     }
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError> {
@@ -288,6 +406,8 @@ pub enum InstallErrorKind {
     Utf8(#[from] std::str::Utf8Error),
     #[error("Installation failed: {0}")]
     InstallationFailed(String),
+    #[error("Installation cancelled by user")]
+    Cancelled,
 }
 
 #[derive(Debug, thiserror::Error)]

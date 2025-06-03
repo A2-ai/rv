@@ -9,12 +9,12 @@ use serde_json::json;
 
 use rv::cli::utils::timeit;
 use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv};
+use rv::system_req::SysDep;
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
     ResolvedDependency, Resolver, SyncChange, SyncHandler, Version, activate, add_packages,
     deactivate, read_and_verify_config, system_req,
 };
-use rv::system_req::SysDep;
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -648,8 +648,11 @@ fn try_main() -> Result<()> {
             let sys_deps: Vec<_> = system_req::check_installation_status(
                 &context.cache.system_info,
                 &project_sys_deps,
-            ).into_iter().map(|(name, status)| SysDep {name, status}).collect();
-            
+            )
+            .into_iter()
+            .map(|(name, status)| SysDep { name, status })
+            .collect();
+
             let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,
