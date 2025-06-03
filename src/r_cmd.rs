@@ -181,20 +181,11 @@ impl RCmd for RCommandLine {
         let status = handle.wait().unwrap();
 
         if !status.success() {
-            log::warn!(
-                "R CMD INSTALL failed with status: {}. Output: {}",
-                status,
-                output
-            );
+            // Always delete the destination is an error happened
             if destination.as_ref().is_dir() {
                 // We ignore that error intentionally since we want to keep the one from CLI
-                let rm = remove_dir_all::remove_dir_all(destination.as_ref());
-                if let Err(e) = rm {
-                    log::warn!(
-                        "Failed to remove destination directory {} after failed install: {}",
-                        destination.as_ref().display(),
-                        e
-                    );
+                if let Err(e)  = fs::remove_dir_all(destination.as_ref()) {
+                    log::error!("Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually", destination.as_ref().display());
                 }
             }
 
