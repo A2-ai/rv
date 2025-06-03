@@ -41,10 +41,7 @@ Some common reasons a dependency may not be able to be migrated:
 > * If the exact version is required, use the url dependency format to directly access the archive (i.e. {name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr_1.1.3.tar.gz"})
 > * If the exact version is not required, add the dependency to the config
 
-After migration of the renv.lock file is complete, we recommend:
-    1. Removing `source("renv/activate.R")` from the projects `.Rprofile`
-    2. Running `rv activate`
-    3. Restarting R to set your library paths to rv
+For interactive R sessions, we recommend restarting R after initializing your project to ensure your library paths are set properly
 
 ## Installing packages
 `rv sync` is used to synchronize the lock file, configuration file, and library of a project. So if a new package is added to your configuration file, `rv sync` will install the package and its dependencies.
@@ -58,7 +55,9 @@ Additionally, you can use the following flags:
 For more complex edits, including specific sources and other configuration, you can directly edit the configuration file and re-run `rv sync`.
 
 ## Upgrading packages
-`rv` will default to installing packages from the source they were originally installed from. 
-This means if you installed a package from a repository, but later remove that repository from the configuration file, the package will still be installed from the original repository.
+`rv` will default to installing packages from the source they were originally installed from if the repository is still listed in the configuration file.
 
-To upgrade packages to be the latest versions available from the sources listed, use `rv upgrade`. If you'd like to see what will occur when you were to upgrade, run `rv upgrade --dry-run` or `rv plan --upgrade`.
+`rv upgrade` will ignore the lockfile, re-resolve, and install any changed packages. This does not necessarily upgrade to the latest version available across repositories, simply your project state will
+be upgraded as if there was no lockfile present.
+
+ If you'd like to see what will occur when you were to upgrade, run `rv upgrade --dry-run` or `rv plan --upgrade`.

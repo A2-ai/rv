@@ -20,22 +20,21 @@ const INITIAL_CONFIG: &str = r#"[project]
 name = "%project_name%"
 r_version = "%r_version%"
 
-# any CRAN-type repository, order matters. Additional ability to force source package installation
-# Example: {alias = "CRAN", url = "https://cran.r-project.org", force_source = true}
+# A list of repositories to fetch packages from. Order matters: we will try to get a package from each repository in order.
+# The alias is only used in this file if you want to specifically require a dependency to come from a certain repository.
+# Example: { alias = "PPM", url = "https://packagemanager.posit.co/cran/latest" },
 repositories = [
 %repositories%
 ]
 
-# package to install and any specifications. Any descriptive dependency can have the `install_suggestions` specification
+# A list of packages to install and any additional configuration
 # Examples:
     # "dplyr",
-    # {name = "dplyr", repository = "CRAN", force_source = true},
+    # {name = "dplyr", repository = "CRAN"},
     # {name = "dplyr", git = "https://github.com/tidyverse/dplyr.git", tag = "v1.1.4"},
-    # {name = "dplyr", path = "/path/to/local/dplyr"},
 dependencies = [
 %dependencies%
 ]
-
 "#;
 
 /// This function initializes a given directory to be an rv project. It does this by:
