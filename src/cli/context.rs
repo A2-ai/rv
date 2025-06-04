@@ -7,7 +7,7 @@ use crate::package::Package;
 use crate::utils::create_spinner;
 use crate::{
     Config, DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
-    consts::LOCKFILE_NAME, find_r_version_command, get_package_file_urls, http, system_req, timeit,
+    find_r_version_command, get_package_file_urls, http, system_req, timeit,
 };
 use anyhow::{Result, anyhow, bail};
 use fs_err as fs;
@@ -61,7 +61,7 @@ impl CliContext {
         };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
-        let lockfile_path = project_dir.join(LOCKFILE_NAME);
+        let lockfile_path = project_dir.join(config.lockfile_name());
         let lockfile = if lockfile_path.exists() && config.use_lockfile() {
             if let Some(lockfile) = Lockfile::load(&lockfile_path)? {
                 if !lockfile.r_version().hazy_match(&r_version) {
@@ -151,7 +151,7 @@ impl CliContext {
     }
 
     pub fn lockfile_path(&self) -> PathBuf {
-        self.project_dir.join(LOCKFILE_NAME)
+        self.project_dir.join(self.config.lockfile_name())
     }
 
     pub fn library_path(&self) -> &Path {

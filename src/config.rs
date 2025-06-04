@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::consts::LOCKFILE_NAME;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
@@ -257,6 +258,7 @@ pub struct Config {
     pub(crate) library: Option<PathBuf>,
     #[serde(default = "default_true")]
     pub(crate) use_lockfile: bool,
+    lockfile_name: Option<String>,
     pub(crate) project: Project,
 }
 
@@ -358,6 +360,10 @@ impl Config {
 
     pub fn library(&self) -> Option<&PathBuf> {
         self.library.as_ref()
+    }
+
+    pub fn lockfile_name(&self) -> &str {
+        self.lockfile_name.as_deref().unwrap_or(LOCKFILE_NAME)
     }
 }
 
