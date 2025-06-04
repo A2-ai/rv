@@ -6,7 +6,7 @@ use std::{
 
 use serde::Serialize;
 
-use crate::system_req::{SysDep};
+use crate::system_req::SysDep;
 use crate::utils::get_max_workers;
 use crate::{
     DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,

@@ -9,12 +9,12 @@ use serde_json::json;
 
 use rv::cli::utils::timeit;
 use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv};
+use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
     ResolvedDependency, Resolver, SyncChange, SyncHandler, Version, activate, add_packages,
     deactivate, read_and_verify_config, system_req,
 };
-use rv::system_req::SysDep;
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -120,6 +120,24 @@ pub enum Command {
     },
     /// Deactivate an rv project
     Deactivate,
+    /// List the system dependencies needed by the dependency tree.
+    /// This is currently only supported on Ubuntu/Debian, it will return an empty result
+    /// anywhere else.
+    ///
+    /// The present/absent status may be wrong if a dependency was installed in
+    /// a way that we couldn't detect (eg not via the main package manager of the OS).
+    /// If a dependency that you know is installed but is showing up as
+    Sysdeps {
+        /// Only show the dependencies not detected on the system.
+        #[clap(long)]
+        only_absent: bool,
+
+        /// Ignore the dependencies in that list from the output.
+        /// For example if you have installed pandoc manually without using the OS package manager
+        /// and want to not return it from this command.
+        #[clap(long)]
+        ignore: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -648,8 +666,11 @@ fn try_main() -> Result<()> {
             let sys_deps: Vec<_> = system_req::check_installation_status(
                 &context.cache.system_info,
                 &project_sys_deps,
-            ).into_iter().map(|(name, status)| SysDep {name, status}).collect();
-            
+            )
+            .into_iter()
+            .map(|(name, status)| SysDep { name, status })
+            .collect();
+
             let summary = ProjectSummary::new(
                 &context.library,
                 &resolved,
@@ -685,6 +706,55 @@ fn try_main() -> Result<()> {
                 println!("{{}}");
             } else {
                 println!("rv deactivated");
+            }
+        }
+        Command::Sysdeps {
+            only_absent,
+            ignore,
+        } => {
+            let mut context = CliContext::new(&cli.config_file, None)?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            context.load_databases_if_needed()?;
+            context.load_system_requirements()?;
+
+            let resolved = resolve_dependencies(&context, &ResolveMode::Default);
+            let project_sys_deps: HashSet<_> = resolved
+                .iter()
+                .flat_map(|x| context.system_dependencies.get(x.name.as_ref()))
+                .flatten()
+                .map(|x| x.as_str())
+                .collect();
+
+            let sys_deps_status = system_req::check_installation_status(
+                &context.cache.system_info,
+                &project_sys_deps,
+            );
+
+            let mut sys_deps_names: Vec<_> = sys_deps_status
+                .into_iter()
+                .filter(|(name, status)| {
+                    // Filter by only_absent flag
+                    if only_absent && *status != SysInstallationStatus::Absent {
+                        return false;
+                    }
+                    
+                    // Filter by ignore list
+                    !ignore.contains(name)
+                })
+                .map(|(name, _)| name)
+                .collect();
+
+            // Sort by name for consistent output
+            sys_deps_names.sort_by(|a, b| a.cmp(&b));
+
+            if output_format.is_json() {
+                println!("{}", json!(sys_deps_names));
+            } else {
+                for name in &sys_deps_names {
+                    println!("{name}");
+                }
             }
         }
     }
