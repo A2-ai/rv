@@ -46,7 +46,13 @@ pub(crate) fn install_package(
             _ => pkg_paths.source,
         };
 
-        r_cmd.install(&source_path, library_dir, &pkg_paths.binary, cancellation)?;
+        r_cmd.install(
+            &source_path,
+            library_dir,
+            &pkg_paths.binary,
+            cancellation,
+            &pkg.env_vars,
+        )?;
         let metadata = LocalMetadata::Sha(sha.to_owned());
         metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
     }

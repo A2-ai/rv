@@ -36,6 +36,7 @@ pub struct ResolvedDependency<'d> {
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
     // Only set for local dependencies. This is the full resolved path to a directory/tarball
     pub(crate) local_resolved_path: Option<PathBuf>,
+    pub(crate) env_vars: HashMap<&'d str, &'d str>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -87,6 +88,7 @@ impl<'d> ResolvedDependency<'d> {
             // it might come from a remote but we don't keep track of that
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         }
     }
 
@@ -141,6 +143,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -175,6 +178,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: package.remotes.clone(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -207,6 +211,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: package.remotes.clone(),
             from_remote: false,
             local_resolved_path: Some(local_resolved_path),
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -238,6 +243,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: package.remotes.clone(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -264,6 +270,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -274,7 +281,7 @@ impl fmt::Debug for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={})",
+            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={}, env_vars=[{}])",
             self.name,
             self.version.original,
             self.source,
@@ -282,6 +289,11 @@ impl fmt::Debug for ResolvedDependency<'_> {
             self.path.as_deref().unwrap_or(""),
             self.from_lockfile,
             self.from_remote,
+            self.env_vars
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(" ")
         )
     }
 }

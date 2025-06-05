@@ -138,6 +138,7 @@ mod tests {
             from_remote: false,
             remotes: HashMap::new(),
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         }
     }
 
