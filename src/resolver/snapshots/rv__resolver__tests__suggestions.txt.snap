@@ -2,11 +2,11 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-A3=1.0.0 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-xtable=1.8-4 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-pbapply=1.7-2 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-randomForest=4.7-1.2 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-e1071=1.7-16 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-class=7.3-22 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-proxy=0.4-27 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false)
-MASS=7.3-60 (builtin, type=binary, path='', from_lockfile=false, from_remote=false)
+A3=1.0.0 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+xtable=1.8-4 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+pbapply=1.7-2 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+randomForest=4.7-1.2 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+e1071=1.7-16 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+class=7.3-22 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+proxy=0.4-27 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+MASS=7.3-60 (builtin, type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])

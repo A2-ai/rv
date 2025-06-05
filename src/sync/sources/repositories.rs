@@ -24,7 +24,7 @@ pub(crate) fn install_package(
     let compile_package = || {
         let source_path = pkg_paths.source.join(pkg.name.as_ref());
         log::debug!("Compiling package from {}", source_path.display());
-        r_cmd.install(&source_path, library_dir, &pkg_paths.binary)
+        r_cmd.install(&source_path, library_dir, &pkg_paths.binary, &pkg.env_vars)
     };
 
     match pkg.installation_status {

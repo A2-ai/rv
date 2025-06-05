@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -26,6 +27,7 @@ pub trait RCmd: Send + Sync {
         folder: impl AsRef<Path>,
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
+        env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
@@ -115,6 +117,7 @@ impl RCmd for RCommandLine {
         source_folder: impl AsRef<Path>,
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
+        env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError> {
         // Always delete destination if it exists first to avoid issues with incomplete installs
         // except if it's the same as the library. This happens for local packages
@@ -134,7 +137,7 @@ impl RCmd for RCommandLine {
             source: InstallErrorKind::TempDir(e),
         })?;
         let link = LinkMode::symlink_if_possible();
-        link.link_files("tmp_build", source_folder, tmp_dir.path())
+        link.link_files("tmp_build", &source_folder, tmp_dir.path())
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
@@ -167,9 +170,23 @@ impl RCmd for RCommandLine {
             .env("R_LIBS_SITE", &library)
             .env("R_LIBS_USER", &library)
             .env("_R_SHLIB_STRIP_", "true")
+            .envs(env_vars)
             .stdout(writer)
             .stderr(writer_clone);
-
+        log::debug!(
+            "Compiling {} with env vars: {}",
+            source_folder.as_ref().display(),
+            command
+                .get_envs()
+                .into_iter()
+                .map(|(k, v)| format!(
+                    "{}={}",
+                    k.to_string_lossy(),
+                    v.unwrap_or_default().to_string_lossy()
+                ))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
         let mut handle = command.spawn().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
