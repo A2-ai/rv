@@ -50,6 +50,26 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
         found_r_vers.push(path_r.original);
     }
 
+    // Include matching rig-formatted R on the path if it exists
+    // e.g. R-<major>.<minor>-<arch>
+    let info = os_info::get();
+    let major_minor = r_version.major_minor();
+    if let Some(arch) = info.architecture() {
+        let rig_r_bin_path =
+            PathBuf::from(format!("R-{}.{}-{}", major_minor[0], major_minor[1], arch));
+        if let Ok(path_rig_r) = (RCommandLine {
+            r: Some(rig_r_bin_path),
+        })
+        .version()
+        {
+            if r_version.hazy_match(&path_rig_r) {
+                log::debug!("R {r_version} found on the path via rig pattern");
+                return Ok(RCommandLine { r: None });
+            }
+            found_r_vers.push(path_rig_r.original);
+        }
+    }
+
     // For windows, R installed/managed by rig is has the extension .bat
     if cfg!(windows) {
         if let Ok(rig_r) = (RCommandLine {
