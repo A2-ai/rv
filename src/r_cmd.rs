@@ -185,8 +185,11 @@ impl RCmd for RCommandLine {
             // Always delete the destination is an error happened
             if destination.as_ref().is_dir() {
                 // We ignore that error intentionally since we want to keep the one from CLI
-                if let Err(e)  = fs::remove_dir_all(destination.as_ref()) {
-                    log::error!("Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually", destination.as_ref().display());
+                if let Err(e) = fs::remove_dir_all(destination.as_ref()) {
+                    log::error!(
+                        "Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually",
+                        destination.as_ref().display()
+                    );
                 }
             }
 
