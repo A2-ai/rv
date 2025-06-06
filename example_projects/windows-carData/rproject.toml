@@ -1,0 +1,13 @@
+# Test that we catch that a package is a binary even if it has no R code (typically just data)
+
+[project]
+name = "No R folder"
+r_version = "4.4"
+
+repositories = [
+    { alias = "PPM", url = "https://packagemanager.posit.co/cran/2025-04-12"}
+]
+
+dependencies = [
+    "carData"
+]
