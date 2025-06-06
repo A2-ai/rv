@@ -9,3 +9,4 @@ example_projects/*/rv.lock
 !example_projects/archive/rv.lock
 from*/
 .DS_Store
+.aider*

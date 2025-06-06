@@ -8,6 +8,9 @@ Here's a snippet detailing every field in that configuration file.
 ```toml
 # If this is set to false, the lockfile won't be used for resolution. Defaults to true
 use_lockfile = true
+# You can override the default "rv.lock" filename for the lockfile. Useful if you need multiple
+# config files depending on the environment/R version.
+lockfile_name = "rv.lock"
 # By default the library will be created in the project directory in the `library` folder, and then namespaced
 # by R version as well as arch
 # You can however set it to any path you want and the packages will be installed directly inside that folder, without
