@@ -244,6 +244,12 @@ pub(crate) struct Project {
     /// install from the remote.
     #[serde(default)]
     prefer_repositories_for: Vec<String>,
+    /// This is where you add specific environment variables for each package compilation step,
+    /// they will be passed to R.
+    /// If a package is already available as binary and you don't mention you want to force source,
+    /// this will not be used
+    #[serde(default)]
+    packages_env_vars: HashMap<String, HashMap<String, String>>,
 }
 
 // That's the way to do it with serde :/
@@ -348,6 +354,10 @@ impl Config {
 
     pub fn prefer_repositories_for(&self) -> &[String] {
         &self.project.prefer_repositories_for
+    }
+
+    pub fn packages_env_vars(&self) -> &HashMap<String, HashMap<String, String>> {
+        &self.project.packages_env_vars
     }
 
     pub fn r_version(&self) -> &Version {

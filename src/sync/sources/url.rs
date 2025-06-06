@@ -29,7 +29,12 @@ pub(crate) fn install_package(
             "Building the package from URL in {}",
             download_path.display()
         );
-        r_cmd.install(&download_path, library_dir, &pkg_paths.binary)?;
+        r_cmd.install(
+            &download_path,
+            library_dir,
+            &pkg_paths.binary,
+            &pkg.env_vars,
+        )?;
     }
 
     let metadata = LocalMetadata::Sha(pkg.source.sha().to_owned());

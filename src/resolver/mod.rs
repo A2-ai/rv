@@ -101,6 +101,8 @@ pub struct Resolver<'d> {
     r_version: &'d Version,
     /// The base + recommended package versions for the R version we are using
     builtin_packages: &'d HashMap<String, Package>,
+    /// Env vars from the config
+    packages_env_vars: &'d HashMap<String, HashMap<String, String>>,
     /// If we have a lockfile for the resolver, we will skip looking at the database for any package
     /// listed in it
     lockfile: Option<&'d Lockfile>,
@@ -116,6 +118,7 @@ impl<'d> Resolver<'d> {
         r_version: &'d Version,
         builtin_packages: &'d HashMap<String, Package>,
         lockfile: Option<&'d Lockfile>,
+        packages_env_vars: &'d HashMap<String, HashMap<String, String>>,
     ) -> Self {
         Self {
             project_dir: project_dir.as_ref().into(),
@@ -124,6 +127,7 @@ impl<'d> Resolver<'d> {
             r_version,
             lockfile,
             builtin_packages,
+            packages_env_vars,
             show_progress_bar: false,
         }
     }
@@ -647,6 +651,12 @@ impl<'d> Resolver<'d> {
         for name in dependencies_only {
             result.remove_found(name);
         }
+
+        for dep in result.found.iter_mut() {
+            if let Some(args) = self.packages_env_vars.get(dep.name.as_ref()) {
+                dep.env_vars = args.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            }
+        }
         result.finalize();
 
         result
@@ -846,6 +856,7 @@ mod tests {
                 &r_version,
                 &builtin_packages,
                 Some(&lockfile),
+                config.packages_env_vars(),
             );
 
             let resolution = resolver.resolve(
