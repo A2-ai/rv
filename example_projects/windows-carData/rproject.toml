@@ -1,0 +1,11 @@
+[project]
+name = "carData"
+r_version = "4.4"
+
+repositories = [
+    { alias = "PPM", url = "https://packagemanager.posit.co/cran/2025-04-12" },
+]
+
+dependencies = [
+    "carData",
+]

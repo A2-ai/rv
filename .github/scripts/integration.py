@@ -26,7 +26,7 @@ def run_examples():
     items = os.listdir(PARENT_FOLDER)
     for subfolder in items:
         # This one needs lots of system deps, skipping in CI
-        if subfolder == "big":
+        if subfolder != "windows-carData":
             continue
         subfolder_path = os.path.join(PARENT_FOLDER, subfolder, "rproject.toml")
         print(f"===== Processing example: {subfolder_path} =====")

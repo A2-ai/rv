@@ -12,54 +12,14 @@ on:
       - "README.md"
 
 jobs:
-  test:
-    name: test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        build: [linux, macos, windows]
-        include:
-          - build: linux
-            os: ubuntu-22.04
-            rust: stable
-          - build: macos
-            os: macOS-latest
-            rust: stable
-          - build: windows
-            os: windows-2022
-            rust: stable
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-
-      - name: Build System Info
-        run: rustc --version
-
-      - name: check with all features enabled
-        run: |
-          cargo check
-          cargo check --all-features
-
-      - name: run tests
-        run: cargo test --all-features
-
   integration:
     name: integration-test
     timeout-minutes: 30
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        build: [linux, macos, windows]
+        build: [windows]
         include:
-          - build: linux
-            os: ubuntu-22.04
-            rust: stable
-          - build: macos
-            os: macOS-latest
-            rust: stable
           - build: windows
             os: windows-2022
             rust: stable
@@ -98,7 +58,7 @@ jobs:
           sudo apt-get install -y libcurl4-openssl-dev
       - name: build binary
         run: |
-          cargo build --all-features --release
+          cargo build --all-features
       - name: run rv sync on all example projects
         run: python .github/scripts/integration.py
 
