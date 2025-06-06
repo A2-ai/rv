@@ -41,8 +41,6 @@ crossbeam = "0.8.4"
 num_cpus = "1.16.0"
 # some of the progress bars happen in the library
 indicatif = "0.17.11"
-# To pipe stdout and stderr to a single output for R compilation
-os_pipe = "1"
 log = "0.4"
 
 clap = { version = "4", features = ["derive"], optional = true }
@@ -51,6 +49,8 @@ rayon = { version = "1", optional = true }
 anyhow = { version = "1", optional = true }
 env_logger = { version = "0.11", optional = true }
 jiff = { version = "0.2", optional = true }
+ctrlc = { version = "3", optional = true, features = ["termination"] }
+libc = "0.2.172"
 
 
 [features]
@@ -61,6 +61,7 @@ cli = [
     "dep:clap-verbosity-flag",
     "dep:env_logger",
     "dep:jiff",
+    "dep:ctrlc",
 ]
 
 [dev-dependencies]

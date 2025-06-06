@@ -104,10 +104,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))
     "#;
 
-    let (mut reader, writer) = os_pipe::pipe().map_err(|e| InitError {
-        source: InitErrorKind::Command(e),
-    })?;
-    let writer_clone = writer.try_clone().map_err(|e| InitError {
+    let (mut recv, send) = std::io::pipe().map_err(|e| InitError {
         source: InitErrorKind::Command(e),
     })?;
 
@@ -115,8 +112,10 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     command
         .arg("-e")
         .arg(r_code)
-        .stdout(writer)
-        .stderr(writer_clone);
+        .stdout(send.try_clone().map_err(|e| InitError {
+            source: InitErrorKind::Command(e),
+        })?)
+        .stderr(send);
 
     let mut handle = command.spawn().map_err(|e| InitError {
         source: InitErrorKind::Command(e),
@@ -125,7 +124,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     drop(command);
 
     let mut output = String::new();
-    reader.read_to_string(&mut output).unwrap();
+    recv.read_to_string(&mut output).unwrap();
     let status = handle.wait().unwrap();
 
     if !status.success() {
