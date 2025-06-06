@@ -24,6 +24,15 @@ def run_cmd(cmd, path, json = False):
 
 def run_examples():
     items = os.listdir(PARENT_FOLDER)
+    subprocess.run([
+        "Rscript", "-e",
+        'install.packages("carData", repos="https://packagemanager.posit.co/cran/2025-04-12")'
+    ], check=True)
+    subprocess.run([
+        "Rscript", "-e",
+        'remove.packages("carData")'
+    ], check=True)
+    
     for subfolder in items:
         # This one needs lots of system deps, skipping in CI
         if subfolder != "windows-carData":
