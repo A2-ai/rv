@@ -8,7 +8,7 @@ SKIP_PLAN_CHECK = ["no-lockfile", "url", "custom-lib-path"]
 
 def run_cmd(cmd, path, json = False):
     print(f">> Running rv {cmd}")
-    command = ["./target/release/rv", "--config-file", path, "-vvv"] + (["--json"] if json else []) + [cmd]
+    command = ["./target/debug/rv", "--config-file", path, "-vvv"] + (["--json"] if json else []) + [cmd]
     result = subprocess.run(command, capture_output=True, text=True)
     if not json:
         print(result.stdout)
