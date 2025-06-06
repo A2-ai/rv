@@ -9,5 +9,5 @@ repositories = [
 ]
 
 dependencies = [
-    "carDate"
+    "carData"
 ]
