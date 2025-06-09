@@ -2,4 +2,4 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-R6=2.5.1 (repository(url: http://cran/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[SUPPORTED=1 ENV=VAR])
+R6=2.5.1 (repository(url: http://cran/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[ENV=VAR, SUPPORTED=1])

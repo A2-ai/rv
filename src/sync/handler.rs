@@ -13,7 +13,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::lockfile::Source;
 use crate::package::PackageType;
-use crate::r_cmd::kill_all_r_processes;
 use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
@@ -21,6 +20,9 @@ use crate::utils::get_max_workers;
 use crate::{
     BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
 };
+
+#[cfg(feature = "cli")]
+use crate::r_cmd::kill_all_r_processes;
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {

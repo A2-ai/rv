@@ -72,6 +72,8 @@ fn spawn_isolated_r_command(r_path: &Option<PathBuf>) -> Command {
     command
 }
 
+
+#[cfg(feature = "cli")]
 pub fn kill_all_r_processes() {
     let process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
 

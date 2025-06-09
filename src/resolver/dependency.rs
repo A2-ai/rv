@@ -279,6 +279,11 @@ impl<'d> ResolvedDependency<'d> {
 
 impl fmt::Debug for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut vars = self.env_vars
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>();
+        vars.sort();
         write!(
             f,
             "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={}, env_vars=[{}])",
@@ -289,11 +294,7 @@ impl fmt::Debug for ResolvedDependency<'_> {
             self.path.as_deref().unwrap_or(""),
             self.from_lockfile,
             self.from_remote,
-            self.env_vars
-                .iter()
-                .map(|(k, v)| format!("{k}={v}"))
-                .collect::<Vec<_>>()
-                .join(" ")
+            vars.join(", "),
         )
     }
 }
