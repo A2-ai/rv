@@ -1,11 +1,15 @@
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
+
+use fs_err as fs;
+
 use crate::git::{GitReference, GitRemote};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
 use crate::{Cancellation, CommandExecutor, DiskCache, RCmd, ResolvedDependency};
-use std::path::Path;
-use std::sync::Arc;
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
@@ -19,12 +23,8 @@ pub(crate) fn install_package(
 
     // We will have the source version since we needed to clone it to get the DESCRIPTION file
     if !pkg.installation_status.binary_available() {
-        let (repo_url, sha) = match &pkg.source {
-            Source::Git { git, sha, .. } => (git.url(), sha),
-            Source::RUniverse { git, sha, .. } => (git.url(), sha),
-            _ => unreachable!(),
-        };
-
+        let repo_url = pkg.source.git_url().unwrap();
+        let sha = pkg.source.sha();
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
         let remote = GitRemote::new(repo_url);
@@ -46,13 +46,21 @@ pub(crate) fn install_package(
             _ => pkg_paths.source,
         };
 
-        r_cmd.install(
+        let output = r_cmd.install(
             &source_path,
             library_dir,
             &pkg_paths.binary,
             cancellation,
             &pkg.env_vars,
         )?;
+
+        let log_path = cache.get_build_log_path(&pkg.source, None, None);
+        if let Some(parent) = log_path.parent() {
+            fs::create_dir_all(parent)?;
+            let mut f = fs::File::create(log_path)?;
+            f.write_all(output.as_bytes())?;
+        }
+
         let metadata = LocalMetadata::Sha(sha.to_owned());
         metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
     }
