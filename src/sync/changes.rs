@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
+use serde::{Serialize, Serializer};
+
+use crate::DiskCache;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::system_req::{SysDep, SysInstallationStatus};
-use serde::{Serialize, Serializer};
 
 fn serialize_duration_as_ms<S>(
     duration: &Option<Duration>,
@@ -122,6 +125,22 @@ impl SyncChange {
             }
         } else {
             format!("- {}", self.name)
+        }
+    }
+
+    pub fn log_path(&self, cache: &DiskCache) -> PathBuf {
+        if let Some(s) = &self.source {
+            if s.is_repo() {
+                cache.get_build_log_path(
+                    s,
+                    Some(&self.name),
+                    Some(&self.version.clone().unwrap().as_str()),
+                )
+            } else {
+                cache.get_build_log_path(s, None, None)
+            }
+        } else {
+            unreachable!("Should not be called with uninstalled deps")
         }
     }
 }

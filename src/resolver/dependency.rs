@@ -279,7 +279,8 @@ impl<'d> ResolvedDependency<'d> {
 
 impl fmt::Debug for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut vars = self.env_vars
+        let mut vars = self
+            .env_vars
             .iter()
             .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>();

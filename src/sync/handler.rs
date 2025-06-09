@@ -120,6 +120,7 @@ impl<'a> SyncHandler<'a> {
                 dep,
                 self.project_dir,
                 &self.staging_path,
+                self.cache,
                 r_cmd,
                 cancellation,
             ),

@@ -1,10 +1,14 @@
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
+
+use fs_err as fs;
+
 use crate::library::LocalMetadata;
 use crate::package::PackageType;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
 use crate::{Cancellation, DiskCache, RCmd, ResolvedDependency};
-use std::path::Path;
-use std::sync::Arc;
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
@@ -30,13 +34,20 @@ pub(crate) fn install_package(
             "Building the package from URL in {}",
             download_path.display()
         );
-        r_cmd.install(
+        let output = r_cmd.install(
             &download_path,
             library_dir,
             &pkg_paths.binary,
             cancellation,
             &pkg.env_vars,
         )?;
+
+        let log_path = cache.get_build_log_path(&pkg.source, None, None);
+        if let Some(parent) = log_path.parent() {
+            fs::create_dir_all(parent)?;
+            let mut f = fs::File::create(log_path)?;
+            f.write_all(output.as_bytes())?;
+        }
     }
 
     let metadata = LocalMetadata::Sha(pkg.source.sha().to_owned());
