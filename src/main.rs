@@ -208,6 +208,7 @@ fn resolve_dependencies<'a>(
         &context.r_version,
         &context.builtin_packages,
         lockfile.as_ref(),
+        context.config.packages_env_vars(),
     );
 
     if context.show_progress_bar {

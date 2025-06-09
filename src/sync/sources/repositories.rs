@@ -31,6 +31,7 @@ pub(crate) fn install_package(
             library_dir,
             &pkg_paths.binary,
             cancellation.clone(),
+            &pkg.env_vars,
         )
     };
 

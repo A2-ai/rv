@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -35,6 +36,7 @@ pub trait RCmd: Send + Sync {
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
+        env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
@@ -70,6 +72,8 @@ fn spawn_isolated_r_command(r_path: &Option<PathBuf>) -> Command {
     command
 }
 
+
+#[cfg(feature = "cli")]
 pub fn kill_all_r_processes() {
     let process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
 
@@ -175,6 +179,7 @@ impl RCmd for RCommandLine {
         library: impl AsRef<Path>,
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
+        env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError> {
         // Always delete destination if it exists first to avoid issues with incomplete installs
         // except if it's the same as the library. This happens for local packages
@@ -226,8 +231,22 @@ impl RCmd for RCommandLine {
                 send.try_clone()
                     .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?,
             )
-            .stderr(send);
-
+            .stderr(send)
+            .envs(env_vars);
+        log::debug!(
+            "Compiling {} with env vars: {}",
+            source_folder.as_ref().display(),
+            command
+                .get_envs()
+                .into_iter()
+                .map(|(k, v)| format!(
+                    "{}={}",
+                    k.to_string_lossy(),
+                    v.unwrap_or_default().to_string_lossy()
+                ))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
         let mut handle = command.spawn().map_err(|e| InstallError {
             source: InstallErrorKind::Command(e),
         })?;
