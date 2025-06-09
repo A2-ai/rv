@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::{FromStr, Utf8Error};
@@ -36,6 +36,7 @@ pub struct ResolvedDependency<'d> {
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
     // Only set for local dependencies. This is the full resolved path to a directory/tarball
     pub(crate) local_resolved_path: Option<PathBuf>,
+    pub(crate) env_vars: HashMap<&'d str, &'d str>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -48,6 +49,17 @@ impl<'d> ResolvedDependency<'d> {
 
     pub fn is_local(&self) -> bool {
         matches!(self.source, Source::Local { .. })
+    }
+
+    pub fn all_dependencies_names(&'d self) -> Vec<&'d str> {
+        let mut deps: HashSet<_> = self.dependencies.iter().map(|x| x.name()).collect();
+        if self.install_suggests {
+            for s in &self.suggests {
+                deps.insert(s.name());
+            }
+        }
+
+        deps.into_iter().collect()
     }
 
     /// We found the dependency from the lockfile
@@ -76,6 +88,7 @@ impl<'d> ResolvedDependency<'d> {
             // it might come from a remote but we don't keep track of that
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         }
     }
 
@@ -130,6 +143,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -164,6 +178,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: package.remotes.clone(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -196,6 +211,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: package.remotes.clone(),
             from_remote: false,
             local_resolved_path: Some(local_resolved_path),
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -227,6 +243,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: package.remotes.clone(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -253,6 +270,7 @@ impl<'d> ResolvedDependency<'d> {
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
+            env_vars: HashMap::new(),
         };
 
         (res, deps)
@@ -261,9 +279,14 @@ impl<'d> ResolvedDependency<'d> {
 
 impl fmt::Debug for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut vars = self.env_vars
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>();
+        vars.sort();
         write!(
             f,
-            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={})",
+            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={}, env_vars=[{}])",
             self.name,
             self.version.original,
             self.source,
@@ -271,6 +294,7 @@ impl fmt::Debug for ResolvedDependency<'_> {
             self.path.as_deref().unwrap_or(""),
             self.from_lockfile,
             self.from_remote,
+            vars.join(", "),
         )
     }
 }

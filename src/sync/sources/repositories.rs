@@ -1,8 +1,8 @@
 //! Download and install packages from repositories like CRAN, posit etc
 
-use std::path::Path;
-
 use fs_err as fs;
+use std::path::Path;
+use std::sync::Arc;
 
 use crate::cache::InstallationStatus;
 use crate::http::Http;
@@ -10,7 +10,8 @@ use crate::package::PackageType;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
 use crate::{
-    DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls, is_binary_package,
+    Cancellation, DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls,
+    is_binary_package,
 };
 
 pub(crate) fn install_package(
@@ -18,13 +19,20 @@ pub(crate) fn install_package(
     library_dir: &Path,
     cache: &DiskCache,
     r_cmd: &impl RCmd,
+    cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let pkg_paths =
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
     let compile_package = || {
         let source_path = pkg_paths.source.join(pkg.name.as_ref());
         log::debug!("Compiling package from {}", source_path.display());
-        r_cmd.install(&source_path, library_dir, &pkg_paths.binary)
+        r_cmd.install(
+            &source_path,
+            library_dir,
+            &pkg_paths.binary,
+            cancellation.clone(),
+            &pkg.env_vars,
+        )
     };
 
     match pkg.installation_status {

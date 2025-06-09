@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 use toml_edit::{InlineTable, Value};
+use walkdir::WalkDir;
 
 mod builtin;
 mod description;
@@ -119,7 +120,7 @@ impl Package {
 
         // The deps in linkingTo can be listed already in depends
         for dep in &self.linking_to {
-            if out.iter().find(|x| x.name() == dep.name()).is_none() {
+            if !out.iter().any(|x| x.name() == dep.name()) {
                 out.push(dep);
             }
         }
@@ -145,5 +146,20 @@ impl Package {
 
 /// Returns whether this folder contains compiled R files
 pub fn is_binary_package(path: impl AsRef<Path>, name: &str) -> bool {
-    path.as_ref().join("R").join(format!("{name}.rdx")).exists()
+    let name_rdx = format!("{name}.rdx");
+
+    for entry in WalkDir::new(path) {
+        match entry {
+            Ok(e) => {
+                if e.file_type().is_file() && e.file_name().to_string_lossy() == name_rdx {
+                    return true;
+                }
+            }
+            Err(err) => {
+                eprintln!("Failed to read entry: {}", err);
+            }
+        }
+    }
+
+    false
 }

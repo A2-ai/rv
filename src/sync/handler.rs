@@ -1,11 +1,14 @@
-use crossbeam::{channel, thread};
-use fs_err as fs;
-use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use crossbeam::{channel, thread};
+#[cfg(feature = "cli")]
+use ctrlc;
+use fs_err as fs;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::lockfile::Source;
@@ -14,7 +17,12 @@ use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::get_max_workers;
-use crate::{BuildPlan, BuildStep, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency};
+use crate::{
+    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
+};
+
+#[cfg(feature = "cli")]
+use crate::r_cmd::kill_all_r_processes;
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
@@ -86,28 +94,42 @@ impl<'a> SyncHandler<'a> {
         &self,
         dep: &ResolvedDependency,
         r_cmd: &impl RCmd,
+        cancellation: Arc<Cancellation>,
     ) -> Result<(), SyncError> {
         if self.dry_run {
             return Ok(());
         }
 
         match dep.source {
-            Source::Repository { .. } => {
-                sources::repositories::install_package(dep, &self.staging_path, self.cache, r_cmd)
-            }
+            Source::Repository { .. } => sources::repositories::install_package(
+                dep,
+                &self.staging_path,
+                self.cache,
+                r_cmd,
+                cancellation,
+            ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,
                 &self.staging_path,
                 self.cache,
                 r_cmd,
                 &GitExecutor {},
+                cancellation,
             ),
-            Source::Local { .. } => {
-                sources::local::install_package(dep, self.project_dir, &self.staging_path, r_cmd)
-            }
-            Source::Url { .. } => {
-                sources::url::install_package(dep, &self.staging_path, self.cache, r_cmd)
-            }
+            Source::Local { .. } => sources::local::install_package(
+                dep,
+                self.project_dir,
+                &self.staging_path,
+                r_cmd,
+                cancellation,
+            ),
+            Source::Url { .. } => sources::url::install_package(
+                dep,
+                &self.staging_path,
+                self.cache,
+                r_cmd,
+                cancellation,
+            ),
             Source::Builtin { .. } => Ok(()),
         }
     }
@@ -176,6 +198,33 @@ impl<'a> SyncHandler<'a> {
         r_cmd: &impl RCmd,
     ) -> Result<Vec<SyncChange>, SyncError> {
         // Clean up at all times, even with a dry run
+        let cancellation = Arc::new(Cancellation::default());
+
+        #[cfg(feature = "cli")]
+        {
+            let cancellation_clone = Arc::clone(&cancellation);
+            let staging_path = self.staging_path.clone();
+            ctrlc::set_handler(move || {
+                cancellation_clone.cancel();
+                if cancellation_clone.is_soft_cancellation() {
+                    println!(
+                        "Finishing current operations... Press Ctrl+C again to exit immediately."
+                    );
+                } else if cancellation_clone.is_hard_cancellation() {
+                    kill_all_r_processes();
+                    if staging_path.is_dir() {
+                        fs::remove_dir_all(&staging_path).expect("Failed to remove staging path");
+                    }
+                    ::std::process::exit(130);
+                }
+            })
+            .expect("Error setting Ctrl-C handler");
+        }
+
+        if cancellation.is_cancelled() {
+            return Ok(Vec::new());
+        }
+
         if self.staging_path.is_dir() {
             fs::remove_dir_all(&self.staging_path)?;
         }
@@ -231,6 +280,7 @@ impl<'a> SyncHandler<'a> {
 
         let (ready_sender, ready_receiver) = channel::unbounded();
         let (done_sender, done_receiver) = channel::unbounded();
+
         let plan = Arc::new(Mutex::new(plan));
         // Initial deps we can install immediately
         {
@@ -286,12 +336,16 @@ impl<'a> SyncHandler<'a> {
                 let deps_to_copy_clone = Arc::clone(&deps_to_copy);
                 let pb_clone = Arc::clone(&pb);
                 let installing_clone = Arc::clone(&installing);
+                let cancellation_clone = cancellation.clone();
 
                 s.spawn(move |_| {
                     while let Ok(dep) = ready_receiver.recv() {
-                        if has_errors_clone.load(Ordering::Relaxed) {
+                        if has_errors_clone.load(Ordering::Relaxed)
+                            || cancellation_clone.is_cancelled()
+                        {
                             break;
                         }
+
                         installing_clone.lock().unwrap().insert(dep.name.clone());
                         if !self.dry_run {
                             if self.show_progress_bar {
@@ -313,7 +367,7 @@ impl<'a> SyncHandler<'a> {
                         let install_result = if deps_to_copy_clone.contains(dep.name.as_ref()) {
                             self.copy_package(dep)
                         } else {
-                            self.install_package(dep, r_cmd)
+                            self.install_package(dep, r_cmd, cancellation_clone.clone())
                         };
 
                         match install_result {
@@ -332,7 +386,9 @@ impl<'a> SyncHandler<'a> {
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);
                                 drop(plan);
-                                done_sender.send(sync_change).unwrap();
+                                if done_sender.send(sync_change).is_err() {
+                                    break; // Channel closed
+                                }
                             }
                             Err(e) => {
                                 has_errors_clone.store(true, Ordering::Relaxed);
@@ -403,7 +459,13 @@ impl<'a> SyncHandler<'a> {
                 fs::remove_dir_all(self.library.path())?;
             }
 
-            fs::rename(&self.staging_path, self.library.path())?;
+            match fs::rename(&self.staging_path, self.library.path()) {
+                Ok(_) => (),
+                Err(e) => {
+                    fs::remove_dir_all(self.library.path())?;
+                    return Err(e.into());
+                }
+            }
         }
 
         // Sort all changes by a-z and fall back on installed status for things with the same name

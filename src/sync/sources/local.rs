@@ -1,19 +1,20 @@
-use std::path::Path;
-
 use fs_err as fs;
+use std::path::Path;
+use std::sync::Arc;
 
 use crate::fs::{mtime_recursive, untar_archive};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
-use crate::{RCmd, ResolvedDependency, is_binary_package};
+use crate::{Cancellation, RCmd, ResolvedDependency, is_binary_package};
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
     project_dir: &Path,
     library_dir: &Path,
     r_cmd: &impl RCmd,
+    cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let (local_path, sha) = match &pkg.source {
         Source::Local { path, sha } => (path, sha.clone()),
@@ -43,7 +44,13 @@ pub(crate) fn install_package(
         )?;
     } else {
         log::debug!("Building the local package in {}", actual_path.display());
-        r_cmd.install(&actual_path, library_dir, library_dir)?;
+        r_cmd.install(
+            &actual_path,
+            library_dir,
+            library_dir,
+            cancellation,
+            &pkg.env_vars,
+        )?;
     }
 
     // If it's a dir, save the dir mtime and if it's a tarball its sha

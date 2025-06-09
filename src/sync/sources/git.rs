@@ -3,8 +3,9 @@ use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
-use crate::{CommandExecutor, DiskCache, RCmd, ResolvedDependency};
+use crate::{Cancellation, CommandExecutor, DiskCache, RCmd, ResolvedDependency};
 use std::path::Path;
+use std::sync::Arc;
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
@@ -12,6 +13,7 @@ pub(crate) fn install_package(
     cache: &DiskCache,
     r_cmd: &impl RCmd,
     git_exec: &(impl CommandExecutor + Clone + 'static),
+    cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let pkg_paths = cache.get_package_paths(&pkg.source, None, None);
 
@@ -44,7 +46,13 @@ pub(crate) fn install_package(
             _ => pkg_paths.source,
         };
 
-        r_cmd.install(&source_path, library_dir, &pkg_paths.binary)?;
+        r_cmd.install(
+            &source_path,
+            library_dir,
+            &pkg_paths.binary,
+            cancellation,
+            &pkg.env_vars,
+        )?;
         let metadata = LocalMetadata::Sha(sha.to_owned());
         metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
     }

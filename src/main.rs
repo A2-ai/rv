@@ -8,12 +8,12 @@ use serde::Serialize;
 use serde_json::json;
 
 use rv::cli::utils::timeit;
-use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv};
+use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv, tree};
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
-    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
-    ResolvedDependency, Resolver, SyncChange, SyncHandler, Version, activate, add_packages,
-    deactivate, read_and_verify_config, system_req,
+    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
+    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, deactivate,
+    read_and_verify_config, system_req,
 };
 
 #[derive(Parser)]
@@ -138,6 +138,18 @@ pub enum Command {
         #[clap(long)]
         ignore: Vec<String>,
     },
+    /// Shows the project packages in tree format
+    Tree {
+        #[clap(long)]
+        /// How deep are we going in the tree: 1 == only root deps, 2 == root deps + their direct dep etc
+        /// Defaults to showing everything
+        depth: Option<usize>,
+        #[clap(long)]
+        /// Whether to not display the system dependencies on each leaf.
+        /// This only does anything on supported platforms (eg some Linux), it's already
+        /// hidden otherwise
+        hide_system_deps: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -177,7 +189,8 @@ impl OutputFormat {
 fn resolve_dependencies<'a>(
     context: &'a CliContext,
     resolve_mode: &ResolveMode,
-) -> Vec<ResolvedDependency<'a>> {
+    exit_on_failure: bool,
+) -> Resolution<'a> {
     let lockfile = match resolve_mode {
         ResolveMode::Default => &context.lockfile,
         ResolveMode::FullUpgrade => &None,
@@ -195,20 +208,22 @@ fn resolve_dependencies<'a>(
         &context.r_version,
         &context.builtin_packages,
         lockfile.as_ref(),
+        context.config.packages_env_vars(),
     );
 
     if context.show_progress_bar {
         resolver.show_progress_bar();
     }
 
-    let resolution = resolver.resolve(
+    let mut resolution = resolver.resolve(
         context.config.dependencies(),
         context.config.prefer_repositories_for(),
         &context.cache,
         &GitExecutor {},
         &Http {},
     );
-    if !resolution.is_success() {
+
+    if !resolution.is_success() && exit_on_failure {
         eprintln!("Failed to resolve all dependencies");
         let req_error_messages = resolution.req_error_messages();
 
@@ -225,8 +240,8 @@ fn resolve_dependencies<'a>(
 
     // If upgrade and there is a lockfile, we want to adjust the resolved dependencies s.t. if the resolved dep has the same
     // name and version in the lockfile, we say that it was resolved from the lockfile
-    let resolved = if resolve_mode == &ResolveMode::FullUpgrade && context.lockfile.is_some() {
-        resolution
+    if resolve_mode == &ResolveMode::FullUpgrade && context.lockfile.is_some() {
+        resolution.found = resolution
             .found
             .into_iter()
             .map(|mut dep| {
@@ -237,12 +252,10 @@ fn resolve_dependencies<'a>(
                     .contains_resolved_dep(&dep);
                 dep
             })
-            .collect::<Vec<_>>()
-    } else {
-        resolution.found
-    };
+            .collect::<Vec<_>>();
+    }
 
-    resolved
+    resolution
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -285,7 +298,7 @@ fn _sync(
     }
     context.load_system_requirements()?;
 
-    let resolved = resolve_dependencies(&context, &resolve_mode);
+    let resolved = resolve_dependencies(&context, &resolve_mode, true).found;
 
     match timeit!(
         if dry_run {
@@ -350,13 +363,11 @@ fn _sync(
                     serde_json::to_string_pretty(&SyncChanges::from_changes(changes,))
                         .expect("valid json")
                 );
+            } else if changes.is_empty() {
+                println!("Nothing to do");
             } else {
-                if changes.is_empty() {
-                    println!("Nothing to do");
-                } else {
-                    for c in changes {
-                        println!("{}", c.print(!dry_run, !sysdeps_status.is_empty()));
-                    }
+                for c in changes {
+                    println!("{}", c.print(!dry_run, !sysdeps_status.is_empty()));
                 }
             }
 
@@ -577,7 +588,7 @@ fn try_main() -> Result<()> {
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
-                resolve_dependencies(&context, &ResolveMode::Default),
+                resolve_dependencies(&context, &ResolveMode::Default, true).found,
             );
             if output_format.is_json() {
                 println!(
@@ -655,7 +666,7 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let resolved = resolve_dependencies(&context, &ResolveMode::Default);
+            let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
             let project_sys_deps: HashSet<_> = resolved
                 .iter()
                 .flat_map(|x| context.system_dependencies.get(x.name.as_ref()))
@@ -719,7 +730,7 @@ fn try_main() -> Result<()> {
             context.load_databases_if_needed()?;
             context.load_system_requirements()?;
 
-            let resolved = resolve_dependencies(&context, &ResolveMode::Default);
+            let resolved = resolve_dependencies(&context, &ResolveMode::Default, false).found;
             let project_sys_deps: HashSet<_> = resolved
                 .iter()
                 .flat_map(|x| context.system_dependencies.get(x.name.as_ref()))
@@ -739,7 +750,7 @@ fn try_main() -> Result<()> {
                     if only_absent && *status != SysInstallationStatus::Absent {
                         return false;
                     }
-                    
+
                     // Filter by ignore list
                     !ignore.contains(name)
                 })
@@ -755,6 +766,31 @@ fn try_main() -> Result<()> {
                 for name in &sys_deps_names {
                     println!("{name}");
                 }
+            }
+        }
+
+        Command::Tree {
+            depth,
+            hide_system_deps,
+        } => {
+            let mut context = CliContext::new(&cli.config_file, None)?;
+            context.load_databases_if_needed()?;
+            if !hide_system_deps {
+                context.load_system_requirements()?;
+            }
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
+            let tree = tree(&context, &resolution.found, &resolution.failed);
+
+            if output_format.is_json() {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&tree).expect("valid json")
+                );
+            } else {
+                tree.print(depth, !hide_system_deps);
             }
         }
     }
