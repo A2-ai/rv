@@ -6,7 +6,7 @@ use std::{
 
 use serde::Serialize;
 
-use crate::system_req::SysDep;
+use crate::system_req::{SysDep, SysInstallationStatus};
 use crate::utils::get_max_workers;
 use crate::{
     DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
@@ -78,12 +78,23 @@ impl fmt::Display for ProjectSummary<'_> {
 
         write!(f, "== Dependencies == \n{}\n", self.dependency_info)?;
         if !self.sys_deps.is_empty() {
-            let mut out = String::new();
+            let mut present = 0;
+            let mut absent = Vec::new();
+            let mut unknown = Vec::new();
             for d in self.sys_deps.iter() {
-                out.push_str(&format!("{}: {}\n", d.name, d.status));
+                match d.status {
+                    SysInstallationStatus::Present => present += 1,
+                    SysInstallationStatus::Absent => absent.push(d.name.as_str()),
+                    SysInstallationStatus::Unknown => unknown.push(d.name.as_str())
+                }
             }
 
-            write!(f, "== System Dependencies == \n{}\n", self.dependency_info)?;
+            write!(f, 
+                "== System Dependencies == \n{}{}{}\n",
+                if present != 0 { format!("Present: {present}/{}\n", self.sys_deps.len()) } else { String::new() },
+                if !absent.is_empty() { format!("Absent:\n  {}\n", absent.join("\n  ")) } else { String::new() },
+                if !unknown.is_empty() { format!("Unknown:\n  {}\n", unknown.join("\n  ")) } else { String::new() },
+            )?;
         }
         write!(f, "== Remote == \n{}", self.remote_info)?;
         Ok(())
