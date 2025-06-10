@@ -12,7 +12,7 @@ mod parser;
 mod remotes;
 mod version;
 
-use crate::consts::BASE_PACKAGES;
+use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
 pub use parser::parse_package_file;
@@ -90,6 +90,12 @@ pub struct Package {
     pub(crate) needs_compilation: bool,
     // {remote_string => (pkg name, remote)}
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
+    // The below fields are populated when packages are built from Git by tools like R-Universe
+    // Used to install packages from R-Universe and sets us up to start editing the DESCRIPTION
+    // file upon installations for compatibility with `sessioninfo`
+    pub(crate) remote_url: Option<GitUrl>,
+    pub(crate) remote_sha: Option<String>,
+    pub(crate) remote_subdir: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]

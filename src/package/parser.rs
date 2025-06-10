@@ -1,5 +1,6 @@
 //! Parses the PACKAGES files
 
+use crate::git::url::GitUrl;
 use crate::package::remotes::parse_remote;
 use crate::package::{Dependency, Package};
 use crate::{Version, VersionRequirement};
@@ -7,6 +8,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::LazyLock;
+use url::Url;
 
 static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
@@ -97,6 +99,14 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 }
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
+                //
+                "RemoteUrl" => {
+                    if let Ok(url) = value.parse::<Url>() {
+                        package.remote_url = Some(GitUrl::Http(url));
+                    }
+                }
+                "RemoteSha" => package.remote_sha = Some(value.to_string()),
+                "RemoteSubdir" => package.remote_subdir = Some(value.to_string()),
                 _ => continue,
             }
         }

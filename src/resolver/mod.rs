@@ -236,7 +236,6 @@ impl<'d> Resolver<'d> {
         &self,
         item: &QueueItem<'d>,
         cache: &'d DiskCache,
-        http_download: &impl HttpDownload,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
@@ -271,7 +270,6 @@ impl<'d> Resolver<'d> {
                             repository: Url::parse(&repo.url).unwrap(),
                         },
                     ),
-                    http_download,
                 );
                 return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
             }
@@ -576,9 +574,7 @@ impl<'d> Resolver<'d> {
                     if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
                         continue;
                     }
-                    if let Some((resolved_dep, items)) =
-                        self.repositories_lookup(&item, cache, http_download)
-                    {
+                    if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
                         result.add_found(resolved_dep);
                         queue.extend(items);
                     } else {

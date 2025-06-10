@@ -1,9 +1,11 @@
 use bincode::{Decode, Encode};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use crate::package::{Package, PackageType, parse_package_file};
+use crate::git::url::GitUrl;
+use crate::package::{Package, PackageType, deserialize_version, parse_package_file};
 use crate::package::{Version, VersionRequirement};
 
 #[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
@@ -54,6 +56,18 @@ impl RepositoryDatabase {
     pub fn parse_binary(&mut self, content: &str, r_version: [u32; 2]) {
         let packages = parse_package_file(content);
         self.binary_packages.insert(r_version, packages);
+    }
+
+    pub fn parse_runiverse_api(&mut self, content: &str) {
+        for (pkg_name, api) in parse_runiverse_api_file(content) {
+            if let Some(pkgs) = self.source_packages.get_mut(&pkg_name) {
+                for p in pkgs.iter_mut().filter(|p| p.version == api.version) {
+                    p.remote_url = Some(api.remote_url.clone());
+                    p.remote_sha = Some(api.remote_sha.to_string());
+                    p.remote_subdir = api.remote_subdir.clone();
+                }
+            }
+        }
     }
 
     // We always prefer binary unless `force_source` is set to true
@@ -127,6 +141,26 @@ impl RepositoryDatabase {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct RUniverseApi {
+    package: String,
+    #[serde(deserialize_with = "deserialize_version")]
+    version: Version,
+    remote_url: GitUrl,
+    remote_sha: String,
+    remote_subdir: Option<String>,
+}
+
+fn parse_runiverse_api_file(content: &str) -> HashMap<String, RUniverseApi> {
+    let apis: Vec<RUniverseApi> = serde_json::from_str(content).unwrap_or_default();
+    let mut map = HashMap::new();
+    for api in apis {
+        map.insert(api.package.to_string(), api);
+    }
+    map
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to load package database")]
 #[non_exhaustive]
@@ -153,4 +187,22 @@ impl RepositoryDatabaseError {
 pub enum RepositoryDatabaseErrorKind {
     Io(#[from] std::io::Error),
     Bincode(#[from] bincode::error::DecodeError),
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+
+    use crate::RepositoryDatabase;
+
+    #[test]
+    fn test_r_universe_api_parse() {
+        let mut repo_db = RepositoryDatabase::new("http://a2-ai");
+        let content = fs::read_to_string("src/tests/package_files/a2-ai-universe.PACKAGE").unwrap();
+        repo_db.parse_source(&content);
+
+        let content = fs::read_to_string("src/tests/r_universe/a2-ai.api").unwrap();
+        repo_db.parse_runiverse_api(&content);
+        println!("{:#?}", repo_db);
+    }
 }

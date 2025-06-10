@@ -231,6 +231,29 @@ pub(crate) fn load_databases(
                     log::debug!("No binary URL.")
                 }
 
+                if r.url().contains("r-universe.dev") {
+                    let api_url = format!("{}/api/packages", r.url());
+                    let mut api_str = Vec::new();
+                    let bytes_read = timeit!(
+                        format!("Downloaded R-universe API from URL: {api_url}"),
+                        // we can just set bytes_read to 0 if the download fails
+                        // such that there is no attempt to parse the db below
+                        http::download(
+                            &api_url.parse::<Url>().expect("valid url"),
+                            &mut api_str,
+                            vec![],
+                        )
+                        .unwrap_or(0)
+                    );
+
+                    if bytes_read > 0 {
+                        let content = String::from_utf8_lossy(&api_str);
+                        db.parse_runiverse_api(&content);
+                    } else {
+                        log::warn!("Could not parse R-universe API for Git info. Treating as normal repository");
+                    }
+                }
+
                 db.persist(&path)?;
                 log::debug!("Saving packages db at {path:?}");
                 Ok((db, r.force_source))
