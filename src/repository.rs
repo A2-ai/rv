@@ -143,7 +143,7 @@ impl RepositoryDatabase {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct RUniverseApi {
+struct RUniversePackage {
     package: String,
     #[serde(deserialize_with = "deserialize_version")]
     version: Version,
@@ -152,8 +152,8 @@ struct RUniverseApi {
     remote_subdir: Option<String>,
 }
 
-fn parse_runiverse_api_file(content: &str) -> HashMap<String, RUniverseApi> {
-    let apis: Vec<RUniverseApi> = serde_json::from_str(content).unwrap_or_default();
+fn parse_runiverse_api_file(content: &str) -> HashMap<String, RUniversePackage> {
+    let apis: Vec<RUniversePackage> = serde_json::from_str(content).unwrap_or_default();
     let mut map = HashMap::new();
     for api in apis {
         map.insert(api.package.to_string(), api);
