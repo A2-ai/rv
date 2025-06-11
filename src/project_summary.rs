@@ -85,15 +85,28 @@ impl fmt::Display for ProjectSummary<'_> {
                 match d.status {
                     SysInstallationStatus::Present => present += 1,
                     SysInstallationStatus::Absent => absent.push(d.name.as_str()),
-                    SysInstallationStatus::Unknown => unknown.push(d.name.as_str())
+                    SysInstallationStatus::Unknown => unknown.push(d.name.as_str()),
                 }
             }
 
-            write!(f, 
+            write!(
+                f,
                 "== System Dependencies == \n{}{}{}\n",
-                if present != 0 { format!("Present: {present}/{}\n", self.sys_deps.len()) } else { String::new() },
-                if !absent.is_empty() { format!("Absent:\n  {}\n", absent.join("\n  ")) } else { String::new() },
-                if !unknown.is_empty() { format!("Unknown:\n  {}\n", unknown.join("\n  ")) } else { String::new() },
+                if present != 0 {
+                    format!("Present: {present}/{}\n", self.sys_deps.len())
+                } else {
+                    String::new()
+                },
+                if !absent.is_empty() {
+                    format!("Absent:\n  {}\n", absent.join("\n  "))
+                } else {
+                    String::new()
+                },
+                if !unknown.is_empty() {
+                    format!("Unknown:\n  {}\n", unknown.join("\n  "))
+                } else {
+                    String::new()
+                },
             )?;
         }
         write!(f, "== Remote == \n{}", self.remote_info)?;

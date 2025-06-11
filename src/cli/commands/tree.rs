@@ -31,6 +31,7 @@ pub struct TreeNode<'a> {
     error: Option<String>,
     version_req: Option<String>,
     children: Vec<TreeNode<'a>>,
+    ignored: bool,
 }
 
 impl TreeNode<'_> {
@@ -54,6 +55,9 @@ impl TreeNode<'_> {
         let sys_deps = self.get_sys_deps(show_sys_deps);
         let mut elems = Vec::new();
         if self.resolved {
+            if self.ignored {
+                return "ignored".to_string();
+            }
             elems.push(format!("version: {}", self.version.unwrap()));
             elems.push(format!("source: {}", self.source.unwrap()));
             elems.push(format!("type: {}", self.package_type.unwrap()));
@@ -150,6 +154,7 @@ fn recursive_finder<'d>(
             version_req: None,
             sys_deps,
             children,
+            ignored: resolved.ignored,
         }
     } else {
         let unresolved = unresolved_deps_by_name[name];
@@ -166,6 +171,7 @@ fn recursive_finder<'d>(
                 .map(|x| x.to_string()),
             resolved: false,
             children: vec![],
+            ignored: false,
         }
     }
 }
@@ -234,6 +240,7 @@ pub fn tree<'a>(
                     .map(|x| x.to_string()),
                 resolved: false,
                 children: vec![],
+                ignored: false,
             })
         }
     }

@@ -2,6 +2,7 @@
 source: src/resolver/mod.rs
 expression: out
 ---
+dplyr=1.1.4 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[], ignored)
 cli=3.6.3 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 generics=0.1.3 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 glue=1.8.0 (repository(url: http://cran/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])

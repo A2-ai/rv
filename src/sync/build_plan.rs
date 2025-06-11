@@ -26,6 +26,9 @@ impl<'a> BuildPlan<'a> {
         let mut full_deps = HashMap::new();
 
         for dep in deps {
+            if dep.ignored {
+                continue;
+            }
             let mut all_deps = HashSet::new();
 
             let mut queue = VecDeque::from_iter(dep.dependencies.iter().map(|x| x.name()));
@@ -139,6 +142,7 @@ mod tests {
             remotes: HashMap::new(),
             local_resolved_path: None,
             env_vars: HashMap::new(),
+            ignored: false,
         }
     }
 
