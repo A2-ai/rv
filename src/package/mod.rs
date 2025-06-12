@@ -19,6 +19,8 @@ pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version};
 
+pub(crate) use remotes::parse_remote;
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageType {
@@ -77,16 +79,16 @@ impl Dependency {
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,
-    r_requirement: Option<VersionRequirement>,
-    depends: Vec<Dependency>,
-    imports: Vec<Dependency>,
-    suggests: Vec<Dependency>,
-    enhances: Vec<Dependency>,
-    linking_to: Vec<Dependency>,
-    license: String,
-    md5_sum: String,
+    pub(crate) r_requirement: Option<VersionRequirement>,
+    pub(crate) depends: Vec<Dependency>,
+    pub(crate) imports: Vec<Dependency>,
+    pub(crate) suggests: Vec<Dependency>,
+    pub(crate) enhances: Vec<Dependency>,
+    pub(crate) linking_to: Vec<Dependency>,
+    pub(crate) license: String,
+    pub(crate) md5_sum: String,
     pub(crate) path: Option<String>,
-    recommended: bool,
+    pub(crate) recommended: bool,
     pub(crate) needs_compilation: bool,
     // {remote_string => (pkg name, remote)}
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,

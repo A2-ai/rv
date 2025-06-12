@@ -1,7 +1,7 @@
 //! CLI context that gets instantiated for a few commands and passed around
 
 use crate::cli::utils::write_err;
-use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
+use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::utils::create_spinner;
@@ -182,6 +182,26 @@ pub(crate) fn load_databases(
                 let db = RepositoryDatabase::load(&path)?;
                 log::debug!("Loaded packages db from {path:?}");
                 Ok((db, r.force_source))
+            } else if r.url().contains("r-universe.dev") {
+                if path.exists() {
+                    fs::remove_file(&path)?;
+                }
+                log::debug!("Need to download R-Universe packages API for {}", r.url());
+                let mut db = RepositoryDatabase::new(r.url());
+                let mut r_universe_api = Vec::new();
+                let api_url = format!("{}/{RUNIVERSE_PACKAGES_API_PATH}", r.url()).parse::<Url>().unwrap();
+                let bytes_read = timeit!(
+                    "Downloaded R-Universe packages API",
+                    http::download(&api_url, &mut r_universe_api, Vec::new())?
+                );
+
+                if bytes_read == 0 {
+                    bail!("File at {api_url} was not found");
+                }
+
+                db.parse_runiverse_api(&String::from_utf8_lossy(&r_universe_api));
+
+                Ok((db, r.force_source))
             } else {
                 // Make sure to remove the file if it exists - it's expired
                 if path.exists() {
@@ -229,29 +249,6 @@ pub(crate) fn load_databases(
                     }
                 } else {
                     log::debug!("No binary URL.")
-                }
-
-                if r.url().contains("r-universe.dev") {
-                    let api_url = format!("{}/api/packages", r.url());
-                    let mut api_str = Vec::new();
-                    let bytes_read = timeit!(
-                        format!("Downloaded R-universe API from URL: {api_url}"),
-                        // we can just set bytes_read to 0 if the download fails
-                        // such that there is no attempt to parse the db below
-                        http::download(
-                            &api_url.parse::<Url>().expect("valid url"),
-                            &mut api_str,
-                            vec![],
-                        )
-                        .unwrap_or(0)
-                    );
-
-                    if bytes_read > 0 {
-                        let content = String::from_utf8_lossy(&api_str);
-                        db.parse_runiverse_api(&content);
-                    } else {
-                        log::warn!("Could not parse R-universe API for Git info. Treating as normal repository");
-                    }
                 }
 
                 db.persist(&path)?;
