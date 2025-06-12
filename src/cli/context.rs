@@ -203,6 +203,8 @@ pub(crate) fn load_databases(
 
                 db.parse_runiverse_api(&String::from_utf8_lossy(&r_universe_api));
 
+                db.persist(&path)?;
+                log::debug!("Saving packages db at {path:?}");
                 Ok((db, r.force_source))
             } else {
                 // Make sure to remove the file if it exists - it's expired
