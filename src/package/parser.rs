@@ -1,6 +1,5 @@
 //! Parses the PACKAGES files
 
-use crate::git::url::GitUrl;
 use crate::package::remotes::parse_remote;
 use crate::package::{Dependency, Package};
 use crate::{Version, VersionRequirement};
@@ -8,7 +7,6 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::LazyLock;
-use url::Url;
 
 static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
