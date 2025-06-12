@@ -189,7 +189,9 @@ pub(crate) fn load_databases(
                 log::debug!("Need to download R-Universe packages API for {}", r.url());
                 let mut db = RepositoryDatabase::new(r.url());
                 let mut r_universe_api = Vec::new();
-                let api_url = format!("{}/{RUNIVERSE_PACKAGES_API_PATH}", r.url()).parse::<Url>().unwrap();
+                let api_url = format!("{}/{RUNIVERSE_PACKAGES_API_PATH}", r.url())
+                    .parse::<Url>()
+                    .unwrap();
                 let bytes_read = timeit!(
                     "Downloaded R-Universe packages API",
                     http::download(&api_url, &mut r_universe_api, Vec::new())?

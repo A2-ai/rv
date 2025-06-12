@@ -1,12 +1,12 @@
 use bincode::{Decode, Encode};
-use serde::{Deserialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::git::url::GitUrl;
-use crate::package::{deserialize_version, parse_package_file, Dependency, Package, PackageType};
+use crate::package::{Dependency, Package, PackageType, deserialize_version, parse_package_file};
 use crate::package::{Version, VersionRequirement, parse_remote};
 
 #[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
@@ -62,9 +62,7 @@ impl RepositoryDatabase {
     pub fn parse_runiverse_api(&mut self, content: &str) {
         self.source_packages = parse_runiverse_api_file(content)
             .into_iter()
-            .map(|(pkg_name, pkg)| {
-                (pkg_name, vec![pkg.into()])
-            })
+            .map(|(pkg_name, pkg)| (pkg_name, vec![pkg.into()]))
             .collect();
     }
 
@@ -147,7 +145,10 @@ where
     match s.as_str() {
         "Yes" | "yes" => Ok(true),
         "No" | "no" => Ok(false),
-        other => Err(serde::de::Error::custom(format!("expected 'Yes' or 'No', got '{}'", other))),
+        other => Err(serde::de::Error::custom(format!(
+            "expected 'Yes' or 'No', got '{}'",
+            other
+        ))),
     }
 }
 
@@ -199,18 +200,20 @@ fn parse_runiverse_api_file(content: &str) -> HashMap<String, RUniversePackage> 
 
 impl From<RUniversePackage> for Package {
     fn from(pkg: RUniversePackage) -> Self {
-        fn map_dependencies(
-            deps: &[RUniverseDependency],
-            role: Role,
-        ) -> Vec<Dependency> {
+        fn map_dependencies(deps: &[RUniverseDependency], role: Role) -> Vec<Dependency> {
             deps.iter()
                 .filter(|d| d.role == role && d.package != "R")
                 .map(|d| {
                     if let Some(v) = &d.version {
-                        let requirement = format!("({v})").parse::<VersionRequirement>().expect("Properly formatted version requirement");
-                        Dependency::Pinned { name: d.package.to_string(), requirement }
+                        let requirement = format!("({v})")
+                            .parse::<VersionRequirement>()
+                            .expect("Properly formatted version requirement");
+                        Dependency::Pinned {
+                            name: d.package.to_string(),
+                            requirement,
+                        }
                     } else {
-                        Dependency::Simple( d.package.to_string() )
+                        Dependency::Simple(d.package.to_string())
                     }
                 })
                 .collect()
@@ -218,17 +221,17 @@ impl From<RUniversePackage> for Package {
 
         let mut remotes = HashMap::new();
         for remote in pkg.remotes.iter() {
-            let (name_opt, parsed_remote) =  parse_remote(remote);
+            let (name_opt, parsed_remote) = parse_remote(remote);
             remotes.insert(remote.clone(), (name_opt, parsed_remote));
         }
 
-        let r_requirement = pkg.dependencies.iter().find_map(|d| {
-            match &d.version {
-                Some(ver) if d.package == "R" => {
-                    Some(format!("({ver})").parse::<VersionRequirement>().expect("Properly formatted version requirement"))
-                },
-                _ => None
-            }
+        let r_requirement = pkg.dependencies.iter().find_map(|d| match &d.version {
+            Some(ver) if d.package == "R" => Some(
+                format!("({ver})")
+                    .parse::<VersionRequirement>()
+                    .expect("Properly formatted version requirement"),
+            ),
+            _ => None,
         });
 
         let recommended = RECOMMENDED_PACKAGES.contains(&pkg.package.as_str());
@@ -294,7 +297,7 @@ mod test {
         let mut runiverse_db = RepositoryDatabase::new("http://r-universe.dev");
         let content = fs::read_to_string("src/tests/r_universe/a2-ai.api").unwrap();
         runiverse_db.parse_runiverse_api(&content);
-        
+
         let mut repo_db = RepositoryDatabase::new("http://a2-ai");
         let content = fs::read_to_string("src/tests/package_files/a2-ai-universe.PACKAGE").unwrap();
         repo_db.parse_source(&content);
@@ -305,18 +308,44 @@ mod test {
         assert_eq!(runiverse_pkgs.len(), repo_pkgs.len());
 
         for (name, runiverse_pkg_vec) in runiverse_pkgs {
-            let repo_pkg_vec = repo_pkgs.get(name).expect(&format!("Package {name} not found in repo_db"));
+            let repo_pkg_vec = repo_pkgs
+                .get(name)
+                .expect(&format!("Package {name} not found in repo_db"));
             assert_eq!(runiverse_pkg_vec.len(), repo_pkg_vec.len());
 
             for (runiverse_pkg, repo_pkg) in runiverse_pkg_vec.iter().zip(repo_pkg_vec.iter()) {
-                assert_eq!(runiverse_pkg.name, repo_pkg.name, "Package name mismatch for {name}");
-                assert_eq!(runiverse_pkg.version, repo_pkg.version, "Version mismatch for {name}");
-                assert_eq!(runiverse_pkg.depends, repo_pkg.depends, "Depends mismatch for {name}");
-                assert_eq!(runiverse_pkg.suggests, repo_pkg.suggests, "Suggests mismatch for {name}");
-                assert_eq!(runiverse_pkg.imports, repo_pkg.imports, "Imports mismatch for {name}");
-                assert_eq!(runiverse_pkg.enhances, repo_pkg.enhances, "Enhances mismatch for {name}");
-                assert_eq!(runiverse_pkg.linking_to, repo_pkg.linking_to, "LinkingTo mismatch for {name}");
-                assert_eq!(runiverse_pkg.needs_compilation, repo_pkg.needs_compilation, "NeedsCompilation mismatch for {name}");
+                assert_eq!(
+                    runiverse_pkg.name, repo_pkg.name,
+                    "Package name mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.version, repo_pkg.version,
+                    "Version mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.depends, repo_pkg.depends,
+                    "Depends mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.suggests, repo_pkg.suggests,
+                    "Suggests mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.imports, repo_pkg.imports,
+                    "Imports mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.enhances, repo_pkg.enhances,
+                    "Enhances mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.linking_to, repo_pkg.linking_to,
+                    "LinkingTo mismatch for {name}"
+                );
+                assert_eq!(
+                    runiverse_pkg.needs_compilation, repo_pkg.needs_compilation,
+                    "NeedsCompilation mismatch for {name}"
+                );
             }
         }
     }
