@@ -1,6 +1,7 @@
 //! Download and install packages from repositories like CRAN, posit etc
 
 use fs_err as fs;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -23,16 +24,32 @@ pub(crate) fn install_package(
 ) -> Result<(), SyncError> {
     let pkg_paths =
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
-    let compile_package = || {
+    let compile_package = || -> Result<(), SyncError> {
         let source_path = pkg_paths.source.join(pkg.name.as_ref());
         log::debug!("Compiling package from {}", source_path.display());
-        r_cmd.install(
+        match r_cmd.install(
             &source_path,
             library_dir,
             &pkg_paths.binary,
             cancellation.clone(),
             &pkg.env_vars,
-        )
+        ) {
+            Ok(output) => {
+                // not using the path for the cache
+                let log_path = cache.get_build_log_path(
+                    &pkg.source,
+                    Some(pkg.name.as_ref()),
+                    Some(&pkg.version.original),
+                );
+                if let Some(parent) = log_path.parent() {
+                    fs::create_dir_all(parent)?;
+                    let mut f = fs::File::create(log_path)?;
+                    f.write_all(output.as_bytes())?;
+                }
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
     };
 
     match pkg.installation_status {

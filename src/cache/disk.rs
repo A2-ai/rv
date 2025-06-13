@@ -131,6 +131,43 @@ impl DiskCache {
             .join(version)
     }
 
+    /// Gets the folder where the R build package stdout+stderr output should be stored
+    pub fn get_build_log_path(
+        &self,
+        source: &Source,
+        pkg_name: Option<&str>,
+        version: Option<&str>,
+    ) -> PathBuf {
+        let (parent_name, sha) = match source {
+            Source::RUniverse { git, sha, .. } | Source::Git { git, sha, .. } => {
+                (hash_string(git.url()), Some(sha.clone()))
+            }
+            Source::Url { url, sha, .. } => (hash_string(url.as_str()), Some(sha.clone())),
+            Source::Repository { repository } => (hash_string(repository.as_str()), None),
+            Source::Local { path, sha, .. } => (
+                hash_string(path.as_os_str().to_string_lossy().as_ref()),
+                sha.clone(),
+            ),
+            Source::Builtin { .. } => unreachable!(),
+        };
+
+        let mut p = self
+            .root
+            .join("logs")
+            .join(&parent_name)
+            .join(get_current_system_path(&self.system_info, self.r_version));
+
+        if let Some(pkg_name) = pkg_name {
+            p = p.join(pkg_name);
+        }
+
+        if let Some(version) = version.map(|x| x.to_string()).or(sha) {
+            p = p.join(version);
+        }
+
+        p.join("build.log")
+    }
+
     /// Gets the folder where a source tarball would be located
     /// The folder may or may not exist depending on whether it's in the cache
     fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {

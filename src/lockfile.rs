@@ -138,6 +138,13 @@ impl Source {
         }
     }
 
+    pub fn git_url(&self) -> Option<&str> {
+        match self {
+            Source::Git { git, .. } => Some(git.url()),
+            _ => None,
+        }
+    }
+
     /// Some sources might have changed remotely so we will want to fetch them to be sure it
     /// hasn't changed (eg a git branch having new commits)
     pub fn could_have_changed(&self) -> bool {
