@@ -2,7 +2,7 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-slurmtools=0.1.2 (repository(url: http://a2-ai-universe/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
+slurmtools=0.1.3 (repository(url: http://a2-ai-universe/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
 brio=1.1.5 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 dplyr=1.1.4 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 fs=1.6.5 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
@@ -19,6 +19,7 @@ cli=3.6.3 (repository(url: http://p3m/), type=binary, path='', from_lockfile=fal
 stringi=1.8.4 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 hms=1.1.3 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 lifecycle=1.0.4 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+log4r=0.4.4 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 generics=0.1.3 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 magrittr=2.0.3 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
 pillar=1.9.0 (repository(url: http://p3m/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])

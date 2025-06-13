@@ -1,0 +1,814 @@
+[
+  {
+    "Package": "reportifyr",
+    "Title": "Reproducible Reporting Made Simple with R",
+    "Version": "0.3.1",
+    "Authors@R": "c(\nperson(\"Jacob\", \"Dumbleton\", , \"jacob@a2-ai.com\", role = c(\"aut\", \"cre\")),\nperson(\"Matthew\", \"Smith\", , \"matthews@a2-ai.com\", role = \"aut\"),\nperson(\"Theodoros\", \"Papathanasiou\", , \"theo.x.papathanasiou@gsk.com\", role = \"aut\"),\nperson(\"Tarjinder\", \"Sahota\", , \"tarjinder.z.sahota@gsk.com\", role = \"aut\"),\nperson(\"Devin\", \"Pastoor\", , \"devin@a2-ai.com\", role = \"aut\"),\nperson(\"Agnes\", \"Kim\", , \"agnes@a2-ai.com\", role = \"aut\"),\nperson(\"Anne\", \"Zheng\", , \"anne@a2-ai.com\", role = \"aut\"),\nperson(\"Jenna\", \"Johnson\", , \"jenna@a2-ai.com\", role = \"aut\"),\nperson(\"Fernando\", \"Carreno\", , \"fernando.o.carreno@gsk.com\", role = \"aut\"),\nperson(\"Kashyap\", \"Patel\", , \"kashyap.x.patel@gsk.com\", role = \"ctb\"),\nperson(\"Maxwell\", \"Chirehwa\", , \"maxwell.t.chirehwa@gsk.com\", role = \"ctb\"),\nperson(\"Wesley\", \"Cummings\", , \"wes@a2-ai.com\", role = \"ctb\"),\nperson(\"Elizabeth\", \"LeBeau\", ,\"elizabeth@a2-ai.com\", role = \"ctb\")\n)",
+    "Description": "Create reproducible reports with Microsoft Word and R.",
+    "License": "GPL (>= 3)",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/testthat/edition": "3",
+    "URL": "https://a2-ai.github.io/reportifyr/",
+    "Config/pak/sysreqs": "libcairo2-dev libfontconfig1-dev libfreetype6-dev\nlibfribidi-dev git make libharfbuzz-dev libgit2-dev libicu-dev\nlibjpeg-dev libpng-dev libtiff-dev libxml2-dev libssl-dev",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/reportifyr",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "d959bd43bfc9d278760ad666e9b79979472190a9",
+    "NeedsCompilation": "no",
+    "Packaged": {
+      "Date": "2025-06-10 18:33:15 UTC",
+      "User": "root"
+    },
+    "Author": "Jacob Dumbleton [aut, cre],\nMatthew Smith [aut],\nTheodoros Papathanasiou [aut],\nTarjinder Sahota [aut],\nDevin Pastoor [aut],\nAgnes Kim [aut],\nAnne Zheng [aut],\nJenna Johnson [aut],\nFernando Carreno [aut],\nKashyap Patel [ctb],\nMaxwell Chirehwa [ctb],\nWesley Cummings [ctb],\nElizabeth LeBeau [ctb]",
+    "Maintainer": "Jacob Dumbleton <jacob@a2-ai.com>",
+    "MD5sum": "f6f372404973d6facd63a4cf63d972a7",
+    "_dependencies": [
+      {
+        "package": "R",
+        "version": ">= 4.1.0",
+        "role": "Depends"
+      },
+      {
+        "package": "assertthat",
+        "role": "Imports"
+      },
+      {
+        "package": "cli",
+        "role": "Imports"
+      },
+      {
+        "package": "digest",
+        "role": "Imports"
+      },
+      {
+        "package": "dplyr",
+        "role": "Imports"
+      },
+      {
+        "package": "flextable",
+        "role": "Imports"
+      },
+      {
+        "package": "fs",
+        "role": "Imports"
+      },
+      {
+        "package": "gert",
+        "role": "Imports"
+      },
+      {
+        "package": "ggplot2",
+        "role": "Imports"
+      },
+      {
+        "package": "here",
+        "role": "Imports"
+      },
+      {
+        "package": "jsonlite",
+        "role": "Imports"
+      },
+      {
+        "package": "log4r",
+        "role": "Imports"
+      },
+      {
+        "package": "officer",
+        "role": "Imports"
+      },
+      {
+        "package": "processx",
+        "role": "Imports"
+      },
+      {
+        "package": "purrr",
+        "role": "Imports"
+      },
+      {
+        "package": "rlang",
+        "role": "Imports"
+      },
+      {
+        "package": "rstudioapi",
+        "role": "Imports"
+      },
+      {
+        "package": "tictoc",
+        "role": "Imports"
+      },
+      {
+        "package": "yaml",
+        "role": "Imports"
+      },
+      {
+        "package": "knitr",
+        "role": "Suggests"
+      },
+      {
+        "package": "mockery",
+        "role": "Suggests"
+      },
+      {
+        "package": "rmarkdown",
+        "role": "Suggests"
+      },
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      },
+      {
+        "package": "withr",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "ghqc.app",
+    "Title": "Create QC Checklists in Github Issues",
+    "Version": "0.6.4",
+    "Authors@R": "c(\nperson(\"Jenna\", \"Johnson\", email = \"jenna@a2-ai.com\", role = c(\"aut\", \"cre\")),\nperson(\"Anne\", \"Zheng\", email = \"anne@a2-ai.com\", role = c(\"aut\")),\nperson(\"Janelle\", \"Lennie\", email = \"janelle.l.lennie@gsk.com\", role = c(\"ctb\")),\nperson(\"Devin\", \"Pastoor\", email = \"devin@a2-ai.com\", role = c(\"aut\")),\nperson(\"Wes\", \"Cummings\", email = \"wes@a2-ai.com\", role = c(\"aut\")))",
+    "Description": "A QC tool with 3 major functions: creation and management\nof QC log, creation and management of QC record, perform\nsemi-automated QC tasks.",
+    "License": "GPL (>= 3) + file LICENSE",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/testthat/edition": "3",
+    "URL": "https://a2-ai.github.io/ghqc.app/",
+    "Config/pak/sysreqs": "libfontconfig1-dev libfreetype6-dev libfribidi-dev\ngit make libharfbuzz-dev libgit2-dev libicu-dev libpng-dev\nlibxml2-dev libssl-dev zlib1g-dev",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/ghqc.app",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "c04101f2ff0d46cdf3323d2c9c992d2cd8636da6",
+    "NeedsCompilation": "no",
+    "Packaged": {
+      "Date": "2025-06-04 21:20:18 UTC",
+      "User": "root"
+    },
+    "Author": "Jenna Johnson [aut, cre],\nAnne Zheng [aut],\nJanelle Lennie [ctb],\nDevin Pastoor [aut],\nWes Cummings [aut]",
+    "Maintainer": "Jenna Johnson <jenna@a2-ai.com>",
+    "MD5sum": "6c84b2b65c5d80c96b7c0fc32829f7d3",
+    "_dependencies": [
+      {
+        "package": "R",
+        "version": ">= 4.1.0",
+        "role": "Depends"
+      },
+      {
+        "package": "fs",
+        "version": ">= 1.6.3",
+        "role": "Imports"
+      },
+      {
+        "package": "gert",
+        "version": ">= 2.0.1",
+        "role": "Imports"
+      },
+      {
+        "package": "gh",
+        "version": ">= 1.4.0",
+        "role": "Imports"
+      },
+      {
+        "package": "glue",
+        "version": ">= 1.6.2",
+        "role": "Imports"
+      },
+      {
+        "package": "httr2",
+        "version": ">= 1.0.0",
+        "role": "Imports"
+      },
+      {
+        "package": "miniUI",
+        "version": ">= 0.1.1.1",
+        "role": "Imports"
+      },
+      {
+        "package": "kableExtra",
+        "version": ">= 1.3.4",
+        "role": "Imports"
+      },
+      {
+        "package": "purrr",
+        "version": ">= 1.0.2",
+        "role": "Imports"
+      },
+      {
+        "package": "rlang",
+        "version": ">= 1.1.3",
+        "role": "Imports"
+      },
+      {
+        "package": "shiny",
+        "version": ">= 1.8.0",
+        "role": "Imports"
+      },
+      {
+        "package": "stringr",
+        "version": ">= 1.5.1",
+        "role": "Imports"
+      },
+      {
+        "package": "waiter",
+        "version": ">= 0.2.5",
+        "role": "Imports"
+      },
+      {
+        "package": "withr",
+        "version": ">= 3.0.0",
+        "role": "Imports"
+      },
+      {
+        "package": "yaml",
+        "version": ">= 2.3.7",
+        "role": "Imports"
+      },
+      {
+        "package": "shinyjs",
+        "version": ">= 2.1.0",
+        "role": "Imports"
+      },
+      {
+        "package": "dplyr",
+        "version": ">= 1.1.4",
+        "role": "Imports"
+      },
+      {
+        "package": "diffobj",
+        "version": ">= 0.3.5",
+        "role": "Imports"
+      },
+      {
+        "package": "processx",
+        "version": ">= 3.8.3",
+        "role": "Imports"
+      },
+      {
+        "package": "rmarkdown",
+        "version": ">= 2.24",
+        "role": "Imports"
+      },
+      {
+        "package": "rvest",
+        "version": ">= 1.0.3",
+        "role": "Imports"
+      },
+      {
+        "package": "jsTreeR",
+        "version": ">= 2.5.0",
+        "role": "Imports"
+      },
+      {
+        "package": "log4r",
+        "version": ">= 0.4.3",
+        "role": "Imports"
+      },
+      {
+        "package": "rprojroot",
+        "version": ">= 2.0.3",
+        "role": "Imports"
+      },
+      {
+        "package": "gitcreds",
+        "version": ">= 0.1.2",
+        "role": "Imports"
+      },
+      {
+        "package": "shinyvalidate",
+        "role": "Imports"
+      },
+      {
+        "package": "xml2",
+        "role": "Imports"
+      },
+      {
+        "package": "DT",
+        "role": "Imports"
+      },
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      },
+      {
+        "package": "httptest",
+        "role": "Suggests"
+      },
+      {
+        "package": "knitr",
+        "role": "Suggests"
+      },
+      {
+        "package": "shinytest2",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "scicalc",
+    "Title": "Scientific Calculations for Quantitative Clinical Pharmacology\nand Pharmacometrics Analysis",
+    "Version": "0.2.0",
+    "Authors@R": "c( \nperson(\"Matthew\", \"Smith\", , \"matthews@a2-ai.com\", role = c(\"aut\", \"cre\")),\nperson(\"Jenna\", \"Johnson\", , \"jenna@a2-ai.com\", role = \"aut\"),\nperson(\"Devin\", \"Pastoor\", , \"devin@a2-ai.com\", role = \"aut\"),\nperson(\"Wesley\", \"Cummings\", , \"wes@a2-ai.com\", role = \"ctb\"),\nperson(\"Emily\", \"Schapiro\", , \"emily@a2-ai.com\", role = \"ctb\"),\nperson(\"Ryan\", \"Crass\", , \"ryan@a2-ai.com\", role = \"ctb\"),\nperson(\"Jonah\", \"Lyon\", , \"jonah@a2-ai.com\", role = \"ctb\"),\nperson(\"Elizabeth\", \"LeBeau\", ,\"elizabeth@a2-ai.com\", role = \"ctb\")\n)",
+    "Description": "Utility functions helpful for reproducible scientific\ncalculations.",
+    "License": "MIT + file LICENSE",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/testthat/edition": "3",
+    "VignetteBuilder": "knitr",
+    "URL": "https://a2-ai.github.io/scicalc",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/scicalc",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "5b3cfe40390ddf14e3b6d3a88aa10dff78e232c6",
+    "NeedsCompilation": "no",
+    "Packaged": {
+      "Date": "2025-06-04 14:22:40 UTC",
+      "User": "root"
+    },
+    "Author": "Matthew Smith [aut, cre],\nJenna Johnson [aut],\nDevin Pastoor [aut],\nWesley Cummings [ctb],\nEmily Schapiro [ctb],\nRyan Crass [ctb],\nJonah Lyon [ctb],\nElizabeth LeBeau [ctb]",
+    "Maintainer": "Matthew Smith <matthews@a2-ai.com>",
+    "MD5sum": "6f7ffe4391c448635ba9fbbe2ed7fdf7",
+    "_dependencies": [
+      {
+        "package": "arrow",
+        "role": "Imports"
+      },
+      {
+        "package": "checkmate",
+        "role": "Imports"
+      },
+      {
+        "package": "digest",
+        "role": "Imports"
+      },
+      {
+        "package": "dplyr",
+        "role": "Imports"
+      },
+      {
+        "package": "fs",
+        "role": "Imports"
+      },
+      {
+        "package": "haven",
+        "role": "Imports"
+      },
+      {
+        "package": "lifecycle",
+        "role": "Imports"
+      },
+      {
+        "package": "magrittr",
+        "role": "Imports"
+      },
+      {
+        "package": "readr",
+        "role": "Imports"
+      },
+      {
+        "package": "readxl",
+        "role": "Imports"
+      },
+      {
+        "package": "rlang",
+        "role": "Imports"
+      },
+      {
+        "package": "stats",
+        "role": "Imports"
+      },
+      {
+        "package": "stringr",
+        "role": "Imports"
+      },
+      {
+        "package": "knitr",
+        "role": "Suggests"
+      },
+      {
+        "package": "rmarkdown",
+        "role": "Suggests"
+      },
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      },
+      {
+        "package": "ggplot2",
+        "role": "Suggests"
+      },
+      {
+        "package": "here",
+        "role": "Suggests"
+      },
+      {
+        "package": "purrr",
+        "role": "Suggests"
+      },
+      {
+        "package": "pzfx",
+        "role": "Suggests"
+      },
+      {
+        "package": "tools",
+        "role": "Suggests"
+      },
+      {
+        "package": "tidyr",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "ghqc",
+    "Title": "Manage QC via GitHub Issues using Shiny Apps",
+    "Version": "0.4.2",
+    "Authors@R": "c(\nperson(\"Anne\", \"Zheng\", email = \"anne@a2-ai.com\", role = c(\"aut\")),\nperson(\"Jenna\", \"Johnson\", email = \"jenna@a2-ai.com\", role = c(\"aut\")),\nperson(\"Janelle\", \"Lennie\", email = \"janelle.l.lennie@gsk.com\", role = c(\"ctb\")),\nperson(\"Devin\", \"Pastoor\", email = \"devin@a2-ai.com\", role = c(\"aut\")),\nperson(\"Wes\", \"Cummings\", email = \"wes@a2-ai.com\", role = c(\"aut\", \"cre\")))",
+    "Description": "This package launches 3 ghqc applications as background\njobs to aid the QC process through the use of shiny apps. It\nalso contains aides to maintain the proper setup of the\necosystem. Namely, it will aid in the installation of ghqc.app\nand its dependendencies into an isolated directory as to not\ninterfere with the project being QCed.",
+    "License": "GPL (>= 3) + file LICENSE",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/Needs/website": "sessioninfo",
+    "URL": "https://a2-ai.github.io/ghqc",
+    "Config/pak/sysreqs": "make zlib1g-dev",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/ghqc",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "170aa5c1f739360cce2e46ffcc4f5cd47ed64f72",
+    "NeedsCompilation": "no",
+    "Packaged": {
+      "Date": "2025-06-06 05:38:05 UTC",
+      "User": "root"
+    },
+    "Author": "Anne Zheng [aut],\nJenna Johnson [aut],\nJanelle Lennie [ctb],\nDevin Pastoor [aut],\nWes Cummings [aut, cre]",
+    "Maintainer": "Wes Cummings <wes@a2-ai.com>",
+    "MD5sum": "4d8b8b6ad8314c2f8716ea5733979d4d",
+    "_dependencies": [
+      {
+        "package": "R",
+        "version": ">= 2.10",
+        "role": "Depends"
+      },
+      {
+        "package": "httpuv",
+        "role": "Imports"
+      },
+      {
+        "package": "rstudioapi",
+        "role": "Imports"
+      },
+      {
+        "package": "withr",
+        "role": "Imports"
+      },
+      {
+        "package": "glue",
+        "role": "Imports"
+      },
+      {
+        "package": "rlang",
+        "role": "Imports"
+      },
+      {
+        "package": "cli",
+        "role": "Imports"
+      },
+      {
+        "package": "fs",
+        "role": "Imports"
+      },
+      {
+        "package": "yaml",
+        "role": "Imports"
+      },
+      {
+        "package": "gert",
+        "role": "Suggests"
+      },
+      {
+        "package": "pak",
+        "version": ">= 0.8.0",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "slurmtools",
+    "Title": "slurm tooling",
+    "Version": "0.1.3",
+    "Authors@R": "c(person(\"Devin\", \"Pastoor\", , \"devin@a2-ai.com\", role = c(\"aut\", \"cre\")),\nperson(\"Jenna\", \"Elwing\", email = \"jenna@a2-ai.com\", role = \"aut\"),\nperson(\"Matthew\", \"Smith\", email = \"matthews@a2-ai.com\", role = \"aut\"),\nperson(\"Jacob\", \"Dumbleton\", email = \"jacob@a2-ai.com\", role = \"aut\"))",
+    "Description": "What the package does (one paragraph).",
+    "License": "GPL (>= 3)",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/testthat/edition": "3",
+    "VignetteBuilder": "knitr",
+    "Config/pak/sysreqs": "make libicu-dev",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/slurmtools",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "f2ac31863aed35a23e380c85fcf9e7ec8428aa72",
+    "NeedsCompilation": "no",
+    "Packaged": {
+      "Date": "2025-05-29 03:08:19 UTC",
+      "User": "root"
+    },
+    "Author": "Devin Pastoor [aut, cre],\nJenna Elwing [aut],\nMatthew Smith [aut],\nJacob Dumbleton [aut]",
+    "Maintainer": "Devin Pastoor <devin@a2-ai.com>",
+    "MD5sum": "e329073521fb0bcab5301141c852fa9a",
+    "_dependencies": [
+      {
+        "package": "brio",
+        "role": "Imports"
+      },
+      {
+        "package": "dplyr",
+        "role": "Imports"
+      },
+      {
+        "package": "fs",
+        "role": "Imports"
+      },
+      {
+        "package": "glue",
+        "role": "Imports"
+      },
+      {
+        "package": "jsonlite",
+        "role": "Imports"
+      },
+      {
+        "package": "processx",
+        "role": "Imports"
+      },
+      {
+        "package": "purrr",
+        "role": "Imports"
+      },
+      {
+        "package": "rlang",
+        "role": "Imports"
+      },
+      {
+        "package": "tibble",
+        "role": "Imports"
+      },
+      {
+        "package": "utils",
+        "role": "Imports"
+      },
+      {
+        "package": "whisker",
+        "role": "Imports"
+      },
+      {
+        "package": "withr",
+        "role": "Imports"
+      },
+      {
+        "package": "here",
+        "role": "Imports"
+      },
+      {
+        "package": "cli",
+        "role": "Imports"
+      },
+      {
+        "package": "stringi",
+        "role": "Imports"
+      },
+      {
+        "package": "hms",
+        "role": "Imports"
+      },
+      {
+        "package": "lifecycle",
+        "role": "Imports"
+      },
+      {
+        "package": "log4r",
+        "role": "Imports"
+      },
+      {
+        "package": "knitr",
+        "role": "Suggests"
+      },
+      {
+        "package": "rmarkdown",
+        "role": "Suggests"
+      },
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      },
+      {
+        "package": "bbr",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "pkgpub",
+    "Type": "Package",
+    "Title": "Publish Packages",
+    "Version": "0.4.0",
+    "Description": "Publish packages to cran-like repos.",
+    "Encoding": "UTF-8",
+    "Authors@R": "c(\nperson(given = \"Devin\",\nfamily = \"Pastoor\",\nrole = c(\"aut\", \"cre\"),\nemail = \"devin.pastoor@gmail.com\"),\nperson(given = \"Xu\",\nfamily = \"Fei\",\nrole = c(\"ctb\"),\nemail = \"xu@a2-ai.com\"),\nperson(given = \"Elizabeth\",\nfamily = \"Bouton\",\nrole = c(\"ctb\"),\nemail = \"elizabethb@a2-ai.com\")\n)",
+    "RoxygenNote": "7.3.2",
+    "License": "MIT + file LICENSE",
+    "URL": "https://a2-ai.github.io/pkgpub/",
+    "Config/testthat/edition": "3",
+    "Config/pak/sysreqs": "git libgit2-dev libssl-dev",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/pkgpub",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "fa3e20a411847998ecd4fc6f5be7ee5608b4a664",
+    "NeedsCompilation": "no",
+    "Packaged": {
+      "Date": "2025-06-05 05:08:48 UTC",
+      "User": "root"
+    },
+    "Author": "Devin Pastoor [aut, cre],\nXu Fei [ctb],\nElizabeth Bouton [ctb]",
+    "Maintainer": "Devin Pastoor <devin.pastoor@gmail.com>",
+    "MD5sum": "dc700105b1ed591202251436dfda64f3",
+    "_dependencies": [
+      {
+        "package": "magrittr",
+        "role": "Imports"
+      },
+      {
+        "package": "desc",
+        "role": "Imports"
+      },
+      {
+        "package": "drat",
+        "role": "Imports"
+      },
+      {
+        "package": "pkgbuild",
+        "role": "Imports"
+      },
+      {
+        "package": "withr",
+        "role": "Imports"
+      },
+      {
+        "package": "gert",
+        "role": "Imports"
+      },
+      {
+        "package": "glue",
+        "role": "Imports"
+      },
+      {
+        "package": "rlang",
+        "role": "Imports"
+      },
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "dvs",
+    "Title": "Large/Sensitive File Linker for Git Repositories",
+    "Version": "0.0.2.9000",
+    "Authors@R": "c(\nperson(\"Jenna\", \"Johnson\", , \"jenna@a2-ai.com\", role = c(\"aut\", \"cre\")),\nperson(\"Devin\", \"Pastoor\", , \"devin@a2-ai.com\", role = c(\"aut\")),\nperson(\"A2-Ai\", role = \"cph\")\n)",
+    "Description": "This package allows users to version large or sensitive\nfiles under Git without tracking the file directly.",
+    "License": "MIT + file LICENSE",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/rextendr/version": "0.3.1.9001",
+    "Config/testthat/edition": "3",
+    "SystemRequirements": "Cargo (Rust's package manager), rustc >= 1.78.0",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/dvs",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "02c7ca5614a1f94acb5f2770b11dede062b1de63",
+    "NeedsCompilation": "yes",
+    "Packaged": {
+      "Date": "2025-05-16 15:58:22 UTC",
+      "User": "root"
+    },
+    "Author": "Jenna Johnson [aut, cre],\nDevin Pastoor [aut],\nA2-Ai [cph]",
+    "Maintainer": "Jenna Johnson <jenna@a2-ai.com>",
+    "MD5sum": "ff69c69bc77db85802f0869747ec52d9",
+    "_dependencies": [
+      {
+        "package": "rlang",
+        "role": "Imports"
+      },
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      },
+      {
+        "package": "fs",
+        "role": "Suggests"
+      },
+      {
+        "package": "jsonlite",
+        "role": "Suggests"
+      },
+      {
+        "package": "withr",
+        "role": "Suggests"
+      },
+      {
+        "package": "stringr",
+        "role": "Suggests"
+      },
+      {
+        "package": "yaml",
+        "role": "Suggests"
+      },
+      {
+        "package": "processx",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "osinfo",
+    "Title": "Get the os info in a cross platform way",
+    "Version": "0.0.1",
+    "Authors@R": "person(\"Devin\", \"Pastoor\", , \"devin.pastoor@gmail.com\", role = c(\"aut\", \"cre\"))",
+    "Description": "Get the os info in a cross platform way.",
+    "License": "MIT + file LICENSE",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.3.2",
+    "Config/rextendr/version": "0.3.1.9001",
+    "SystemRequirements": "Cargo (Rust's package manager), rustc",
+    "Config/testthat/edition": "3",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/osinfo",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "f815095b7b04cbf57da0e0c0a55ef5e03c16f477",
+    "NeedsCompilation": "yes",
+    "Packaged": {
+      "Date": "2025-05-30 05:28:10 UTC",
+      "User": "root"
+    },
+    "Author": "Devin Pastoor [aut, cre]",
+    "Maintainer": "Devin Pastoor <devin.pastoor@gmail.com>",
+    "MD5sum": "70cb28b60470ea9dce91568e3577c468",
+    "_dependencies": [
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      }
+    ]
+  },
+  {
+    "Package": "blake3r",
+    "Title": "Blake3 Hasher",
+    "Version": "0.0.1",
+    "Authors@R": "c(\nperson(\"Devin\", \"Pastoor\", email = \"devin.pastoor@gmail.com\", role = c(\"aut\", \"cre\")),\nperson(\"Authors of the dependency Rust crates\", role = \"aut\",\ncomment = \"see AUTHORS file\")\n)",
+    "Description": "Calculate blake3 hashes on files using rust's reference\nblake3 implementation.",
+    "License": "MIT + file LICENSE",
+    "Encoding": "UTF-8",
+    "Roxygen": "list(markdown = TRUE)",
+    "RoxygenNote": "7.2.3",
+    "Config/rextendr/version": "0.3.1",
+    "SystemRequirements": "Cargo (Rust's package manager), rustc",
+    "Config/testthat/edition": "3",
+    "Repository": "https://a2-ai.r-universe.dev",
+    "RemoteUrl": "https://github.com/a2-ai/blake3r",
+    "RemoteRef": "HEAD",
+    "RemoteSha": "bf28983f6be1da83de3e2b4e3ec1f06ab40a9dac",
+    "NeedsCompilation": "yes",
+    "Packaged": {
+      "Date": "2025-06-05 03:29:15 UTC",
+      "User": "root"
+    },
+    "Author": "Devin Pastoor [aut, cre],\nAuthors of the dependency Rust crates [aut] (see AUTHORS file)",
+    "Maintainer": "Devin Pastoor <devin.pastoor@gmail.com>",
+    "MD5sum": "0eb21e0df9453171daddd267a0ca5652",
+    "_dependencies": [
+      {
+        "package": "testthat",
+        "version": ">= 3.0.0",
+        "role": "Suggests"
+      },
+      {
+        "package": "withr",
+        "role": "Suggests"
+      }
+    ]
+  }
+]
