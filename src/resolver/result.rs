@@ -40,9 +40,9 @@ impl<'d> Resolution<'d> {
             .any(|d| d.source.is_repo() && d.name == name)
     }
 
-    pub(crate) fn remove_found(&mut self, name: &str) {
-        if let Some(index) = self.found.iter().position(|dep| dep.name == name) {
-            self.found.remove(index);
+    pub(crate) fn ignore(&mut self, name: &str) {
+        if let Some(dep) = self.found.iter_mut().find(|dep| dep.name == name) {
+            dep.ignored = true;
         }
     }
 
@@ -72,6 +72,9 @@ impl<'d> Resolution<'d> {
 
         let mut solver = DependencySolver::default();
         for package in &self.found {
+            if package.ignored {
+                continue;
+            }
             solver.add_package(&package.name, &package.version);
             for dep in &package.dependencies {
                 if let Some(req) = dep.version_requirement() {
@@ -94,6 +97,10 @@ impl<'d> Resolution<'d> {
                             names.insert(&pkg.name);
                             indices.insert(i);
                         }
+                    } else if pkg.ignored {
+                        // We still insert ignored packages
+                        names.insert(&pkg.name);
+                        indices.insert(i);
                     }
                 }
 

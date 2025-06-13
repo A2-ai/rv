@@ -37,6 +37,11 @@ pub struct ResolvedDependency<'d> {
     // Only set for local dependencies. This is the full resolved path to a directory/tarball
     pub(crate) local_resolved_path: Option<PathBuf>,
     pub(crate) env_vars: HashMap<&'d str, &'d str>,
+    /// Whether this dependency should be ignored by the sync handler.
+    /// This can happen for example if you have
+    /// { name = "dplyr", dependencies_only = true } in your rproject.toml
+    /// in which case we want to keep track of it but not write it anywhere
+    pub(crate) ignored: bool,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -89,6 +94,7 @@ impl<'d> ResolvedDependency<'d> {
             from_remote: false,
             local_resolved_path: None,
             env_vars: HashMap::new(),
+            ignored: false,
         }
     }
 
@@ -144,6 +150,7 @@ impl<'d> ResolvedDependency<'d> {
             from_remote: false,
             local_resolved_path: None,
             env_vars: HashMap::new(),
+            ignored: false,
         };
 
         (res, deps)
@@ -179,6 +186,7 @@ impl<'d> ResolvedDependency<'d> {
             from_remote: false,
             local_resolved_path: None,
             env_vars: HashMap::new(),
+            ignored: false,
         };
 
         (res, deps)
@@ -212,6 +220,7 @@ impl<'d> ResolvedDependency<'d> {
             from_remote: false,
             local_resolved_path: Some(local_resolved_path),
             env_vars: HashMap::new(),
+            ignored: false,
         };
 
         (res, deps)
@@ -244,6 +253,7 @@ impl<'d> ResolvedDependency<'d> {
             from_remote: false,
             local_resolved_path: None,
             env_vars: HashMap::new(),
+            ignored: false,
         };
 
         (res, deps)
@@ -271,6 +281,7 @@ impl<'d> ResolvedDependency<'d> {
             from_remote: false,
             local_resolved_path: None,
             env_vars: HashMap::new(),
+            ignored: false,
         };
 
         (res, deps)
@@ -279,14 +290,15 @@ impl<'d> ResolvedDependency<'d> {
 
 impl fmt::Debug for ResolvedDependency<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut vars = self.env_vars
+        let mut vars = self
+            .env_vars
             .iter()
             .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>();
         vars.sort();
         write!(
             f,
-            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={}, env_vars=[{}])",
+            "{}={} ({:?}, type={}, path='{}', from_lockfile={}, from_remote={}, env_vars=[{}]{})",
             self.name,
             self.version.original,
             self.source,
@@ -295,6 +307,7 @@ impl fmt::Debug for ResolvedDependency<'_> {
             self.from_lockfile,
             self.from_remote,
             vars.join(", "),
+            if self.ignored { ", ignored" } else { "" },
         )
     }
 }

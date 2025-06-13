@@ -649,7 +649,7 @@ impl<'d> Resolver<'d> {
         }
 
         for name in dependencies_only {
-            result.remove_found(name);
+            result.ignore(name);
         }
 
         for dep in result.found.iter_mut() {
