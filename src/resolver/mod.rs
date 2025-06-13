@@ -223,9 +223,12 @@ impl<'d> Resolver<'d> {
                 .iter()
                 .chain(&package.suggests)
                 .map(|p| {
-                    QueueItem::name_and_parent_only(Cow::Borrowed(p.name()), item.name.clone())
+                    let mut q = QueueItem::name_and_parent_only(Cow::Borrowed(p.name()), item.name.clone());
+                    q.version_requirement = p.version_requirement().map(|x| Cow::Borrowed(x));
+                    q
                 })
                 .collect();
+
             Some((resolved_dep, items))
         } else {
             None
@@ -424,7 +427,7 @@ impl<'d> Resolver<'d> {
         http_download: &'d impl HttpDownload,
     ) -> Resolution<'d> {
         let mut result = Resolution::default();
-        let mut processed = HashSet::with_capacity(dependencies.len() * 10);
+        let mut processed: HashMap<String, HashSet<Option<Cow<'d, VersionRequirement>>>> = HashMap::with_capacity(dependencies.len() * 10);
         // Top level dependencies can require specific repos.
         // We should not try to resolve those from anywhere else even if they dependencies of other
         // packages
@@ -458,13 +461,14 @@ impl<'d> Resolver<'d> {
             .collect();
 
         while let Some(item) = queue.pop_front() {
-            if processed.contains(item.name.as_ref()) {
+            if let Some(ver_reqs) = processed.get(item.name.as_ref()) {
                 // If we have already found that dependency and it has a forced repo, skip it
                 if repo_required.contains(item.name.as_ref()) {
                     continue
                 }
+
                 // If there's no version requirement and we already have it, we can skip it
-                if item.version_requirement.is_none() {
+                if ver_reqs.contains(&item.version_requirement) {
                     continue;
                 }
             }
@@ -473,7 +477,7 @@ impl<'d> Resolver<'d> {
             if item.local_path.is_some() {
                 match self.local_lookup(&item) {
                     Ok((resolved_dep, items)) => {
-                        processed.insert(resolved_dep.name.to_string());
+                        processed.entry(resolved_dep.name.to_string()).or_insert_with(HashSet::new).insert(item.version_requirement.clone());
                         result.add_found(resolved_dep);
                         queue.extend(items);
                         continue;
@@ -489,7 +493,7 @@ impl<'d> Resolver<'d> {
             // is not listed from a specific repo
             if !item.has_required_repo() {
                 if let Some((resolved_dep, items)) = self.builtin_lookup(&item) {
-                    processed.insert(resolved_dep.name.to_string());
+                    processed.entry(resolved_dep.name.to_string()).or_insert_with(HashSet::new).insert(item.version_requirement.clone());
                     result.add_found(resolved_dep);
                     queue.extend(items);
                     continue;
@@ -498,7 +502,7 @@ impl<'d> Resolver<'d> {
 
             // Look at lockfile
             if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
-                processed.insert(resolved_dep.name.to_string());
+                processed.entry(resolved_dep.name.to_string()).or_insert_with(HashSet::new).insert(item.version_requirement.clone());
                 result.add_found(resolved_dep);
                 queue.extend(items);
                 continue;
@@ -506,7 +510,7 @@ impl<'d> Resolver<'d> {
 
             // Then we handle it differently depending on the source but even if we fail to find
             // something, we will consider it processed
-            processed.insert(item.name.to_string());
+            processed.entry(item.name.to_string()).or_insert_with(HashSet::new).insert(item.version_requirement.clone());
 
             // But first, we check if the item has a remote and use that instead
             // We will keep the remote result around _if_ the item has a version requirement and is in
