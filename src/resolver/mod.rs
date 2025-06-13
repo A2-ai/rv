@@ -458,10 +458,15 @@ impl<'d> Resolver<'d> {
             .collect();
 
         while let Some(item) = queue.pop_front() {
-            // If we have already found that dependency and it has a forced repo, skip it
-            if processed.contains(item.name.as_ref()) && repo_required.contains(item.name.as_ref())
-            {
-                continue;
+            if processed.contains(item.name.as_ref()) {
+                // If we have already found that dependency and it has a forced repo, skip it
+                if repo_required.contains(item.name.as_ref()) {
+                    continue
+                }
+                // If there's no version requirement and we already have it, we can skip it
+                if item.version_requirement.is_none() {
+                    continue;
+                }
             }
 
             // If we have a local path, we don't need to check anything at all, just the actual path
