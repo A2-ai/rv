@@ -1,7 +1,7 @@
 //! CLI context that gets instantiated for a few commands and passed around
 
 use crate::cli::utils::write_err;
-use crate::consts::{RV_DIR_NAME, STAGING_DIR_NAME};
+use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::utils::create_spinner;
@@ -181,6 +181,30 @@ pub(crate) fn load_databases(
                 // load the archive
                 let db = RepositoryDatabase::load(&path)?;
                 log::debug!("Loaded packages db from {path:?}");
+                Ok((db, r.force_source))
+            } else if r.url().contains("r-universe.dev") {
+                if path.exists() {
+                    fs::remove_file(&path)?;
+                }
+                log::debug!("Need to download R-Universe packages API for {}", r.url());
+                let mut db = RepositoryDatabase::new(r.url());
+                let mut r_universe_api = Vec::new();
+                let api_url = format!("{}/{RUNIVERSE_PACKAGES_API_PATH}", r.url())
+                    .parse::<Url>()
+                    .unwrap();
+                let bytes_read = timeit!(
+                    "Downloaded R-Universe packages API",
+                    http::download(&api_url, &mut r_universe_api, Vec::new())?
+                );
+
+                if bytes_read == 0 {
+                    bail!("File at {api_url} was not found");
+                }
+
+                db.parse_runiverse_api(&String::from_utf8_lossy(&r_universe_api));
+
+                db.persist(&path)?;
+                log::debug!("Saving packages db at {path:?}");
                 Ok((db, r.force_source))
             } else {
                 // Make sure to remove the file if it exists - it's expired

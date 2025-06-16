@@ -2,18 +2,15 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
-use std::str::{FromStr, Utf8Error};
+use std::str::FromStr;
 
-use serde::Deserialize;
 use url::Url;
 
 use crate::cache::InstallationStatus;
-use crate::git::url::GitUrl;
-use crate::http::HttpError;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
-use crate::{HttpDownload, Version, VersionRequirement};
+use crate::{Version, VersionRequirement};
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -105,34 +102,21 @@ impl<'d> ResolvedDependency<'d> {
         install_suggests: bool,
         force_source: bool,
         installation_status: InstallationStatus,
-        http_download: &impl HttpDownload,
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
-
-        let mut source = Source::Repository {
-            repository: repo_url.clone(),
-        };
-        // If repository is r-universe, treat as a git repo since r-universe does not have archive
-
-        // TODO: If/when the need arises to not treat r-universe as a git repo, the potential spec is to keep both the repository
-        // and git info. The repository is used while the locked version and version in the PACKAGES database match,
-        // switching to using git once it is no longer available
-        if repo_url.as_str().contains("r-universe.dev") {
-            match RUniverseApi::query_r_universe_api(&package.name, repo_url, http_download) {
-                Ok(r) => {
-                    source = Source::RUniverse {
-                        repository: repo_url.clone(),
-                        git: r.remote_url,
-                        sha: r.remote_sha.to_string(),
-                        directory: r.remote_subdir,
-                    }
+        let source = match (&package.remote_url, &package.remote_sha) {
+            (Some(git), Some(sha)) if repo_url.to_string().contains("r-universe.dev") => {
+                Source::RUniverse {
+                    repository: repo_url.clone(),
+                    git: git.clone(),
+                    sha: sha.to_string(),
+                    directory: package.remote_subdir.clone(),
                 }
-                Err(e) => log::warn!(
-                    "Could not properly lock {} due to: {e:?}. Falling back to standard repository. Library may not be able to be recreated.",
-                    package.name
-                ),
             }
-        }
+            _ => Source::Repository {
+                repository: repo_url.clone(),
+            },
+        };
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
@@ -380,91 +364,5 @@ impl fmt::Display for UnresolvedDependency<'_> {
                 String::new()
             }
         )
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct RUniverseApi {
-    remote_url: GitUrl,
-    remote_sha: String,
-    remote_subdir: Option<String>,
-}
-
-impl RUniverseApi {
-    fn query_r_universe_api(
-        pkg_name: &str,
-        repo_url: &Url,
-        http: &impl HttpDownload,
-    ) -> Result<Self, RUniverseApiError> {
-        let api_url =
-            Url::parse(&format!("{}/api/packages/{}", repo_url, pkg_name)).expect("valid URL");
-        let mut writer = Vec::new();
-
-        http.download(&api_url, &mut writer, Vec::new())?;
-        let r_universe_api: RUniverseApi = serde_json::from_slice(&writer)?;
-
-        Ok(r_universe_api)
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("Failed to determine Git info from R-Universe API")]
-#[non_exhaustive]
-pub struct RUniverseApiError {
-    pub source: RUniverseApiErrorKind,
-}
-
-impl From<HttpError> for RUniverseApiError {
-    fn from(value: HttpError) -> Self {
-        Self {
-            source: RUniverseApiErrorKind::Http(value),
-        }
-    }
-}
-
-impl From<Utf8Error> for RUniverseApiError {
-    fn from(value: Utf8Error) -> Self {
-        Self {
-            source: RUniverseApiErrorKind::Utf8(value),
-        }
-    }
-}
-
-impl From<serde_json::Error> for RUniverseApiError {
-    fn from(value: serde_json::Error) -> Self {
-        Self {
-            source: RUniverseApiErrorKind::Parse(value),
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum RUniverseApiErrorKind {
-    #[error(transparent)]
-    Http(#[from] HttpError),
-    #[error(transparent)]
-    Utf8(#[from] Utf8Error),
-    #[error(transparent)]
-    Parse(#[from] serde_json::Error),
-}
-
-#[cfg(test)]
-mod test {
-    use std::fs;
-
-    use super::RUniverseApi;
-
-    #[test]
-    fn runiverse_api() {
-        // test with path element
-        let content = fs::read_to_string("src/tests/r_universe/arrow.api").unwrap();
-        let api: RUniverseApi = serde_json::from_str(&content).unwrap();
-        insta::assert_debug_snapshot!("R Universe arrow API parse", api);
-
-        // test without path element
-        let content = fs::read_to_string("src/tests/r_universe/osinfo.api").unwrap();
-        let api: RUniverseApi = serde_json::from_str(&content).unwrap();
-        insta::assert_debug_snapshot!("R Universe scicalc API parse", api);
     }
 }

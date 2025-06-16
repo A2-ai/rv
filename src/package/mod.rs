@@ -12,12 +12,14 @@ mod parser;
 mod remotes;
 mod version;
 
-use crate::consts::BASE_PACKAGES;
+use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
 pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version};
+
+pub(crate) use remotes::parse_remote;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -77,19 +79,25 @@ impl Dependency {
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,
-    r_requirement: Option<VersionRequirement>,
-    depends: Vec<Dependency>,
-    imports: Vec<Dependency>,
-    suggests: Vec<Dependency>,
-    enhances: Vec<Dependency>,
-    linking_to: Vec<Dependency>,
-    license: String,
-    md5_sum: String,
+    pub(crate) r_requirement: Option<VersionRequirement>,
+    pub(crate) depends: Vec<Dependency>,
+    pub(crate) imports: Vec<Dependency>,
+    pub(crate) suggests: Vec<Dependency>,
+    pub(crate) enhances: Vec<Dependency>,
+    pub(crate) linking_to: Vec<Dependency>,
+    pub(crate) license: String,
+    pub(crate) md5_sum: String,
     pub(crate) path: Option<String>,
-    recommended: bool,
+    pub(crate) recommended: bool,
     pub(crate) needs_compilation: bool,
     // {remote_string => (pkg name, remote)}
     pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
+    // The below fields are populated when packages are built from Git by tools like R-Universe
+    // Used to install packages from R-Universe and sets us up to start editing the DESCRIPTION
+    // file upon installations for compatibility with `sessioninfo`
+    pub(crate) remote_url: Option<GitUrl>,
+    pub(crate) remote_sha: Option<String>,
+    pub(crate) remote_subdir: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -106,10 +114,6 @@ impl Package {
         } else {
             true
         }
-    }
-
-    pub fn r_version_requirement(&self) -> Option<&VersionRequirement> {
-        self.r_requirement.as_ref()
     }
 
     pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependencies {
