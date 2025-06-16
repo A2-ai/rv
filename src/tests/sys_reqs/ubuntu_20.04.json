@@ -1,0 +1,270 @@
+{
+  "requirements": [
+    {
+      "name": "ABC.RAP",
+      "requirements": {
+        "packages": [
+          "make"
+        ],
+        "install_scripts": [
+          "apt-get install -y make"
+        ]
+      }
+    },
+    {
+      "name": "AWR",
+      "requirements": {
+        "packages": [
+          "default-jdk"
+        ],
+        "install_scripts": [
+          "apt-get install -y default-jdk"
+        ],
+        "post_install": [
+          {
+            "command": "R CMD javareconf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AovBay",
+      "requirements": {
+        "packages": [
+          "make"
+        ],
+        "install_scripts": [
+          "apt-get install -y make"
+        ]
+      }
+    },
+    {
+      "name": "BANOVA",
+      "requirements": {
+        "packages": [
+          "jags"
+        ],
+        "install_scripts": [
+          "apt-get install -y jags"
+        ]
+      }
+    },
+    {
+      "name": "BCHM",
+      "requirements": {
+        "packages": [
+          "jags"
+        ],
+        "install_scripts": [
+          "apt-get install -y jags"
+        ]
+      }
+    },
+    {
+      "name": "BGVAR",
+      "requirements": {
+        "packages": [
+          "make"
+        ],
+        "install_scripts": [
+          "apt-get install -y make"
+        ]
+      }
+    },
+    {
+      "name": "BIDistances",
+      "requirements": {
+        "packages": [
+          "make",
+          "pandoc"
+        ],
+        "install_scripts": [
+          "apt-get install -y make",
+          "apt-get install -y pandoc"
+        ]
+      }
+    },
+    {
+      "name": "BINtools",
+      "requirements": {
+        "packages": [
+          "make"
+        ],
+        "install_scripts": [
+          "apt-get install -y make"
+        ]
+      }
+    },
+    {
+      "name": "BPrinStratTTE",
+      "requirements": {
+        "packages": [
+          "make"
+        ],
+        "install_scripts": [
+          "apt-get install -y make"
+        ]
+      }
+    },
+    {
+      "name": "BSPBSS",
+      "requirements": {
+        "packages": [
+          "make"
+        ],
+        "install_scripts": [
+          "apt-get install -y make"
+        ]
+      }
+    },
+    {
+      "name": "BTSPAS",
+      "requirements": {
+        "packages": [
+          "jags"
+        ],
+        "install_scripts": [
+          "apt-get install -y jags"
+        ]
+      }
+    },
+    {
+      "name": "BaHZING",
+      "requirements": {
+        "packages": [
+          "jags"
+        ],
+        "install_scripts": [
+          "apt-get install -y jags"
+        ]
+      }
+    },
+    {
+      "name": "BayLum",
+      "requirements": {
+        "packages": [
+          "jags"
+        ],
+        "install_scripts": [
+          "apt-get install -y jags"
+        ]
+      }
+    },
+    {
+      "name": "BayesCACE",
+      "requirements": {
+        "packages": [
+          "jags"
+        ],
+        "install_scripts": [
+          "apt-get install -y jags"
+        ]
+      }
+    },
+    {
+        "name": "RPushbullet",
+        "requirements": {
+            "pre_install": [
+            {
+                "command": "[ $(which google-chrome) ] || apt-get install -y gnupg curl"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || curl -fsSL -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || DEBIAN_FRONTEND='noninteractive' apt-get install -y /tmp/google-chrome.deb"
+            }
+            ],
+            "post_install": [
+            {
+                "command": "rm -f /tmp/google-chrome.deb"
+            }
+            ]
+        }
+    },
+    {
+        "name": "chromote",
+        "requirements": {
+            "pre_install": [
+            {
+                "command": "[ $(which google-chrome) ] || apt-get install -y gnupg curl"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || curl -fsSL -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || DEBIAN_FRONTEND='noninteractive' apt-get install -y /tmp/google-chrome.deb"
+            }
+            ],
+            "post_install": [
+            {
+                "command": "rm -f /tmp/google-chrome.deb"
+            }
+            ]
+        }
+    },
+    {
+        "name": "giacR",
+        "requirements": {
+            "pre_install": [
+            {
+                "command": "[ $(which google-chrome) ] || apt-get install -y gnupg curl"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || curl -fsSL -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || DEBIAN_FRONTEND='noninteractive' apt-get install -y /tmp/google-chrome.deb"
+            }
+            ],
+            "post_install": [
+            {
+                "command": "rm -f /tmp/google-chrome.deb"
+            }
+            ]
+        }
+    },
+    {
+        "name": "nomnoml",
+        "requirements": {
+            "pre_install": [
+            {
+                "command": "[ $(which google-chrome) ] || apt-get install -y gnupg curl"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || curl -fsSL -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || DEBIAN_FRONTEND='noninteractive' apt-get install -y /tmp/google-chrome.deb"
+            }
+            ],
+            "post_install": [
+            {
+                "command": "rm -f /tmp/google-chrome.deb"
+            }
+            ]
+        }
+    },
+    {
+        "name": "qtkit",
+        "requirements": {
+            "pre_install": [
+            {
+                "command": "[ $(which google-chrome) ] || apt-get install -y gnupg curl"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || curl -fsSL -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+            },
+            {
+                "command": "[ $(which google-chrome) ] || DEBIAN_FRONTEND='noninteractive' apt-get install -y /tmp/google-chrome.deb"
+            }
+            ],
+            "post_install": [
+            {
+                "command": "rm -f /tmp/google-chrome.deb"
+            }
+            ]
+        }
+    }
+  ]
+}

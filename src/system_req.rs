@@ -172,3 +172,15 @@ pub fn check_installation_status(
 
     out
 }
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+    use super::Response;
+
+    #[test]
+    fn test_ubuntu_20_04() {
+        let content = fs::read_to_string("src/tests/sys_reqs/ubuntu_20.04.json").unwrap();
+        assert!(serde_json::from_str::<Response>(&content).is_ok());
+    }
+}
