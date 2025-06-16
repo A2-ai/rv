@@ -24,6 +24,10 @@ pub enum SyncErrorKind {
     HttpError(HttpError),
     #[error("{0}")]
     SyncFailed(SyncErrors),
+    #[error(
+        "One or more packages we want to remove is loaded in the session, please restart your R session and re-run the rv command."
+    )]
+    NfsError,
 }
 
 impl From<InstallError> for SyncError {

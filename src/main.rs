@@ -726,8 +726,8 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Activate { no_r_environment } => {
-            let dir = std::env::current_dir()?;
-            activate(dir, no_r_environment)?;
+            let context = CliContext::new(&cli.config_file, None)?;
+            activate(&context.project_dir, no_r_environment)?;
             if output_format.is_json() {
                 println!("{{}}");
             } else {
@@ -735,8 +735,8 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Deactivate => {
-            let dir = std::env::current_dir()?;
-            deactivate(dir)?;
+            let context = CliContext::new(&cli.config_file, None)?;
+            deactivate(&context.project_dir)?;
             if output_format.is_json() {
                 println!("{{}}");
             } else {

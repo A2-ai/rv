@@ -233,22 +233,29 @@ impl<'a> SyncHandler<'a> {
 
         let mut sync_changes = Vec::new();
 
-        let plan = BuildPlan::new(deps);
+        let mut plan = BuildPlan::new(deps);
         let num_deps_to_install = plan.num_to_install();
         let (deps_seen, deps_to_copy, deps_to_remove) = self.compare_with_local_library(deps);
         let needs_sync = deps_seen.len() != num_deps_to_install;
 
-        for (dir_name, notify) in deps_to_remove {
-            // Only actually remove the deps if we are not going to rebuild the lib folder
+        for (dir_name, notify) in &deps_to_remove {
+            if self.library.has_nfs_locks.contains(*dir_name) {
+                log::debug!("{dir_name} in the library has a NFS lock but we want to remove it.");
+                return Err(SyncError {
+                    source: SyncErrorKind::NfsError,
+                });
+            }
+
+            // Only actually remove the deps if we are not going to do any other changes.
             if !needs_sync {
                 let p = self.library.path().join(dir_name);
-                if !self.dry_run && notify {
+                if !self.dry_run && *notify {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
                 }
             }
 
-            if notify {
+            if *notify {
                 sync_changes.push(SyncChange::removed(dir_name));
             }
         }
@@ -261,12 +268,24 @@ impl<'a> SyncHandler<'a> {
         // Create staging only if we need to build stuff
         fs::create_dir_all(&self.staging_path)?;
 
+        // Then we copy the deps seen to the staging path and mark them as installed in the plan
+        for d in &deps_seen {
+            // builtin packages will not be in the library
+            let in_lib = self.library.path().join(d);
+            if in_lib.is_dir() {
+                let linker = LinkMode::symlink_if_possible();
+                linker.link_files(d, in_lib, &self.staging_path.join(d))?;
+                plan.mark_installed(*d);
+            }
+        }
+        let num_deps_to_install = plan.num_to_install();
+
         // We can't use references from the BuildPlan since we borrow mutably from it so we
         // create a lookup table for resolved deps by name and use those references across channels.
         let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (&d.name, d)).collect();
 
         let pb = if self.show_progress_bar {
-            let pb = ProgressBar::new(plan.full_deps.len() as u64);
+            let pb = ProgressBar::new(plan.num_to_install() as u64);
             pb.set_style(
                 ProgressStyle::with_template(
                     "[{elapsed_precise}] {bar:60} {pos:>7}/{len:7}\n{msg}",
@@ -455,18 +474,36 @@ impl<'a> SyncHandler<'a> {
         if self.dry_run {
             fs::remove_dir_all(&self.staging_path)?;
         } else {
-            // If we are there, it means we are successful. Replace the project lib by the staging dir
-            if self.library.path().is_dir() {
-                fs::remove_dir_all(self.library.path())?;
-            }
+            // If we are there, it means we are successful.
 
-            match fs::rename(&self.staging_path, self.library.path()) {
-                Ok(_) => (),
-                Err(e) => {
-                    fs::remove_dir_all(self.library.path())?;
-                    return Err(e.into());
+            // mv new packages to the library and delete the ones that need to be removed
+            for (name, notify) in deps_to_remove {
+                let p = self.library.path().join(name);
+                if !self.dry_run && notify {
+                    log::debug!("Removing {name} from library");
+                    fs::remove_dir_all(&p)?;
+                }
+
+                if notify {
+                    sync_changes.push(SyncChange::removed(name));
                 }
             }
+
+            for entry in fs::read_dir(&self.staging_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                let name = path.file_name().unwrap().to_str().unwrap().to_string();
+                if !deps_seen.contains(name.as_str()) {
+                    let out = self.library.path().join(&name);
+                    if out.is_dir() {
+                        fs::remove_dir_all(&out)?;
+                    }
+                    fs::rename(path, out)?;
+                }
+            }
+
+            // Then delete staging
+            fs::remove_dir_all(&self.staging_path)?;
         }
 
         // Sort all changes by a-z and fall back on installed status for things with the same name

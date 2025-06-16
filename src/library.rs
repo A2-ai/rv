@@ -77,6 +77,9 @@ pub struct Library {
     pub packages: HashMap<String, Version>,
     /// We keep track of all packages not coming from a package repository
     pub non_repo_packages: HashMap<String, LocalMetadata>,
+    /// Which packages in the library have some kind of NFS lock file that will prevent its
+    /// deletion
+    pub has_nfs_locks: HashSet<String>,
     /// The folders exist but we can't find the DESCRIPTION file.
     /// This is likely a broken symlink and we should remove that folder/reinstall it
     /// It could also be something that is not a R package added by another tool
@@ -102,6 +105,7 @@ impl Library {
             packages: HashMap::new(),
             non_repo_packages: HashMap::new(),
             broken: HashSet::new(),
+            has_nfs_locks: HashSet::new(),
             custom: false,
         }
     }
@@ -116,6 +120,7 @@ impl Library {
             packages: HashMap::new(),
             non_repo_packages: HashMap::new(),
             broken: HashSet::new(),
+            has_nfs_locks: HashSet::new(),
             custom: true,
         }
     }
@@ -142,6 +147,7 @@ impl Library {
         self.packages.clear();
         self.non_repo_packages.clear();
         self.broken.clear();
+        self.has_nfs_locks.clear();
 
         for entry in fs::read_dir(&self.path).unwrap() {
             let entry = entry.expect("Valid entry");
@@ -149,6 +155,36 @@ impl Library {
             // the package name will be the name of the folder
             let path = entry.path();
             let name = path.file_name().unwrap().to_str().unwrap();
+
+            #[cfg(unix)]
+            {
+                let libs_path = path.join("libs");
+
+                if libs_path.is_dir() {
+                    for entry in fs::read_dir(&libs_path).unwrap() {
+                        let entry = entry.expect("Valid entry");
+                        let filename = entry.file_name().to_string_lossy().to_string();
+                        // We already have a .nfs file so something went wrong before
+                        if filename.starts_with(".nfs") {
+                            self.has_nfs_locks.insert(name.to_string());
+                            break;
+                        }
+                        // Otherwise if the extension is .so, check if the file is in use
+                        let extension = entry
+                            .path()
+                            .extension()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        if extension == "so" && is_file_in_use(&entry.path())
+                        {
+                            self.has_nfs_locks.insert(name.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+
             let desc_path = path.join(DESCRIPTION_FILENAME);
             if !desc_path.exists() {
                 self.broken.insert(name.to_string());
@@ -210,4 +246,15 @@ impl Library {
             Source::Builtin { .. } => true,
         }
     }
+}
+
+#[cfg(unix)]
+fn is_file_in_use(file_path: &Path) -> bool {
+    let output = std::process::Command::new("lsof")
+        .arg(file_path)
+        .output()
+        .expect("lsof failed");
+
+    // lsof returns exit code 0 if file is open, 1 if not
+    output.status.success()
 }
