@@ -46,6 +46,8 @@ impl SysDep {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Requirements {
+    // not all requirements have packages. Some are pre_/post_install
+    #[serde(default)]
     packages: Vec<String>,
 }
 
