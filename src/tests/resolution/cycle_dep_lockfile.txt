@@ -1,0 +1,42 @@
+# this would do an infinite loop before
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "R6",
+]
+---
+Package: R6
+Version: 2.5.2
+Depends: R (>= 3.0), processx
+Suggests: testthat, pryr
+NeedsCompilation: no
+License: MIT + file LICENSE
+
+Package: processx
+Version: 2.5.2
+Depends: R6
+NeedsCompilation: no
+License: MIT + file LICENSE
+---
+version = 1
+r_version = "4.4"
+
+[[packages]]
+name = "R6"
+version = "2.5.1"
+source = { repository = "http://cran" }
+force_source = false
+dependencies = [
+    "processx"
+]
+
+[[packages]]
+name = "processx"
+version = "3.8.6"
+source = { repository = "http://cran" }
+force_source = false
+dependencies = [
+    "R6",
+]
