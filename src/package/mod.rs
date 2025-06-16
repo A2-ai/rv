@@ -116,10 +116,6 @@ impl Package {
         }
     }
 
-    pub fn r_version_requirement(&self) -> Option<&VersionRequirement> {
-        self.r_requirement.as_ref()
-    }
-
     pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependencies {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise

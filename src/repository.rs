@@ -94,7 +94,7 @@ impl RepositoryDatabase {
                         }
                     }
 
-                    match (max_r_version, p.r_version_requirement()) {
+                    match (max_r_version, p.r_requirement.as_ref()) {
                         (Some(_), None) => (),
                         (None, Some(v)) => {
                             max_r_version = Some(&v.version);
