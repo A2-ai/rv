@@ -11,3 +11,4 @@ from*/
 .DS_Store
 .aider*
 logs/
+dist/

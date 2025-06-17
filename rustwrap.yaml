@@ -1,0 +1,38 @@
+targets:
+  - platform: darwin
+    arch: x64
+    url_template: https://github.com/a2-ai/rv/releases/download/v__VERSION__/rv-v__VERSION__-x86_64-apple-darwin.tar.gz
+  - platform: darwin
+    arch: arm64
+    url_template: https://github.com/a2-ai/rv/releases/download/v__VERSION__/rv-v__VERSION__-aarch64-apple-darwin.tar.gz
+
+# provider: homebrew
+brew:
+  name: rv
+  publish: true # push an update commit to the tap repo
+  tap: a2-ai/homebrew-tap
+  recipe_fname: rv.rb
+  recipe_template: |
+    class Rv < Formula
+      desc "rv - a fast R package installer"
+      homepage "https://github.com/a2-ai/rv"
+      version "__VERSION__"
+
+      on_macos do
+        if Hardware::CPU.arm?
+          url "__URL__[arm64]"
+          sha256 "__SHA__[arm64]"
+        elsif Hardware::CPU.intel?
+          url "__URL__[x64]"
+          sha256 "__SHA__[x64]"
+        end
+      end
+
+      def install
+        bin.install "rv"
+      end
+
+      test do
+        system "#{bin}/rv", "--version"
+      end
+    end
