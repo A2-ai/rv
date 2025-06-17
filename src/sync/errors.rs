@@ -25,9 +25,9 @@ pub enum SyncErrorKind {
     #[error("{0}")]
     SyncFailed(SyncErrors),
     #[error(
-        "One or more packages we want to remove is loaded in the session, please restart your R session and re-run the rv command."
+        "Unable to sync - one or more packages ({0}) we want to remove is loaded in the session, please restart your R session and re-run the rv command."
     )]
-    NfsError,
+    NfsError(String),
 }
 
 impl From<InstallError> for SyncError {

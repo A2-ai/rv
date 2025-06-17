@@ -186,7 +186,7 @@ impl<'a> SyncHandler<'a> {
 
         // Lastly, remove any package that we can't really access
         for name in &self.library.broken {
-            log::debug!("Package {name} in library is broken");
+            log::warn!("Package {name} in library is broken");
             deps_to_remove.insert((name.as_str(), false));
         }
 
@@ -239,10 +239,17 @@ impl<'a> SyncHandler<'a> {
         let needs_sync = deps_seen.len() != num_deps_to_install;
 
         for (dir_name, notify) in &deps_to_remove {
-            if self.library.has_nfs_locks.contains(*dir_name) {
+            if self.library.packages_loaded.contains(*dir_name) {
                 log::debug!("{dir_name} in the library has a NFS lock but we want to remove it.");
                 return Err(SyncError {
-                    source: SyncErrorKind::NfsError,
+                    source: SyncErrorKind::NfsError(
+                        self.library
+                            .packages_loaded
+                            .iter()
+                            .map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
                 });
             }
 
@@ -273,7 +280,7 @@ impl<'a> SyncHandler<'a> {
             // builtin packages will not be in the library
             let in_lib = self.library.path().join(d);
             if in_lib.is_dir() {
-                let linker = LinkMode::symlink_if_possible();
+                let linker = LinkMode::new();
                 linker.link_files(d, in_lib, &self.staging_path.join(d))?;
                 plan.mark_installed(*d);
             }
