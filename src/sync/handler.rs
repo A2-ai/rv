@@ -10,7 +10,7 @@ use ctrlc;
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::consts::RECOMMENDED_PACKAGES;
+use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
@@ -176,7 +176,9 @@ impl<'a> SyncHandler<'a> {
         }
 
         // Skip builtin versions
-        for name in RECOMMENDED_PACKAGES {
+        let mut out = Vec::from(RECOMMENDED_PACKAGES);
+        out.extend(BASE_PACKAGES.as_slice());
+        for name in out {
             if let Some(dep) = deps_by_name.get(name) {
                 if dep.source.is_builtin() {
                     deps_seen.insert(name);
@@ -281,6 +283,7 @@ impl<'a> SyncHandler<'a> {
             let in_lib = self.library.path().join(d);
             if in_lib.is_dir() {
                 let linker = LinkMode::new();
+                log::debug!("Linking {in_lib:?} into staging dir with link mode {}", linker.name());
                 linker.link_files(d, in_lib, &self.staging_path.join(d))?;
                 plan.mark_installed(*d);
             }
