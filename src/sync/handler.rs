@@ -18,7 +18,7 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::get_max_workers;
 use crate::{
-    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
+    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency
 };
 
 #[cfg(feature = "cli")]
@@ -99,18 +99,20 @@ impl<'a> SyncHandler<'a> {
         if self.dry_run {
             return Ok(());
         }
-
+        // we want the staging to take precedence over the library, but still have
+        // the library in the paths for lookup
+        let library_dirs = vec![&self.staging_path, self.library.path()];
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
                 dep,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 cancellation,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 &GitExecutor {},
@@ -119,14 +121,14 @@ impl<'a> SyncHandler<'a> {
             Source::Local { .. } => sources::local::install_package(
                 dep,
                 self.project_dir,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 cancellation,
             ),
             Source::Url { .. } => sources::url::install_package(
                 dep,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 cancellation,
@@ -277,14 +279,15 @@ impl<'a> SyncHandler<'a> {
         // Create staging only if we need to build stuff
         fs::create_dir_all(&self.staging_path)?;
 
-        // Then we copy the deps seen to the staging path and mark them as installed in the plan
+        // Then we mark the deps seen so they won't be installed into the staging dir 
         for d in &deps_seen {
             // builtin packages will not be in the library
             let in_lib = self.library.path().join(d);
             if in_lib.is_dir() {
-                let linker = LinkMode::new();
-                log::debug!("Linking {in_lib:?} into staging dir with link mode {}", linker.name());
-                linker.link_files(d, in_lib, &self.staging_path.join(d))?;
+                //let linker = LinkMode::new();
+                //log::debug!("Linking {in_lib:?} into staging dir with link mode {}", linker.name());
+                //linker.link_files(d, in_lib, &self.staging_path.join(d))?;
+                log::debug!("marking {d} as installed in the plan");
                 plan.mark_installed(*d);
             }
         }
@@ -357,7 +360,7 @@ impl<'a> SyncHandler<'a> {
             let installing = Arc::new(Mutex::new(HashSet::new()));
 
             // Our worker threads that will actually perform the installation
-            for _ in 0..self.max_workers {
+            for worker_num in 0..self.max_workers {
                 let ready_receiver = ready_receiver.clone();
                 let done_sender = done_sender.clone();
                 let plan = Arc::clone(&plan);
@@ -369,6 +372,7 @@ impl<'a> SyncHandler<'a> {
                 let cancellation_clone = cancellation.clone();
 
                 s.spawn(move |_| {
+                    let local_worker_id = worker_num + 1;
                     while let Ok(dep) = ready_receiver.recv() {
                         if has_errors_clone.load(Ordering::Relaxed)
                             || cancellation_clone.is_cancelled()
@@ -386,10 +390,10 @@ impl<'a> SyncHandler<'a> {
                             }
                             match dep.kind {
                                 PackageType::Source => {
-                                    log::debug!("Installing {} (source)", dep.name)
+                                    log::debug!("Installing {} (source) on worker {}", dep.name, local_worker_id)
                                 }
                                 PackageType::Binary => {
-                                    log::debug!("Installing {} (binary)", dep.name)
+                                    log::debug!("Installing {} (binary) on worker {}", dep.name, local_worker_id)
                                 }
                             }
                         }

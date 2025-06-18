@@ -33,7 +33,7 @@ pub trait RCmd: Send + Sync {
     fn install(
         &self,
         folder: impl AsRef<Path>,
-        library: impl AsRef<Path>,
+        libraries: &[impl AsRef<Path>],
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
@@ -197,11 +197,20 @@ impl RCmd for RCommandLine {
     fn install(
         &self,
         source_folder: impl AsRef<Path>,
-        library: impl AsRef<Path>,
+        libraries: &[impl AsRef<Path>],
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError> {
+        // the core library will be the first library in the list
+        let library = libraries
+            .first()
+            .ok_or_else(|| InstallError {
+                source: InstallErrorKind::InstallationFailed(
+                    "No library specified for R CMD INSTALL".to_string(),
+                ),
+            })?;
+   
         // Always delete destination if it exists first to avoid issues with incomplete installs
         // except if it's the same as the library. This happens for local packages
         if library.as_ref() != destination.as_ref() {
@@ -224,10 +233,29 @@ impl RCmd for RCommandLine {
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
+        
 
-        let library = library.as_ref().canonicalize().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
+        let canonicalized_libraries = libraries
+            .iter()
+            .map(|lib| lib.as_ref().canonicalize())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
+        
+        // combine them to the single string path that R wants, specifically:
+        //  colon-separated on Unix-alike systems and semicolon-separated on Windows.
+        let library_paths = if cfg!(windows) {
+            canonicalized_libraries
+                .iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(";")
+        } else {
+            canonicalized_libraries
+                .iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(":")
+        };
 
         let (recv, send) =
             std::io::pipe().map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
@@ -245,8 +273,8 @@ impl RCmd for RCommandLine {
             .arg("--strip-lib")
             .arg(tmp_dir.path())
             // Override where R should look for deps
-            .env("R_LIBS_SITE", &library)
-            .env("R_LIBS_USER", &library)
+            .env("R_LIBS_SITE", &library_paths)
+            .env("R_LIBS_USER", &library_paths)
             .env("_R_SHLIB_STRIP_", "true")
             .stdout(
                 send.try_clone()

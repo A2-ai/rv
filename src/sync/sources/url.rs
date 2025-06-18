@@ -12,7 +12,7 @@ use crate::{Cancellation, DiskCache, RCmd, ResolvedDependency};
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
-    library_dir: &Path,
+    library_dirs: &[&Path],
     cache: &DiskCache,
     r_cmd: &impl RCmd,
     cancellation: Arc<Cancellation>,
@@ -36,7 +36,7 @@ pub(crate) fn install_package(
         );
         let output = r_cmd.install(
             &download_path,
-            library_dir,
+            library_dirs,
             &pkg_paths.binary,
             cancellation,
             &pkg.env_vars,
@@ -54,7 +54,7 @@ pub(crate) fn install_package(
     metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
 
     // And then we always link the binary folder into the staging library
-    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dir)?;
+    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dirs.first().unwrap())?;
 
     Ok(())
 }
