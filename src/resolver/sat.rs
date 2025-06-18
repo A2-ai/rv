@@ -488,7 +488,7 @@ impl<'d> DependencySolver<'d> {
 
         let var_to_pkg_version: HashMap<_, _> =
             pkg_version_to_var.iter().map(|(k, v)| (v, k)).collect();
-
+        let start_time = std::time::Instant::now();
         log::debug!("Starting SAT solving");
         let assignment = self.solve_sat_iterative(&clauses, var_to_pkg_version.len() as i32);
 
@@ -506,7 +506,11 @@ impl<'d> DependencySolver<'d> {
                 solution.insert(*pkg, *version);
             }
         }
-
+        log::info!(
+            "SAT solving completed in {:?}, found {} packages",
+            start_time.elapsed(),
+            solution.len()
+        );
         Ok(solution)
     }
 }
