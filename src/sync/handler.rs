@@ -10,7 +10,7 @@ use ctrlc;
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
+use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
@@ -23,6 +23,52 @@ use crate::{
 
 #[cfg(feature = "cli")]
 use crate::r_cmd::kill_all_r_processes;
+
+fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
+    if !cfg!(unix) {
+        return HashSet::new();
+    }
+    let val = std::env::var(NO_CHECK_OPEN_FILE_ENV_VAR_NAME)
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if val == "true" || val == "1" {
+        return HashSet::new();
+    }
+
+    // lsof +D rv/ | awk 'NR>1 {print $NF}'
+    let output = match std::process::Command::new("lsof")
+        .arg("+D")
+        .arg(path)
+        .output()
+    {
+        Ok(output) => output,
+        Err(e) => {
+            log::error!("lsof error: {e}. The +D option might not be available");
+            return HashSet::new();
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut out = HashSet::new();
+    for (i, line) in stdout.lines().enumerate() {
+        // Skip header
+        if i == 0 {
+            continue;
+        }
+
+        if let Some(filename) = line.split_whitespace().last() {
+            // that should be a .so file in libs subfolder so we need to find grandparent
+            let p = Path::new(filename);
+            let lib = p.parent().unwrap().parent().unwrap();
+            out.insert(lib.file_name().unwrap().to_str().unwrap().to_string());
+        }
+    }
+
+    log::debug!("Packages with files loaded (via lsof): {out:?}");
+
+    out
+}
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
@@ -241,14 +287,20 @@ impl<'a> SyncHandler<'a> {
         let num_deps_to_install = plan.num_to_install();
         let (deps_seen, deps_to_copy, deps_to_remove) = self.compare_with_local_library(deps);
         let needs_sync = deps_seen.len() != num_deps_to_install;
+        let packages_loaded = if deps_to_remove.len() > 0 {
+            get_all_packages_in_use(&self.library.path)
+        } else {
+            HashSet::new()
+        };
 
         for (dir_name, notify) in &deps_to_remove {
-            if self.library.packages_loaded.contains(*dir_name) {
-                log::debug!("{dir_name} in the library has a NFS lock but we want to remove it.");
+            if packages_loaded.contains(*dir_name) {
+                log::debug!(
+                    "{dir_name} in the library is loaded in a session but we want to remove it."
+                );
                 return Err(SyncError {
                     source: SyncErrorKind::NfsError(
-                        self.library
-                            .packages_loaded
+                        packages_loaded
                             .iter()
                             .map(|x| x.as_str())
                             .collect::<Vec<_>>()
@@ -284,10 +336,6 @@ impl<'a> SyncHandler<'a> {
             // builtin packages will not be in the library
             let in_lib = self.library.path().join(d);
             if in_lib.is_dir() {
-                //let linker = LinkMode::new();
-                //log::debug!("Linking {in_lib:?} into staging dir with link mode {}", linker.name());
-                //linker.link_files(d, in_lib, &self.staging_path.join(d))?;
-                log::debug!("marking {d} as installed in the plan");
                 plan.mark_installed(*d);
             }
         }

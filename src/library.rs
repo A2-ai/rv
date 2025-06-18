@@ -6,8 +6,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::consts::{
-    DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME,
-    NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RV_DIR_NAME,
+    DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME,
 };
 use crate::fs::mtime_recursive;
 use crate::lockfile::Source;
@@ -78,8 +77,6 @@ pub struct Library {
     pub packages: HashMap<String, Version>,
     /// We keep track of all packages not coming from a package repository
     pub non_repo_packages: HashMap<String, LocalMetadata>,
-    /// Which packages in the library have some loaded .so files loaded somewhere
-    pub packages_loaded: HashSet<String>,
     /// The folders exist but we can't find the DESCRIPTION file.
     /// This is likely a broken symlink and we should remove that folder/reinstall it
     /// It could also be something that is not a R package added by another tool
@@ -105,7 +102,6 @@ impl Library {
             packages: HashMap::new(),
             non_repo_packages: HashMap::new(),
             broken: HashSet::new(),
-            packages_loaded: HashSet::new(),
             custom: false,
         }
     }
@@ -120,7 +116,6 @@ impl Library {
             packages: HashMap::new(),
             non_repo_packages: HashMap::new(),
             broken: HashSet::new(),
-            packages_loaded: HashSet::new(),
             custom: true,
         }
     }
@@ -147,7 +142,6 @@ impl Library {
         self.packages.clear();
         self.non_repo_packages.clear();
         self.broken.clear();
-        self.packages_loaded.clear();
 
         for entry in fs::read_dir(&self.path).unwrap() {
             let entry = entry.expect("Valid entry");
@@ -173,15 +167,6 @@ impl Library {
                 Err(_) => {
                     self.broken.insert(name.to_string());
                 }
-            }
-        }
-        #[cfg(unix)]
-        {
-            let val = std::env::var(NO_CHECK_OPEN_FILE_ENV_VAR_NAME)
-                .unwrap_or_default()
-                .to_lowercase();
-            if val != "true" && val != "0" {
-                self.packages_loaded = get_all_packages_in_use(self.path());
             }
         }
     }
@@ -226,40 +211,4 @@ impl Library {
             Source::Builtin { .. } => true,
         }
     }
-}
-
-#[cfg(unix)]
-fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
-    // lsof +D rv/ | awk 'NR>1 {print $NF}'
-    let output = match std::process::Command::new("lsof")
-        .arg("+D")
-        .arg(path)
-        .output()
-    {
-        Ok(output) => output,
-        Err(e) => {
-            log::error!("lsof error: {e}. The +D option might not be available");
-            return HashSet::new();
-        }
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut out = HashSet::new();
-    for (i, line) in stdout.lines().enumerate() {
-        // Skip header
-        if i == 0 {
-            continue;
-        }
-
-        if let Some(filename) = line.split_whitespace().last() {
-            // that should be a .so file in libs subfolder so we need to find grandparent
-            let p = Path::new(filename);
-            let lib = p.parent().unwrap().parent().unwrap();
-            out.insert(lib.file_name().unwrap().to_str().unwrap().to_string());
-        }
-    }
-
-    log::debug!("Packages with files loaded (via lsof): {out:?}");
-
-    out
 }

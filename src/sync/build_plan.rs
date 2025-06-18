@@ -72,15 +72,19 @@ impl<'a> BuildPlan<'a> {
     }
 
     fn is_done(&self) -> bool {
-        self.installed.len() == self.deps.len()
+        self.installed.len() == self.deps().len()
+    }
+
+    fn deps(&self) -> Vec<&'a ResolvedDependency<'a>> {
+        self.deps.iter().filter(|x| !x.ignored).collect()
     }
 
     pub fn num_to_install(&self) -> usize {
-        self.deps.len() - self.installed.len()
+        self.deps().len() - self.installed.len()
     }
 
     pub fn all_dependencies(&self) -> HashMap<&str, (&Version, &Source)> {
-        self.deps
+        self.deps()
             .iter()
             .map(|r| (r.name.as_ref(), (r.version.as_ref(), &r.source)))
             .collect()
