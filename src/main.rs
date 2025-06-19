@@ -8,7 +8,9 @@ use serde::Serialize;
 use serde_json::json;
 
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, tree, CliContext, RCommandLookup};
+use rv::cli::{
+    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
+};
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
@@ -499,11 +501,20 @@ fn try_main() -> Result<()> {
                 ResolveMode::Default
             };
             let context = CliContext::new(&cli.config_file, r_version.into())?;
-            _sync(context, true, log_enabled, upgrade, output_format)?;
+            _sync(context, true, log_enabled, upgrade, output_format, None)?;
         }
-        Command::Sync {save_install_logs_in} => {
+        Command::Sync {
+            save_install_logs_in,
+        } => {
             let context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
-            _sync(context, true, log_enabled, ResolveMode::Default, output_format, save_install_logs_in)?;
+            _sync(
+                context,
+                false,
+                log_enabled,
+                ResolveMode::Default,
+                output_format,
+                save_install_logs_in,
+            )?;
         }
         Command::Add {
             packages,
@@ -785,7 +796,7 @@ fn try_main() -> Result<()> {
         Command::Tree {
             depth,
             hide_system_deps,
-            r_version
+            r_version,
         } => {
             let mut context = CliContext::new(&cli.config_file, r_version.into())?;
             context.load_databases_if_needed()?;

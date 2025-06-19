@@ -140,7 +140,7 @@ impl Source {
 
     pub fn git_url(&self) -> Option<&str> {
         match self {
-            Source::Git { git, .. } => Some(git.url()),
+            Source::Git { git, .. } | Source::RUniverse { git, .. } => Some(git.url()),
             _ => None,
         }
     }

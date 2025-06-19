@@ -12,6 +12,7 @@ use url::Url;
 use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
+use crate::consts::BUILD_LOG_FILENAME;
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
@@ -165,7 +166,7 @@ impl DiskCache {
             p = p.join(version);
         }
 
-        p.join("build.log")
+        p.join(BUILD_LOG_FILENAME)
     }
 
     /// Gets the folder where a source tarball would be located
