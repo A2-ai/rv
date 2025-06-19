@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use rv::cli::utils::timeit;
-use rv::cli::{CliContext, find_r_repositories, init, init_structure, migrate_renv, tree};
+use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, tree, CliContext, RCommandLookup};
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
@@ -149,6 +149,10 @@ pub enum Command {
         /// This only does anything on supported platforms (eg some Linux), it's already
         /// hidden otherwise
         hide_system_deps: bool,
+        #[clap(long)]
+        /// Specify a R version different from the one in the config.
+        /// The command will not error even if this R version is not found
+        r_version: Option<Version>,
     },
 }
 
@@ -461,7 +465,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Library => {
-            let context = CliContext::new(&cli.config_file, None)?;
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
             let path_str = context.library_path().to_string_lossy();
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
@@ -481,11 +485,11 @@ fn try_main() -> Result<()> {
             } else {
                 ResolveMode::Default
             };
-            let context = CliContext::new(&cli.config_file, r_version)?;
+            let context = CliContext::new(&cli.config_file, r_version.into())?;
             _sync(context, true, log_enabled, upgrade, output_format)?;
         }
         Command::Sync => {
-            let context = CliContext::new(&cli.config_file, None)?;
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
             _sync(
                 context,
                 false,
@@ -516,7 +520,7 @@ fn try_main() -> Result<()> {
                 }
                 return Ok(());
             }
-            let mut context = CliContext::new(&cli.config_file, None)?;
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
             // if dry run, the config won't have been edited to reflect the added changes so must be added
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
@@ -530,7 +534,7 @@ fn try_main() -> Result<()> {
             )?;
         }
         Command::Upgrade { dry_run } => {
-            let context = CliContext::new(&cli.config_file, None)?;
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
             _sync(
                 context,
                 dry_run,
@@ -546,7 +550,7 @@ fn try_main() -> Result<()> {
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
-            let context = CliContext::new(&cli.config_file, None)?;
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
             if library {
                 let path_str = context.library_path().to_string_lossy();
                 let path_out = if cfg!(windows) {
@@ -580,7 +584,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Cache => {
-            let mut context = CliContext::new(&cli.config_file, None)?;
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
             context.load_databases()?;
             if !log_enabled {
                 context.show_progress_bar();
@@ -660,7 +664,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Summary { r_version } => {
-            let mut context = CliContext::new(&cli.config_file, r_version)?;
+            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
             context.load_databases()?;
             context.load_system_requirements()?;
             if !log_enabled {
@@ -723,7 +727,7 @@ fn try_main() -> Result<()> {
             only_absent,
             ignore,
         } => {
-            let mut context = CliContext::new(&cli.config_file, None)?;
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
             if !log_enabled {
                 context.show_progress_bar();
             }
@@ -772,8 +776,9 @@ fn try_main() -> Result<()> {
         Command::Tree {
             depth,
             hide_system_deps,
+            r_version
         } => {
-            let mut context = CliContext::new(&cli.config_file, None)?;
+            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
             context.load_databases_if_needed()?;
             if !hide_system_deps {
                 context.load_system_requirements()?;

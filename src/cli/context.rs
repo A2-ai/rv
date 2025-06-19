@@ -16,6 +16,32 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use url::Url;
 
+/// Method on how to find the R Version on the system
+#[derive(Debug, Clone, PartialEq)]
+pub enum RCommandLookup {
+    /// Used for commands that require R to be on the system (installation commands)
+    /// Also used for planning commands when the `--r-version` flag is not in use
+    Strict,
+    /// Used when the `--r-version` flag is set for planning commands
+    Soft(Version),
+    /// Used when finding the RCommand is not required, primarily for information commands like
+    /// cache, library, etc.
+    Skip,
+}
+
+
+impl From<Option<Version>> for RCommandLookup {
+    /// convert Option<Version> to RCommandLookup, where if the Version is specified, it is a soft lookup
+    /// If it is not specified, it is a strict lookup.
+    fn from(ver: Option<Version>) -> Self {
+        if let Some(v) = ver {
+            Self::Soft(v)
+        } else {
+            Self::Strict
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CliContext {
     pub config: Config,
@@ -34,25 +60,30 @@ pub struct CliContext {
 }
 
 impl CliContext {
-    pub fn new(config_file: &PathBuf, r_version: Option<Version>) -> Result<Self> {
+    pub fn new(config_file: &PathBuf, r_command_lookup: RCommandLookup) -> Result<Self> {
         let config = Config::from_file(config_file)?;
 
         // This can only be set to false if the user passed a r_version to rv plan
         let mut r_version_found = true;
-        let (r_version, r_cmd) = if let Some(v) = r_version {
-            // we try to find it but no big deal if it isn't there
-            let r_cmd = match find_r_version_command(&v) {
-                Ok(r) => r,
-                Err(_) => {
-                    r_version_found = false;
-                    RCommandLine::default()
-                }
-            };
-            (v, r_cmd)
-        } else {
-            let r_version = config.r_version().clone();
-            let r_cmd = find_r_version_command(&r_version)?;
-            (r_version, r_cmd)
+        let (r_version, r_cmd) = match r_command_lookup {
+            RCommandLookup::Strict => {
+                let r_version = config.r_version().clone();
+                let r_cmd = find_r_version_command(&r_version)?;
+                (r_version, r_cmd)
+            }
+            RCommandLookup::Soft(v) => {
+                let r_cmd = match find_r_version_command(&v) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        r_version_found = false;
+                        RCommandLine::default()
+                    }
+                };
+                (v, r_cmd)
+            }
+            RCommandLookup::Skip => {
+                (config.r_version().clone(), RCommandLine::default())
+            }
         };
 
         let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
