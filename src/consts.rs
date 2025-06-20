@@ -8,6 +8,7 @@ pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";
 pub const STAGING_DIR_NAME: &str = "__rv__staging";
 pub(crate) const LIBRARY_METADATA_FILENAME: &str = ".rv.metadata";
+pub const BUILD_LOG_FILENAME: &str = "__rv_build.log";
 
 /// How long are the package databases cached for
 /// Same default value as PKGCACHE_TIMEOUT:

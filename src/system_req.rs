@@ -175,8 +175,8 @@ pub fn check_installation_status(
 
 #[cfg(test)]
 mod test {
-    use std::fs;
     use super::Response;
+    use std::fs;
 
     #[test]
     fn test_ubuntu_20_04() {

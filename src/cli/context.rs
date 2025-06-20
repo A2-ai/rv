@@ -29,7 +29,6 @@ pub enum RCommandLookup {
     Skip,
 }
 
-
 impl From<Option<Version>> for RCommandLookup {
     /// convert Option<Version> to RCommandLookup, where if the Version is specified, it is a soft lookup
     /// If it is not specified, it is a strict lookup.
@@ -81,9 +80,7 @@ impl CliContext {
                 };
                 (v, r_cmd)
             }
-            RCommandLookup::Skip => {
-                (config.r_version().clone(), RCommandLine::default())
-            }
+            RCommandLookup::Skip => (config.r_version().clone(), RCommandLine::default()),
         };
 
         let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {

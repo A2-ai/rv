@@ -1,4 +1,5 @@
 use fs_err as fs;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -7,12 +8,13 @@ use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
-use crate::{Cancellation, RCmd, ResolvedDependency, is_binary_package};
+use crate::{Cancellation, DiskCache, RCmd, ResolvedDependency, is_binary_package};
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
     project_dir: &Path,
     library_dir: &Path,
+    cache: &DiskCache,
     r_cmd: &impl RCmd,
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
@@ -44,13 +46,20 @@ pub(crate) fn install_package(
         )?;
     } else {
         log::debug!("Building the local package in {}", actual_path.display());
-        r_cmd.install(
+        let output = r_cmd.install(
             &actual_path,
             library_dir,
             library_dir,
             cancellation,
             &pkg.env_vars,
         )?;
+
+        let log_path = cache.get_build_log_path(&pkg.source, None, None);
+        if let Some(parent) = log_path.parent() {
+            fs::create_dir_all(parent)?;
+            let mut f = fs::File::create(log_path)?;
+            f.write_all(output.as_bytes())?;
+        }
     }
 
     // If it's a dir, save the dir mtime and if it's a tarball its sha

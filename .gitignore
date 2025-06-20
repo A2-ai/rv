@@ -10,3 +10,4 @@ example_projects/*/rv.lock
 from*/
 .DS_Store
 .aider*
+logs/

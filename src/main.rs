@@ -8,7 +8,9 @@ use serde::Serialize;
 use serde_json::json;
 
 use rv::cli::utils::timeit;
-use rv::cli::{find_r_repositories, init, init_structure, migrate_renv, tree, CliContext, RCommandLookup};
+use rv::cli::{
+    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
+};
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
@@ -69,7 +71,10 @@ pub enum Command {
         r_version: Option<Version>,
     },
     /// Replaces the library with exactly what is in the lock file
-    Sync,
+    Sync {
+        #[clap(long)]
+        save_install_logs_in: Option<PathBuf>,
+    },
     /// Add simple packages to the project and sync
     Add {
         #[clap(value_parser, required = true)]
@@ -289,6 +294,7 @@ fn _sync(
     has_logs_enabled: bool,
     resolve_mode: ResolveMode,
     output_format: OutputFormat,
+    save_install_logs_in: Option<PathBuf>,
 ) -> Result<()> {
     if !has_logs_enabled {
         context.show_progress_bar();
@@ -349,7 +355,6 @@ fn _sync(
                     }
                 }
             }
-
             let all_sys_deps: HashSet<_> = changes
                 .iter()
                 .flat_map(|x| x.sys_deps.iter().map(|x| x.name.as_str()))
@@ -359,6 +364,16 @@ fn _sync(
 
             for change in changes.iter_mut() {
                 change.update_sys_deps_status(&sysdeps_status);
+            }
+
+            if let Some(log_folder) = save_install_logs_in {
+                fs::create_dir_all(&log_folder)?;
+                for change in changes.iter().filter(|x| x.installed) {
+                    let log_path = change.log_path(&context.cache);
+                    if log_path.exists() {
+                        fs::copy(log_path, log_folder.join(&format!("{}.log", change.name)))?;
+                    }
+                }
             }
 
             if output_format.is_json() {
@@ -486,9 +501,11 @@ fn try_main() -> Result<()> {
                 ResolveMode::Default
             };
             let context = CliContext::new(&cli.config_file, r_version.into())?;
-            _sync(context, true, log_enabled, upgrade, output_format)?;
+            _sync(context, true, log_enabled, upgrade, output_format, None)?;
         }
-        Command::Sync => {
+        Command::Sync {
+            save_install_logs_in,
+        } => {
             let context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
             _sync(
                 context,
@@ -496,6 +513,7 @@ fn try_main() -> Result<()> {
                 log_enabled,
                 ResolveMode::Default,
                 output_format,
+                save_install_logs_in,
             )?;
         }
         Command::Add {
@@ -531,6 +549,7 @@ fn try_main() -> Result<()> {
                 log_enabled,
                 ResolveMode::Default,
                 output_format,
+                None,
             )?;
         }
         Command::Upgrade { dry_run } => {
@@ -541,6 +560,7 @@ fn try_main() -> Result<()> {
                 log_enabled,
                 ResolveMode::FullUpgrade,
                 output_format,
+                None,
             )?;
         }
         Command::Info {
@@ -776,7 +796,7 @@ fn try_main() -> Result<()> {
         Command::Tree {
             depth,
             hide_system_deps,
-            r_version
+            r_version,
         } => {
             let mut context = CliContext::new(&cli.config_file, r_version.into())?;
             context.load_databases_if_needed()?;

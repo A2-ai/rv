@@ -12,6 +12,7 @@ use url::Url;
 use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
+use crate::consts::BUILD_LOG_FILENAME;
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
@@ -129,6 +130,43 @@ impl DiskCache {
         self.get_repo_root_binary_dir(repo_url)
             .join(name)
             .join(version)
+    }
+
+    /// Gets the folder where the R build package stdout+stderr output should be stored
+    pub fn get_build_log_path(
+        &self,
+        source: &Source,
+        pkg_name: Option<&str>,
+        version: Option<&str>,
+    ) -> PathBuf {
+        let (parent_name, sha) = match source {
+            Source::RUniverse { git, sha, .. } | Source::Git { git, sha, .. } => {
+                (hash_string(git.url()), Some(sha.clone()))
+            }
+            Source::Url { url, sha, .. } => (hash_string(url.as_str()), Some(sha.clone())),
+            Source::Repository { repository } => (hash_string(repository.as_str()), None),
+            Source::Local { path, sha, .. } => (
+                hash_string(path.as_os_str().to_string_lossy().as_ref()),
+                sha.clone(),
+            ),
+            Source::Builtin { .. } => unreachable!(),
+        };
+
+        let mut p = self
+            .root
+            .join("logs")
+            .join(&parent_name)
+            .join(get_current_system_path(&self.system_info, self.r_version));
+
+        if let Some(pkg_name) = pkg_name {
+            p = p.join(pkg_name);
+        }
+
+        if let Some(version) = version.map(|x| x.to_string()).or(sha) {
+            p = p.join(version);
+        }
+
+        p.join(BUILD_LOG_FILENAME)
     }
 
     /// Gets the folder where a source tarball would be located
