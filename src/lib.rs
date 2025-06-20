@@ -19,7 +19,7 @@ mod sync;
 mod system_info;
 pub mod system_req;
 mod utils;
-
+mod format;
 #[cfg(feature = "cli")]
 pub mod cli;
 
@@ -43,3 +43,4 @@ pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
+pub use format::format_document;
