@@ -17,7 +17,7 @@ use crate::{
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
-    library_dir: &Path,
+    library_dirs: &[&Path],
     cache: &DiskCache,
     r_cmd: &impl RCmd,
     cancellation: Arc<Cancellation>,
@@ -29,7 +29,7 @@ pub(crate) fn install_package(
         log::debug!("Compiling package from {}", source_path.display());
         match r_cmd.install(
             &source_path,
-            library_dir,
+            library_dirs,
             &pkg_paths.binary,
             cancellation.clone(),
             &pkg.env_vars,
@@ -135,7 +135,7 @@ pub(crate) fn install_package(
         _ => {}
     }
     // And then we always link the binary folder into the staging library
-    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dir)?;
+    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dirs.first().unwrap())?;
 
     Ok(())
 }

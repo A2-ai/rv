@@ -13,7 +13,7 @@ use crate::{Cancellation, DiskCache, RCmd, ResolvedDependency, is_binary_package
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
     project_dir: &Path,
-    library_dir: &Path,
+    library_dirs: &[&Path],
     cache: &DiskCache,
     r_cmd: &impl RCmd,
     cancellation: Arc<Cancellation>,
@@ -42,14 +42,14 @@ pub(crate) fn install_package(
         LinkMode::Copy.link_files(
             pkg.name.as_ref(),
             &actual_path,
-            library_dir.join(pkg.name.as_ref()),
+            library_dirs.first().unwrap().join(pkg.name.as_ref()),
         )?;
     } else {
         log::debug!("Building the local package in {}", actual_path.display());
         let output = r_cmd.install(
             &actual_path,
-            library_dir,
-            library_dir,
+            library_dirs,
+            library_dirs.first().unwrap(),
             cancellation,
             &pkg.env_vars,
         )?;
@@ -69,7 +69,7 @@ pub(crate) fn install_package(
     } else {
         LocalMetadata::Sha(sha.unwrap())
     };
-    metadata.write(library_dir.join(pkg.name.as_ref()))?;
+    metadata.write(library_dirs.first().unwrap().join(pkg.name.as_ref()))?;
 
     Ok(())
 }

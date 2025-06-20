@@ -19,6 +19,7 @@ pub const PACKAGE_DB_FILENAME: &str = "packages.bin";
 
 pub const NUM_CPUS_ENV_VAR_NAME: &str = "RV_NUM_CPUS";
 pub const SYS_REQ_URL_ENV_VAR_NAME: &str = "RV_SYS_REQ_URL";
+pub const NO_CHECK_OPEN_FILE_ENV_VAR_NAME: &str = "RV_NO_CHECK_OPEN_FILE";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R

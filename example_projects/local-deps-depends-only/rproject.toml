@@ -1,0 +1,13 @@
+[project]
+name = "simple"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2025-05-12/"}
+]
+dependencies = [
+    # dependencies_only = true failed in the wild in a way that this resolved fine
+    # where it wanted to install both the deps and the package itself to mark
+    # install complete so just hung with a message Installing {}
+    # without deps only, so using this as a regression test as well
+    { name = "dummy", path = "../../dummy-pkg/", dependencies_only = true, install_suggestions = true }
+]

@@ -10,7 +10,7 @@ use ctrlc;
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::consts::RECOMMENDED_PACKAGES;
+use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::sync::changes::SyncChange;
@@ -18,11 +18,57 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::get_max_workers;
 use crate::{
-    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
+    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency
 };
 
 #[cfg(feature = "cli")]
 use crate::r_cmd::kill_all_r_processes;
+
+fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
+    if !cfg!(unix) {
+        return HashSet::new();
+    }
+    let val = std::env::var(NO_CHECK_OPEN_FILE_ENV_VAR_NAME)
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if val == "true" || val == "1" {
+        return HashSet::new();
+    }
+
+    // lsof +D rv/ | awk 'NR>1 {print $NF}'
+    let output = match std::process::Command::new("lsof")
+        .arg("+D")
+        .arg(path)
+        .output()
+    {
+        Ok(output) => output,
+        Err(e) => {
+            log::error!("lsof error: {e}. The +D option might not be available");
+            return HashSet::new();
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut out = HashSet::new();
+    for (i, line) in stdout.lines().enumerate() {
+        // Skip header
+        if i == 0 {
+            continue;
+        }
+
+        if let Some(filename) = line.split_whitespace().last() {
+            // that should be a .so file in libs subfolder so we need to find grandparent
+            let p = Path::new(filename);
+            let lib = p.parent().unwrap().parent().unwrap();
+            out.insert(lib.file_name().unwrap().to_str().unwrap().to_string());
+        }
+    }
+
+    log::debug!("Packages with files loaded (via lsof): {out:?}");
+
+    out
+}
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
@@ -99,18 +145,20 @@ impl<'a> SyncHandler<'a> {
         if self.dry_run {
             return Ok(());
         }
-
+        // we want the staging to take precedence over the library, but still have
+        // the library in the paths for lookup
+        let library_dirs = vec![&self.staging_path, self.library.path()];
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
                 dep,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 cancellation,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 &GitExecutor {},
@@ -119,14 +167,14 @@ impl<'a> SyncHandler<'a> {
             Source::Local { .. } => sources::local::install_package(
                 dep,
                 self.project_dir,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 cancellation,
             ),
             Source::Url { .. } => sources::url::install_package(
                 dep,
-                &self.staging_path,
+                &library_dirs,
                 self.cache,
                 r_cmd,
                 cancellation,
@@ -176,7 +224,9 @@ impl<'a> SyncHandler<'a> {
         }
 
         // Skip builtin versions
-        for name in RECOMMENDED_PACKAGES {
+        let mut out = Vec::from(RECOMMENDED_PACKAGES);
+        out.extend(BASE_PACKAGES.as_slice());
+        for name in out {
             if let Some(dep) = deps_by_name.get(name) {
                 if dep.source.is_builtin() {
                     deps_seen.insert(name);
@@ -186,7 +236,7 @@ impl<'a> SyncHandler<'a> {
 
         // Lastly, remove any package that we can't really access
         for name in &self.library.broken {
-            log::debug!("Package {name} in library is broken");
+            log::warn!("Package {name} in library is broken");
             deps_to_remove.insert((name.as_str(), false));
         }
 
@@ -233,22 +283,42 @@ impl<'a> SyncHandler<'a> {
 
         let mut sync_changes = Vec::new();
 
-        let plan = BuildPlan::new(deps);
+        let mut plan = BuildPlan::new(deps);
         let num_deps_to_install = plan.num_to_install();
         let (deps_seen, deps_to_copy, deps_to_remove) = self.compare_with_local_library(deps);
         let needs_sync = deps_seen.len() != num_deps_to_install;
+        let packages_loaded = if deps_to_remove.len() > 0 {
+            get_all_packages_in_use(&self.library.path)
+        } else {
+            HashSet::new()
+        };
 
-        for (dir_name, notify) in deps_to_remove {
-            // Only actually remove the deps if we are not going to rebuild the lib folder
+        for (dir_name, notify) in &deps_to_remove {
+            if packages_loaded.contains(*dir_name) {
+                log::debug!(
+                    "{dir_name} in the library is loaded in a session but we want to remove it."
+                );
+                return Err(SyncError {
+                    source: SyncErrorKind::NfsError(
+                        packages_loaded
+                            .iter()
+                            .map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                });
+            }
+
+            // Only actually remove the deps if we are not going to do any other changes.
             if !needs_sync {
                 let p = self.library.path().join(dir_name);
-                if !self.dry_run && notify {
+                if !self.dry_run && *notify {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
                 }
             }
 
-            if notify {
+            if *notify {
                 sync_changes.push(SyncChange::removed(dir_name));
             }
         }
@@ -261,12 +331,22 @@ impl<'a> SyncHandler<'a> {
         // Create staging only if we need to build stuff
         fs::create_dir_all(&self.staging_path)?;
 
+        // Then we mark the deps seen so they won't be installed into the staging dir 
+        for d in &deps_seen {
+            // builtin packages will not be in the library
+            let in_lib = self.library.path().join(d);
+            if in_lib.is_dir() {
+                plan.mark_installed(*d);
+            }
+        }
+        let num_deps_to_install = plan.num_to_install();
+
         // We can't use references from the BuildPlan since we borrow mutably from it so we
         // create a lookup table for resolved deps by name and use those references across channels.
         let dep_by_name: HashMap<_, _> = deps.iter().map(|d| (&d.name, d)).collect();
 
         let pb = if self.show_progress_bar {
-            let pb = ProgressBar::new(plan.full_deps.len() as u64);
+            let pb = ProgressBar::new(plan.num_to_install() as u64);
             pb.set_style(
                 ProgressStyle::with_template(
                     "[{elapsed_precise}] {bar:60} {pos:>7}/{len:7}\n{msg}",
@@ -328,7 +408,7 @@ impl<'a> SyncHandler<'a> {
             let installing = Arc::new(Mutex::new(HashSet::new()));
 
             // Our worker threads that will actually perform the installation
-            for _ in 0..self.max_workers {
+            for worker_num in 0..self.max_workers {
                 let ready_receiver = ready_receiver.clone();
                 let done_sender = done_sender.clone();
                 let plan = Arc::clone(&plan);
@@ -340,6 +420,7 @@ impl<'a> SyncHandler<'a> {
                 let cancellation_clone = cancellation.clone();
 
                 s.spawn(move |_| {
+                    let local_worker_id = worker_num + 1;
                     while let Ok(dep) = ready_receiver.recv() {
                         if has_errors_clone.load(Ordering::Relaxed)
                             || cancellation_clone.is_cancelled()
@@ -357,10 +438,10 @@ impl<'a> SyncHandler<'a> {
                             }
                             match dep.kind {
                                 PackageType::Source => {
-                                    log::debug!("Installing {} (source)", dep.name)
+                                    log::debug!("Installing {} (source) on worker {}", dep.name, local_worker_id)
                                 }
                                 PackageType::Binary => {
-                                    log::debug!("Installing {} (binary)", dep.name)
+                                    log::debug!("Installing {} (binary) on worker {}", dep.name, local_worker_id)
                                 }
                             }
                         }
@@ -455,18 +536,36 @@ impl<'a> SyncHandler<'a> {
         if self.dry_run {
             fs::remove_dir_all(&self.staging_path)?;
         } else {
-            // If we are there, it means we are successful. Replace the project lib by the staging dir
-            if self.library.path().is_dir() {
-                fs::remove_dir_all(self.library.path())?;
-            }
+            // If we are there, it means we are successful.
 
-            match fs::rename(&self.staging_path, self.library.path()) {
-                Ok(_) => (),
-                Err(e) => {
-                    fs::remove_dir_all(self.library.path())?;
-                    return Err(e.into());
+            // mv new packages to the library and delete the ones that need to be removed
+            for (name, notify) in deps_to_remove {
+                let p = self.library.path().join(name);
+                if !self.dry_run && notify {
+                    log::debug!("Removing {name} from library");
+                    fs::remove_dir_all(&p)?;
+                }
+
+                if notify {
+                    sync_changes.push(SyncChange::removed(name));
                 }
             }
+
+            for entry in fs::read_dir(&self.staging_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                let name = path.file_name().unwrap().to_str().unwrap().to_string();
+                if !deps_seen.contains(name.as_str()) {
+                    let out = self.library.path().join(&name);
+                    if out.is_dir() {
+                        fs::remove_dir_all(&out)?;
+                    }
+                    fs::rename(path, out)?;
+                }
+            }
+
+            // Then delete staging
+            fs::remove_dir_all(&self.staging_path)?;
         }
 
         // Sort all changes by a-z and fall back on installed status for things with the same name
