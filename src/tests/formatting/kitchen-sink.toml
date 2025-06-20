@@ -1,0 +1,36 @@
+# too much whitespace below this
+use_lockfile = false
+
+
+
+[project]
+name = "simple"
+r_version = "4.4"
+repositories = [
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/", force_source = true}
+]
+dependencies = [
+    # a bunch of deps that should be inlined
+    "data.table",   "abind", "acepack", "admiral", "admiral.test", "admiraldev",
+    "AER", "akima", "ALEPlot", "almanac", "alphashape3d", "animation",
+    "anytime", "ape", "apexcharter", "aplot", "archive", "argonDash",
+    "argonR", "arm", "arrayhelpers", "arrow", "arsenal", "asciicast",
+    "ash", "AsioHeaders", "askpass", "assertr", "assertthat", "attempt",
+    "AUC", "automap", "av", "aws.s3", "aws.signature", "babelmixr2",
+    "backports", "badger", "base64enc", "base64url", "batchmeans",
+    "batchtools", "bayesplot", "BayesPostEst", "bayestestR", "BB",
+    "BBmisc", "bbmle", "bdsmatrix", "beeswarm", "bench", "benchmarkme",
+    "benchmarkmeData", "betareg", "BH", "BiasedUrn", "biblio", "bibtex",
+    "bigassertr", "bigD", "biglm", "bigreadr", "bindr", "bindrcpp",
+    "binGroup", "binom", "binr", "BiocManager", "bit", "bit64", "bitops",
+    "blastula", "blob", "blockrand", "blogdown", "bookdown", "boomer",
+    "boot", "box", "box.linters", "box.lsp", "boxr", "BradleyTerry2",
+    "brew", "brglm", "brglm2", "bridgesampling", "brio", "brms",
+    "Brobdingnag", "broom", "broom.helpers", "broom.mixed", "bs4Dash",
+    "bsicons", "bslib", "btergm", "bvls", "ca", "cachem", "Cairo",
+    # an expanded dep
+    { name = "rv.git.pkgA", git = "https://github.com/A2-ai/rv.git.pkgA", branch = "main", install_suggestions = true},
+]
+
+[project.packages_env_vars]
+"data.table" = { OPENMP_CFLAGS = '' }

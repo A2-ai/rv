@@ -38,6 +38,11 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Fmt {
+        // add a --check flag to check formatting without changing the file
+        #[clap(long)]
+        check: bool,
+    },
     /// Creates a new rv project
     Init {
         #[clap(value_parser, default_value = ".")]
@@ -276,6 +281,31 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
+        Command::Fmt { check } => {
+            let contents = read_to_string(&cli.config_file)?;
+            let formatted = rv::format_document(&contents);
+            if contents == formatted {
+                if output_format.is_json() {
+                    println!("{{\"reformat\": false}}");
+                } else {
+                    println!("Config file is already formatted");
+                }
+                return Ok(());
+            }
+            // if we've gotten here we weren't formatted, so if check we bail
+            // otherwise we rewrite the file
+            if check {
+                eprintln!("Config file is not formatted correctly");
+                ::std::process::exit(1);
+            } else {
+                write(&cli.config_file, formatted)?;
+                if output_format.is_json() {
+                    println!("{{\"reformat\": true}}");
+                } else {
+                    println!("Config file successfully formatted");
+                }
+            }
+        }
         Command::Init {
             project_directory,
             r_version,
