@@ -149,6 +149,7 @@ impl Library {
             // the package name will be the name of the folder
             let path = entry.path();
             let name = path.file_name().unwrap().to_str().unwrap();
+
             let desc_path = path.join(DESCRIPTION_FILENAME);
             if !desc_path.exists() {
                 self.broken.insert(name.to_string());

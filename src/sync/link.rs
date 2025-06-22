@@ -78,7 +78,7 @@ impl LinkMode {
         }
     }
 
-    fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::Copy => "copy",
             Self::Clone => "clone",
