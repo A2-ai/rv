@@ -106,8 +106,11 @@ pub enum Command {
         #[clap(long)]
         repositories: bool,
     },
-    /// Gives information about where the cache is for that project
-    Cache,
+    /// Manage rv's cache
+    Cache {
+        #[clap(subcommand)]
+        subcommand: Option<CacheSubcommand>,
+    },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
@@ -158,6 +161,28 @@ pub enum Command {
         /// Specify a R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheSubcommand {
+    /// Shows the cache directories for each repository used by rv project
+    Dir,
+    /// Purge selected parts of the cache
+    Purge {
+        /// Alias of repositories to purge from cache
+        #[clap(short = 'r', long, value_parser)]
+        repositories: Vec<String>,
+
+        /// Names of dependencies to purge from cache. Purges only the package and version from the resolved source
+        #[clap(short = 'd', long, value_parser)]
+        dependencies: Vec<String>,
+    },
+    /// Refresh the repository database to be the most up to date
+    Refresh {
+        /// Alias of repositories to refresh their repository database for
+        #[clap(value_parser)]
+        repositories: Vec<String>,
     },
 }
 
@@ -603,17 +628,29 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Cache => {
+        Command::Cache{ subcommand } => {
             let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
             context.load_databases()?;
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let info = CacheInfo::new(
-                &context.config,
-                &context.cache,
-                resolve_dependencies(&context, &ResolveMode::Default, true).found,
-            );
+            let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
+            match subcommand.unwrap_or(CacheSubcommand::Dir) {
+                CacheSubcommand::Dir => {
+                    let info = CacheInfo::new(
+                        &context.config,
+                        &context.cache,
+                        resolved,
+                    );
+                }
+                CacheSubcommand::Purge { repositories, dependencies } => {
+                    if !repositories.is_empty() {
+                        let repos = context.config.repositories().iter().filter(|r| repositories.contains(&r.alias)).collect::<Vec<_>>;
+                    }
+                },
+                CacheSubcommand::Refresh { repositories } => todo!(),
+            }
+            
             if output_format.is_json() {
                 println!(
                     "{}",
