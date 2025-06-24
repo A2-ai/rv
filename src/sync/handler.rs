@@ -203,7 +203,8 @@ impl<'a> SyncHandler<'a> {
         for name in self.library.packages.keys() {
             if let Some(dep) = deps_by_name.get(name.as_str()) {
                 // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
-                if self.library.contains_package(dep) {
+                // Additionally, any package in the library that is ignored, needs to be removed
+                if self.library.contains_package(dep) && !dep.ignored {
                     match &dep.source {
                         Source::Repository { .. } if dep.from_lockfile => {
                             deps_seen.insert(name.as_str());
@@ -575,6 +576,9 @@ impl<'a> SyncHandler<'a> {
                 ordering => ordering,
             }
         });
+
+        // remove any duplicate entries to be displayed
+        sync_changes.dedup();
 
         Ok(sync_changes)
     }
