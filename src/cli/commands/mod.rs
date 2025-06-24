@@ -1,8 +1,9 @@
+mod clean_cache;
 mod init;
 mod migrate;
 mod tree;
-mod cache;
 
+pub use clean_cache::purge_cache;
 pub use init::{find_r_repositories, init, init_structure};
 pub use migrate::migrate_renv;
 pub use tree::tree;

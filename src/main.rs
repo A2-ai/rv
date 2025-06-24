@@ -9,7 +9,8 @@ use serde_json::json;
 
 use rv::cli::utils::timeit;
 use rv::cli::{
-    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
+    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv,
+    purge_cache, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
@@ -171,11 +172,11 @@ pub enum CacheSubcommand {
     /// Purge selected parts of the cache
     Purge {
         /// Alias of repositories to purge from cache
-        #[clap(short = 'r', long, value_parser)]
+        #[clap(short = 'r', long, value_parser, num_args = 1..)]
         repositories: Vec<String>,
 
         /// Names of dependencies to purge from cache. Purges only the package and version from the resolved source
-        #[clap(short = 'd', long, value_parser)]
+        #[clap(short = 'd', long, value_parser, num_args = 1..)]
         dependencies: Vec<String>,
     },
     /// Refresh the repository database to be the most up to date
@@ -628,7 +629,7 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Cache{ subcommand } => {
+        Command::Cache { subcommand } => {
             let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
             context.load_databases()?;
             if !log_enabled {
@@ -637,27 +638,31 @@ fn try_main() -> Result<()> {
             let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
             match subcommand.unwrap_or(CacheSubcommand::Dir) {
                 CacheSubcommand::Dir => {
-                    let info = CacheInfo::new(
-                        &context.config,
-                        &context.cache,
-                        resolved,
-                    );
-                }
-                CacheSubcommand::Purge { repositories, dependencies } => {
-                    if !repositories.is_empty() {
-                        let repos = context.config.repositories().iter().filter(|r| repositories.contains(&r.alias)).collect::<Vec<_>>;
+                    let info = CacheInfo::new(&context.config, &context.cache, resolved);
+                    if output_format.is_json() {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&info).expect("valid json")
+                        );
+                    } else {
+                        println!("{info}");
                     }
-                },
+                }
+                CacheSubcommand::Purge {
+                    repositories,
+                    dependencies,
+                } => {
+                    let res = purge_cache(&context, &resolved, &repositories, &dependencies)?;
+                    if output_format.is_json() {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&res).expect("valid json")
+                        );
+                    } else {
+                        println!("{res}");
+                    }
+                }
                 CacheSubcommand::Refresh { repositories } => todo!(),
-            }
-            
-            if output_format.is_json() {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&info).expect("valid json")
-                );
-            } else {
-                println!("{info}");
             }
         }
         Command::Migrate {
