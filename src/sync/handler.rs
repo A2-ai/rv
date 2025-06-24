@@ -18,7 +18,7 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::get_max_workers;
 use crate::{
-    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency
+    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
 };
 
 #[cfg(feature = "cli")]
@@ -172,13 +172,9 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 cancellation,
             ),
-            Source::Url { .. } => sources::url::install_package(
-                dep,
-                &library_dirs,
-                self.cache,
-                r_cmd,
-                cancellation,
-            ),
+            Source::Url { .. } => {
+                sources::url::install_package(dep, &library_dirs, self.cache, r_cmd, cancellation)
+            }
             Source::Builtin { .. } => Ok(()),
         }
     }
@@ -331,7 +327,7 @@ impl<'a> SyncHandler<'a> {
         // Create staging only if we need to build stuff
         fs::create_dir_all(&self.staging_path)?;
 
-        // Then we mark the deps seen so they won't be installed into the staging dir 
+        // Then we mark the deps seen so they won't be installed into the staging dir
         for d in &deps_seen {
             // builtin packages will not be in the library
             let in_lib = self.library.path().join(d);
@@ -438,10 +434,18 @@ impl<'a> SyncHandler<'a> {
                             }
                             match dep.kind {
                                 PackageType::Source => {
-                                    log::debug!("Installing {} (source) on worker {}", dep.name, local_worker_id)
+                                    log::debug!(
+                                        "Installing {} (source) on worker {}",
+                                        dep.name,
+                                        local_worker_id
+                                    )
                                 }
                                 PackageType::Binary => {
-                                    log::debug!("Installing {} (binary) on worker {}", dep.name, local_worker_id)
+                                    log::debug!(
+                                        "Installing {} (binary) on worker {}",
+                                        dep.name,
+                                        local_worker_id
+                                    )
                                 }
                             }
                         }

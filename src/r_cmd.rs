@@ -203,14 +203,12 @@ impl RCmd for RCommandLine {
         env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError> {
         // the core library will be the first library in the list
-        let library = libraries
-            .first()
-            .ok_or_else(|| InstallError {
-                source: InstallErrorKind::InstallationFailed(
-                    "No library specified for R CMD INSTALL".to_string(),
-                ),
-            })?;
-   
+        let library = libraries.first().ok_or_else(|| InstallError {
+            source: InstallErrorKind::InstallationFailed(
+                "No library specified for R CMD INSTALL".to_string(),
+            ),
+        })?;
+
         // Always delete destination if it exists first to avoid issues with incomplete installs
         // except if it's the same as the library. This happens for local packages
         if library.as_ref() != destination.as_ref() {
@@ -233,14 +231,13 @@ impl RCmd for RCommandLine {
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
-        
 
         let canonicalized_libraries = libraries
             .iter()
             .map(|lib| lib.as_ref().canonicalize())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
-        
+
         // combine them to the single string path that R wants, specifically:
         //  colon-separated on Unix-alike systems and semicolon-separated on Windows.
         let library_paths = if cfg!(windows) {

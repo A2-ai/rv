@@ -4,12 +4,16 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::process::Command;
 
-use crate::consts::SYS_REQ_URL_ENV_VAR_NAME;
 use serde::{Deserialize, Serialize};
 use url::Url;
+use which::which;
+
+use crate::consts::{SYS_DEPS_CHECK_IN_PATH_ENV_VAR_NAME, SYS_REQ_URL_ENV_VAR_NAME};
 
 /// https://rserver.tradecraftclinical.com/rspm/__api__/swagger/index.html#/default/get_repos__id__sysreqs
 const SYSTEM_REQ_API_URL: &str = "https://packagemanager.posit.co/__api__/repos/cran/sysreqs";
+/// Some tools might not be installed by the package manager
+const KNOWN_THINGS_IN_PATH: &[&str] = &["rustc", "cargo", "pandoc"];
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -134,7 +138,7 @@ pub fn check_installation_status(
     }
 
     log::debug!("Checking installation status for {:?}", sys_deps);
-
+    let from_env = std::env::var(SYS_DEPS_CHECK_IN_PATH_ENV_VAR_NAME).unwrap_or_default();
     match system_info.sysreq_data().0 {
         "ubuntu" | "debian" => {
             // Running dpkg-query -W -f='${Package}\n' {..pkg_list} and read stdout
@@ -149,6 +153,22 @@ pub fn check_installation_status(
             for line in stdout.lines() {
                 if let Some(status) = out.get_mut(line.trim()) {
                     *status = SysInstallationStatus::Present;
+                }
+            }
+            
+            let mut to_check_in_path: Vec<_> = from_env.split(",").map(|x| x.trim()).collect();
+            to_check_in_path.extend_from_slice(KNOWN_THINGS_IN_PATH);
+
+            for (name, status) in out
+                .iter_mut()
+                .filter(|(_, v)| v == &&SysInstallationStatus::Unknown)
+            {
+                if to_check_in_path.contains(&name.as_str()) {
+                    if which(name).is_ok() {
+                        *status = SysInstallationStatus::Present;
+                    } else {
+                        *status = SysInstallationStatus::Absent;
+                    }
                 }
             }
         }
