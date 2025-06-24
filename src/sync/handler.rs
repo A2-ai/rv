@@ -18,7 +18,7 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::get_max_workers;
 use crate::{
-    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency
+    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
 };
 
 #[cfg(feature = "cli")]
@@ -80,7 +80,7 @@ pub struct SyncHandler<'a> {
     dry_run: bool,
     show_progress_bar: bool,
     max_workers: usize,
-    has_lockfile: bool,
+    uses_lockfile: bool,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -99,7 +99,7 @@ impl<'a> SyncHandler<'a> {
             staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
             show_progress_bar: false,
-            has_lockfile: false,
+            uses_lockfile: false,
             max_workers: get_max_workers(),
         }
     }
@@ -117,8 +117,8 @@ impl<'a> SyncHandler<'a> {
         self.max_workers = max_workers;
     }
 
-    pub fn set_has_lockfile(&mut self, has_lockfile: bool) {
-        self.has_lockfile = has_lockfile;
+    pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
+        self.uses_lockfile = uses_lockfile;
     }
 
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
@@ -172,13 +172,9 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 cancellation,
             ),
-            Source::Url { .. } => sources::url::install_package(
-                dep,
-                &library_dirs,
-                self.cache,
-                r_cmd,
-                cancellation,
-            ),
+            Source::Url { .. } => {
+                sources::url::install_package(dep, &library_dirs, self.cache, r_cmd, cancellation)
+            }
             Source::Builtin { .. } => Ok(()),
         }
     }
@@ -202,11 +198,19 @@ impl<'a> SyncHandler<'a> {
 
         for name in self.library.packages.keys() {
             if let Some(dep) = deps_by_name.get(name.as_str()) {
-                // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
+                // If the library contains the dep, we also want it to be resolved from the lockfile unless
+                // the user is not using a lockfile, in which case we just trust whatever is in there
                 if self.library.contains_package(dep) {
                     match &dep.source {
-                        Source::Repository { .. } if dep.from_lockfile => {
-                            deps_seen.insert(name.as_str());
+                        Source::Repository { .. } => {
+                            if !self.uses_lockfile {
+                                deps_seen.insert(name.as_str());
+                            } else {
+
+                                if dep.from_lockfile{
+                                    deps_seen.insert(name.as_str());
+                                }
+                            }
                         }
                         Source::Git { .. } | Source::RUniverse { .. } | Source::Url { .. } => {
                             deps_seen.insert(name.as_str());
@@ -331,7 +335,7 @@ impl<'a> SyncHandler<'a> {
         // Create staging only if we need to build stuff
         fs::create_dir_all(&self.staging_path)?;
 
-        // Then we mark the deps seen so they won't be installed into the staging dir 
+        // Then we mark the deps seen so they won't be installed into the staging dir
         for d in &deps_seen {
             // builtin packages will not be in the library
             let in_lib = self.library.path().join(d);
@@ -438,10 +442,18 @@ impl<'a> SyncHandler<'a> {
                             }
                             match dep.kind {
                                 PackageType::Source => {
-                                    log::debug!("Installing {} (source) on worker {}", dep.name, local_worker_id)
+                                    log::debug!(
+                                        "Installing {} (source) on worker {}",
+                                        dep.name,
+                                        local_worker_id
+                                    )
                                 }
                                 PackageType::Binary => {
-                                    log::debug!("Installing {} (binary) on worker {}", dep.name, local_worker_id)
+                                    log::debug!(
+                                        "Installing {} (binary) on worker {}",
+                                        dep.name,
+                                        local_worker_id
+                                    )
                                 }
                             }
                         }
