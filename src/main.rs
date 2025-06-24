@@ -652,14 +652,29 @@ fn try_main() -> Result<()> {
                     repositories,
                     dependencies,
                 } => {
-                    let res = purge_cache(&context, &resolved, &repositories, &dependencies)?;
-                    if output_format.is_json() {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&res).expect("valid json")
-                        );
+                    if repositories.is_empty() && dependencies.is_empty() {
+                        fs::remove_dir_all(&context.cache.root)?;
+                        if output_format.is_json() {
+                            println!(
+                                "{}",
+                                json!({"cache_root": format!("{}", context.cache.root.display())})
+                            )
+                        } else {
+                            println!(
+                                "Cache successfully removed at: {}",
+                                context.cache.root.display()
+                            );
+                        }
                     } else {
-                        println!("{res}");
+                        let res = purge_cache(&context, &resolved, &repositories, &dependencies)?;
+                        if output_format.is_json() {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&res).expect("valid json")
+                            );
+                        } else {
+                            println!("{res}");
+                        }
                     }
                 }
                 CacheSubcommand::Refresh { repositories } => todo!(),
