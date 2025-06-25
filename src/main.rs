@@ -634,18 +634,41 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context.load_databases()?;
-            let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
             match subcommand.unwrap_or(CacheSubcommand::Dir) {
                 CacheSubcommand::Dir => {
-                    let info = CacheInfo::new(&context.config, &context.cache, resolved);
+                    context.load_databases()?;
+                    let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
+
+                    let info = CacheInfo::new(&context.config, &context.cache, resolution.found.clone());
                     if output_format.is_json() {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&info).expect("valid json")
-                        );
+                        if resolution.is_success() {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&info).expect("valid json")
+                            );
+                        } else {
+                            println!(
+                                "{}",
+                                json!({
+                                    "unresolved_packages": resolution.failed,
+                                    "cache_info": info
+                                })
+                            );
+                        }
                     } else {
                         println!("{info}");
+
+                        if !resolution.is_success() {
+                            eprintln!("\n Failed to resolved all dependencies. All cache directories may not be listed.");
+                            let req_error_messages = resolution.req_error_messages();
+                            for d in resolution.failed {
+                                eprintln!("    {d}");
+                            }
+
+                            if !req_error_messages.is_empty() {
+                                eprintln!("{}", req_error_messages.join("\n"));
+                            }
+                        }
                     }
                 }
                 CacheSubcommand::Purge {
@@ -667,14 +690,46 @@ fn try_main() -> Result<()> {
                             );
                         }
                     } else {
-                        let res = purge_cache(&context, &resolved, &repositories, &dependencies)?;
+                        // if no dependencies, no need to resolve. If there are, we will only 
+                        let resolution = if dependencies.is_empty() {
+                            Resolution::default()
+                        } else {
+                            context.load_databases()?;
+                            resolve_dependencies(&context, &ResolveMode::Default, false)
+                        };
+                        let res = purge_cache(&context, &resolution.found, &repositories, &dependencies)?;
+
                         if output_format.is_json() {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&res).expect("valid json")
-                            );
+                            // only need to print unresolved packages if all the dependencies are not found. 
+                            // If all deps are found, a failed resolution does not impact the purge
+                            if !resolution.is_success() && !res.all_deps_found() {
+                                println!(
+                                    "{}",
+                                    json!({
+                                        "unresolved_packages": resolution.failed,
+                                        "purge_results": res,
+                                    })
+                                );
+                            } else {
+                                println!(
+                                    "{}",
+                                    serde_json::to_string_pretty(&res).expect("valid json")
+                                );
+                            }
                         } else {
                             println!("{res}");
+
+                            if !resolution.is_success() && !res.all_deps_found(){
+                                eprintln!("\n Failed to resolved all dependencies, potentially preventing a successful purge of one or more dependencies.");
+                                let req_error_messages = resolution.req_error_messages();
+                                for d in resolution.failed {
+                                    eprintln!("    {d}");
+                                }
+
+                                if !req_error_messages.is_empty() {
+                                    eprintln!("{}", req_error_messages.join("\n"));
+                                }
+                            }
                         }
                     }
                 }
