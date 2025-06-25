@@ -13,7 +13,7 @@ use crate::consts::{SYS_DEPS_CHECK_IN_PATH_ENV_VAR_NAME, SYS_REQ_URL_ENV_VAR_NAM
 /// https://rserver.tradecraftclinical.com/rspm/__api__/swagger/index.html#/default/get_repos__id__sysreqs
 const SYSTEM_REQ_API_URL: &str = "https://packagemanager.posit.co/__api__/repos/cran/sysreqs";
 /// Some tools might not be installed by the package manager
-const KNOWN_THINGS_IN_PATH: &[&str] = &["rustc", "cargo", "pandoc"];
+const KNOWN_THINGS_IN_PATH: &[&str] = &["rustc", "cargo", "pandoc", "texlive", "chromium", "google-chrome"];
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
