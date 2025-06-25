@@ -10,7 +10,7 @@ use serde_json::json;
 use rv::cli::utils::timeit;
 use rv::cli::{
     CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv,
-    purge_cache, tree,
+    purge_cache, refresh_cache, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
@@ -631,10 +631,10 @@ fn try_main() -> Result<()> {
         }
         Command::Cache { subcommand } => {
             let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            context.load_databases()?;
             if !log_enabled {
                 context.show_progress_bar();
             }
+            context.load_databases()?;
             let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
             match subcommand.unwrap_or(CacheSubcommand::Dir) {
                 CacheSubcommand::Dir => {
@@ -653,6 +653,7 @@ fn try_main() -> Result<()> {
                     dependencies,
                 } => {
                     if repositories.is_empty() && dependencies.is_empty() {
+                        // Proposed TODO: Add interactive prompt before removing cache root?
                         fs::remove_dir_all(&context.cache.root)?;
                         if output_format.is_json() {
                             println!(
@@ -677,7 +678,38 @@ fn try_main() -> Result<()> {
                         }
                     }
                 }
-                CacheSubcommand::Refresh { repositories } => todo!(),
+                CacheSubcommand::Refresh { repositories } => {
+                    let res = refresh_cache(&context, &repositories)?;
+                    if output_format.is_json() {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&res).expect("valid json")
+                        );
+                    } else {
+                        let mut resolved = Vec::new();
+                        let mut unresolved = Vec::new();
+                        for r in res {
+                            if r.unresolved() {
+                                unresolved.push(r.to_string());
+                            } else {
+                                resolved.push(r.to_string());
+                            }
+                        }
+
+                        if !resolved.is_empty() {
+                            println!(
+                                "Refreshed Successfully:\n    {}\n",
+                                resolved.join("\n    ")
+                            );
+                        }
+                        if !unresolved.is_empty() {
+                            println!(
+                                "Repository alias not found in config file: \n    {}\n",
+                                unresolved.join("\n    ")
+                            );
+                        }
+                    }
+                }
             }
         }
         Command::Migrate {

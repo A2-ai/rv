@@ -1,8 +1,9 @@
 use core::fmt;
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{ResolvedDependency, Version, cli::CliContext, hash_string, package::PackageType};
+use crate::{cli::{context::load_databases, CliContext}, hash_string, package::PackageType, ResolvedDependency, Version};
 
+use anyhow::Result;
 use fs_err as fs;
 use serde::Serialize;
 
@@ -148,14 +149,14 @@ impl fmt::Display for PurgeResults<'_> {
             if !removed.is_empty() {
                 write!(
                     f,
-                    "The following dependencies were successfully removed:\n    {}\n\n",
+                    "Removed Successfully:\n    {}\n\n",
                     removed.join("\n    ")
                 )?;
             }
             if !not_removed.is_empty() {
                 write!(
                     f,
-                    "The following dependencies were not removed:\n    {}\n",
+                    "Not Removed:\n    {}\n",
                     not_removed.join("\n    ")
                 )?;
             }
@@ -192,3 +193,76 @@ enum PurgeDepResult<'a> {
         version: &'a Version,
     },
 }
+
+/// refresh the repository database by invalidating the packages.bin and re-loading it
+pub fn refresh_cache<'a>(context: &'a CliContext, repositories: &'a [String]) -> Result<Vec<RefreshResult<'a>>> {
+    let mut cache = context.cache.clone();
+    // need to set cache timeout to refresh the databases for the found repositories
+    cache.packages_timeout = 0;
+
+    // if no repositories supplied, we'll refresh all repos listed in the config
+    let res = if repositories.is_empty() {
+        let res = context
+            .config
+            .repositories()
+            .iter()
+            .map(|repo| RefreshResult::Refreshed { 
+                alias: &repo.alias, 
+                url: repo.url(), 
+                path: cache.get_package_db_entry(repo.url()).0,
+            })
+            .collect::<Vec<_>>();
+
+        let _ = load_databases(context.config.repositories(), &cache)?;
+        res
+    } else {
+        let mut repos = Vec::new();
+        let mut res = Vec::new();
+
+        for r in repositories {
+            if let Some(repo) = context
+                .config
+                .repositories()
+                .iter()
+                .find(|repo| &repo.alias == r)
+            {
+                repos.push(repo.clone());
+                let (path, _) = cache.get_package_db_entry(repo.url());
+                res.push(RefreshResult::Refreshed { alias: &repo.alias, url: repo.url(), path });
+            } else {
+                res.push(RefreshResult::Unresolved(r));
+            }
+        }
+
+        let _ = load_databases(&repos, &cache)?;
+        res
+    };
+
+    Ok(res)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum RefreshResult<'a> {
+    Unresolved(&'a str),
+    Refreshed{
+        alias: &'a str,
+        url: &'a str,
+        path: PathBuf,
+    }
+}
+
+impl RefreshResult<'_> {
+    pub fn unresolved(&self) -> bool {
+        matches!(self, RefreshResult::Unresolved(_))
+    }
+}
+
+impl fmt::Display for RefreshResult<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unresolved(alias) => write!(f, "{alias}"),
+            Self::Refreshed { alias, url, .. } => write!(f, "{alias} ({url})"),
+        }
+    }
+}
+

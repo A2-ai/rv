@@ -72,7 +72,7 @@ pub struct DiskCache {
     pub system_info: SystemInfo,
     /// How long the compiled databases are considered fresh for, in seconds
     /// Defaults to 3600s (1 hour)
-    packages_timeout: u64,
+    pub(crate) packages_timeout: u64,
     // TODO: check if it's worth keeping a hashmap of repo_url -> encoded
     // TODO: or if the overhead is the same as base64 directly
 }
