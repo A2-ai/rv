@@ -198,9 +198,9 @@ impl<'a> SyncHandler<'a> {
 
         for name in self.library.packages.keys() {
             if let Some(dep) = deps_by_name.get(name.as_str()) {
-                // If the library contains the dep, we also want it to be resolved from the lockfile unless
-                // the user is not using a lockfile, in which case we just trust whatever is in there
-                if self.library.contains_package(dep) {
+                // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
+                // Additionally, any package in the library that is ignored, needs to be removed
+                if self.library.contains_package(dep) && !dep.ignored {
                     match &dep.source {
                         Source::Repository { .. } => {
                             if !self.uses_lockfile {
@@ -320,10 +320,10 @@ impl<'a> SyncHandler<'a> {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
                 }
-            }
 
-            if *notify {
-                sync_changes.push(SyncChange::removed(dir_name));
+                if *notify {
+                    sync_changes.push(SyncChange::removed(dir_name));
+                }
             }
         }
 

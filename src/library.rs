@@ -182,7 +182,7 @@ impl Library {
             | Source::RUniverse { ref sha, .. } => self
                 .non_repo_packages
                 .get(pkg.name.as_ref())
-                .map(|m| m.sha().unwrap() == sha.as_str())
+                .and_then(|m| m.sha().map(|s| s == sha.as_str()))
                 .unwrap_or(false),
             Source::Local { ref sha, .. } => {
                 if let Some(metadata) = self.non_repo_packages.get(pkg.name.as_ref()) {
