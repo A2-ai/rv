@@ -22,7 +22,7 @@ where
     }
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize)]
 pub struct SyncChange {
     pub name: String,
     #[serde(skip)]

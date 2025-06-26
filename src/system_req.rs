@@ -29,7 +29,7 @@ impl fmt::Display for SysInstallationStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SysDep {
     pub name: String,
     pub status: SysInstallationStatus,
