@@ -80,7 +80,7 @@ pub struct SyncHandler<'a> {
     dry_run: bool,
     show_progress_bar: bool,
     max_workers: usize,
-    has_lockfile: bool,
+    uses_lockfile: bool,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -99,7 +99,7 @@ impl<'a> SyncHandler<'a> {
             staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
             show_progress_bar: false,
-            has_lockfile: false,
+            uses_lockfile: false,
             max_workers: get_max_workers(),
         }
     }
@@ -117,8 +117,8 @@ impl<'a> SyncHandler<'a> {
         self.max_workers = max_workers;
     }
 
-    pub fn set_has_lockfile(&mut self, has_lockfile: bool) {
-        self.has_lockfile = has_lockfile;
+    pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
+        self.uses_lockfile = uses_lockfile;
     }
 
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
@@ -202,8 +202,15 @@ impl<'a> SyncHandler<'a> {
                 // Additionally, any package in the library that is ignored, needs to be removed
                 if self.library.contains_package(dep) && !dep.ignored {
                     match &dep.source {
-                        Source::Repository { .. } if dep.from_lockfile => {
-                            deps_seen.insert(name.as_str());
+                        Source::Repository { .. } => {
+                            if !self.uses_lockfile {
+                                deps_seen.insert(name.as_str());
+                            } else {
+
+                                if dep.from_lockfile{
+                                    deps_seen.insert(name.as_str());
+                                }
+                            }
                         }
                         Source::Git { .. } | Source::RUniverse { .. } | Source::Url { .. } => {
                             deps_seen.insert(name.as_str());

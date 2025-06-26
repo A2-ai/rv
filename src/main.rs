@@ -330,7 +330,7 @@ fn _sync(
             if !has_logs_enabled {
                 handler.show_progress_bar();
             }
-            handler.set_has_lockfile(context.lockfile.is_some());
+            handler.set_uses_lockfile(context.config.use_lockfile());
             handler.handle(&resolved, &context.r_cmd)
         }
     ) {
