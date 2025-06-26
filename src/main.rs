@@ -639,7 +639,8 @@ fn try_main() -> Result<()> {
                     context.load_databases()?;
                     let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
 
-                    let info = CacheInfo::new(&context.config, &context.cache, resolution.found.clone());
+                    let info =
+                        CacheInfo::new(&context.config, &context.cache, resolution.found.clone());
                     if output_format.is_json() {
                         if resolution.is_success() {
                             println!(
@@ -659,7 +660,9 @@ fn try_main() -> Result<()> {
                         println!("{info}");
 
                         if !resolution.is_success() {
-                            eprintln!("\n Failed to resolved all dependencies. All cache directories may not be listed.");
+                            eprintln!(
+                                "\n Failed to resolved all dependencies. All cache directories may not be listed."
+                            );
                             let req_error_messages = resolution.req_error_messages();
                             for d in resolution.failed {
                                 eprintln!("    {d}");
@@ -690,76 +693,50 @@ fn try_main() -> Result<()> {
                             );
                         }
                     } else {
-                        // if no dependencies, no need to resolve. If there are, we will only 
+                        // if no dependencies, no need to resolve. If there are, we will only
                         let resolution = if dependencies.is_empty() {
                             Resolution::default()
                         } else {
                             context.load_databases()?;
                             resolve_dependencies(&context, &ResolveMode::Default, false)
                         };
-                        let res = purge_cache(&context, &resolution.found, &repositories, &dependencies)?;
+                        let res = purge_cache(&context, &resolution, &repositories, &dependencies)?;
 
                         if output_format.is_json() {
-                            // only need to print unresolved packages if all the dependencies are not found. 
-                            // If all deps are found, a failed resolution does not impact the purge
-                            if !resolution.is_success() && !res.all_deps_found() {
-                                println!(
-                                    "{}",
-                                    json!({
-                                        "unresolved_packages": resolution.failed,
-                                        "purge_results": res,
-                                    })
-                                );
-                            } else {
-                                println!(
-                                    "{}",
-                                    serde_json::to_string_pretty(&res).expect("valid json")
-                                );
-                            }
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&res).expect("valid json")
+                            );
                         } else {
                             println!("{res}");
-
-                            if !resolution.is_success() && !res.all_deps_found(){
-                                eprintln!("\n Failed to resolved all dependencies, potentially preventing a successful purge of one or more dependencies.");
-                                let req_error_messages = resolution.req_error_messages();
-                                for d in resolution.failed {
-                                    eprintln!("    {d}");
-                                }
-
-                                if !req_error_messages.is_empty() {
-                                    eprintln!("{}", req_error_messages.join("\n"));
-                                }
-                            }
                         }
                     }
                 }
                 CacheSubcommand::Refresh { repositories } => {
-                    let res = refresh_cache(&context, &repositories)?;
+                    let (refreshed, unresolved) = refresh_cache(&context, &repositories)?;
                     if output_format.is_json() {
                         println!(
                             "{}",
-                            serde_json::to_string_pretty(&res).expect("valid json")
+                            json!({
+                                "refreshed": refreshed,
+                                "unresolved_repos": unresolved,
+                            })
                         );
                     } else {
-                        let mut resolved = Vec::new();
-                        let mut unresolved = Vec::new();
-                        for r in res {
-                            if r.unresolved() {
-                                unresolved.push(r.to_string());
-                            } else {
-                                resolved.push(r.to_string());
-                            }
-                        }
-
-                        if !resolved.is_empty() {
+                        if !refreshed.is_empty() {
                             println!(
                                 "Refreshed Successfully:\n    {}\n",
-                                resolved.join("\n    ")
+                                refreshed
+                                    .iter()
+                                    .map(ToString::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join("\n    ")
                             );
                         }
+
                         if !unresolved.is_empty() {
                             println!(
-                                "Repository alias not found in config file: \n    {}\n",
+                                "Repository alias not found in config:\n    {}\n",
                                 unresolved.join("\n    ")
                             );
                         }

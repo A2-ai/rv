@@ -1,7 +1,12 @@
 use core::fmt;
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{cli::{context::load_databases, CliContext}, hash_string, package::PackageType, ResolvedDependency, Version};
+use crate::{
+    Resolution, UnresolvedDependency, Version,
+    cli::{CliContext, context::load_databases},
+    hash_string,
+    package::PackageType,
+};
 
 use anyhow::Result;
 use fs_err as fs;
@@ -9,7 +14,7 @@ use serde::Serialize;
 
 pub fn purge_cache<'a>(
     context: &'a CliContext,
-    resolved: &'a [ResolvedDependency<'a>],
+    resolution: &'a Resolution<'a>,
     repositories: &'a [String],
     dependencies: &'a [String],
 ) -> std::io::Result<PurgeResults<'a>> {
@@ -30,20 +35,20 @@ pub fn purge_cache<'a>(
                     path,
                 }
             } else {
-                PurgeRepoResult::NotFound {
+                PurgeRepoResult::NotInCache {
                     alias: &repo.alias,
                     url: repo.url(),
                 }
             }
         } else {
-            PurgeRepoResult::Unresolved(&r)
+            PurgeRepoResult::NotInProject(&r)
         };
         repo_res.push(res);
     }
 
     let mut dep_res = Vec::new();
     for d in dependencies {
-        let res = if let Some(dep) = resolved.iter().find(|r| &r.name == d) {
+        let res = if let Some(dep) = resolution.found.iter().find(|r| &r.name == d) {
             let pkg_paths = context.cache.get_package_paths(
                 &dep.source,
                 Some(&dep.name),
@@ -61,7 +66,7 @@ pub fn purge_cache<'a>(
             }
 
             if paths.is_empty() {
-                PurgeDepResult::NotFound {
+                PurgeDepResult::NotInCache {
                     name: &dep.name,
                     version: &dep.version,
                 }
@@ -72,8 +77,10 @@ pub fn purge_cache<'a>(
                     paths,
                 }
             }
+        } else if let Some(dep) = resolution.failed.iter().find(|r| &r.name == d) {
+            PurgeDepResult::Unresolved(dep)
         } else {
-            PurgeDepResult::Unresolved(d)
+            PurgeDepResult::NotInProject(d)
         };
         dep_res.push(res);
     }
@@ -92,7 +99,9 @@ pub struct PurgeResults<'a> {
 
 impl PurgeResults<'_> {
     pub fn all_deps_found(&self) -> bool {
-        self.dependencies.iter().all(|dep| !matches!(dep, PurgeDepResult::Unresolved(_)))
+        self.dependencies
+            .iter()
+            .all(|dep| !matches!(dep, PurgeDepResult::Unresolved(_)))
     }
 }
 
@@ -104,13 +113,13 @@ impl fmt::Display for PurgeResults<'_> {
             let mut removed = Vec::new();
             for repo in &self.repositories {
                 match repo {
-                    PurgeRepoResult::Unresolved(alias) => not_removed.push(format!(
+                    PurgeRepoResult::NotInProject(alias) => not_removed.push(format!(
                         "{alias} - Repository alias not found in config file"
                     )),
                     PurgeRepoResult::Removed { alias, url, .. } => {
                         removed.push(format!("{alias} ({url})"));
                     }
-                    PurgeRepoResult::NotFound { alias, url } => {
+                    PurgeRepoResult::NotInCache { alias, url } => {
                         not_removed.push(format!("{alias} ({url}) - Repository not found in cache"))
                     }
                 }
@@ -131,11 +140,13 @@ impl fmt::Display for PurgeResults<'_> {
             write!(f, "== Dependencies ==\n")?;
             let mut not_removed = Vec::new();
             let mut removed = Vec::new();
+            let mut unresolved = Vec::new();
             for dep in &self.dependencies {
                 match dep {
-                    PurgeDepResult::Unresolved(name) => not_removed.push(format!(
-                        "{name} - Dependency not found in resolved packages"
-                    )),
+                    PurgeDepResult::Unresolved(dep) => {
+                        unresolved.push(dep.to_string());
+                        not_removed.push(format!("{} - Package could not be resolved", dep.name,));
+                    }
                     PurgeDepResult::Removed {
                         name,
                         version,
@@ -146,9 +157,11 @@ impl fmt::Display for PurgeResults<'_> {
 
                         removed.push(format!("{name} ({version}) - {}", types.join(" and ")))
                     }
-                    PurgeDepResult::NotFound { name, version } => not_removed.push(format!(
+                    PurgeDepResult::NotInCache { name, version } => not_removed.push(format!(
                         "{name} ({version}) - Dependency not found in cache"
                     )),
+                    PurgeDepResult::NotInProject(name) => not_removed
+                        .push(format!("{name} - Package not part of project dependencies")),
                 }
             }
 
@@ -160,10 +173,13 @@ impl fmt::Display for PurgeResults<'_> {
                 )?;
             }
             if !not_removed.is_empty() {
+                write!(f, "Not Removed:\n    {}\n\n", not_removed.join("\n    "))?;
+            }
+            if !unresolved.is_empty() {
                 write!(
                     f,
-                    "Not Removed:\n    {}\n",
-                    not_removed.join("\n    ")
+                    "Failed to resolve all dependencies. Packages may not have been purged due to the following resolution issues:\n    {}\n\n",
+                    unresolved.join("\n    ")
                 )?;
             }
         }
@@ -174,34 +190,38 @@ impl fmt::Display for PurgeResults<'_> {
 
 #[derive(Debug, Serialize)]
 enum PurgeRepoResult<'a> {
-    Unresolved(&'a str),
     Removed {
         alias: &'a str,
         url: &'a str,
         path: PathBuf,
     },
-    NotFound {
-        alias: &'a str,
-        url: &'a str,
-    },
+    /// Alias is not in config file
+    NotInProject(&'a str),
+    /// Repository not in cache (nothing to remove)
+    NotInCache { alias: &'a str, url: &'a str },
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 enum PurgeDepResult<'a> {
-    Unresolved(&'a str),
+    /// Package is part of the unresolved dependencies
+    Unresolved(&'a UnresolvedDependency<'a>),
     Removed {
         name: &'a str,
         version: &'a Version,
         paths: HashMap<PackageType, PathBuf>,
     },
-    NotFound {
-        name: &'a str,
-        version: &'a Version,
-    },
+    /// Dependency not part of the resolved dependency burden
+    NotInProject(&'a str),
+    /// Dependency resolved, but not in cache (nothing to remove)
+    NotInCache { name: &'a str, version: &'a Version },
 }
 
 /// refresh the repository database by invalidating the packages.bin and re-loading it
-pub fn refresh_cache<'a>(context: &'a CliContext, repositories: &'a [String]) -> Result<Vec<RefreshResult<'a>>> {
+/// returns a list of repositories that were refreshed and a list of repos that could not be found in the config
+pub fn refresh_cache<'a>(
+    context: &'a CliContext,
+    repositories: &'a [String],
+) -> Result<(Vec<RefreshedRepo<'a>>, Vec<&'a str>)> {
     let mut cache = context.cache.clone();
     // need to set cache timeout to refresh the databases for the found repositories
     cache.packages_timeout = 0;
@@ -212,18 +232,20 @@ pub fn refresh_cache<'a>(context: &'a CliContext, repositories: &'a [String]) ->
             .config
             .repositories()
             .iter()
-            .map(|repo| RefreshResult::Refreshed { 
-                alias: &repo.alias, 
-                url: repo.url(), 
+            .map(|repo| RefreshedRepo {
+                alias: &repo.alias,
+                url: repo.url(),
                 path: cache.get_package_db_entry(repo.url()).0,
             })
             .collect::<Vec<_>>();
 
-        let _ = load_databases(context.config.repositories(), &cache)?;
-        res
+        load_databases(context.config.repositories(), &cache)?;
+        (res, Vec::new())
     } else {
         let mut repos = Vec::new();
-        let mut res = Vec::new();
+        let mut refreshed = Vec::new();
+        // unresolved meaning that we can't find a corresponding entry in the config
+        let mut unresolved = Vec::new();
 
         for r in repositories {
             if let Some(repo) = context
@@ -234,41 +256,32 @@ pub fn refresh_cache<'a>(context: &'a CliContext, repositories: &'a [String]) ->
             {
                 repos.push(repo.clone());
                 let (path, _) = cache.get_package_db_entry(repo.url());
-                res.push(RefreshResult::Refreshed { alias: &repo.alias, url: repo.url(), path });
+                refreshed.push(RefreshedRepo {
+                    alias: &repo.alias,
+                    url: repo.url(),
+                    path,
+                });
             } else {
-                res.push(RefreshResult::Unresolved(r));
+                unresolved.push(r.as_str());
             }
         }
 
-        let _ = load_databases(&repos, &cache)?;
-        res
+        load_databases(&repos, &cache)?;
+        (refreshed, unresolved)
     };
 
     Ok(res)
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub enum RefreshResult<'a> {
-    Unresolved(&'a str),
-    Refreshed{
-        alias: &'a str,
-        url: &'a str,
-        path: PathBuf,
-    }
+pub struct RefreshedRepo<'a> {
+    alias: &'a str,
+    url: &'a str,
+    path: PathBuf,
 }
 
-impl RefreshResult<'_> {
-    pub fn unresolved(&self) -> bool {
-        matches!(self, RefreshResult::Unresolved(_))
-    }
-}
-
-impl fmt::Display for RefreshResult<'_> {
+impl fmt::Display for RefreshedRepo<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unresolved(alias) => write!(f, "{alias}"),
-            Self::Refreshed { alias, url, .. } => write!(f, "{alias} ({url})"),
-        }
+        write!(f, "{} ({})", self.alias, self.url)
     }
 }
-
