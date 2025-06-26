@@ -317,10 +317,10 @@ impl<'a> SyncHandler<'a> {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
                 }
-            }
 
-            if *notify {
-                sync_changes.push(SyncChange::removed(dir_name));
+                if *notify {
+                    sync_changes.push(SyncChange::removed(dir_name));
+                }
             }
         }
 
@@ -576,9 +576,6 @@ impl<'a> SyncHandler<'a> {
                 ordering => ordering,
             }
         });
-
-        // remove any duplicate entries to be displayed
-        sync_changes.dedup();
 
         Ok(sync_changes)
     }
