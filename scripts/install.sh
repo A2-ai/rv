@@ -9,10 +9,74 @@ os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)
 if [ "$arch" = "arm64" ]; then arch="aarch64"; elif [ "$arch" = "x86_64" ]; then arch="x86_64"; fi
 
-# Adjust OS string for macOS asset naming convention
+# Function to compare version numbers
+version_compare() {
+    # Returns 0 if $1 >= $2, 1 otherwise
+    printf '%s\n%s\n' "$2" "$1" | sort -V -C
+}
+
+# Function to get glibc version
+get_glibc_version() {
+    # Try multiple methods to get glibc version
+    if command -v ldd >/dev/null 2>&1; then
+        # Method 1: Use ldd --version
+        glibc_version=$(ldd --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+        if [ -n "$glibc_version" ]; then
+            echo "$glibc_version"
+            return 0
+        fi
+    fi
+
+    # Method 2: Check if glibc library exists and try to get version
+    if [ -f /lib/x86_64-linux-gnu/libc.so.6 ] || [ -f /lib64/libc.so.6 ] || [ -f /lib/libc.so.6 ]; then
+        for lib_path in /lib/x86_64-linux-gnu/libc.so.6 /lib64/libc.so.6 /lib/libc.so.6 /lib/aarch64-linux-gnu/libc.so.6; do
+            if [ -f "$lib_path" ]; then
+                glibc_version=$("$lib_path" 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+                if [ -n "$glibc_version" ]; then
+                    echo "$glibc_version"
+                    return 0
+                fi
+            fi
+        done
+    fi
+
+    # Method 3: Use getconf if available
+    if command -v getconf >/dev/null 2>&1; then
+        glibc_version=$(getconf GNU_LIBC_VERSION 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+        if [ -n "$glibc_version" ]; then
+            echo "$glibc_version"
+            return 0
+        fi
+    fi
+
+    # If all methods fail, return empty
+    echo ""
+}
+
+# Determine the appropriate target based on OS
 if [ "$os" = "darwin" ]; then
     os_pattern="apple-darwin"
+    echo "Detected macOS, using apple-darwin target"
+elif [ "$os" = "linux" ]; then
+    # Check glibc version to determine if we should use musl
+    glibc_version=$(get_glibc_version)
+
+    if [ -n "$glibc_version" ]; then
+        echo "Detected glibc version: $glibc_version"
+        if version_compare "$glibc_version" "2.31"; then
+            os_pattern="unknown-linux-gnu"
+            echo "glibc >= 2.31, using gnu target"
+        else
+            os_pattern="unknown-linux-musl"
+            echo "glibc < 2.31, using musl target for better compatibility"
+        fi
+    else
+        echo "Could not determine glibc version, defaulting to musl target for better compatibility"
+        os_pattern="unknown-linux-musl"
+    fi
 else
+    # Default fallback for other Unix-like systems
+    echo "Unknown OS: $os, defaulting to linux-gnu target"
     os_pattern="unknown-linux-gnu"
 fi
 
@@ -24,6 +88,13 @@ asset_url=$(curl -s https://api.github.com/repos/a2-ai/rv/releases/latest | grep
 if [ -z "$asset_url" ]; then
     echo "Error: Could not find a suitable release asset for your system ($arch-$os_pattern) on GitHub." >&2
     echo "Please check available assets at https://github.com/a2-ai/rv/releases/latest" >&2
+    echo "Available targets typically include:" >&2
+    echo "  - x86_64-unknown-linux-gnu" >&2
+    echo "  - x86_64-unknown-linux-musl" >&2
+    echo "  - aarch64-unknown-linux-gnu" >&2
+    echo "  - aarch64-unknown-linux-musl" >&2
+    echo "  - x86_64-apple-darwin" >&2
+    echo "  - aarch64-apple-darwin" >&2
     exit 1
 fi
 
