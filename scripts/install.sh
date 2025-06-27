@@ -28,17 +28,16 @@ get_glibc_version() {
     fi
 
     # Method 2: Check if glibc library exists and try to get version
-    if [ -f /lib/x86_64-linux-gnu/libc.so.6 ] || [ -f /lib64/libc.so.6 ] || [ -f /lib/libc.so.6 ]; then
-        for lib_path in /lib/x86_64-linux-gnu/libc.so.6 /lib64/libc.so.6 /lib/libc.so.6 /lib/aarch64-linux-gnu/libc.so.6; do
-            if [ -f "$lib_path" ]; then
-                glibc_version=$("$lib_path" 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)
-                if [ -n "$glibc_version" ]; then
-                    echo "$glibc_version"
-                    return 0
-                fi
+    libc_paths=(/lib/x86_64-linux-gnu/libc.so.6 /lib64/libc.so.6 /lib/libc.so.6 /lib/aarch64-linux-gnu/libc.so.6)
+    for lib_path in "${libc_paths[@]}"; do
+        if [ -f "$lib_path" ]; then
+            glibc_version=$("$lib_path" 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+            if [ -n "$glibc_version" ]; then
+                echo "$glibc_version"
+                return 0
             fi
-        done
-    fi
+        fi
+    done
 
     # Method 3: Use getconf if available
     if command -v getconf >/dev/null 2>&1; then
