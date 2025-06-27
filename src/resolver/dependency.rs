@@ -4,6 +4,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use serde::Serialize;
 use url::Url;
 
 use crate::cache::InstallationStatus;
@@ -297,7 +298,7 @@ impl fmt::Debug for ResolvedDependency<'_> {
 }
 
 /// A dependency that we could not
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct UnresolvedDependency<'d> {
     pub(crate) name: Cow<'d, str>,
     pub(crate) error: Option<String>,

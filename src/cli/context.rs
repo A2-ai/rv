@@ -59,7 +59,8 @@ pub struct CliContext {
 }
 
 impl CliContext {
-    pub fn new(config_file: &PathBuf, r_command_lookup: RCommandLookup) -> Result<Self> {
+    pub fn new(config_file: impl AsRef<Path>, r_command_lookup: RCommandLookup) -> Result<Self> {
+        let config_file = config_file.as_ref();
         let config = Config::from_file(config_file)?;
 
         // This can only be set to false if the user passed a r_version to rv plan

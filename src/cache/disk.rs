@@ -16,7 +16,7 @@ use crate::consts::BUILD_LOG_FILENAME;
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
-use crate::{RCmd, SystemInfo, Version};
+use crate::{RCmd, Repository, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
@@ -72,7 +72,7 @@ pub struct DiskCache {
     pub system_info: SystemInfo,
     /// How long the compiled databases are considered fresh for, in seconds
     /// Defaults to 3600s (1 hour)
-    packages_timeout: u64,
+    pub(crate) packages_timeout: u64,
     // TODO: check if it's worth keeping a hashmap of repo_url -> encoded
     // TODO: or if the overhead is the same as base64 directly
 }
@@ -307,5 +307,64 @@ impl DiskCache {
             fs::write(&path, content).expect("to work");
             sysreq
         }
+    }
+
+    pub fn remove_repository<'a>(
+        &self,
+        repo: &'a Repository,
+    ) -> Result<Option<PathBuf>, std::io::Error> {
+        let cache_path = self.root.join(hash_string(repo.url()));
+        if cache_path.exists() {
+            log::debug!("Removing {} at {}", repo.url(), cache_path.display());
+            fs::remove_dir_all(&cache_path)?;
+            Ok(Some(cache_path))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn remove_dependency<'a>(
+        &self,
+        name: &str,
+        version: &Version,
+        source: &Source,
+    ) -> Result<(Option<PathBuf>, Option<PathBuf>), std::io::Error> {
+        let mut res = (None, None);
+
+        // Builtins and Local not in cache and would lead to panic in get_package_paths
+        match source {
+            Source::Builtin { .. } | Source::Local { .. } => return Ok((None, None)),
+            _ => ()
+        }
+
+        let cache_path = self.get_package_paths(
+            &source,
+            Some(name),
+            Some(&version.original),
+        );
+
+        if cache_path.binary.exists() {
+            log::debug!(
+                "Removing binary {} ({}) at {}",
+                name,
+                version,
+                cache_path.binary.display()
+            );
+            fs::remove_dir_all(&cache_path.binary)?;
+            res.0 = Some(cache_path.binary);
+        }
+
+        if cache_path.source.exists() {
+            log::debug!(
+                "Removing source {} ({}) at {}",
+                name,
+                version,
+                cache_path.source.display()
+            );
+            fs::remove_dir_all(&cache_path.source)?;
+            res.1 = Some(cache_path.source);
+        }
+
+        Ok(res)
     }
 }
