@@ -12,6 +12,9 @@ use anyhow::Result;
 use fs_err as fs;
 use serde::Serialize;
 
+/// Remove repositories and/or dependencies from the cache. 
+/// Dependencies only remove the package version from the resolved source
+/// Repositories are aliases corresponding to repos in the config
 pub fn purge_cache<'a>(
     context: &'a CliContext,
     resolution: &'a Resolution<'a>,
@@ -49,20 +52,14 @@ pub fn purge_cache<'a>(
     let mut dep_res = Vec::new();
     for d in dependencies {
         let res = if let Some(dep) = resolution.found.iter().find(|r| &r.name == d) {
-            let pkg_paths = context.cache.get_package_paths(
-                &dep.source,
-                Some(&dep.name),
-                Some(&dep.version.original),
-            );
-            let mut paths = HashMap::new();
-            if pkg_paths.binary.exists() {
-                fs::remove_dir_all(&pkg_paths.binary)?;
-                paths.insert(PackageType::Binary, pkg_paths.binary);
-            }
+            let (binary_path, source_path) = context.cache.remove_dependency(&dep.name, &dep.version, &dep.source)?;
 
-            if pkg_paths.source.exists() {
-                fs::remove_dir_all(&pkg_paths.source)?;
-                paths.insert(PackageType::Source, pkg_paths.source);
+            let mut paths = HashMap::new();
+            if let Some(bin_path) = binary_path {
+                paths.insert(PackageType::Binary, bin_path);
+            }
+            if let Some(src_path) = source_path {
+                paths.insert(PackageType::Source, src_path);
             }
 
             if paths.is_empty() {

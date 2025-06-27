@@ -16,7 +16,7 @@ use crate::consts::BUILD_LOG_FILENAME;
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
-use crate::{RCmd, Repository, ResolvedDependency, SystemInfo, Version};
+use crate::{RCmd, Repository, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
@@ -325,21 +325,29 @@ impl DiskCache {
 
     pub fn remove_dependency<'a>(
         &self,
-        resolved_dep: &'a ResolvedDependency<'a>,
+        name: &str,
+        version: &Version,
+        source: &Source,
     ) -> Result<(Option<PathBuf>, Option<PathBuf>), std::io::Error> {
         let mut res = (None, None);
 
+        // Builtins and Local not in cache and would lead to panic in get_package_paths
+        match source {
+            Source::Builtin { .. } | Source::Local { .. } => return Ok((None, None)),
+            _ => ()
+        }
+
         let cache_path = self.get_package_paths(
-            &resolved_dep.source,
-            Some(&resolved_dep.name),
-            Some(&resolved_dep.version.original),
+            &source,
+            Some(name),
+            Some(&version.original),
         );
 
         if cache_path.binary.exists() {
             log::debug!(
                 "Removing binary {} ({}) at {}",
-                resolved_dep.name,
-                resolved_dep.version,
+                name,
+                version,
                 cache_path.binary.display()
             );
             fs::remove_dir_all(&cache_path.binary)?;
@@ -349,8 +357,8 @@ impl DiskCache {
         if cache_path.source.exists() {
             log::debug!(
                 "Removing source {} ({}) at {}",
-                resolved_dep.name,
-                resolved_dep.version,
+                name,
+                version,
                 cache_path.source.display()
             );
             fs::remove_dir_all(&cache_path.source)?;
