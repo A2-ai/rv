@@ -12,7 +12,9 @@ if [ "$arch" = "arm64" ]; then arch="aarch64"; elif [ "$arch" = "x86_64" ]; then
 # Function to compare version numbers
 version_compare() {
     # Returns 0 if $1 >= $2, 1 otherwise
-    printf '%s\n%s\n' "$2" "$1" | sort -V -C
+    local ver1="$1"
+    local ver2="$2"
+    printf '%s\n%s\n' "$ver2" "$ver1" | sort -V -C
 }
 
 # Function to get glibc version
