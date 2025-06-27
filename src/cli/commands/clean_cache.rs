@@ -94,14 +94,6 @@ pub struct PurgeResults<'a> {
     dependencies: Vec<PurgeDepResult<'a>>,
 }
 
-impl PurgeResults<'_> {
-    pub fn all_deps_found(&self) -> bool {
-        self.dependencies
-            .iter()
-            .all(|dep| !matches!(dep, PurgeDepResult::Unresolved(_)))
-    }
-}
-
 impl fmt::Display for PurgeResults<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.repositories.is_empty() {
