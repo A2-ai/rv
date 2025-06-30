@@ -49,7 +49,11 @@ pub trait RCmd: Send + Sync {
 /// so we can control _how_ they get killed, and allow for a soft cancellation (eg we let
 /// ongoing tasks finish but stop enqueuing/processing new ones.
 fn spawn_isolated_r_command(r_path: &Option<PathBuf>) -> Command {
+    #[cfg(unix)]
     let mut command = Command::new(r_path.as_ref().unwrap_or(&PathBuf::from("R")));
+
+    #[cfg(windows)]
+    let mut command = Command::new(r_path.as_ref().unwrap_or(&PathBuf::from("R.bat")));
 
     #[cfg(unix)]
     {
@@ -150,29 +154,30 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
             found_r_vers.push(rig_r.original);
         }
     }
-
-    let opt_r = PathBuf::from("/opt/R");
-    if opt_r.is_dir() {
-        // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
-        // returns an RCommandLine struct with the path to the executable if found
-        for path in fs::read_dir(opt_r)
-            .map_err(|e| VersionError {
-                source: VersionErrorKind::Io(e),
-            })?
-            .filter_map(Result::ok)
-            .map(|p| p.path().join("bin/R"))
-            .filter(|p| p.exists())
-        {
-            if let Ok(ver) = (RCommandLine {
-                r: Some(path.clone()),
-            })
-            .version()
+    if cfg!(target_os = "linux") {
+        let opt_r = PathBuf::from("/opt/R");
+        if opt_r.is_dir() {
+            // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
+            // returns an RCommandLine struct with the path to the executable if found
+            for path in fs::read_dir(opt_r)
+                .map_err(|e| VersionError {
+                    source: VersionErrorKind::Io(e),
+                })?
+                .filter_map(Result::ok)
+                .map(|p| p.path().join("bin/R"))
+                .filter(|p| p.exists())
             {
-                if r_version.hazy_match(&ver) {
-                    log::debug!(" R {r_version} found at {}", path.display());
-                    return Ok(RCommandLine { r: Some(path) });
+                if let Ok(ver) = (RCommandLine {
+                    r: Some(path.clone()),
+                })
+                .version()
+                {
+                    if r_version.hazy_match(&ver) {
+                        log::debug!(" R {r_version} found at {}", path.display());
+                        return Ok(RCommandLine { r: Some(path) });
+                    }
+                    found_r_vers.push(ver.original);
                 }
-                found_r_vers.push(ver.original);
             }
         }
     }
@@ -383,7 +388,7 @@ impl RCmd for RCommandLine {
     }
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError> {
-        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R.bat")))
             .arg("RHOME")
             .output()
             .map_err(|e| LibraryError {
@@ -411,7 +416,7 @@ impl RCmd for RCommandLine {
     }
 
     fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R")))
+        let output = Command::new(self.r.as_ref().unwrap_or(&PathBuf::from("R.bat")))
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
