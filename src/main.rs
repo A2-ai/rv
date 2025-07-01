@@ -3,21 +3,20 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use fs_err::{self as fs, read_to_string, write};
-use serde::Serialize;
+use fs_err::{read_to_string, write};
 use serde_json::json;
 
-use rv::cli::utils::timeit;
+use rv::RepositoryOperation as LibRepositoryOperation;
 use rv::cli::{
-    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
+    CliContext, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
+    init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
-    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, deactivate, RepositoryAction, RepositoryPositioning, ConfigureRepositoryResponse, RepositoryMatcher, RepositoryUpdates,
-    read_and_verify_config, system_req,
+    CacheInfo, Config, ProjectSummary, RCmd, RCommandLine, RepositoryAction, RepositoryMatcher,
+    RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
+    execute_repository_action, read_and_verify_config, system_req,
 };
-use rv::RepositoryOperation as LibRepositoryOperation;
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -257,224 +256,6 @@ pub enum MigrateSubcommand {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum ResolveMode {
-    Default,
-    FullUpgrade,
-    // TODO: PartialUpgrade -- allow user to specify packages to upgrade
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum OutputFormat {
-    Json,
-    Plain,
-}
-
-impl OutputFormat {
-    fn is_json(&self) -> bool {
-        matches!(self, OutputFormat::Json)
-    }
-}
-
-/// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
-/// to stderr and the cli will exit.
-fn resolve_dependencies<'a>(
-    context: &'a CliContext,
-    resolve_mode: &ResolveMode,
-    exit_on_failure: bool,
-) -> Resolution<'a> {
-    let lockfile = match resolve_mode {
-        ResolveMode::Default => &context.lockfile,
-        ResolveMode::FullUpgrade => &None,
-    };
-
-    let mut resolver = Resolver::new(
-        &context.project_dir,
-        &context.databases,
-        context
-            .config
-            .repositories()
-            .iter()
-            .map(|x| x.url())
-            .collect(),
-        &context.r_version,
-        &context.builtin_packages,
-        lockfile.as_ref(),
-        context.config.packages_env_vars(),
-    );
-
-    if context.show_progress_bar {
-        resolver.show_progress_bar();
-    }
-
-    let mut resolution = resolver.resolve(
-        context.config.dependencies(),
-        context.config.prefer_repositories_for(),
-        &context.cache,
-        &GitExecutor {},
-        &Http {},
-    );
-
-    if !resolution.is_success() && exit_on_failure {
-        eprintln!("Failed to resolve all dependencies");
-        let req_error_messages = resolution.req_error_messages();
-
-        for d in resolution.failed {
-            eprintln!("    {d}");
-        }
-
-        if !req_error_messages.is_empty() {
-            eprintln!("{}", req_error_messages.join("\n"));
-        }
-
-        ::std::process::exit(1)
-    }
-
-    // If upgrade and there is a lockfile, we want to adjust the resolved dependencies s.t. if the resolved dep has the same
-    // name and version in the lockfile, we say that it was resolved from the lockfile
-    if resolve_mode == &ResolveMode::FullUpgrade && context.lockfile.is_some() {
-        resolution.found = resolution
-            .found
-            .into_iter()
-            .map(|mut dep| {
-                dep.from_lockfile = context
-                    .lockfile
-                    .as_ref()
-                    .unwrap()
-                    .contains_resolved_dep(&dep);
-                dep
-            })
-            .collect::<Vec<_>>();
-    }
-
-    resolution
-}
-
-#[derive(Debug, Default, Serialize)]
-struct SyncChanges {
-    installed: Vec<SyncChange>,
-    removed: Vec<SyncChange>,
-}
-
-impl SyncChanges {
-    fn from_changes(changes: Vec<SyncChange>) -> Self {
-        let mut installed = vec![];
-        let mut removed = vec![];
-        for change in changes {
-            if change.installed {
-                installed.push(change);
-            } else {
-                removed.push(change);
-            }
-        }
-        Self { installed, removed }
-    }
-}
-
-fn _sync(
-    mut context: CliContext,
-    dry_run: bool,
-    has_logs_enabled: bool,
-    resolve_mode: ResolveMode,
-    output_format: OutputFormat,
-    save_install_logs_in: Option<PathBuf>,
-) -> Result<()> {
-    if !has_logs_enabled {
-        context.show_progress_bar();
-    }
-
-    // If the sync mode is an upgrade, we want to load the databases even if all packages are contained in the lockfile
-    // because we ignore the lockfile during initial resolution
-    match resolve_mode {
-        ResolveMode::Default => context.load_databases_if_needed()?,
-        ResolveMode::FullUpgrade => context.load_databases()?,
-    }
-    context.load_system_requirements()?;
-
-    let resolved = resolve_dependencies(&context, &resolve_mode, true).found;
-
-    match timeit!(
-        if dry_run {
-            "Planned dependencies"
-        } else {
-            "Synced dependencies"
-        },
-        {
-            let mut handler = SyncHandler::new(
-                &context.project_dir,
-                &context.library,
-                &context.cache,
-                &context.system_dependencies,
-                save_install_logs_in.clone(),
-                context.staging_path(),
-            );
-            if dry_run {
-                handler.dry_run();
-            }
-            if !has_logs_enabled {
-                handler.show_progress_bar();
-            }
-            handler.set_uses_lockfile(context.config.use_lockfile());
-            handler.handle(&resolved, &context.r_cmd)
-        }
-    ) {
-        Ok(mut changes) => {
-            if !dry_run && context.config.use_lockfile() {
-                if resolved.is_empty() {
-                    // delete the lockfiles if there are no dependencies
-                    let lockfile_path = context.lockfile_path();
-                    if lockfile_path.exists() {
-                        fs::remove_file(lockfile_path)?;
-                    }
-                } else {
-                    let lockfile =
-                        Lockfile::from_resolved(&context.r_version.major_minor(), resolved);
-                    if let Some(existing_lockfile) = &context.lockfile {
-                        if existing_lockfile != &lockfile {
-                            lockfile.save(context.lockfile_path())?;
-                            log::debug!("Lockfile changed, saving it.");
-                        }
-                    } else {
-                        lockfile.save(context.lockfile_path())?;
-                    }
-                }
-            }
-            let all_sys_deps: HashSet<_> = changes
-                .iter()
-                .flat_map(|x| x.sys_deps.iter().map(|x| x.name.as_str()))
-                .collect();
-            let sysdeps_status =
-                system_req::check_installation_status(&context.cache.system_info, &all_sys_deps);
-
-            for change in changes.iter_mut() {
-                change.update_sys_deps_status(&sysdeps_status);
-            }
-
-            if output_format.is_json() {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&SyncChanges::from_changes(changes,))
-                        .expect("valid json")
-                );
-            } else if changes.is_empty() {
-                println!("Nothing to do");
-            } else {
-                for c in changes {
-                    println!("{}", c.print(!dry_run, !sysdeps_status.is_empty()));
-                }
-            }
-
-            Ok(())
-        }
-        Err(e) => {
-            if context.staging_path().is_dir() {
-                fs::remove_dir_all(context.staging_path())?;
-            }
-            Err(e.into())
-        }
-    }
-}
-
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -574,21 +355,36 @@ fn try_main() -> Result<()> {
             } else {
                 ResolveMode::Default
             };
-            let context = CliContext::new(&cli.config_file, r_version.into())?;
-            _sync(context, true, log_enabled, upgrade, output_format, None)?;
+            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            context.load_for_resolve_mode(upgrade)?;
+            SyncHelper {
+                dry_run: true,
+                output_format: Some(output_format),
+                ..Default::default()
+            }
+            .run(&context, upgrade)?;
         }
         Command::Sync {
             save_install_logs_in,
         } => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
-            _sync(
-                context,
-                false,
-                log_enabled,
-                ResolveMode::Default,
-                output_format,
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            let resolve_mode = ResolveMode::Default;
+            context.load_for_resolve_mode(resolve_mode)?;
+            SyncHelper {
+                dry_run: false,
+                output_format: Some(output_format),
                 save_install_logs_in,
-            )?;
+                ..Default::default()
+            }
+            .run(&context, resolve_mode)?;
         }
         Command::Add {
             packages,
@@ -613,29 +409,37 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
             let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+
+            if !log_enabled {
+                context.show_progress_bar();
+            }
             // if dry run, the config won't have been edited to reflect the added changes so must be added
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
             }
-            _sync(
-                context,
+            let resolve_mode = ResolveMode::Default;
+            context.load_for_resolve_mode(resolve_mode)?;
+            SyncHelper {
                 dry_run,
-                log_enabled,
-                ResolveMode::Default,
-                output_format,
-                None,
-            )?;
+                output_format: Some(output_format),
+                ..Default::default()
+            }
+            .run(&context, resolve_mode)?;
         }
         Command::Upgrade { dry_run } => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
-            _sync(
-                context,
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            let resolve_mode = ResolveMode::FullUpgrade;
+            context.load_for_resolve_mode(resolve_mode)?;
+            SyncHelper {
                 dry_run,
-                log_enabled,
-                ResolveMode::FullUpgrade,
-                output_format,
-                None,
-            )?;
+                output_format: Some(output_format),
+                ..Default::default()
+            }
+            .run(&context, resolve_mode)?;
         }
         Command::Info {
             library,
@@ -897,15 +701,21 @@ fn try_main() -> Result<()> {
                 ConfigureSubcommand::Repository { operation } => {
                     let action = match operation {
                         RepositoryOperation::Clear => RepositoryAction::Clear,
-                        
-                        RepositoryOperation::Remove { alias } => {
-                            RepositoryAction::Remove { alias }
-                        }
-                        
-                        RepositoryOperation::Add { alias, url, force_source, first, last, before, after } => {
+
+                        RepositoryOperation::Remove { alias } => RepositoryAction::Remove { alias },
+
+                        RepositoryOperation::Add {
+                            alias,
+                            url,
+                            force_source,
+                            first,
+                            last,
+                            before,
+                            after,
+                        } => {
                             let parsed_url = url::Url::parse(&url)
                                 .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
-                            
+
                             let positioning = if first {
                                 RepositoryPositioning::First
                             } else if last {
@@ -917,7 +727,7 @@ fn try_main() -> Result<()> {
                             } else {
                                 RepositoryPositioning::Last // Default
                             };
-                            
+
                             RepositoryAction::Add {
                                 alias,
                                 url: parsed_url,
@@ -925,12 +735,17 @@ fn try_main() -> Result<()> {
                                 force_source,
                             }
                         }
-                        
-                        RepositoryOperation::Replace { old_alias, alias, url, force_source } => {
+
+                        RepositoryOperation::Replace {
+                            old_alias,
+                            alias,
+                            url,
+                            force_source,
+                        } => {
                             let parsed_url = url::Url::parse(&url)
                                 .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
                             let new_alias = alias.unwrap_or_else(|| old_alias.clone());
-                            
+
                             RepositoryAction::Replace {
                                 old_alias,
                                 new_alias,
@@ -938,8 +753,15 @@ fn try_main() -> Result<()> {
                                 force_source,
                             }
                         }
-                        
-                        RepositoryOperation::Update { target_alias, match_url, alias, url, force_source, no_force_source } => {
+
+                        RepositoryOperation::Update {
+                            target_alias,
+                            match_url,
+                            alias,
+                            url,
+                            force_source,
+                            no_force_source,
+                        } => {
                             // Determine matcher
                             let matcher = if let Some(match_url_str) = match_url {
                                 let parsed_url = url::Url::parse(&match_url_str)
@@ -948,17 +770,21 @@ fn try_main() -> Result<()> {
                             } else if let Some(target_alias) = target_alias {
                                 RepositoryMatcher::ByAlias(target_alias)
                             } else {
-                                return Err(anyhow::anyhow!("Must specify either target alias or --match-url"));
+                                return Err(anyhow::anyhow!(
+                                    "Must specify either target alias or --match-url"
+                                ));
                             };
-                            
+
                             // Parse URL if provided
                             let parsed_url = if let Some(url_str) = url {
-                                Some(url::Url::parse(&url_str)
-                                    .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?)
+                                Some(
+                                    url::Url::parse(&url_str)
+                                        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?,
+                                )
                             } else {
                                 None
                             };
-                            
+
                             // Determine force_source value
                             let force_source_update = if force_source {
                                 Some(true)
@@ -967,19 +793,19 @@ fn try_main() -> Result<()> {
                             } else {
                                 None
                             };
-                            
+
                             let updates = RepositoryUpdates {
                                 alias,
                                 url: parsed_url,
                                 force_source: force_source_update,
                             };
-                            
+
                             RepositoryAction::Update { matcher, updates }
                         }
                     };
-                    
+
                     let response = execute_repository_action(&cli.config_file, action)?;
-                    
+
                     // Handle output based on format preference
                     if output_format.is_json() {
                         println!("{}", serde_json::to_string_pretty(&response)?);
@@ -987,22 +813,30 @@ fn try_main() -> Result<()> {
                         // Print detailed text output
                         match response.operation {
                             LibRepositoryOperation::Add => {
-                                println!("Repository '{}' added successfully with URL: {}", 
-                                         response.alias.as_ref().unwrap(), 
-                                         response.url.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' added successfully with URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Replace => {
-                                println!("Repository replaced successfully - new alias: '{}', URL: {}", 
-                                         response.alias.as_ref().unwrap(), 
-                                         response.url.as_ref().unwrap());
+                                println!(
+                                    "Repository replaced successfully - new alias: '{}', URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Update => {
-                                println!("Repository '{}' updated successfully", 
-                                         response.alias.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' updated successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Remove => {
-                                println!("Repository '{}' removed successfully", 
-                                         response.alias.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' removed successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Clear => {
                                 println!("All repositories cleared successfully");

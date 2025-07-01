@@ -126,14 +126,10 @@ impl SystemInfo {
                     };
                     (distrib, version)
                 }
-                "debian" => {
-                    match self.version {
-                        Version::Semantic(major, _, _) => {
-                            (distrib, major.to_string())
-                        },
-                        _ => unreachable!(),
-                    }
-                }
+                "debian" => match self.version {
+                    Version::Semantic(major, _, _) => (distrib, major.to_string()),
+                    _ => unreachable!(),
+                },
                 _ => (distrib, self.version.to_string()),
             },
             _ => ("invalid", String::new()),
