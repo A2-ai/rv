@@ -446,8 +446,16 @@ impl Config {
         &self.project.repositories
     }
 
+    pub fn repositories_mut(&mut self) -> &mut [Repository] {
+        &mut self.project.repositories
+    }
+
     pub fn dependencies(&self) -> &[ConfigDependency] {
         &self.project.dependencies
+    }
+
+    pub fn dependencies_mut(&mut self) -> &mut [ConfigDependency] {
+        &mut self.project.dependencies
     }
 
     pub fn prefer_repositories_for(&self) -> &[String] {

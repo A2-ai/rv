@@ -18,8 +18,8 @@ use crate::{Version, VersionRequirement};
 #[derive(PartialEq, Clone)]
 pub struct ResolvedDependency<'d> {
     pub name: Cow<'d, str>,
-    pub(crate) version: Cow<'d, Version>,
-    pub(crate) source: Source,
+    pub version: Cow<'d, Version>,
+    pub source: Source,
     pub(crate) dependencies: Vec<Cow<'d, Dependency>>,
     pub(crate) suggests: Vec<Cow<'d, Dependency>>,
     pub(crate) force_source: bool,
