@@ -33,7 +33,7 @@ pub use config::{Config, ConfigDependency, Repository};
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
-pub use lockfile::Lockfile;
+pub use lockfile::{Lockfile, Source};
 pub use package::{Version, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
@@ -43,3 +43,4 @@ pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
+
