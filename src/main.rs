@@ -9,7 +9,8 @@ use serde_json::json;
 
 use rv::cli::utils::timeit;
 use rv::cli::{
-    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
+    CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv,
+    purge_cache, refresh_cache, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
@@ -106,8 +107,11 @@ pub enum Command {
         #[clap(long)]
         repositories: bool,
     },
-    /// Gives information about where the cache is for that project
-    Cache,
+    /// Manage rv's cache
+    Cache {
+        #[clap(subcommand)]
+        subcommand: Option<CacheSubcommand>,
+    },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
@@ -158,6 +162,28 @@ pub enum Command {
         /// Specify a R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheSubcommand {
+    /// Shows the cache directories for each repository used by rv project
+    Dir,
+    /// Purge selected parts of the cache
+    Purge {
+        /// Alias of repositories to purge from cache
+        #[clap(short = 'r', long, value_parser, num_args = 1..)]
+        repositories: Vec<String>,
+
+        /// Names of dependencies to purge from cache. Purges only the package and version from the resolved source
+        #[clap(short = 'd', long, value_parser, num_args = 1..)]
+        dependencies: Vec<String>,
+    },
+    /// Refresh the repository database to be the most up to date
+    Refresh {
+        /// Alias of repositories to refresh their repository database for
+        #[clap(value_parser)]
+        repositories: Vec<String>,
     },
 }
 
@@ -603,24 +629,119 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-        Command::Cache => {
+        Command::Cache { subcommand } => {
             let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            context.load_databases()?;
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let info = CacheInfo::new(
-                &context.config,
-                &context.cache,
-                resolve_dependencies(&context, &ResolveMode::Default, true).found,
-            );
-            if output_format.is_json() {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&info).expect("valid json")
-                );
-            } else {
-                println!("{info}");
+            match subcommand.unwrap_or(CacheSubcommand::Dir) {
+                CacheSubcommand::Dir => {
+                    context.load_databases()?;
+                    let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
+
+                    let info =
+                        CacheInfo::new(&context.config, &context.cache, resolution.found.clone());
+                    if output_format.is_json() {
+                        if resolution.is_success() {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&info).expect("valid json")
+                            );
+                        } else {
+                            println!(
+                                "{}",
+                                json!({
+                                    "unresolved_packages": resolution.failed,
+                                    "cache_info": info
+                                })
+                            );
+                        }
+                    } else {
+                        println!("{info}");
+
+                        if !resolution.is_success() {
+                            eprintln!(
+                                "\n Failed to resolved all dependencies. All cache directories may not be listed."
+                            );
+                            let req_error_messages = resolution.req_error_messages();
+                            for d in resolution.failed {
+                                eprintln!("    {d}");
+                            }
+
+                            if !req_error_messages.is_empty() {
+                                eprintln!("{}", req_error_messages.join("\n"));
+                            }
+                        }
+                    }
+                }
+                CacheSubcommand::Purge {
+                    repositories,
+                    dependencies,
+                } => {
+                    if repositories.is_empty() && dependencies.is_empty() {
+                        // Proposed TODO: Add interactive prompt before removing cache root?
+                        fs::remove_dir_all(&context.cache.root)?;
+                        if output_format.is_json() {
+                            println!(
+                                "{}",
+                                json!({"cache_root": format!("{}", context.cache.root.display())})
+                            )
+                        } else {
+                            println!(
+                                "Cache successfully removed at: {}",
+                                context.cache.root.display()
+                            );
+                        }
+                    } else {
+                        // if no dependencies, no need to resolve. If there are, we will only
+                        let resolution = if dependencies.is_empty() {
+                            Resolution::default()
+                        } else {
+                            context.load_databases()?;
+                            resolve_dependencies(&context, &ResolveMode::Default, false)
+                        };
+                        let res = purge_cache(&context, &resolution, &repositories, &dependencies)?;
+
+                        if output_format.is_json() {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&res).expect("valid json")
+                            );
+                        } else {
+                            println!("{res}");
+                        }
+                    }
+                }
+                CacheSubcommand::Refresh { repositories } => {
+                    let (refreshed, unresolved) = refresh_cache(&context, &repositories)?;
+                    if output_format.is_json() {
+                        println!(
+                            "{}",
+                            json!({
+                                "refreshed": refreshed,
+                                "unresolved_repos": unresolved,
+                            })
+                        );
+                    } else {
+                        if !refreshed.is_empty() {
+                            println!(
+                                "Refreshed Successfully:\n    {}\n",
+                                refreshed
+                                    .iter()
+                                    .map(ToString::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join("\n    ")
+                            );
+                        }
+
+                        if !unresolved.is_empty() {
+                            println!(
+                                "Repository alias not found in config:\n    {}\n",
+                                unresolved.join("\n    ")
+                            );
+                        }
+                    }
+                }
             }
         }
         Command::Migrate {
