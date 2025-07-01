@@ -1,5 +1,6 @@
 //! CLI context that gets instantiated for a few commands and passed around
 
+use crate::cli::ResolveMode;
 use crate::cli::utils::write_err;
 use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, RV_DIR_NAME, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
@@ -175,6 +176,17 @@ impl CliContext {
         let reset_pb = || pb.finish_and_clear();
         self.system_dependencies = self.cache.get_system_requirements();
         reset_pb();
+        Ok(())
+    }
+
+    pub fn load_for_resolve_mode(&mut self, resolve_mode: ResolveMode) -> Result<()> {
+        // If the sync mode is an upgrade, we want to load the databases even if all packages are contained in the lockfile
+        // because we ignore the lockfile during initial resolution
+        match resolve_mode {
+            ResolveMode::Default => self.load_databases_if_needed()?,
+            ResolveMode::FullUpgrade => self.load_databases()?,
+        }
+        self.load_system_requirements()?;
         Ok(())
     }
 

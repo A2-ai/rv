@@ -206,8 +206,7 @@ impl<'a> SyncHandler<'a> {
                             if !self.uses_lockfile {
                                 deps_seen.insert(name.as_str());
                             } else {
-
-                                if dep.from_lockfile{
+                                if dep.from_lockfile {
                                     deps_seen.insert(name.as_str());
                                 }
                             }
