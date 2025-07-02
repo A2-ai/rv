@@ -64,12 +64,12 @@ elif [ "$os" = "linux" ]; then
 
     if [ -n "$glibc_version" ]; then
         echo "Detected glibc version: $glibc_version"
-        if version_compare "$glibc_version" "2.34"; then
+        if version_compare "$glibc_version" "2.31"; then
             os_pattern="unknown-linux-gnu"
-            echo "glibc >= 2.34, using gnu target"
+            echo "glibc >= 2.31, using gnu target"
         else
             os_pattern="unknown-linux-musl"
-            echo "glibc < 2.34, using musl target for better compatibility"
+            echo "glibc < 2.31, using musl target for better compatibility"
         fi
     else
         echo "Could not determine glibc version, defaulting to musl target for better compatibility"
