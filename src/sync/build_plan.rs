@@ -139,7 +139,7 @@ mod tests {
             install_suggests: false,
             force_source: false,
             kind: PackageType::Source,
-            installation_status: InstallationStatus::Binary,
+            installation_status: InstallationStatus::Binary(false),
             path: None,
             from_lockfile: false,
             from_remote: false,

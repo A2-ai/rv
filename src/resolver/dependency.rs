@@ -260,7 +260,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests,
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             from_lockfile: false,
-            installation_status: InstallationStatus::Binary,
+            installation_status: InstallationStatus::Binary(false),
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
