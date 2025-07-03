@@ -46,7 +46,7 @@ fn metadata(path: impl AsRef<Path>) -> Result<Metadata, std::io::Error> {
 /// We keep it simple for now and just mtime even if it causes more rebuilds than mtime + hashes
 pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std::io::Error> {
     let meta = metadata(folder.as_ref())?;
-    if !meta.is_file() {
+    if !meta.is_dir() {
         return Ok(FileTime::from_last_modification_time(&meta));
     }
 
