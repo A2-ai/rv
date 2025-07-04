@@ -8,7 +8,7 @@ use ureq::http::{HeaderName, HeaderValue};
 use ureq::tls::{RootCerts, TlsConfig};
 use url::Url;
 
-use crate::fs::untar_archive;
+use crate::fs::{copy_folder, untar_archive};
 
 pub fn get_agent() -> Agent {
     Agent::config_builder()
@@ -175,7 +175,7 @@ impl HttpDownload for Http {
                     .map_err(|e| HttpError::from_io(url.as_str(), e))?;
             }
             fs::create_dir_all(&install_dir).map_err(|e| HttpError::from_io(url.as_str(), e))?;
-            fs::rename(&actual_dir, &install_dir)
+            copy_folder(&actual_dir, &install_dir)
                 .map_err(|e| HttpError::from_io(url.as_str(), e))?;
 
             (new_destination, Some(install_dir), sha)
