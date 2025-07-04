@@ -487,7 +487,7 @@ impl<'d> Resolver<'d> {
                     }
                     Err(e) => result
                         .failed
-                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e:?}"))),
+                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}"))),
                 }
                 continue;
             }
@@ -569,7 +569,7 @@ impl<'d> Resolver<'d> {
                             Err(e) => {
                                 result.failed.push(
                                     UnresolvedDependency::from_item(&item)
-                                        .with_error(format!("{e:?}"))
+                                        .with_error(format!("{e}"))
                                         .with_remote(remote.clone()),
                                 );
                             }
@@ -620,7 +620,7 @@ impl<'d> Resolver<'d> {
                         Err(e) => {
                             result.failed.push(
                                 UnresolvedDependency::from_item(&item)
-                                    .with_error(format!("{e:?}"))
+                                    .with_error(format!("{e}"))
                                     .with_url(url.as_str()),
                             );
                         }
@@ -659,7 +659,7 @@ impl<'d> Resolver<'d> {
                         }
                         Err(e) => {
                             result.failed.push(
-                                UnresolvedDependency::from_item(&item).with_error(format!("{e:?}")),
+                                UnresolvedDependency::from_item(&item).with_error(format!("{e}")),
                             );
                         }
                     }
