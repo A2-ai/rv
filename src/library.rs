@@ -35,6 +35,8 @@ pub enum LocalMetadata {
     Mtime(i64),
     /// For git repositories, URL sources and local tarballs
     Sha(String),
+    /// Whether we built it locally from source
+    BuiltLocally,
 }
 
 impl LocalMetadata {
@@ -55,16 +57,18 @@ impl LocalMetadata {
     }
 
     pub fn sha(&self) -> Option<&str> {
-        match self {
-            LocalMetadata::Mtime(_) => None,
-            LocalMetadata::Sha(s) => Some(s.as_str()),
+        if let LocalMetadata::Sha(sha) = &self {
+            Some(sha.as_str())
+        } else {
+            None
         }
     }
 
     pub fn mtime(&self) -> Option<i64> {
-        match self {
-            LocalMetadata::Mtime(i) => Some(*i),
-            LocalMetadata::Sha(_) => None,
+        if let LocalMetadata::Mtime(i) = &self {
+            Some(*i)
+        } else {
+            None
         }
     }
 }
@@ -202,6 +206,7 @@ impl Library {
                                 false
                             }
                         }
+                        _ => unreachable!()
                     }
                 } else {
                     false
