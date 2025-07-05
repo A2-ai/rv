@@ -172,7 +172,10 @@ impl Library {
     }
 
     pub fn contains_package(&self, pkg: &ResolvedDependency) -> bool {
-        if self.custom || !self.packages.contains_key(pkg.name.as_ref()) {
+        if self.custom
+            || (!self.packages.contains_key(pkg.name.as_ref())
+                && !matches!(pkg.source, Source::Builtin { .. }))
+        {
             return false;
         }
 
