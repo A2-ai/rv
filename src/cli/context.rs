@@ -207,10 +207,16 @@ pub(crate) fn load_databases(
             // 2. Check in cache whether we have the database and is not expired
             if exists {
                 // load the archive
-                let db = RepositoryDatabase::load(&path)?;
-                log::debug!("Loaded packages db from {path:?}");
-                Ok((db, r.force_source))
-            } else if r.url().contains("r-universe.dev") {
+                // We want to fallback on fetching it again if we somehow can't load it
+                if let Ok(db) = RepositoryDatabase::load(&path) {
+                    log::debug!("Loaded packages db from {path:?}");
+                    return Ok((db, r.force_source));
+                } else {
+                    log::debug!("Failed to load packages db from {path:?}");
+                }
+            }
+
+            if r.url().contains("r-universe.dev") {
                 if path.exists() {
                     fs::remove_file(&path)?;
                 }
