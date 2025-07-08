@@ -57,9 +57,8 @@ impl InstallationStatus {
     /// consider we don't actually have the binary
     pub fn mark_as_binary_unavailable(self) -> Self {
         match self {
-            InstallationStatus::Binary(false) | InstallationStatus::Both(false) => {
-                InstallationStatus::Source
-            }
+            InstallationStatus::Both(false) => InstallationStatus::Source,
+            InstallationStatus::Binary(false) => InstallationStatus::Absent,
             _ => self,
         }
     }

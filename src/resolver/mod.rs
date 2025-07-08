@@ -272,7 +272,7 @@ impl<'d> Resolver<'d> {
                 // If we have the binary but not built from source and the user asked from_source
                 // we will cheat and say the binary is not present so the sync handler will compile it
                 if force_source {
-                    status = status.mark_as_binary_unavailable()
+                    status = status.mark_as_binary_unavailable();
                 }
 
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(

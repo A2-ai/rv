@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::cache::InstallationStatus;
+use crate::consts::BUILT_FROM_SOURCE_FILENAME;
 use crate::http::Http;
 use crate::package::PackageType;
 use crate::sync::LinkMode;
@@ -14,7 +15,6 @@ use crate::{
     Cancellation, DiskCache, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls,
     is_binary_package,
 };
-use crate::consts::BUILT_FROM_SOURCE_FILENAME;
 
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
@@ -48,7 +48,12 @@ pub(crate) fn install_package(
                     f.write_all(output.as_bytes())?;
                 }
                 // Create the marker file for local compilation
-                let _ = fs::File::create(pkg_paths.binary.join(pkg.name.as_ref()).join(BUILT_FROM_SOURCE_FILENAME))?;
+                let _ = fs::File::create(
+                    pkg_paths
+                        .binary
+                        .join(pkg.name.as_ref())
+                        .join(BUILT_FROM_SOURCE_FILENAME),
+                )?;
                 Ok(())
             }
             Err(e) => Err(e.into()),

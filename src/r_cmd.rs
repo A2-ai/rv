@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use std::{fs, thread};
 
+use crate::fs::copy_folder;
 use crate::sync::{LinkError, LinkMode};
 use crate::{Cancellation, Version};
 use regex::Regex;
@@ -202,32 +203,20 @@ impl RCmd for RCommandLine {
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
     ) -> Result<String, InstallError> {
-        // the core library will be the first library in the list
-        let library = libraries.first().ok_or_else(|| InstallError {
-            source: InstallErrorKind::InstallationFailed(
-                "No library specified for R CMD INSTALL".to_string(),
-            ),
+        let destination = destination.as_ref();
+        // We create a temp build dir so we only remove an existing destination if we have something we can replace it with
+        let build_dir = tempfile::tempdir().map_err(|e| InstallError {
+            source: InstallErrorKind::TempDir(e),
         })?;
-
-        // Always delete destination if it exists first to avoid issues with incomplete installs
-        // except if it's the same as the library. This happens for local packages
-        if library.as_ref() != destination.as_ref() {
-            if destination.as_ref().is_dir() {
-                fs::remove_dir_all(destination.as_ref())
-                    .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
-            }
-            fs::create_dir_all(destination.as_ref())
-                .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
-        }
 
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
         // We symlink if possible except on Windows
-        let tmp_dir = tempfile::tempdir().map_err(|e| InstallError {
+        let src_backup_dir = tempfile::tempdir().map_err(|e| InstallError {
             source: InstallErrorKind::TempDir(e),
         })?;
         let link = LinkMode::symlink_if_possible();
-        link.link_files("tmp_build", &source_folder, tmp_dir.path())
+        link.link_files("tmp_build", &source_folder, src_backup_dir.path())
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
@@ -236,7 +225,7 @@ impl RCmd for RCommandLine {
             .iter()
             .map(|lib| lib.as_ref().canonicalize())
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
+            .map_err(|e| InstallError::from_fs_io(e, destination))?;
 
         // combine them to the single string path that R wants, specifically:
         //  colon-separated on Unix-alike systems and semicolon-separated on Windows.
@@ -254,8 +243,7 @@ impl RCmd for RCommandLine {
                 .join(":")
         };
 
-        let (recv, send) =
-            std::io::pipe().map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?;
+        let (recv, send) = std::io::pipe().map_err(|e| InstallError::from_fs_io(e, destination))?;
         let mut command = spawn_isolated_r_command(&self.r);
         command
             .arg("CMD")
@@ -263,19 +251,19 @@ impl RCmd for RCommandLine {
             // This is where it will be installed
             .arg(format!(
                 "--library={}",
-                destination.as_ref().to_string_lossy()
+                build_dir.as_ref().to_string_lossy()
             ))
             .arg("--use-vanilla")
             .arg("--strip")
             .arg("--strip-lib")
-            .arg(tmp_dir.path())
+            .arg(src_backup_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library_paths)
             .env("R_LIBS_USER", &library_paths)
             .env("_R_SHLIB_STRIP_", "true")
             .stdout(
                 send.try_clone()
-                    .map_err(|e| InstallError::from_fs_io(e, destination.as_ref()))?,
+                    .map_err(|e| InstallError::from_fs_io(e, destination))?,
             )
             .stderr(send)
             .envs(env_vars);
@@ -323,12 +311,12 @@ impl RCmd for RCommandLine {
                 process_ids.remove(&pid);
             }
 
-            if destination.as_ref().is_dir() {
+            if destination.is_dir() {
                 // We ignore that error intentionally since we want to keep the one from CLI
-                if let Err(e) = fs::remove_dir_all(destination.as_ref()) {
+                if let Err(e) = fs::remove_dir_all(destination) {
                     log::error!(
                         "Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually",
-                        destination.as_ref().display()
+                        destination.display()
                     );
                 }
             }
@@ -352,6 +340,14 @@ impl RCmd for RCommandLine {
                     if !status.success() {
                         return cleanup(output);
                     }
+
+                    // If it's a success, copy the build tmp dir to the actual destination
+                    // we don't move the folder since the tmp dir might be in another drive/format
+                    // than the cache dir
+                    fs::create_dir_all(destination)
+                        .map_err(|e| InstallError::from_fs_io(e, destination))?;
+                    copy_folder(build_dir.as_ref(), destination)
+                        .map_err(|e| InstallError::from_fs_io(e, destination))?;
 
                     return Ok(output);
                 }
