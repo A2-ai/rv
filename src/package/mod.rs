@@ -152,7 +152,10 @@ impl Package {
 pub fn is_binary_package(path: impl AsRef<Path>, name: &str) -> bool {
     let name_rdx = format!("{name}.rdx");
 
-    for entry in WalkDir::new(path) {
+    // binary files can only be found at {path}/<subdir>/{name}.rdx, therefore only look in depth 2 of the directory
+    for entry in WalkDir::new(path)
+        .min_depth(2)
+        .max_depth(2) {
         match entry {
             Ok(e) => {
                 if e.file_type().is_file() && e.file_name().to_string_lossy() == name_rdx {
