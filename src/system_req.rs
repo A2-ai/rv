@@ -101,8 +101,6 @@ pub fn get_system_requirements(system_info: &SystemInfo) -> HashMap<String, Vec<
     {
         let mut pairs = url.query_pairs_mut();
         pairs.append_pair("all", "true");
-        // pairs.append_pair("distribution", "ubuntu");
-        // pairs.append_pair("release", "22.04");
         let (distrib, version) = system_info.sysreq_data();
         pairs.append_pair("distribution", distrib);
         pairs.append_pair("release", version.as_str());
