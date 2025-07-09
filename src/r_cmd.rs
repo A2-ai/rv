@@ -268,7 +268,7 @@ impl RCmd for RCommandLine {
         };
 
         let (recv, send) = std::io::pipe().map_err(|e| InstallError::from_fs_io(e, destination))?;
-        let mut command = spawn_isolated_r_command(&self.r);
+        let mut command = spawn_isolated_r_command(self);
         command
             .arg("CMD")
             .arg("INSTALL")
