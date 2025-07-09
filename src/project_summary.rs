@@ -384,7 +384,9 @@ impl<'a> DependencySummary<'a> {
             &resolved_dep.source,
         ) {
             // If the package has a binary in the cache, we can use it independent of if the package is binary or not
-            InstallationStatus::Both | InstallationStatus::Binary => DependencyStatus::InCache,
+            InstallationStatus::Both(_) | InstallationStatus::Binary(_) => {
+                DependencyStatus::InCache
+            }
             // If the dependency is not a binary and we have the source in the cache, we can compile it
             InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
             // If the dependency is absent or only source when we want a binary, we report it as missing

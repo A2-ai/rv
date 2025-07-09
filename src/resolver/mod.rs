@@ -261,19 +261,27 @@ impl<'d> Resolver<'d> {
                 self.r_version,
                 force_source,
             ) {
+                let mut status = cache.get_installation_status(
+                    &package.name,
+                    &package.version.original,
+                    &Source::Repository {
+                        repository: Url::parse(&repo.url).unwrap(),
+                    },
+                );
+
+                // If we have the binary but not built from source and the user asked from_source
+                // we will cheat and say the binary is not present so the sync handler will compile it
+                if force_source {
+                    status = status.mark_as_binary_unavailable();
+                }
+
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
                     package,
                     &Url::parse(&repo.url).unwrap(),
                     package_type,
                     item.install_suggestions,
                     force_source,
-                    cache.get_installation_status(
-                        &package.name,
-                        &package.version.original,
-                        &Source::Repository {
-                            repository: Url::parse(&repo.url).unwrap(),
-                        },
-                    ),
+                    status,
                 );
                 return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
             }
@@ -487,7 +495,7 @@ impl<'d> Resolver<'d> {
                     }
                     Err(e) => result
                         .failed
-                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e:?}"))),
+                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}"))),
                 }
                 continue;
             }
@@ -569,7 +577,7 @@ impl<'d> Resolver<'d> {
                             Err(e) => {
                                 result.failed.push(
                                     UnresolvedDependency::from_item(&item)
-                                        .with_error(format!("{e:?}"))
+                                        .with_error(format!("{e}"))
                                         .with_remote(remote.clone()),
                                 );
                             }
@@ -620,7 +628,7 @@ impl<'d> Resolver<'d> {
                         Err(e) => {
                             result.failed.push(
                                 UnresolvedDependency::from_item(&item)
-                                    .with_error(format!("{e:?}"))
+                                    .with_error(format!("{e}"))
                                     .with_url(url.as_str()),
                             );
                         }
@@ -659,7 +667,7 @@ impl<'d> Resolver<'d> {
                         }
                         Err(e) => {
                             result.failed.push(
-                                UnresolvedDependency::from_item(&item).with_error(format!("{e:?}")),
+                                UnresolvedDependency::from_item(&item).with_error(format!("{e}")),
                             );
                         }
                     }
@@ -829,6 +837,17 @@ mod tests {
             url_path.join(DESCRIPTION_FILENAME),
         )
         .unwrap();
+
+        // Add a custom package that has downloaded a binary but didn't compile it
+        let paths = cache.get_package_paths(
+            &Source::Repository {
+                repository: Url::parse("http://repo1").unwrap(),
+            },
+            Some("test.force_source"),
+            Some("1.0.0"),
+        );
+        let binary_path = paths.binary.join("test.force_source");
+        fs::create_dir_all(&binary_path).unwrap();
 
         (cache_dir, cache)
     }

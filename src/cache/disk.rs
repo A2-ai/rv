@@ -12,7 +12,7 @@ use url::Url;
 use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
-use crate::consts::BUILD_LOG_FILENAME;
+use crate::consts::{BUILD_LOG_FILENAME, BUILT_FROM_SOURCE_FILENAME};
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
@@ -26,10 +26,12 @@ pub struct PackagePaths {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum InstallationStatus {
-    Source,
-    Binary,
-    Both,
     Absent,
+    Source,
+    /// The bool represents whether it has been built from source by rv
+    Binary(bool),
+    /// The bool represents whether the binary has been built from source by rv
+    Both(bool),
 }
 
 impl InstallationStatus {
@@ -38,23 +40,45 @@ impl InstallationStatus {
     }
 
     pub fn binary_available(&self) -> bool {
-        matches!(self, InstallationStatus::Binary | InstallationStatus::Both)
+        matches!(
+            self,
+            InstallationStatus::Binary(_) | InstallationStatus::Both(_)
+        )
+    }
+
+    pub fn binary_available_from_source(&self) -> bool {
+        matches!(
+            self,
+            InstallationStatus::Binary(true) | InstallationStatus::Both(true)
+        )
+    }
+
+    /// If the user asked force_source and we have binary version but not built from source ourselves,
+    /// consider we don't actually have the binary
+    pub fn mark_as_binary_unavailable(self) -> Self {
+        match self {
+            InstallationStatus::Both(false) => InstallationStatus::Source,
+            InstallationStatus::Binary(false) => InstallationStatus::Absent,
+            _ => self,
+        }
     }
 
     pub fn source_available(&self) -> bool {
-        matches!(self, InstallationStatus::Source | InstallationStatus::Both)
+        matches!(
+            self,
+            InstallationStatus::Source | InstallationStatus::Both(_)
+        )
     }
 }
 
 impl fmt::Display for InstallationStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let v = match self {
-            InstallationStatus::Source => "source",
-            InstallationStatus::Binary => "binary",
-            InstallationStatus::Both => "source and binary",
-            InstallationStatus::Absent => "absent",
-        };
-        write!(f, "{v}")
+        match self {
+            InstallationStatus::Source => write!(f, "source"),
+            InstallationStatus::Binary(b) => write!(f, "binary (built from source: {b})"),
+            InstallationStatus::Both(b) => write!(f, "source and binary (built from source: {b})"),
+            InstallationStatus::Absent => write!(f, "absent"),
+        }
     }
 }
 
@@ -266,13 +290,19 @@ impl DiskCache {
             // TODO: can we cache local somehow?
             Source::Local { .. } => return InstallationStatus::Absent,
             // TODO: check if we have specific versions
-            Source::Builtin { .. } => return InstallationStatus::Binary,
+            Source::Builtin { .. } => return InstallationStatus::Binary(false),
+        };
+
+        let from_source = if binary_path.is_dir() {
+            binary_path.join(BUILT_FROM_SOURCE_FILENAME).exists()
+        } else {
+            false
         };
 
         match (source_path.is_dir(), binary_path.is_dir()) {
-            (true, true) => InstallationStatus::Both,
+            (true, true) => InstallationStatus::Both(from_source),
             (true, false) => InstallationStatus::Source,
-            (false, true) => InstallationStatus::Binary,
+            (false, true) => InstallationStatus::Binary(from_source),
             (false, false) => InstallationStatus::Absent,
         }
     }

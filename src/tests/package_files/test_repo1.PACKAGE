@@ -26,3 +26,6 @@ Depends: survival (>= 6.0.0)
 
 Package: survival
 Version: 6.0.0
+
+Package: test.force_source
+Version: 1.0.0

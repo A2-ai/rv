@@ -1,0 +1,14 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "repo1", url = "http://repo1" },
+]
+dependencies = [
+    "test.force_source",
+]
+---
+repos = [
+    {name = "repo1", source = "test_repo1", binary = "test_repo1", force_source = true},
+]
+---
