@@ -168,7 +168,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
                 if let Ok(ver) = (RCommandLine {
                     r: Some(path.clone()),
                 })
-                    .version()
+                .version()
                 {
                     if r_version.hazy_match(&ver) {
                         log::debug!(" R {r_version} found at {}", path.display());
