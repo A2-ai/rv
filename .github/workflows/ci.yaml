@@ -1,8 +1,9 @@
 name: ci
 on:
+  workflow-dispatch:
   push:
     branches:
-      - [main, r-tests]
+      - main 
     paths-ignore:
       - "docs/**"
       - "README.md"
