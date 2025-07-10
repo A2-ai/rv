@@ -14,7 +14,7 @@ use rv::cli::{
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, deactivate,
+    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, configure_repository, deactivate,
     read_and_verify_config, system_req,
 };
 
@@ -158,6 +158,48 @@ pub enum Command {
         /// Specify a R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
+    },
+    /// Configure project settings
+    Configure {
+        #[command(subcommand)]
+        subcommand: ConfigureSubcommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigureSubcommand {
+    /// Configure project repositories
+    Repository {
+        /// Repository alias
+        #[clap(long)]
+        alias: Option<String>,
+        /// Repository URL
+        #[clap(long)]
+        url: Option<String>,
+        /// Enable force_source for this repository
+        #[clap(long)]
+        force_source: bool,
+        /// Add the repository before the specified alias
+        #[clap(long, conflicts_with_all = ["after", "first", "last", "replace", "remove", "clear"])]
+        before: Option<String>,
+        /// Add the repository after the specified alias
+        #[clap(long, conflicts_with_all = ["before", "first", "last", "replace", "remove", "clear"])]
+        after: Option<String>,
+        /// Add the repository as the first entry
+        #[clap(long, conflicts_with_all = ["before", "after", "last", "replace", "remove", "clear"])]
+        first: bool,
+        /// Add the repository as the last entry
+        #[clap(long, conflicts_with_all = ["before", "after", "first", "replace", "remove", "clear"])]
+        last: bool,
+        /// Replace the existing repository with the specified alias
+        #[clap(long, conflicts_with_all = ["before", "after", "first", "last", "remove", "clear"])]
+        replace: Option<String>,
+        /// Remove the existing repository with the specified alias
+        #[clap(long, conflicts_with_all = ["before", "after", "first", "last", "replace", "clear"])]
+        remove: Option<String>,
+        /// Clear all repositories
+        #[clap(long, conflicts_with_all = ["before", "after", "first", "last", "replace", "remove"])]
+        clear: bool,
     },
 }
 
@@ -816,6 +858,37 @@ fn try_main() -> Result<()> {
                 );
             } else {
                 tree.print(depth, !hide_system_deps);
+            }
+        }
+        Command::Configure { subcommand } => {
+            match subcommand {
+                ConfigureSubcommand::Repository {
+                    alias,
+                    url,
+                    force_source,
+                    before,
+                    after,
+                    first,
+                    last,
+                    replace,
+                    remove,
+                    clear,
+                } => {
+                    configure_repository(
+                        &cli.config_file,
+                        alias,
+                        url,
+                        force_source,
+                        before,
+                        after,
+                        first,
+                        last,
+                        replace,
+                        remove,
+                        clear,
+                        output_format.is_json(),
+                    )?;
+                }
             }
         }
     }
