@@ -21,6 +21,18 @@ def run_cmd(cmd, path, json = False):
 
     return result.stdout
 
+def test_load(pkg, lib):
+    print(f">> Loading {pkg}")
+    command = ["Rscript", "-e", f"library(\"{pkg}\", lib.loc = file.path(getwd(), \"{lib}\"))"]
+    result = subprocess.run(command, capture_output=True, text=True)
+    
+    # Check for errors
+    if result.returncode != 0:
+        print(f"Failed to load {pkg} with error: {result.stderr}")
+        exit(1)
+        
+    return result.stdout
+
 
 def run_examples():
     items = os.listdir(PARENT_FOLDER)
@@ -43,11 +55,16 @@ def run_examples():
                 print("Cache command didn't return anything")
 
         run_cmd("sync", subfolder_path)
+        
         plan_result = run_cmd("plan", subfolder_path)
         if "Nothing to do" not in plan_result and not any([True for s in SKIP_PLAN_CHECK if s in subfolder_path]):
             print(f"Plan after sync has changes planned for {subfolder}")
             return 1
         library_path = run_cmd("library", subfolder_path)
+        
+        if subfolder == "local-deps":
+            test_load("dummy", library_path.strip())
+        
         folder_count = len(os.listdir(library_path.strip()))
 
         if folder_count == 0:
