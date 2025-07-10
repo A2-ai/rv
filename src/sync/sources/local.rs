@@ -34,7 +34,12 @@ pub(crate) fn install_package(
         canon_path.clone()
     };
 
-    if is_binary_package(&actual_path, pkg.name.as_ref()) {
+    if is_binary_package(&actual_path, pkg.name.as_ref()).map_err(|err| SyncError {
+        source: crate::sync::errors::SyncErrorKind::InvalidPackage {
+            path: actual_path.to_path_buf(),
+            error: err.to_string(),
+        },
+    })? {
         log::debug!(
             "Local package in {} is a binary package, copying files to library.",
             actual_path.display()

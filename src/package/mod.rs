@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 use toml_edit::{InlineTable, Value};
-use walkdir::WalkDir;
 
 mod builtin;
 mod description;
@@ -20,6 +19,9 @@ pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version};
 
 pub(crate) use remotes::parse_remote;
+
+///
+const COMPILED_R_SUBDIRS: [&str; 2] = ["R", "data"];
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -98,6 +100,9 @@ pub struct Package {
     pub(crate) remote_url: Option<GitUrl>,
     pub(crate) remote_sha: Option<String>,
     pub(crate) remote_subdir: Option<String>,
+    // The built field only exists when a package is a binary
+    // https://rstudio.github.io/r-manuals/r-ints/Package-Structure.html
+    pub(crate) built: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -149,24 +154,37 @@ impl Package {
 }
 
 /// Returns whether this folder contains compiled R files
-pub fn is_binary_package(path: impl AsRef<Path>, name: &str) -> bool {
-    let name_rdx = format!("{name}.rdx");
+/// Error only occurs if the DESCRIPTION file cannot be parsed
+pub fn is_binary_package(
+    path: impl AsRef<Path>,
+    name: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let path = path.as_ref();
 
-    // binary files can only be found at {path}/<subdir>/{name}.rdx, therefore only look in depth 2 of the directory
-    for entry in WalkDir::new(path)
-        .min_depth(2)
-        .max_depth(2) {
-        match entry {
-            Ok(e) => {
-                if e.file_type().is_file() && e.file_name().to_string_lossy() == name_rdx {
-                    return true;
-                }
-            }
-            Err(err) => {
-                eprintln!("Failed to read entry: {}", err);
-            }
+    // If the package does not have a parse-able DESCRIPTION file, the entire package is not valid and we should not try to install it
+    let pkg = parse_description_file_in_folder(&path)?;
+
+    // The only way for a package to contain <package name>.rdx in either the R or data subdirectories is if it has been built
+    // While most packages DO contain either R code or data, that is not required, therefore we check more robustly
+    let name_rdx = format!("{name}.rdx");
+    for subdir in COMPILED_R_SUBDIRS {
+        if path.join(subdir).join(&name_rdx).exists() {
+            return Ok(true);
         }
     }
 
-    false
+    // If the package does not have the `Built` field, inserted by R during a build, then we know it is not a binary
+    if pkg.built.is_none() {
+        return Ok(false);
+    }
+
+    // Built packages will have a `Meta` directory with a `package.rds` file. If not, we know it is not a binary
+    // https://rstudio.github.io/r-manuals/r-ints/Package-Structure.html#metadata
+    if !path.join("Meta").join("package.rds").exists() {
+        return Ok(false);
+    }
+
+    // If the package has both the `Built` field of a DESCRIPTION file and `Meta/package.rds`, then we will say it is a binary
+    // even if we do not find any .rdx files
+    Ok(true)
 }

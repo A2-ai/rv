@@ -123,10 +123,13 @@ pub(crate) fn install_package(
                 } else {
                     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
                     // source files. We have to check first whether what we have is actually binary content.
-                    if !is_binary_package(
-                        pkg_paths.binary.join(pkg.name.as_ref()),
-                        pkg.name.as_ref(),
-                    ) {
+                    let bin_path = pkg_paths.binary.join(pkg.name.as_ref());
+                    if !is_binary_package(&bin_path, pkg.name.as_ref()).map_err(|err| SyncError {
+                        source: crate::sync::errors::SyncErrorKind::InvalidPackage {
+                            path: bin_path,
+                            error: err.to_string(),
+                        },
+                    })? {
                         log::debug!("{} was expected as binary, found to be source.", pkg.name);
                         // Move it to the source destination if we don't have it already
                         if pkg_paths.source.is_dir() {
