@@ -1,0 +1,11 @@
+[project]
+name = "r6-test"
+r_version = "4.4"
+
+repositories = [
+	{alias = "ppm", url = "https://packagemanager.posit.co/cran/2025-07-10"}
+]
+
+dependencies = [
+	"R6"	
+]
