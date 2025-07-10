@@ -1,10 +1,20 @@
 use std::path::Path;
 use anyhow::{anyhow, Result};
 use fs_err::write;
+use serde::Serialize;
 use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 use url::Url;
 
 use crate::read_and_verify_config;
+
+#[derive(Debug, Serialize)]
+struct ConfigureRepositoryResponse {
+    operation: String,
+    alias: Option<String>,
+    url: Option<String>,
+    success: bool,
+    message: String,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to configure repository in config at `{path}`")]
@@ -47,12 +57,24 @@ pub fn configure_repository(
 ) -> Result<()> {
     let mut doc = read_and_verify_config(config_file)?;
 
-    // Handle different operations
-    let is_remove = remove.is_some();
+    // Handle different operations and track what we did
+    let operation;
+    let response_alias;
+    let response_url;
+    let message;
+    
     if clear {
         clear_repositories(&mut doc)?;
+        operation = "clear".to_string();
+        response_alias = None;
+        response_url = None;
+        message = "All repositories cleared".to_string();
     } else if let Some(remove_alias) = remove {
         remove_repository(&mut doc, &remove_alias)?;
+        operation = "remove".to_string();
+        response_alias = Some(remove_alias);
+        response_url = None;
+        message = "Repository removed successfully".to_string();
     } else {
         // For other operations, we need alias and url
         let alias = alias.ok_or_else(|| anyhow!("--alias is required for this operation"))?;
@@ -63,6 +85,8 @@ pub fn configure_repository(
         
         if let Some(replace_alias) = replace {
             replace_repository(&mut doc, &replace_alias, &alias, &parsed_url, force_source)?;
+            operation = "replace".to_string();
+            message = "Repository replaced successfully".to_string();
         } else {
             add_repository(
                 &mut doc,
@@ -74,7 +98,12 @@ pub fn configure_repository(
                 first,
                 last,
             )?;
+            operation = "add".to_string();
+            message = "Repository configured successfully".to_string();
         }
+        
+        response_alias = Some(alias);
+        response_url = Some(parsed_url.to_string());
     }
 
     // Write the updated configuration
@@ -82,14 +111,35 @@ pub fn configure_repository(
 
     // Output result
     if is_json_output {
-        println!("{{}}");
+        let response = ConfigureRepositoryResponse {
+            operation,
+            alias: response_alias,
+            url: response_url,
+            success: true,
+            message,
+        };
+        println!("{}", serde_json::to_string_pretty(&response)?);
     } else {
-        if clear {
-            println!("All repositories cleared");
-        } else if is_remove {
-            println!("Repository removed successfully");
-        } else {
-            println!("Repository configured successfully");
+        // Print detailed text output similar to JSON structure
+        match operation.as_str() {
+            "add" => {
+                println!("Repository '{}' added successfully with URL: {}", 
+                         response_alias.as_ref().unwrap(), 
+                         response_url.as_ref().unwrap());
+            }
+            "replace" => {
+                println!("Repository replaced successfully - new alias: '{}', URL: {}", 
+                         response_alias.as_ref().unwrap(), 
+                         response_url.as_ref().unwrap());
+            }
+            "remove" => {
+                println!("Repository '{}' removed successfully", 
+                         response_alias.as_ref().unwrap());
+            }
+            "clear" => {
+                println!("All repositories cleared successfully");
+            }
+            _ => println!("{}", message),
         }
     }
 
