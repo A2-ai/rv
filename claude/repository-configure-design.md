@@ -1,94 +1,83 @@
-I want a new feature for rv that allows repositories to be configured from the rv cli
+# AI Assistant Reference - rv configure repository
 
+## Quick Implementation Guide
+
+### Purpose
+The `rv configure repository` command manages R package repositories in `rproject.toml` files. This is the canonical reference for AI assistants working on this feature.
+
+### Key Files to Check First
+- `src/configure.rs` - Main implementation (authoritative source)
+- `src/main.rs` - CLI integration (ConfigureSubcommand enum)
+- `src/lib.rs` - Module exports
+
+### Command Pattern
+```bash
+rv configure repository --alias <name> --url <url> [positioning/operation flags]
 ```
-rv configure repository --alias my-repo --url https://github.com/my-org/my-repo.git
-```
 
-The flags should correspond to the fields for repositories in `rproject.toml`. 
-The only two required fields are `alias` and `url`. The command should update the `rproject.toml` file with the new repository configuration.
+### Critical Implementation Details
 
-In addition, we must be able to specify where to add the respository. To do so the following flag options should be available:
-- `--before <alias>`: Add the new repository before the specified alias
-- `--after <alias>`: Add the new repository after the specified alias
-- `--first`: Add the new repository as the first entry
-- `--last`: Add the new repository as the last entry    
-- `--replace <alias>`: Replace the existing repository with the specified alias
-- `--remove <alias>`: Remove the existing repository with the specified alias
-- `--clear`: Clear all repositories
+**Core Function**: `configure_repository()` in `src/configure.rs`
+- Takes all CLI args as parameters
+- Returns `Result<()>`
+- Handles all operations: add, replace, remove, clear
 
-for example given a starting `rproject.toml` file like this:
+**TOML Handling**: Uses `toml_edit::DocumentMut` 
+- Preserves formatting and comments
+- Function: `get_mut_repositories_array()` gets mutable access
 
-```
-[project]
-name = "simple"
-r_version = "4.4"
+**Repository Format**: Inline tables in TOML
+```toml
 repositories = [
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
-]
-dependencies = [
-    "dplyr",
+    { alias = "cran", url = "https://cran.r-project.org" },
 ]
 ```
 
-```
-rv configure repository --alias ppm --url https://packagemanager.posit.co/cran/latest --first
-```
+### Positioning Logic (mutually exclusive)
+- `--first` → index 0
+- `--last` → array.len() (default)
+- `--before <alias>` → find_index(alias)
+- `--after <alias>` → find_index(alias) + 1
 
-should result in the following `rproject.toml` file:
+### Operations (mutually exclusive with positioning)
+- `--replace <alias>` → replace existing
+- `--remove <alias>` → remove by alias
+- `--clear` → empty array
 
-```
-[project]
-name = "simple"
-r_version = "4.4"
-repositories = [
-    {alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
-]
-dependencies = [
-    "dplyr",
-]
-```
+### Validation Rules
+1. **Duplicate aliases**: Check before adding (not for replace with same alias)
+2. **URL validation**: Use `url::Url::parse()`
+3. **Reference validation**: Ensure before/after targets exist
 
-another example, given:
+### Output Formats
+- **Text**: Detailed success messages
+- **JSON**: `ConfigureRepositoryResponse` struct with operation details
 
-```
-[project]
-name = "simple"
-r_version = "4.4"
-repositories = [
-    {alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
-]
-dependencies = [
-    "dplyr",
-]
-```
+### Testing
+- Location: `src/configure.rs` test module
+- Uses `cargo insta` snapshots
+- Tests operate on `DocumentMut`, not CLI
 
-```
-rv configure repository --alias ppm-old --url https://packagemanager.posit.co/cran/2024-11-16 --after ppm
-```
+### Common Gotchas for AI
+1. **Don't assume URLs**: Always validate with `url` crate
+2. **Preserve TOML formatting**: Use `toml_edit`, not `toml`
+3. **Check duplicates correctly**: Skip check when replacing with same alias
+4. **Repository structure**: Always inline tables, never full tables
+5. **Array formatting**: Call `format_repositories_array()` after modifications
 
+### Error Types
+Check `ConfigureErrorKind` enum in `src/configure.rs` for all error cases.
 
-```
-[project]
-name = "simple"
-r_version = "4.4"
-repositories = [
-    {alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
-    {alias = "ppm-old", url = "https://packagemanager.posit.co/cran/2024-11-16/"},
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
-]
-dependencies = [
-    "dplyr",
-]
-```
+### Integration Points
+- CLI: `ConfigureSubcommand::Repository` in `src/main.rs`
+- Config loading: Uses existing `read_and_verify_config()`
+- JSON flag: Handled at CLI level, passed to function
 
-When making these changes, rv should insure that the resulting rproject.toml is valid and no duplicate aliases exist. If a duplicate alias is found, rv should return an error message indicating the conflict.
+### When Making Changes
+1. **Read current implementation first** - this doc may be outdated
+2. **Check test snapshots** for expected behavior
+3. **Run `cargo insta test`** to verify changes
+4. **Update this doc** if core patterns change
 
-the tomledit crate should be used, such that comments are preserved and the file is formatted correctly.
-
-for testing, use cargo insta to generate snapshots of representative `rproject.toml` file before and after the command is run. 
-This will ensure that the changes are correctly applied and that the file remains valid. For testing, integration tests
-should be used to test all permutations. Check the testing strategy in src/tests/add.rs for examples of how to write these tests,
-where the tests do not shell out to rv directly, but instead test the functionality on the documentmut from tomledit then call to_string to see 
-and test snapshots of resulting contents.
+---
+*This document focuses on implementation patterns, not examples. Check `docs/` for usage examples.*
