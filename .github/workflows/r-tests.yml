@@ -25,6 +25,9 @@ jobs:
     - name: Build rv
       run: cargo build --features=cli --release
 
+    - name: Add rv to PATH
+      run: echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
+    
     - name: Verify R installation
       run: |
         R --version
