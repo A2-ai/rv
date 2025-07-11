@@ -6,6 +6,7 @@ test:
   - name: "rv init"
     run: "rv init"
     thread: rv
+    assert: "rv project successfully initialized at ."
 
   - name: "start R"
     run: "R"

@@ -47,8 +47,6 @@ struct StepResult {
     name: String,
     step_index: usize,
     output: String,
-    assertion_passed: Option<bool>,
-    assertion_error: Option<String>,
 }
 
 #[derive(Debug)]
@@ -177,7 +175,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 println!("🟡 {}: {}", thread_name_clone.to_uppercase(), step.name);
                 println!("   └─ Running: {}", step.run);
                 
-                let (output, assertion_passed, assertion_error) = match thread_name_clone.as_str() {
+                let output = match thread_name_clone.as_str() {
                     "rv" => {
                         // Handle rv commands
                         let result = execute_rv_command(&step.run, &thread_test_dir, &thread_config_path)?;
@@ -185,10 +183,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             println!("   ├─ Output: {}", result.trim());
                         }
                         
-                        // Store assertion for checking at the end
-                        let (assertion_passed, assertion_error) = (None, None);
-                        
-                        (result, assertion_passed, assertion_error)
+                        result
                     },
                     "r" => {
                         // Handle R commands
@@ -240,9 +235,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     use std::io::Write;
                                     stdin.flush().map_err(|e| anyhow::anyhow!("Failed to flush R stdin after restart: {}", e))?;
                                 }
-                                ("R process restarted".to_string(), None, None)
+                                "R process restarted".to_string()
                             } else {
-                                ("R process started".to_string(), None, None)
+                                "R process started".to_string()
                             }
                         } else {
                             // Execute R script or command
@@ -291,7 +286,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 println!("   ├─ Command sent (will wait at completion barrier)");
                                 
                                 // We'll check assertions after capturing all output at the end
-                                ("Command executed".to_string(), None, None)
+                                "Command executed".to_string()
                             } else {
                                 return Err(anyhow::anyhow!("R process not started"));
                             }
@@ -305,8 +300,6 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     name: step.name.clone(),
                     step_index: step_idx,
                     output,
-                    assertion_passed,
-                    assertion_error: assertion_error.clone(),
                 };
                 step_results.push(step_result);
                 
