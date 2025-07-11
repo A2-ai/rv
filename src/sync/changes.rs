@@ -128,6 +128,13 @@ impl SyncChange {
         }
     }
 
+    pub fn is_builtin(&self) -> bool {
+        self.source
+            .as_ref()
+            .map(|x| x == &Source::Builtin { builtin: true })
+            .unwrap_or_default()
+    }
+
     pub fn log_path(&self, cache: &DiskCache) -> PathBuf {
         if let Some(s) = &self.source {
             if s.is_repo() {

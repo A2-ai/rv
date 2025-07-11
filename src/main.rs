@@ -322,6 +322,7 @@ fn _sync(
                 &context.library,
                 &context.cache,
                 &context.system_dependencies,
+                save_install_logs_in.clone(),
                 context.staging_path(),
             );
             if dry_run {
@@ -364,16 +365,6 @@ fn _sync(
 
             for change in changes.iter_mut() {
                 change.update_sys_deps_status(&sysdeps_status);
-            }
-
-            if let Some(log_folder) = save_install_logs_in {
-                fs::create_dir_all(&log_folder)?;
-                for change in changes.iter().filter(|x| x.installed) {
-                    let log_path = change.log_path(&context.cache);
-                    if log_path.exists() {
-                        fs::copy(log_path, log_folder.join(&format!("{}.log", change.name)))?;
-                    }
-                }
             }
 
             if output_format.is_json() {

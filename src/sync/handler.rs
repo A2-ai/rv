@@ -13,6 +13,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
 use crate::package::PackageType;
+#[cfg(feature = "cli")]
+use crate::r_cmd::kill_all_r_processes;
+use crate::r_cmd::{InstallError, InstallErrorKind};
 use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
@@ -20,9 +23,6 @@ use crate::utils::get_max_workers;
 use crate::{
     BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
 };
-
-#[cfg(feature = "cli")]
-use crate::r_cmd::kill_all_r_processes;
 
 fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
     if !cfg!(unix) {
@@ -77,6 +77,7 @@ pub struct SyncHandler<'a> {
     cache: &'a DiskCache,
     system_dependencies: &'a HashMap<String, Vec<String>>,
     staging_path: PathBuf,
+    save_install_logs_in: Option<PathBuf>,
     dry_run: bool,
     show_progress_bar: bool,
     max_workers: usize,
@@ -89,6 +90,7 @@ impl<'a> SyncHandler<'a> {
         library: &'a Library,
         cache: &'a DiskCache,
         system_dependencies: &'a HashMap<String, Vec<String>>,
+        save_install_logs_in: Option<PathBuf>,
         staging_path: impl AsRef<Path>,
     ) -> Self {
         Self {
@@ -96,6 +98,7 @@ impl<'a> SyncHandler<'a> {
             library,
             cache,
             system_dependencies,
+            save_install_logs_in,
             staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
             show_progress_bar: false,
@@ -334,6 +337,10 @@ impl<'a> SyncHandler<'a> {
         // Create staging only if we need to build stuff
         fs::create_dir_all(&self.staging_path)?;
 
+        if let Some(log_folder) = &self.save_install_logs_in {
+            fs::create_dir_all(&log_folder)?;
+        }
+
         // Then we mark the deps seen so they won't be installed into the staging dir
         for d in &deps_seen {
             // builtin packages will not be in the library
@@ -421,6 +428,7 @@ impl<'a> SyncHandler<'a> {
                 let pb_clone = Arc::clone(&pb);
                 let installing_clone = Arc::clone(&installing);
                 let cancellation_clone = cancellation.clone();
+                let save_install_logs_in_clone = self.save_install_logs_in.clone();
 
                 s.spawn(move |_| {
                     let local_worker_id = worker_num + 1;
@@ -479,12 +487,40 @@ impl<'a> SyncHandler<'a> {
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);
                                 drop(plan);
+                                if let Some(log_folder) = &save_install_logs_in_clone {
+                                    if !sync_change.is_builtin() {
+                                        let log_path = sync_change.log_path(&self.cache);
+                                        if log_path.exists() {
+                                            fs::copy(
+                                                log_path,
+                                                log_folder
+                                                    .join(&format!("{}.log", sync_change.name)),
+                                            )
+                                            .expect("no error");
+                                        }
+                                    }
+                                }
                                 if done_sender.send(sync_change).is_err() {
                                     break; // Channel closed
                                 }
                             }
                             Err(e) => {
                                 has_errors_clone.store(true, Ordering::Relaxed);
+
+                                if let SyncErrorKind::InstallError(InstallError {
+                                    source: InstallErrorKind::InstallationFailed(msg),
+                                    ..
+                                }) = &e.source
+                                {
+                                    if let Some(log_folder) = &save_install_logs_in_clone {
+                                        fs::write(
+                                            log_folder.join(&format!("{}.log", dep.name)),
+                                            msg.as_bytes(),
+                                        )
+                                        .expect("to write files");
+                                    }
+                                }
+
                                 errors_clone.lock().unwrap().push((dep, e));
                                 break;
                             }
