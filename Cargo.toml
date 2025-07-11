@@ -71,6 +71,7 @@ assert_cmd = "2.0.17"
 insta = "1"
 mockito = "1"
 pretty_assertions = "1.4.1"
+serde_yaml = "0.9"
 
 [profile.release]
 codegen-units = 1

@@ -42,6 +42,9 @@ jobs:
         which R
         R --slave -e "cat('R is working:', R.version.string, '\n')"
         R --slave -e "cat('Library paths:', paste(.libPaths(), collapse=', '), '\n')"
+        R --slave -e "cat('Working directory:', getwd(), '\n')"
+        R --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
+        R --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
         
     - name: Build rv
       run: cargo build --features=cli --release

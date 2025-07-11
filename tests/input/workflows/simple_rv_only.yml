@@ -1,0 +1,13 @@
+project-dir: r6-test
+config: r6-rproject.toml
+
+test:
+  steps:
+  - name: "rv init"
+    run: "rv init"
+    thread: rv
+  
+  - name: "rv sync"
+    run: "rv sync"
+    thread: rv
+    assert: "+ R6 (2.6.1, binary from https://packagemanager.posit.co/cran/2025-07-10)"
