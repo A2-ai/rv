@@ -1,11 +1,28 @@
 use std::path::Path;
-use anyhow::{anyhow, Result};
 use fs_err::write;
 use serde::Serialize;
 use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 use url::Url;
 
-use crate::read_and_verify_config;
+use crate::{Config, config::ConfigLoadError};
+
+fn read_config_as_document(config_file: &Path) -> Result<DocumentMut, ConfigLoadError> {
+    // Verify config can be loaded and is valid
+    let _ = Config::from_file(config_file)?;
+    
+    // Read and parse as DocumentMut for editing
+    let config_content = std::fs::read_to_string(config_file)
+        .map_err(|e| ConfigLoadError {
+            path: config_file.into(),
+            source: crate::config::ConfigLoadErrorKind::Io(e),
+        })?;
+    
+    config_content.parse::<DocumentMut>()
+        .map_err(|e| ConfigLoadError {
+            path: config_file.into(),
+            source: crate::config::ConfigLoadErrorKind::InvalidConfig(e.to_string()),
+        })
+}
 
 #[derive(Debug, Serialize)]
 struct ConfigureRepositoryResponse {
@@ -14,6 +31,30 @@ struct ConfigureRepositoryResponse {
     url: Option<String>,
     success: bool,
     message: String,
+}
+
+#[derive(Debug)]
+struct ConfigureOptions {
+    alias: Option<String>,
+    url: Option<String>,
+    force_source: bool,
+    before: Option<String>,
+    after: Option<String>,
+    first: bool,
+    last: bool,
+    replace: Option<String>,
+    remove: Option<String>,
+    clear: bool,
+    is_json_output: bool,
+}
+
+#[derive(Debug)]
+struct AddRepositoryOptions {
+    force_source: bool,
+    before: Option<String>,
+    after: Option<String>,
+    first: bool,
+    last: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -28,17 +69,25 @@ pub struct ConfigureError {
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigureErrorKind {
     #[error("Invalid URL: {0}")]
-    InvalidUrl(#[from] url::ParseError),
+    InvalidUrl(url::ParseError),
     #[error("Duplicate alias: {0}")]
     DuplicateAlias(String),
     #[error("Alias not found: {0}")]
     AliasNotFound(String),
+    #[error("--alias is required for this operation")]
+    MissingAlias,
+    #[error("--url is required for this operation")]
+    MissingUrl,
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("TOML parse error: {0}")]
-    Parse(#[from] toml_edit::TomlError),
+    Io(std::io::Error),
     #[error("Config load error: {0}")]
-    ConfigLoad(#[from] crate::config::ConfigLoadError),
+    ConfigLoad(ConfigLoadError),
+    #[error("JSON serialization error: {0}")]
+    SerdeJson(serde_json::Error),
+    #[error("Missing [project] table")]
+    MissingProjectTable,
+    #[error("repositories field is not an array")]
+    InvalidRepositoriesField,
 }
 
 pub fn configure_repository(
@@ -54,8 +103,33 @@ pub fn configure_repository(
     remove: Option<String>,
     clear: bool,
     is_json_output: bool,
-) -> Result<()> {
-    let mut doc = read_and_verify_config(config_file)?;
+) -> Result<(), ConfigureError> {
+    let options = ConfigureOptions {
+        alias,
+        url,
+        force_source,
+        before,
+        after,
+        first,
+        last,
+        replace,
+        remove,
+        clear,
+        is_json_output,
+    };
+    
+    configure_repository_impl(config_file, options)
+}
+
+fn configure_repository_impl(
+    config_file: &Path,
+    options: ConfigureOptions,
+) -> Result<(), ConfigureError> {
+    let mut doc = read_config_as_document(config_file)
+        .map_err(|e| ConfigureError {
+            path: config_file.into(),
+            source: Box::new(ConfigureErrorKind::ConfigLoad(e)),
+        })?;
 
     // Handle different operations and track what we did
     let operation;
@@ -63,41 +137,65 @@ pub fn configure_repository(
     let response_url;
     let message;
     
-    if clear {
-        clear_repositories(&mut doc)?;
+    if options.clear {
+        clear_repositories(&mut doc)
+            .map_err(|e| ConfigureError {
+                path: config_file.into(),
+                source: Box::new(e),
+            })?;
         operation = "clear".to_string();
         response_alias = None;
         response_url = None;
         message = "All repositories cleared".to_string();
-    } else if let Some(remove_alias) = remove {
-        remove_repository(&mut doc, &remove_alias)?;
+    } else if let Some(remove_alias) = options.remove {
+        remove_repository(&mut doc, &remove_alias)
+            .map_err(|e| ConfigureError {
+                path: config_file.into(),
+                source: Box::new(e),
+            })?;
         operation = "remove".to_string();
         response_alias = Some(remove_alias);
         response_url = None;
         message = "Repository removed successfully".to_string();
     } else {
         // For other operations, we need alias and url
-        let alias = alias.ok_or_else(|| anyhow!("--alias is required for this operation"))?;
-        let url = url.ok_or_else(|| anyhow!("--url is required for this operation"))?;
+        let alias = options.alias.ok_or_else(|| ConfigureError {
+            path: config_file.into(),
+            source: Box::new(ConfigureErrorKind::MissingAlias),
+        })?;
+        let url = options.url.ok_or_else(|| ConfigureError {
+            path: config_file.into(),
+            source: Box::new(ConfigureErrorKind::MissingUrl),
+        })?;
         
         // Validate URL only when needed
-        let parsed_url = Url::parse(&url)?;
+        let parsed_url = Url::parse(&url)
+            .map_err(|e| ConfigureError {
+                path: config_file.into(),
+                source: Box::new(ConfigureErrorKind::InvalidUrl(e)),
+            })?;
         
-        if let Some(replace_alias) = replace {
-            replace_repository(&mut doc, &replace_alias, &alias, &parsed_url, force_source)?;
+        if let Some(replace_alias) = options.replace {
+            replace_repository(&mut doc, &replace_alias, &alias, &parsed_url, options.force_source)
+                .map_err(|e| ConfigureError {
+                    path: config_file.into(),
+                    source: Box::new(e),
+                })?;
             operation = "replace".to_string();
             message = "Repository replaced successfully".to_string();
         } else {
-            add_repository(
-                &mut doc,
-                &alias,
-                &parsed_url,
-                force_source,
-                before,
-                after,
-                first,
-                last,
-            )?;
+            let add_options = AddRepositoryOptions {
+                force_source: options.force_source,
+                before: options.before,
+                after: options.after,
+                first: options.first,
+                last: options.last,
+            };
+            add_repository(&mut doc, &alias, &parsed_url, add_options)
+            .map_err(|e| ConfigureError {
+                path: config_file.into(),
+                source: Box::new(e),
+            })?;
             operation = "add".to_string();
             message = "Repository configured successfully".to_string();
         }
@@ -107,10 +205,14 @@ pub fn configure_repository(
     }
 
     // Write the updated configuration
-    write(config_file, doc.to_string())?;
+    write(config_file, doc.to_string())
+        .map_err(|e| ConfigureError {
+            path: config_file.into(),
+            source: Box::new(ConfigureErrorKind::Io(e)),
+        })?;
 
     // Output result
-    if is_json_output {
+    if options.is_json_output {
         let response = ConfigureRepositoryResponse {
             operation,
             alias: response_alias,
@@ -118,7 +220,11 @@ pub fn configure_repository(
             success: true,
             message,
         };
-        println!("{}", serde_json::to_string_pretty(&response)?);
+        println!("{}", serde_json::to_string_pretty(&response)
+            .map_err(|e| ConfigureError {
+                path: config_file.into(), 
+                source: Box::new(ConfigureErrorKind::SerdeJson(e)),
+            })?);
     } else {
         // Print detailed text output similar to JSON structure
         match operation.as_str() {
@@ -146,32 +252,32 @@ pub fn configure_repository(
     Ok(())
 }
 
-fn get_mut_repositories_array(doc: &mut DocumentMut) -> Result<&mut Array> {
+fn get_mut_repositories_array(doc: &mut DocumentMut) -> Result<&mut Array, ConfigureErrorKind> {
     let project_table = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())
-        .ok_or_else(|| anyhow!("Missing [project] table"))?;
+        .ok_or(ConfigureErrorKind::MissingProjectTable)?;
     
     let repos = project_table
         .entry("repositories")
         .or_insert_with(|| Array::new().into())
         .as_array_mut()
-        .ok_or_else(|| anyhow!("repositories field is not an array"))?;
+        .ok_or(ConfigureErrorKind::InvalidRepositoriesField)?;
 
     Ok(repos)
 }
 
-fn clear_repositories(doc: &mut DocumentMut) -> Result<()> {
+fn clear_repositories(doc: &mut DocumentMut) -> Result<(), ConfigureErrorKind> {
     let repos = get_mut_repositories_array(doc)?;
     repos.clear();
     Ok(())
 }
 
-fn remove_repository(doc: &mut DocumentMut, alias: &str) -> Result<()> {
+fn remove_repository(doc: &mut DocumentMut, alias: &str) -> Result<(), ConfigureErrorKind> {
     let repos = get_mut_repositories_array(doc)?;
     
     let index = find_repository_index(repos, alias)
-        .ok_or_else(|| anyhow!("Repository with alias '{}' not found", alias))?;
+        .ok_or_else(|| ConfigureErrorKind::AliasNotFound(alias.to_string()))?;
     
     repos.remove(index);
     Ok(())
@@ -183,15 +289,15 @@ fn replace_repository(
     new_alias: &str,
     url: &Url,
     force_source: bool,
-) -> Result<()> {
+) -> Result<(), ConfigureErrorKind> {
     let repos = get_mut_repositories_array(doc)?;
     
     let index = find_repository_index(repos, replace_alias)
-        .ok_or_else(|| anyhow!("Repository with alias '{}' not found", replace_alias))?;
+        .ok_or_else(|| ConfigureErrorKind::AliasNotFound(replace_alias.to_string()))?;
     
     // Check for duplicate alias (unless we're replacing with the same alias)
     if new_alias != replace_alias && find_repository_index(repos, new_alias).is_some() {
-        return Err(anyhow!("Repository with alias '{}' already exists", new_alias));
+        return Err(ConfigureErrorKind::DuplicateAlias(new_alias.to_string()));
     }
     
     let new_repo = create_repository_value(new_alias, url, force_source);
@@ -204,31 +310,27 @@ fn add_repository(
     doc: &mut DocumentMut,
     alias: &str,
     url: &Url,
-    force_source: bool,
-    before: Option<String>,
-    after: Option<String>,
-    first: bool,
-    last: bool,
-) -> Result<()> {
+    options: AddRepositoryOptions,
+) -> Result<(), ConfigureErrorKind> {
     let repos = get_mut_repositories_array(doc)?;
     
     // Check for duplicate alias
     if find_repository_index(repos, alias).is_some() {
-        return Err(anyhow!("Repository with alias '{}' already exists", alias));
+        return Err(ConfigureErrorKind::DuplicateAlias(alias.to_string()));
     }
     
-    let new_repo = create_repository_value(alias, url, force_source);
+    let new_repo = create_repository_value(alias, url, options.force_source);
     
-    let insert_index = if first {
+    let insert_index = if options.first {
         0
-    } else if last {
+    } else if options.last {
         repos.len()
-    } else if let Some(before_alias) = before {
+    } else if let Some(before_alias) = options.before {
         find_repository_index(repos, &before_alias)
-            .ok_or_else(|| anyhow!("Repository with alias '{}' not found", before_alias))?
-    } else if let Some(after_alias) = after {
+            .ok_or_else(|| ConfigureErrorKind::AliasNotFound(before_alias.to_string()))?
+    } else if let Some(after_alias) = options.after {
         let after_index = find_repository_index(repos, &after_alias)
-            .ok_or_else(|| anyhow!("Repository with alias '{}' not found", after_alias))?;
+            .ok_or_else(|| ConfigureErrorKind::AliasNotFound(after_alias.to_string()))?;
         after_index + 1
     } else {
         // Default to last
@@ -272,12 +374,8 @@ fn format_repositories_array(repos: &mut Array) {
     }
     
     // Add proper formatting
-    for (i, item) in repos.iter_mut().enumerate() {
-        if i == 0 {
-            item.decor_mut().set_prefix("\n    ");
-        } else {
-            item.decor_mut().set_prefix("\n    ");
-        }
+    for item in repos.iter_mut() {
+        item.decor_mut().set_prefix("\n    ");
     }
     
     // Set trailing formatting
@@ -468,7 +566,8 @@ dependencies = [
         );
         
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("already exists"));
+        let error = result.unwrap_err();
+        assert!(format!("{:?}", error.source).contains("DuplicateAlias"));
     }
     
     #[test] 

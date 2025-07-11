@@ -64,6 +64,7 @@ repositories = [
 3. **Check duplicates correctly**: Skip check when replacing with same alias
 4. **Repository structure**: Always inline tables, never full tables
 5. **Array formatting**: Call `format_repositories_array()` after modifications
+6. **Error handling**: Uses `thiserror` pattern, returns `Result<(), ConfigureError>`
 
 ### Error Types
 Check `ConfigureErrorKind` enum in `src/configure.rs` for all error cases.
