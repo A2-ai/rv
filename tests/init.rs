@@ -2,7 +2,6 @@ use anyhow::Result;
 use assert_cmd::Command;
 use tempfile::TempDir;
 use std::thread;
-use std::time::Duration;
 use std::io::Write;
 use std::sync::{Arc, Barrier};
 use fs_err as fs;
@@ -32,6 +31,8 @@ struct TestStep {
     thread: String,
     #[serde(default)]
     assert: Option<TestAssertion>,
+    #[serde(default)]
+    restart: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -41,10 +42,66 @@ enum TestAssertion {
     Multiple(Vec<String>),
 }
 
+#[derive(Debug, Clone)]
+struct StepResult {
+    name: String,
+    output: String,
+    assertion_passed: Option<bool>,
+    assertion_error: Option<String>,
+}
+
+#[derive(Debug)]
+struct ThreadOutput {
+    thread_name: String,
+    step_results: Vec<StepResult>,
+}
+
 fn load_r_script(script_name: &str) -> Result<String> {
     let script_path = format!("tests/input/r_scripts/{}", script_name);
     fs::read_to_string(&script_path)
         .map_err(|e| anyhow::anyhow!("Failed to load R script {}: {}", script_path, e))
+}
+
+fn parse_r_step_outputs(full_output: &str, step_names: &[String]) -> HashMap<String, String> {
+    let mut step_outputs = HashMap::new();
+    
+    // Find all step end markers with their positions
+    let mut markers = Vec::new();
+    for (i, line) in full_output.lines().enumerate() {
+        if line.starts_with("# STEP_END: ") {
+            if let Some(step_name) = line.strip_prefix("# STEP_END: ") {
+                markers.push((i, step_name.to_string()));
+            }
+        }
+    }
+    
+    let lines: Vec<&str> = full_output.lines().collect();
+    
+    // Handle the first step (R startup) if it exists
+    if !step_names.is_empty() && !markers.is_empty() {
+        let first_step_name = &step_names[0];
+        let first_marker_line = markers[0].0;
+        
+        // Everything from start to first marker belongs to first step
+        let first_step_output = lines[0..first_marker_line].join("\n");
+        step_outputs.insert(first_step_name.clone(), first_step_output);
+    }
+    
+    // Handle subsequent steps
+    for (marker_idx, (marker_line, step_name)) in markers.iter().enumerate() {
+        if marker_idx == 0 {
+            continue; // First marker already handled above
+        }
+        
+        // Find the previous marker
+        let prev_marker_line = markers[marker_idx - 1].0;
+        
+        // Output is from after previous marker to before current marker
+        let step_output = lines[(prev_marker_line + 1)..*marker_line].join("\n");
+        step_outputs.insert(step_name.clone(), step_output);
+    }
+    
+    step_outputs
 }
 
 fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
@@ -67,15 +124,19 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     }
     
     // Create barriers for synchronization between steps - each step needs all threads to sync
+    // We need two barriers per step: one for start, one for completion
     let num_threads = thread_steps.len();
-    let barriers: Vec<Arc<Barrier>> = (0..workflow.test.steps.len())
+    let start_barriers: Vec<Arc<Barrier>> = (0..workflow.test.steps.len())
+        .map(|_| Arc::new(Barrier::new(num_threads)))
+        .collect();
+    let completion_barriers: Vec<Arc<Barrier>> = (0..workflow.test.steps.len())
         .map(|_| Arc::new(Barrier::new(num_threads)))
         .collect();
     
-    // Channels for collecting outputs from each thread
+    // Channels for collecting step results from each thread
     let (tx_map, rx_map): (HashMap<String, _>, HashMap<String, _>) = thread_steps.keys()
         .map(|thread_name| {
-            let (tx, rx) = std::sync::mpsc::channel();
+            let (tx, rx) = std::sync::mpsc::channel::<ThreadOutput>();
             ((thread_name.clone(), tx), (thread_name.clone(), rx))
         })
         .unzip();
@@ -84,50 +145,84 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     let mut thread_handles = HashMap::new();
     
     for (thread_name, step_indices) in thread_steps {
-        let thread_barriers = barriers.clone();
+        let thread_start_barriers = start_barriers.clone();
+        let thread_completion_barriers = completion_barriers.clone();
         let thread_steps = workflow.test.steps.clone();
         let thread_test_dir = test_dir.clone();
         let thread_config_path = config_path.clone();
         let thread_tx = tx_map[&thread_name].clone();
         let thread_name_clone = thread_name.clone();
         
-        let handle = thread::spawn(move || -> Result<String> {
-            let mut outputs = Vec::new();
-            let mut r_process = None;
-            let mut r_stdin = None;
+        let handle = thread::spawn(move || -> Result<()> {
+            let mut step_results = Vec::new();
+            let mut r_process: Option<std::process::Child> = None;
+            let mut r_stdin: Option<std::process::ChildStdin> = None;
+            let mut accumulated_r_output = String::new();
             
             // Process all steps in order, participating in barriers even if not executing
             for step_idx in 0..thread_steps.len() {
-                // Wait for this step's turn
-                thread_barriers[step_idx].wait();
+                // Wait for this step's start - all threads begin this step together
+                thread_start_barriers[step_idx].wait();
                 
                 // Only execute if this step belongs to our thread
                 if !step_indices.contains(&step_idx) {
+                    // Even if we don't execute, we must wait at the completion barrier
+                    thread_completion_barriers[step_idx].wait();
                     continue;
                 }
                 
                 let step = &thread_steps[step_idx];
                 
                 println!("🟡 {}: {}", thread_name_clone.to_uppercase(), step.name);
-                
-                // Show what command is being executed
                 println!("   └─ Running: {}", step.run);
                 
-                let output = match thread_name_clone.as_str() {
+                let (output, assertion_passed, assertion_error) = match thread_name_clone.as_str() {
                     "rv" => {
                         // Handle rv commands
                         let result = execute_rv_command(&step.run, &thread_test_dir, &thread_config_path)?;
                         if !result.trim().is_empty() {
                             println!("   ├─ Output: {}", result.trim());
                         }
-                        result
+                        
+                        // Check assertion immediately for rv commands
+                        let (assertion_passed, assertion_error) = if let Some(assertion) = &step.assert {
+                            println!("   ├─ Checking assertion...");
+                            match check_assertion(assertion, &result) {
+                                Ok(()) => {
+                                    println!("   └─ ✅ Assertion passed");
+                                    (Some(true), None)
+                                },
+                                Err(e) => {
+                                    println!("   └─ ❌ Assertion failed");
+                                    (Some(false), Some(e.to_string()))
+                                }
+                            }
+                        } else {
+                            (None, None)
+                        };
+                        
+                        (result, assertion_passed, assertion_error)
                     },
                     "r" => {
                         // Handle R commands
                         if step.run == "R" {
-                            // Start R process - try interactive mode first, fallback to slave mode
+                            // Check if this is a restart
+                            if step.restart && r_process.is_some() {
+                                // Restart: capture existing output first, then start new process
+                                if let (Some(mut stdin), Some(process)) = (r_stdin.take(), r_process.take()) {
+                                    writeln!(stdin, "quit(save = 'no')").ok();
+                                    let final_output = process.wait_with_output()
+                                        .map_err(|e| anyhow::anyhow!("Failed to wait for R process during restart: {}", e))?;
+                                    
+                                    // Accumulate the output from the previous session
+                                    accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
+                                    accumulated_r_output.push_str("\n# === R PROCESS RESTARTED ===\n");
+                                }
+                            }
+                            
+                            // Start (or restart) R process
                             let mut process = std::process::Command::new("R")
-                                .args(["--interactive", "--no-restore", "--no-save"])
+                                .args(["--interactive"])
                                 .current_dir(&thread_test_dir)
                                 .stdin(std::process::Stdio::piped())
                                 .stdout(std::process::Stdio::piped())
@@ -135,56 +230,18 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 .spawn()
                                 .expect("Failed to start R process");
                             
-                            let mut stdin = process.stdin.take().expect("Failed to get R stdin");
-                            
-                            // Give R time to start up properly
-                            thread::sleep(Duration::from_millis(2000));
-                            
-                            // Add markers for the R startup step (empty content between markers)
-                            writeln!(stdin, "cat(\"===STEP_START_{}===\\n\")", step.name.replace(" ", "_"))
-                                .map_err(|e| anyhow::anyhow!("Failed to write step start marker: {}", e))?;
-                            writeln!(stdin, "cat(\"===STEP_END_{}===\\n\")", step.name.replace(" ", "_"))
-                                .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
-                            writeln!(stdin, "flush.console()").ok();
+                            let stdin = process.stdin.take().expect("Failed to get R stdin");
                             
                             r_stdin = Some(stdin);
                             r_process = Some(process);
-                            "".to_string()
-                        } else if step.run.ends_with(".R") {
-                            // Execute R script
-                            if let (Some(stdin), Some(process)) = (&mut r_stdin, &mut r_process) {
-                                // Check if R process is still alive
-                                match process.try_wait() {
-                                    Ok(Some(exit_status)) => {
-                                        return Err(anyhow::anyhow!("R process exited with status: {}", exit_status));
-                                    },
-                                    Ok(None) => {
-                                        // Process is still running, continue
-                                    },
-                                    Err(e) => {
-                                        return Err(anyhow::anyhow!("Failed to check R process status: {}", e));
-                                    }
-                                }
-                                
-                                // Add step start marker
-                                writeln!(stdin, "cat(\"===STEP_START_{}===\\n\")", step.name.replace(" ", "_"))
-                                    .map_err(|e| anyhow::anyhow!("Failed to write step start marker: {}", e))?;
-                                
-                                let script_content = load_r_script(&step.run)?;
-                                writeln!(stdin, "{}", script_content)
-                                    .map_err(|e| anyhow::anyhow!("Failed to write R script (process may have died): {}", e))?;
-                                
-                                // Add step end marker
-                                writeln!(stdin, "cat(\"===STEP_END_{}===\\n\")", step.name.replace(" ", "_"))
-                                    .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
-                                writeln!(stdin, "flush.console()").ok(); // Force output
-                                thread::sleep(Duration::from_millis(1000));
-                                "R_SCRIPT_EXECUTED".to_string() // Placeholder - real output captured at end
+                            
+                            if step.restart {
+                                ("R process restarted".to_string(), None, None)
                             } else {
-                                return Err(anyhow::anyhow!("R process not started"));
+                                ("R process started".to_string(), None, None)
                             }
                         } else {
-                            // Direct R command
+                            // Execute R script or command
                             if let (Some(stdin), Some(process)) = (&mut r_stdin, &mut r_process) {
                                 // Check if R process is still alive
                                 match process.try_wait() {
@@ -199,19 +256,38 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     }
                                 }
                                 
-                                // Add step start marker
-                                writeln!(stdin, "cat(\"===STEP_START_{}===\\n\")", step.name.replace(" ", "_"))
-                                    .map_err(|e| anyhow::anyhow!("Failed to write step start marker: {}", e))?;
+                                // First, add a marker for the startup step if this is the first command
+                                // (We can tell by checking if there are any existing step results for R thread)
+                                let r_steps_so_far = step_results.len();
                                 
-                                writeln!(stdin, "{}", step.run)
-                                    .map_err(|e| anyhow::anyhow!("Failed to write R command (process may have died): {}", e))?;
+                                if r_steps_so_far == 1 {
+                                    // This is the first command after R startup, add startup marker
+                                    writeln!(stdin, "cat('# STEP_END: start R\\n')")
+                                        .map_err(|e| anyhow::anyhow!("Failed to write startup marker: {}", e))?;
+                                }
                                 
-                                // Add step end marker
-                                writeln!(stdin, "cat(\"===STEP_END_{}===\\n\")", step.name.replace(" ", "_"))
+                                // Execute the step
+                                if step.run.ends_with(".R") {
+                                    let script_content = load_r_script(&step.run)?;
+                                    writeln!(stdin, "{}", script_content)
+                                        .map_err(|e| anyhow::anyhow!("Failed to write R script: {}", e))?;
+                                } else {
+                                    writeln!(stdin, "{}", step.run)
+                                        .map_err(|e| anyhow::anyhow!("Failed to write R command: {}", e))?;
+                                }
+                                
+                                // Add step end marker after the command
+                                writeln!(stdin, "cat('# STEP_END: {}\\n')", step.name)
                                     .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
-                                writeln!(stdin, "flush.console()").ok(); // Force output
-                                thread::sleep(Duration::from_millis(1000));
-                                "R_COMMAND_EXECUTED".to_string() // Placeholder - real output captured at end
+                                
+                                // Force flush of stdin to ensure R gets the commands
+                                use std::io::Write;
+                                stdin.flush().map_err(|e| anyhow::anyhow!("Failed to flush R stdin: {}", e))?;
+                                
+                                println!("   ├─ Command sent (will wait at completion barrier)");
+                                
+                                // We'll check assertions after capturing all output at the end
+                                ("Command executed".to_string(), None, None)
                             } else {
                                 return Err(anyhow::anyhow!("R process not started"));
                             }
@@ -220,70 +296,93 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     _ => return Err(anyhow::anyhow!("Unknown thread type: {}", thread_name_clone)),
                 };
                 
-                outputs.push(format!("{}: {}", step.name, output));
+                // Store step result
+                let step_result = StepResult {
+                    name: step.name.clone(),
+                    output,
+                    assertion_passed,
+                    assertion_error: assertion_error.clone(),
+                };
+                step_results.push(step_result);
                 
-                // For R steps, store assertions to check against final output
-                // For rv steps, check assertions immediately
-                if let Some(assertion) = &step.assert {
-                    if thread_name_clone == "rv" {
-                        println!("   ├─ Checking assertion...");
-                        match check_assertion(assertion, &output) {
-                            Ok(()) => println!("   └─ ✅ Assertion passed"),
-                            Err(e) => {
-                                println!("   └─ ❌ Assertion failed");
-                                return Err(e);
-                            }
-                        }
-                    } else {
-                        println!("   └─ ⏳ Assertion will be checked after R completes");
-                    }
+                // Fail fast if assertion failed
+                if let Some(error) = assertion_error {
+                    return Err(anyhow::anyhow!("Assertion failed: {}", error));
                 }
+                
+                // Wait for all threads to complete their commands before moving to next step
+                thread_completion_barriers[step_idx].wait();
             }
             
-            // If this is R thread, finish the process and get final output
+            // Clean up R process if it exists and capture all output
             if thread_name_clone == "r" {
                 if let (Some(mut stdin), Some(process)) = (r_stdin, r_process) {
-                    writeln!(stdin, "quit(save = 'no')")
-                        .map_err(|e| anyhow::anyhow!("Failed to quit R: {}", e))?;
+                    writeln!(stdin, "quit(save = 'no')").ok();
                     let final_output = process.wait_with_output()
                         .map_err(|e| anyhow::anyhow!("Failed to wait for R process: {}", e))?;
-                    let r_stdout = String::from_utf8_lossy(&final_output.stdout);
-                    outputs.push(format!("R_FINAL_OUTPUT: {}", r_stdout));
                     
-                    // Parse step-specific outputs from R session
-                    println!("🔍 Parsing step-specific outputs from R session...");
-                    let step_outputs = parse_step_outputs(&r_stdout);
+                    // Combine accumulated output with final output
+                    accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
                     
-                    // Check R assertions against step-specific output
-                    println!("🔍 Checking R assertions against step-specific outputs...");
-                    for &step_idx in &step_indices {
-                        let step = &thread_steps[step_idx];
-                        if let Some(assertion) = &step.assert {
-                            print!("   ├─ Checking '{}' assertion... ", step.name);
+                    let full_r_stderr = String::from_utf8_lossy(&final_output.stderr);
+                    
+                    println!("{}", "=".repeat(80));
+                    println!("COMPLETE R STDOUT ({} bytes total):", accumulated_r_output.len());
+                    println!("{}", accumulated_r_output);
+                    println!("{}", "=".repeat(80));
+                    println!("COMPLETE R STDERR ({} bytes):", final_output.stderr.len());
+                    println!("{}", full_r_stderr);
+                    println!("{}", "=".repeat(80));
+                    
+                    // Extract R step names from our step results
+                    let r_step_names: Vec<String> = step_results.iter()
+                        .map(|sr| sr.name.clone())
+                        .collect();
+                    
+                    // Parse the complete output to extract per-step outputs
+                    let parsed_outputs = parse_r_step_outputs(&accumulated_r_output, &r_step_names);
+                    
+                    println!("🔍 Parsing R session output into {} steps", r_step_names.len());
+                    
+                    // Update step results with actual outputs and check assertions
+                    for step_result in &mut step_results {
+                        if let Some(step_output) = parsed_outputs.get(&step_result.name) {
+                            step_result.output = step_output.clone();
                             
-                            // Get step-specific output, fallback to full output if parsing failed
-                            let step_output = step_outputs.get(&step.name)
-                                .map(|s| s.as_str())
-                                .unwrap_or_else(|| {
-                                    println!("⚠️ No parsed output for step '{}', using full R output", step.name);
-                                    &r_stdout
-                                });
-                            
-                            match check_assertion(assertion, step_output) {
-                                Ok(()) => println!("✅ passed"),
-                                Err(e) => {
-                                    println!("❌ failed");
-                                    return Err(e);
+                            // Find the original step to get its assertion
+                            if let Some(original_step) = thread_steps.iter().find(|s| s.name == step_result.name) {
+                                if let Some(assertion) = &original_step.assert {
+                                    println!("   ├─ Checking '{}' assertion against {} chars of output", 
+                                        step_result.name, step_output.len());
+                                    
+                                    match check_assertion(assertion, step_output) {
+                                        Ok(()) => {
+                                            println!("   └─ ✅ Assertion passed");
+                                            step_result.assertion_passed = Some(true);
+                                        },
+                                        Err(e) => {
+                                            println!("   └─ ❌ Assertion failed: {}", e);
+                                            step_result.assertion_passed = Some(false);
+                                            step_result.assertion_error = Some(e.to_string());
+                                            return Err(e);
+                                        }
+                                    }
                                 }
                             }
+                        } else {
+                            println!("   ⚠️ No output found for step '{}'", step_result.name);
                         }
                     }
                 }
             }
             
-            let combined_output = outputs.join("\n");
-            thread_tx.send(combined_output.clone()).unwrap();
-            Ok(combined_output)
+            // Send results through channel
+            let thread_output = ThreadOutput {
+                thread_name: thread_name_clone.clone(),
+                step_results,
+            };
+            thread_tx.send(thread_output).unwrap();
+            Ok(())
         });
         
         thread_handles.insert(thread_name, handle);
@@ -294,10 +393,40 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         handle.join().map_err(|_| anyhow::anyhow!("Thread {} panicked", thread_name))??;
     }
     
-    // Collect outputs from all threads (but don't print them as they're already shown inline)
+    // Collect step results from all threads
+    let mut all_thread_outputs = Vec::new();
     for (thread_name, rx) in rx_map {
-        let _output = rx.recv().map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
+        let thread_output = rx.recv().map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
         println!("✅ {} thread completed successfully", thread_name.to_uppercase());
+        
+        // Print step results summary for this thread
+        println!("📊 {} step results:", thread_name.to_uppercase());
+        for step_result in &thread_output.step_results {
+            let status = match step_result.assertion_passed {
+                Some(true) => "✅ PASS",
+                Some(false) => "❌ FAIL", 
+                None => "⏭️ NO ASSERTION",
+            };
+            println!("   • {} - {} (output: {} chars)", step_result.name, status, step_result.output.len());
+            
+            if let Some(ref error) = step_result.assertion_error {
+                println!("     └─ Error: {}", error);
+            }
+        }
+        
+        all_thread_outputs.push(thread_output);
+    }
+    
+    // Provide easy access to step outputs for debugging
+    println!("\n🔍 All step outputs available for inspection:");
+    for thread_output in &all_thread_outputs {
+        for step_result in &thread_output.step_results {
+            println!("   {}::{} -> {} chars of output", 
+                thread_output.thread_name, 
+                step_result.name, 
+                step_result.output.len()
+            );
+        }
     }
     
     Ok(())
@@ -372,71 +501,10 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
     Ok(())
 }
 
-fn parse_step_outputs(full_output: &str) -> HashMap<String, String> {
-    let mut step_outputs = HashMap::new();
-    let lines: Vec<&str> = full_output.lines().collect();
-    let mut i = 0;
-    
-    while i < lines.len() {
-        if let Some(line) = lines.get(i) {
-            if line.starts_with("===STEP_START_") && line.ends_with("===") {
-                // Extract step name from marker
-                let step_name = line
-                    .strip_prefix("===STEP_START_")
-                    .and_then(|s| s.strip_suffix("==="))
-                    .unwrap_or("unknown")
-                    .replace("_", " ");
-                
-                // Find the corresponding end marker
-                let mut step_content = Vec::new();
-                i += 1; // Move past the start marker
-                
-                while i < lines.len() {
-                    if let Some(current_line) = lines.get(i) {
-                        if current_line.starts_with("===STEP_END_") && current_line.ends_with("===") {
-                            // Found the end marker, stop collecting
-                            break;
-                        } else {
-                            step_content.push(*current_line);
-                        }
-                    }
-                    i += 1;
-                }
-                
-                // Store the step output
-                let content = step_content.join("\n");
-                step_outputs.insert(step_name, content);
-            }
-        }
-        i += 1;
-    }
-    
-    step_outputs
-}
 
 #[test]
 fn test_all_workflow_files() -> Result<()> {
     run_workflow_tests(None)
-}
-
-#[test] 
-fn test_debug_workflow_only() -> Result<()> {
-    run_workflow_tests(Some("debug"))
-}
-
-#[test]
-fn test_simple_workflow_only() -> Result<()> {
-    run_workflow_tests(Some("simple"))
-}
-
-#[test]
-fn test_r6_loading_workflow() -> Result<()> {
-    run_workflow_tests(Some("test_r6_loading"))
-}
-
-#[test]
-fn test_diagnose_paths_workflow() -> Result<()> {
-    run_workflow_tests(Some("diagnose_paths"))
 }
 
 fn run_workflow_tests(filter: Option<&str>) -> Result<()> {

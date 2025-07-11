@@ -1,0 +1,7 @@
+[r]
+version = "4.4.0"
+
+[repos]
+cran = "https://cran.r-project.org/"
+
+[dependencies]

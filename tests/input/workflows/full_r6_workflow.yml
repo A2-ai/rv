@@ -6,12 +6,17 @@ test:
   - name: "rv init"
     run: "rv init"
     thread: rv
- 
+
   - name: "start R"
     run: "R"
     thread: r
     assert: "rv libpaths active!"
   
+  - name: "R wd"
+    run: pwd.R
+    thread: r
+    assert: "r6-test"
+ 
   - name: "rv sync"
     run: "rv sync"
     thread: rv
@@ -31,6 +36,11 @@ test:
     thread: r
     assert: "R6_VERSION: 2.5.1"
   
+  - name: "restart r"
+    run: "R"
+    thread: r
+    restart: true
+
   - name: "rv plan"
     run: "rv plan"
     thread: rv
@@ -38,7 +48,10 @@ test:
   - name: "rv sync"
     run: "rv sync"
     thread: rv
-
+    assert: 
+      - "- R6"
+      - "+ R6 (2.6.1, binary from https://packagemanager.posit.co/cran/2025-07-10)"
+  
   - name: "load new packages"
     run: load_r6.R
     thread: r
