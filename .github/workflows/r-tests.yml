@@ -38,11 +38,23 @@ jobs:
       run: |
         R --version
         which R
+        R --slave -e "cat('R is working:', R.version.string, '\n')"
+        R --slave -e "cat('Library paths:', paste(.libPaths(), collapse=', '), '\n')"
         
     - name: Build rv
       run: cargo build --features=cli --release
       
-    - name: Run R integration tests
-      run: cargo test --features=cli --test init -- --nocapture
+    - name: Run basic init test
+      run: cargo test --features=cli test_rv_init_basic -- --nocapture
+      env:
+        RUST_BACKTRACE: 1
+        
+    - name: Run R process test
+      run: cargo test --features=cli test_rv_init_with_r_process -- --nocapture
+      env:
+        RUST_BACKTRACE: 1
+        
+    - name: Run R6 workflow test
+      run: cargo test --features=cli test_r6_workflow -- --nocapture
       env:
         RUST_BACKTRACE: 1
