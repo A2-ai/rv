@@ -21,7 +21,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchains: stable
+        toolchain: stable
         
     - name: Cache Rust dependencies
       uses: actions/cache@v4
@@ -32,7 +32,9 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
         
     - name: Verify R installation
       run: |
@@ -44,17 +46,7 @@ jobs:
     - name: Build rv
       run: cargo build --features=cli --release
       
-    - name: Run basic init test
-      run: cargo test --features=cli test_rv_init_basic -- --nocapture
-      env:
-        RUST_BACKTRACE: 1
-        
-    - name: Run R process test
-      run: cargo test --features=cli test_rv_init_with_r_process -- --nocapture
-      env:
-        RUST_BACKTRACE: 1
-        
-    - name: Run R6 workflow test
-      run: cargo test --features=cli test_r6_workflow -- --nocapture
+    - name: Run integration tests
+      run: cargo test --features=cli --test init -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1

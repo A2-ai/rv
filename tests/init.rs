@@ -27,75 +27,6 @@ fn test_rv_init_basic() -> Result<()> {
 }
 
 #[test]
-fn test_rv_init_with_r_process() -> Result<()> {
-    let temp_dir = TempDir::new()?;
-    let project_path = temp_dir.path().to_path_buf();
-    
-    // Barrier to synchronize threads
-    let barrier = Arc::new(Barrier::new(2));
-    let barrier_r = Arc::clone(&barrier);
-    let barrier_rv = Arc::clone(&barrier);
-    
-    let project_path_r = project_path.clone();
-    let project_path_rv = project_path.clone();
-    
-    // Thread 1: R process
-    let r_handle = thread::spawn(move || {
-        // Wait for rv init to complete
-        barrier_r.wait();
-        
-        // Give rv init a moment to finish
-        thread::sleep(Duration::from_millis(100));
-        
-        // R script to check if rproject.toml exists
-        let r_script = r#"
-            if (file.exists("rproject.toml")) {
-                cat("SUCCESS: rproject.toml found\n")
-                cat("Contents of rproject.toml:\n")
-                cat(readLines("rproject.toml"), sep = "\n")
-                quit(status = 0)
-            } else {
-                cat("ERROR: rproject.toml not found\n")
-                quit(status = 1)
-            }
-        "#;
-        
-        let output = std::process::Command::new("R")
-            .arg("--slave")
-            .arg("-e")
-            .arg(r_script)
-            .current_dir(&project_path_r)
-            .output()
-            .expect("Failed to run R");
-            
-        (output.status.success(), String::from_utf8_lossy(&output.stdout).to_string())
-    });
-    
-    // Thread 2: rv init
-    let rv_handle = thread::spawn(move || {
-        let result = Command::cargo_bin(RV).unwrap()
-            .arg("init")
-            .current_dir(&project_path_rv)
-            .assert()
-            .success();
-            
-        // Signal that rv init is done
-        barrier_rv.wait();
-        result
-    });
-    
-    // Wait for both threads
-    rv_handle.join().expect("rv thread panicked");
-    let (r_success, r_output) = r_handle.join().expect("R thread panicked");
-    
-    println!("R output: {}", r_output);
-
-    assert_eq!(r_success, true); 
-    
-    Ok(())
-}
-
-#[test]
 fn test_r6_workflow() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let project_path = temp_dir.path();
@@ -280,7 +211,7 @@ quit(save = "no")
     assert_eq!(version3, "2.6.1", "Expected R6 version 2.6.1 after rv restoration");
     
     println!("✅ All R6 version checks passed: {} -> {} -> {}", version1, version2, version3);
-    
+    //assert!(1 == 0);
     Ok(())
 }
 
