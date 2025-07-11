@@ -24,14 +24,15 @@ repositories = [
 dependencies = [
     "dplyr",
     "ggplot2",
-]```
+]
+```
 
 ## Example 1: Add repository as first entry
 
 **Command:**
 
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "ppm-latest" --url "https://packagemanager.posit.co/cran/latest" --first
+rv configure repository --config-file test-example/rproject.toml --alias "ppm-latest" --url "https://packagemanager.posit.co/cran/latest" --first
 ```
 
 **Output:**
@@ -59,7 +60,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "bioconductor" --url "https://bioconductor.org/packages/3.18/bioc" --last
+rv configure repository --config-file test-example/rproject.toml --alias "bioconductor" --url "https://bioconductor.org/packages/3.18/bioc" --last
 ```
 
 **Output:**
@@ -88,7 +89,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "ppm-2024-06" --url "https://packagemanager.posit.co/cran/2024-06-01" --before "posit"
+rv configure repository --config-file test-example/rproject.toml --alias "ppm-2024-06" --url "https://packagemanager.posit.co/cran/2024-06-01" --before "posit"
 ```
 
 **Output:**
@@ -118,7 +119,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "ppm-2024-01" --url "https://packagemanager.posit.co/cran/2024-01-01" --after "cran"
+rv configure repository --config-file test-example/rproject.toml --alias "ppm-2024-01" --url "https://packagemanager.posit.co/cran/2024-01-01" --after "cran"
 ```
 
 **Output:**
@@ -149,7 +150,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "posit-latest" --url "https://packagemanager.posit.co/cran/latest" --replace "posit"
+rv configure repository --config-file test-example/rproject.toml --alias "posit-latest" --url "https://packagemanager.posit.co/cran/latest" --replace "posit"
 ```
 
 **Output:**
@@ -180,7 +181,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --remove "cran"
+rv configure repository --config-file test-example/rproject.toml --remove "cran"
 ```
 
 **Output:**
@@ -210,7 +211,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --clear
+rv configure repository --config-file test-example/rproject.toml --clear
 ```
 
 **Output:**
@@ -235,7 +236,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "bioc-data" --url "https://bioconductor.org/packages/3.18/data/annotation" --force-source
+rv configure repository --config-file test-example/rproject.toml --alias "bioc-data" --url "https://bioconductor.org/packages/3.18/data/annotation" --force-source
 ```
 
 **Output:**
@@ -261,7 +262,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv --json configure repository --config-file test-example/rproject.toml --alias "cran" --url "https://cran.r-project.org" --first
+rv --json configure repository --config-file test-example/rproject.toml --alias "cran" --url "https://cran.r-project.org" --first
 ```
 
 **Output:**
@@ -296,7 +297,7 @@ dependencies = [
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "cran" --url "https://packagemanager.posit.co/cran/2024-11-01" --first
+rv configure repository --config-file test-example/rproject.toml --alias "cran" --url "https://packagemanager.posit.co/cran/2024-11-01" --first
 ```
 
 **Output:**
@@ -308,7 +309,7 @@ Repository with alias 'cran' already exists
 
 **Command:**
 ```bash
-./target/release/rv configure repository --config-file test-example/rproject.toml --alias "invalid" --url "not-a-valid-url" --first
+rv configure repository --config-file test-example/rproject.toml --alias "invalid" --url "not-a-valid-url" --first
 ```
 
 **Output:**
@@ -321,7 +322,7 @@ relative URL without a base
 ### JSON output for remove operation
 **Command:**
 ```bash
-./target/release/rv --json configure repository --config-file test-example/rproject.toml --remove "cran"
+rv --json configure repository --config-file test-example/rproject.toml --remove "cran"
 ```
 
 **Output:**
@@ -338,7 +339,7 @@ relative URL without a base
 ### JSON output for replace operation
 **Command:**
 ```bash
-./target/release/rv --json configure repository --config-file test-example/rproject.toml --alias "cran-updated" --url "https://packagemanager.posit.co/cran/latest" --replace "cran"
+rv --json configure repository --config-file test-example/rproject.toml --alias "cran-updated" --url "https://packagemanager.posit.co/cran/latest" --replace "cran"
 ```
 
 **Output:**
@@ -355,7 +356,7 @@ relative URL without a base
 ### JSON output for clear operation
 **Command:**
 ```bash
-./target/release/rv --json configure repository --config-file test-example/rproject.toml --clear
+rv --json configure repository --config-file test-example/rproject.toml --clear
 ```
 
 **Output:**
