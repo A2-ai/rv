@@ -22,7 +22,9 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-        
+    - name: Build rv
+      run: cargo build --features=cli --release
+
     - name: Verify R installation
       run: |
         R --version

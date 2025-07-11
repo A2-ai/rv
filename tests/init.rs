@@ -161,7 +161,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             // Process all steps in order, participating in barriers even if not executing
             for step_idx in 0..thread_steps.len() {
                 // Wait for this step's start - all threads begin this step together
+                println!("🔄 {} thread waiting at start barrier for step {}", thread_name_clone.to_uppercase(), step_idx);
                 thread_start_barriers[step_idx].wait();
+                println!("🔄 {} thread passed start barrier for step {}", thread_name_clone.to_uppercase(), step_idx);
                 
                 // Only execute if this step belongs to our thread
                 if !step_indices.contains(&step_idx) {

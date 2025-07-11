@@ -31,17 +31,17 @@ test:
     run: install_old_r6.R
     thread: r
 
-  - name: "load old packages"
-    run: load_r6.R
-    thread: r
-    assert: "R6_VERSION: 2.5.1"
-  
   - name: "restart r"
     run: "R"
     thread: r
     restart: true
     assert: "rv libpaths active!"
-
+  
+  - name: "load old packages"
+    run: load_r6.R
+    thread: r
+    assert: "R6_VERSION: 2.5.1"
+  
   - name: "rv plan"
     run: "rv plan"
     thread: rv
