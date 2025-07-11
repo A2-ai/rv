@@ -33,7 +33,7 @@ jobs:
         R --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
         R --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
         
-    - name: Run simple workflow tests
-      run: cargo test --features=cli --test init test_simple_workflow_only -- --nocapture --test-threads=1
+    - name: Run R6 loading test
+      run: cargo test --features=cli --test init test_r6_loading_workflow -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1
