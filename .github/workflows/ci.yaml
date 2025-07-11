@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main 
-      - r-tests
     paths-ignore:
       - "docs/**"
       - "README.md"
