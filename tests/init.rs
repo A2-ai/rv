@@ -125,9 +125,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     "r" => {
                         // Handle R commands
                         if step.run == "R" {
-                            // Start R process
+                            // Start R process with better CI compatibility
                             let mut process = std::process::Command::new("R")
-                                .arg("--interactive")
+                                .args(["--slave", "--no-restore", "--no-save"])
                                 .current_dir(&thread_test_dir)
                                 .stdin(std::process::Stdio::piped())
                                 .stdout(std::process::Stdio::piped())
@@ -276,13 +276,28 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
     match assertion {
         TestAssertion::Single(expected) => {
             if !output.contains(expected) {
-                return Err(anyhow::anyhow!("Assertion failed: expected '{}' in output:\n{}", expected, output));
+                return Err(anyhow::anyhow!(
+                    "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}\n\nSearching for lines containing '{}':\n{}", 
+                    expected, 
+                    output.len(),
+                    output,
+                    expected.split(':').next().unwrap_or(expected),
+                    output.lines()
+                        .filter(|line| line.contains(expected.split(':').next().unwrap_or(expected)))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
             }
         },
         TestAssertion::Multiple(expected_list) => {
             for expected in expected_list {
                 if !output.contains(expected) {
-                    return Err(anyhow::anyhow!("Assertion failed: expected '{}' in output:\n{}", expected, output));
+                    return Err(anyhow::anyhow!(
+                        "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}", 
+                        expected, 
+                        output.len(),
+                        output
+                    ));
                 }
             }
         },
@@ -292,6 +307,20 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
 
 #[test]
 fn test_all_workflow_files() -> Result<()> {
+    run_workflow_tests(None)
+}
+
+#[test] 
+fn test_debug_workflow_only() -> Result<()> {
+    run_workflow_tests(Some("debug"))
+}
+
+#[test]
+fn test_simple_workflow_only() -> Result<()> {
+    run_workflow_tests(Some("simple"))
+}
+
+fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
     let workflow_dir = std::env::current_dir()?.join("tests/input/workflows");
     
     if !workflow_dir.exists() {
@@ -306,19 +335,36 @@ fn test_all_workflow_files() -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.extension().map_or(false, |ext| ext == "yml" || ext == "yaml") {
+            // Apply filter if specified
+            if let Some(filter_str) = filter {
+                let file_name = path.file_stem()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if !file_name.contains(filter_str) {
+                    continue;
+                }
+            }
             workflow_files.push(path);
         }
     }
     
     if workflow_files.is_empty() {
-        println!("⚠️  No YAML workflow files found in {}", workflow_dir.display());
+        if let Some(filter_str) = filter {
+            println!("⚠️  No workflow files found matching filter '{}' in {}", filter_str, workflow_dir.display());
+        } else {
+            println!("⚠️  No YAML workflow files found in {}", workflow_dir.display());
+        }
         return Ok(());
     }
     
     workflow_files.sort();
     
     let num_workflow_files = workflow_files.len();
-    println!("🚀 Found {} workflow test files to run", num_workflow_files);
+    if let Some(filter_str) = filter {
+        println!("🚀 Found {} workflow test files matching '{}' to run", num_workflow_files, filter_str);
+    } else {
+        println!("🚀 Found {} workflow test files to run", num_workflow_files);
+    }
     println!("{}", "═".repeat(80));
     
     for workflow_file in workflow_files {
