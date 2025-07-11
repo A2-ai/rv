@@ -1,5 +1,6 @@
 # Comprehensive path and configuration diagnosis
 cat("=== DIRECTORY DIAGNOSIS ===\n")
+sink("diagnostic_output.txt", append=FALSE)  # Also write to file
 cat("R Working Directory:", getwd(), "\n")
 
 # Check if rproject.toml exists
