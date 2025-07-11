@@ -1,7 +1,15 @@
 # Comprehensive path and configuration diagnosis
 cat("=== DIRECTORY DIAGNOSIS ===\n")
-sink("diagnostic_output.txt", append=FALSE)  # Also write to file
 cat("R Working Directory:", getwd(), "\n")
+
+# Check for .Rprofile and source it if it exists
+if (file.exists(".Rprofile")) {
+  cat("✅ .Rprofile EXISTS - sourcing it...\n")
+  source(".Rprofile")
+  cat("✅ .Rprofile sourced - rv libpaths should now be active!\n")
+} else {
+  cat("❌ .Rprofile NOT FOUND\n")
+}
 
 # Check if rproject.toml exists
 toml_path <- "rproject.toml"

@@ -10,7 +10,7 @@ test:
   - name: "start R"
     run: "R"
     thread: r
-    assert: "rv libpaths active!"
+    assert: "rv libpaths should now be active!"
   
   - name: "rv sync"
     run: "rv sync"
