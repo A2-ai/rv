@@ -125,9 +125,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     "r" => {
                         // Handle R commands
                         if step.run == "R" {
-                            // Start R process with better CI compatibility
+                            // Start R process - try interactive mode first, fallback to slave mode
                             let mut process = std::process::Command::new("R")
-                                .args(["--slave", "--no-restore", "--no-save"])
+                                .args(["--interactive", "--no-restore", "--no-save"])
                                 .current_dir(&thread_test_dir)
                                 .stdin(std::process::Stdio::piped())
                                 .stdout(std::process::Stdio::piped())
@@ -137,13 +137,29 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             
                             r_stdin = Some(process.stdin.take().expect("Failed to get R stdin"));
                             r_process = Some(process);
+                            
+                            // Give R time to start up properly
+                            thread::sleep(Duration::from_millis(2000));
                             "".to_string()
                         } else if step.run.ends_with(".R") {
                             // Execute R script
-                            if let (Some(stdin), Some(_process)) = (&mut r_stdin, &mut r_process) {
+                            if let (Some(stdin), Some(process)) = (&mut r_stdin, &mut r_process) {
+                                // Check if R process is still alive
+                                match process.try_wait() {
+                                    Ok(Some(exit_status)) => {
+                                        return Err(anyhow::anyhow!("R process exited with status: {}", exit_status));
+                                    },
+                                    Ok(None) => {
+                                        // Process is still running, continue
+                                    },
+                                    Err(e) => {
+                                        return Err(anyhow::anyhow!("Failed to check R process status: {}", e));
+                                    }
+                                }
+                                
                                 let script_content = load_r_script(&step.run)?;
                                 writeln!(stdin, "{}", script_content)
-                                    .map_err(|e| anyhow::anyhow!("Failed to write R script: {}", e))?;
+                                    .map_err(|e| anyhow::anyhow!("Failed to write R script (process may have died): {}", e))?;
                                 writeln!(stdin, "flush.console()").ok(); // Force output
                                 thread::sleep(Duration::from_millis(1000));
                                 "R_SCRIPT_EXECUTED".to_string() // Placeholder - real output captured at end
@@ -152,9 +168,22 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             }
                         } else {
                             // Direct R command
-                            if let (Some(stdin), Some(_process)) = (&mut r_stdin, &mut r_process) {
+                            if let (Some(stdin), Some(process)) = (&mut r_stdin, &mut r_process) {
+                                // Check if R process is still alive
+                                match process.try_wait() {
+                                    Ok(Some(exit_status)) => {
+                                        return Err(anyhow::anyhow!("R process exited with status: {}", exit_status));
+                                    },
+                                    Ok(None) => {
+                                        // Process is still running, continue
+                                    },
+                                    Err(e) => {
+                                        return Err(anyhow::anyhow!("Failed to check R process status: {}", e));
+                                    }
+                                }
+                                
                                 writeln!(stdin, "{}", step.run)
-                                    .map_err(|e| anyhow::anyhow!("Failed to write R command: {}", e))?;
+                                    .map_err(|e| anyhow::anyhow!("Failed to write R command (process may have died): {}", e))?;
                                 writeln!(stdin, "flush.console()").ok(); // Force output
                                 thread::sleep(Duration::from_millis(1000));
                                 "R_COMMAND_EXECUTED".to_string() // Placeholder - real output captured at end
