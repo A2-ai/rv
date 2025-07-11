@@ -354,6 +354,11 @@ fn test_r6_loading_workflow() -> Result<()> {
     run_workflow_tests(Some("test_r6_loading"))
 }
 
+#[test]
+fn test_diagnose_paths_workflow() -> Result<()> {
+    run_workflow_tests(Some("diagnose_paths"))
+}
+
 fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
     let workflow_dir = std::env::current_dir()?.join("tests/input/workflows");
     
