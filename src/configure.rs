@@ -419,26 +419,6 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
     
-    fn execute_test_action(
-        config_path: &std::path::Path,
-        alias: Option<String>,
-        url: Option<String>,
-        force_source: bool,
-        before: Option<String>,
-        after: Option<String>,
-        first: bool,
-        last: bool,
-        replace: Option<String>,
-        remove: Option<String>,
-        clear: bool,
-    ) -> Result<(), ConfigureError> {
-        let cli_args = CliArgs {
-            alias, url, force_source, before, after, first, last, replace, remove, clear
-        };
-        
-        let action = parse_repository_action(cli_args)?;
-        execute_repository_action(config_path, action, false)
-    }
 
     fn create_test_config() -> (TempDir, std::path::PathBuf) {
         let temp_dir = TempDir::new().unwrap();
@@ -463,19 +443,14 @@ dependencies = [
     fn test_add_first() {
         let (_temp_dir, config_path) = create_test_config();
         
-        execute_test_action(
-            &config_path,
-            Some("ppm".to_string()),
-            Some("https://packagemanager.posit.co/cran/latest".to_string()),
-            false,
-            None,
-            None,
-            true,
-            false,
-            None,
-            None,
-            false,
-        ).unwrap();
+        let action = RepositoryAction::Add {
+            alias: "ppm".to_string(),
+            url: Url::parse("https://packagemanager.posit.co/cran/latest").unwrap(),
+            positioning: RepositoryPositioning::First,
+            force_source: false,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_first", result);
@@ -485,19 +460,14 @@ dependencies = [
     fn test_add_after() {
         let (_temp_dir, config_path) = create_test_config();
         
-        execute_test_action(
-            &config_path,
-            Some("ppm-old".to_string()),
-            Some("https://packagemanager.posit.co/cran/2024-11-16".to_string()),
-            false,
-            None,
-            Some("posit".to_string()),
-            false,
-            false,
-            None,
-            None,
-            false,
-        ).unwrap();
+        let action = RepositoryAction::Add {
+            alias: "ppm-old".to_string(),
+            url: Url::parse("https://packagemanager.posit.co/cran/2024-11-16").unwrap(),
+            positioning: RepositoryPositioning::After("posit".to_string()),
+            force_source: false,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_after", result);
@@ -507,19 +477,14 @@ dependencies = [
     fn test_add_before() {
         let (_temp_dir, config_path) = create_test_config();
         
-        execute_test_action(
-            &config_path,
-            Some("ppm".to_string()),
-            Some("https://packagemanager.posit.co/cran/latest".to_string()),
-            false,
-            Some("posit".to_string()),
-            None,
-            false,
-            false,
-            None,
-            None,
-            false,
-        ).unwrap();
+        let action = RepositoryAction::Add {
+            alias: "ppm".to_string(),
+            url: Url::parse("https://packagemanager.posit.co/cran/latest").unwrap(),
+            positioning: RepositoryPositioning::Before("posit".to_string()),
+            force_source: false,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_before", result);
@@ -529,19 +494,14 @@ dependencies = [
     fn test_replace() {
         let (_temp_dir, config_path) = create_test_config();
         
-        execute_test_action(
-            &config_path,
-            Some("ppm".to_string()),
-            Some("https://packagemanager.posit.co/cran/latest".to_string()),
-            false,
-            None,
-            None,
-            false,
-            false,
-            Some("posit".to_string()),
-            None,
-            false,
-        ).unwrap();
+        let action = RepositoryAction::Replace {
+            old_alias: "posit".to_string(),
+            new_alias: "ppm".to_string(),
+            url: Url::parse("https://packagemanager.posit.co/cran/latest").unwrap(),
+            force_source: false,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_replace", result);
@@ -551,19 +511,11 @@ dependencies = [
     fn test_remove() {
         let (_temp_dir, config_path) = create_test_config();
         
-        execute_test_action(
-            &config_path,
-            None,
-            None,
-            false,
-            None,
-            None,
-            false,
-            false,
-            None,
-            Some("posit".to_string()),
-            false,
-        ).unwrap();
+        let action = RepositoryAction::Remove {
+            alias: "posit".to_string(),
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_remove", result);
@@ -573,19 +525,9 @@ dependencies = [
     fn test_clear() {
         let (_temp_dir, config_path) = create_test_config();
         
-        execute_test_action(
-            &config_path,
-            None,
-            None,
-            false,
-            None,
-            None,
-            false,
-            false,
-            None,
-            None,
-            true,
-        ).unwrap();
+        let action = RepositoryAction::Clear;
+        
+        execute_repository_action(&config_path, action, false).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_clear", result);
@@ -595,19 +537,14 @@ dependencies = [
     fn test_duplicate_alias_error() {
         let (_temp_dir, config_path) = create_test_config();
         
-        let result = execute_test_action(
-            &config_path,
-            Some("posit".to_string()),
-            Some("https://packagemanager.posit.co/cran/latest".to_string()),
-            false,
-            None,
-            None,
-            false,
-            false,
-            None,
-            None,
-            false,
-        );
+        let action = RepositoryAction::Add {
+            alias: "posit".to_string(), // Same as existing alias
+            url: Url::parse("https://packagemanager.posit.co/cran/latest").unwrap(),
+            positioning: RepositoryPositioning::Last,
+            force_source: false,
+        };
+        
+        let result = execute_repository_action(&config_path, action, false);
         
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -616,23 +553,200 @@ dependencies = [
     
     #[test] 
     fn test_invalid_url_error() {
+        let (_temp_dir, _config_path) = create_test_config();
+        
+        // Test invalid URL in parsing phase
+        let cli_args = CliArgs {
+            alias: Some("invalid".to_string()),
+            url: Some("not-a-url".to_string()),
+            force_source: false,
+            before: None,
+            after: None,
+            first: false,
+            last: false,
+            replace: None,
+            remove: None,
+            clear: false,
+        };
+        
+        let result = parse_repository_action(cli_args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_last_default() {
         let (_temp_dir, config_path) = create_test_config();
         
-        let result = execute_test_action(
-            &config_path,
-            Some("invalid".to_string()),
-            Some("not-a-url".to_string()),
-            false,
-            None,
-            None,
-            false,
-            false,
-            None,
-            None,
-            false,
-        );
+        let action = RepositoryAction::Add {
+            alias: "cran".to_string(),
+            url: Url::parse("https://cran.r-project.org").unwrap(),
+            positioning: RepositoryPositioning::Last,
+            force_source: false,
+        };
         
+        execute_repository_action(&config_path, action, false).unwrap();
+        
+        let result = fs::read_to_string(&config_path).unwrap();
+        insta::assert_snapshot!("configure_add_last", result);
+    }
+
+    #[test]
+    fn test_add_with_force_source() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Add {
+            alias: "bioc".to_string(),
+            url: Url::parse("https://bioconductor.org/packages/3.18/bioc").unwrap(),
+            positioning: RepositoryPositioning::Last,
+            force_source: true,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
+        
+        let result = fs::read_to_string(&config_path).unwrap();
+        insta::assert_snapshot!("configure_add_force_source", result);
+    }
+
+    #[test]
+    fn test_replace_with_force_source() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Replace {
+            old_alias: "posit".to_string(),
+            new_alias: "bioc".to_string(),
+            url: Url::parse("https://bioconductor.org/packages/3.18/bioc").unwrap(),
+            force_source: true,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
+        
+        let result = fs::read_to_string(&config_path).unwrap();
+        insta::assert_snapshot!("configure_replace_force_source", result);
+    }
+
+    #[test]
+    fn test_replace_same_alias() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Replace {
+            old_alias: "posit".to_string(),
+            new_alias: "posit".to_string(), // Same alias should work
+            url: Url::parse("https://packagemanager.posit.co/cran/2024-12-01").unwrap(),
+            force_source: false,
+        };
+        
+        execute_repository_action(&config_path, action, false).unwrap();
+        
+        let result = fs::read_to_string(&config_path).unwrap();
+        insta::assert_snapshot!("configure_replace_same_alias", result);
+    }
+
+    #[test]
+    fn test_before_nonexistent_alias_error() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Add {
+            alias: "new-repo".to_string(),
+            url: Url::parse("https://example.com").unwrap(),
+            positioning: RepositoryPositioning::Before("nonexistent".to_string()),
+            force_source: false,
+        };
+        
+        let result = execute_repository_action(&config_path, action, false);
         assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(format!("{:?}", error.source).contains("AliasNotFound"));
+    }
+
+    #[test]
+    fn test_after_nonexistent_alias_error() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Add {
+            alias: "new-repo".to_string(),
+            url: Url::parse("https://example.com").unwrap(),
+            positioning: RepositoryPositioning::After("nonexistent".to_string()),
+            force_source: false,
+        };
+        
+        let result = execute_repository_action(&config_path, action, false);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(format!("{:?}", error.source).contains("AliasNotFound"));
+    }
+
+    #[test]
+    fn test_replace_nonexistent_alias_error() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Replace {
+            old_alias: "nonexistent".to_string(),
+            new_alias: "new".to_string(),
+            url: Url::parse("https://example.com").unwrap(),
+            force_source: false,
+        };
+        
+        let result = execute_repository_action(&config_path, action, false);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(format!("{:?}", error.source).contains("AliasNotFound"));
+    }
+
+    #[test]
+    fn test_remove_nonexistent_alias_error() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Remove {
+            alias: "nonexistent".to_string(),
+        };
+        
+        let result = execute_repository_action(&config_path, action, false);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(format!("{:?}", error.source).contains("AliasNotFound"));
+    }
+
+    #[test]
+    fn test_json_output() {
+        let (_temp_dir, config_path) = create_test_config();
+        
+        let action = RepositoryAction::Add {
+            alias: "test".to_string(),
+            url: Url::parse("https://example.com").unwrap(),
+            positioning: RepositoryPositioning::First,
+            force_source: false,
+        };
+        
+        // Test that JSON output doesn't panic (we can't easily capture stdout in tests)
+        execute_repository_action(&config_path, action, true).unwrap();
+        
+        // Verify the config was still updated correctly
+        let result = fs::read_to_string(&config_path).unwrap();
+        assert!(result.contains("test"));
+        assert!(result.contains("https://example.com"));
+    }
+
+    #[test]
+    fn test_clear_empty_repositories() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("rproject.toml");
+        
+        // Create config with empty repositories array
+        let config_content = r#"[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "dplyr",
+]
+"#;
+        fs::write(&config_path, config_content).unwrap();
+        
+        let action = RepositoryAction::Clear;
+        execute_repository_action(&config_path, action, false).unwrap();
+        
+        let result = fs::read_to_string(&config_path).unwrap();
+        insta::assert_snapshot!("configure_clear_empty", result);
     }
 }
 
