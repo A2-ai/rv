@@ -261,6 +261,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 
                                 if r_steps_so_far == 1 {
                                     // This is the first command after R startup, add startup marker
+                                    // First, add a simple command to ensure R is fully loaded
+                                    writeln!(stdin, "# R startup complete")
+                                        .map_err(|e| anyhow::anyhow!("Failed to write startup comment: {}", e))?;
                                     writeln!(stdin, "cat('# STEP_END: start R\\n')")
                                         .map_err(|e| anyhow::anyhow!("Failed to write startup marker: {}", e))?;
                                 }
@@ -312,9 +315,17 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             // Clean up R process if it exists and capture all output
             if thread_name_clone == "r" {
                 if let (Some(mut stdin), Some(process)) = (r_stdin, r_process) {
-                    writeln!(stdin, "quit(save = 'no')").ok();
+                    println!("🔄 Sending quit command to R process");
+                    if let Err(e) = writeln!(stdin, "quit(save = 'no')") {
+                        println!("⚠️ Failed to send quit command: {}", e);
+                    }
+                    drop(stdin); // Close stdin to signal R to exit
+                    
+                    println!("🔄 Waiting for R process to complete");
                     let final_output = process.wait_with_output()
                         .map_err(|e| anyhow::anyhow!("Failed to wait for R process: {}", e))?;
+                    
+                    println!("🔄 R process completed with exit status: {:?}", final_output.status);
                     
                     // Combine accumulated output with final output (both stdout and stderr)
                     accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
