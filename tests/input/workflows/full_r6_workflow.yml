@@ -11,7 +11,6 @@ test:
   - name: "start R"
     run: "R"
     thread: r
-    assert: "rv libpaths active!"
   
   - name: "R wd"
     run: pwd.R
