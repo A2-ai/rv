@@ -201,8 +201,15 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     let final_output = process.wait_with_output()
                                         .map_err(|e| anyhow::anyhow!("Failed to wait for R process during restart: {}", e))?;
                                     
-                                    // Accumulate the output from the previous session
+                                    // Accumulate the output from the previous session (both stdout and stderr)
                                     accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
+                                    
+                                    let prev_stderr = String::from_utf8_lossy(&final_output.stderr);
+                                    if !prev_stderr.is_empty() {
+                                        accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
+                                        accumulated_r_output.push_str(&prev_stderr);
+                                    }
+                                    
                                     accumulated_r_output.push_str("\n# === R PROCESS RESTARTED ===\n");
                                 }
                             }
@@ -316,10 +323,16 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     let final_output = process.wait_with_output()
                         .map_err(|e| anyhow::anyhow!("Failed to wait for R process: {}", e))?;
                     
-                    // Combine accumulated output with final output
+                    // Combine accumulated output with final output (both stdout and stderr)
                     accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
                     
-                    let full_r_stderr = String::from_utf8_lossy(&final_output.stderr);
+                    let final_stderr = String::from_utf8_lossy(&final_output.stderr);
+                    if !final_stderr.is_empty() {
+                        accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
+                        accumulated_r_output.push_str(&final_stderr);
+                    }
+                    
+                    let full_r_stderr = final_stderr;
                     
                     println!("{}", "=".repeat(80));
                     println!("COMPLETE R STDOUT ({} bytes total):", accumulated_r_output.len());
