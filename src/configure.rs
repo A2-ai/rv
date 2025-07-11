@@ -24,9 +24,48 @@ fn read_config_as_document(config_file: &Path) -> Result<DocumentMut, ConfigLoad
         })
 }
 
+
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RepositoryOperation {
+    Add,
+    Replace,
+    Remove,
+    Clear,
+}
+
+#[derive(Debug)]
+pub enum RepositoryPositioning {
+    First,
+    Last,
+    Before(String),
+    After(String),
+}
+
+#[derive(Debug)]
+pub enum RepositoryAction {
+    Add {
+        alias: String,
+        url: Url,
+        positioning: RepositoryPositioning,
+        force_source: bool,
+    },
+    Replace {
+        old_alias: String,
+        new_alias: String,
+        url: Url,
+        force_source: bool,
+    },
+    Remove {
+        alias: String,
+    },
+    Clear,
+}
+
 #[derive(Debug, Serialize)]
 struct ConfigureRepositoryResponse {
-    operation: String,
+    operation: RepositoryOperation,
     alias: Option<String>,
     url: Option<String>,
     success: bool,
@@ -34,28 +73,20 @@ struct ConfigureRepositoryResponse {
 }
 
 #[derive(Debug)]
-struct ConfigureOptions {
-    alias: Option<String>,
-    url: Option<String>,
-    force_source: bool,
-    before: Option<String>,
-    after: Option<String>,
-    first: bool,
-    last: bool,
-    replace: Option<String>,
-    remove: Option<String>,
-    clear: bool,
-    is_json_output: bool,
+pub struct CliArgs {
+    pub alias: Option<String>,
+    pub url: Option<String>,
+    pub force_source: bool,
+    pub before: Option<String>,
+    pub after: Option<String>,
+    pub first: bool,
+    pub last: bool,
+    pub replace: Option<String>,
+    pub remove: Option<String>,
+    pub clear: bool,
 }
 
-#[derive(Debug)]
-struct AddRepositoryOptions {
-    force_source: bool,
-    before: Option<String>,
-    after: Option<String>,
-    first: bool,
-    last: bool,
-}
+
 
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to configure repository in config at `{path}`")]
@@ -64,6 +95,13 @@ pub struct ConfigureError {
     path: Box<Path>,
     #[source]
     source: Box<ConfigureErrorKind>,
+}
+
+impl ConfigureError {
+    pub fn with_path(mut self, path: impl Into<Box<Path>>) -> Self {
+        self.path = path.into();
+        self
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -90,40 +128,10 @@ pub enum ConfigureErrorKind {
     InvalidRepositoriesField,
 }
 
-pub fn configure_repository(
+pub fn execute_repository_action(
     config_file: &Path,
-    alias: Option<String>,
-    url: Option<String>,
-    force_source: bool,
-    before: Option<String>,
-    after: Option<String>,
-    first: bool,
-    last: bool,
-    replace: Option<String>,
-    remove: Option<String>,
-    clear: bool,
+    action: RepositoryAction,
     is_json_output: bool,
-) -> Result<(), ConfigureError> {
-    let options = ConfigureOptions {
-        alias,
-        url,
-        force_source,
-        before,
-        after,
-        first,
-        last,
-        replace,
-        remove,
-        clear,
-        is_json_output,
-    };
-    
-    configure_repository_impl(config_file, options)
-}
-
-fn configure_repository_impl(
-    config_file: &Path,
-    options: ConfigureOptions,
 ) -> Result<(), ConfigureError> {
     let mut doc = read_config_as_document(config_file)
         .map_err(|e| ConfigureError {
@@ -132,77 +140,43 @@ fn configure_repository_impl(
         })?;
 
     // Handle different operations and track what we did
-    let operation;
-    let response_alias;
-    let response_url;
-    let message;
-    
-    if options.clear {
-        clear_repositories(&mut doc)
-            .map_err(|e| ConfigureError {
-                path: config_file.into(),
-                source: Box::new(e),
-            })?;
-        operation = "clear".to_string();
-        response_alias = None;
-        response_url = None;
-        message = "All repositories cleared".to_string();
-    } else if let Some(remove_alias) = options.remove {
-        remove_repository(&mut doc, &remove_alias)
-            .map_err(|e| ConfigureError {
-                path: config_file.into(),
-                source: Box::new(e),
-            })?;
-        operation = "remove".to_string();
-        response_alias = Some(remove_alias);
-        response_url = None;
-        message = "Repository removed successfully".to_string();
-    } else {
-        // For other operations, we need alias and url
-        let alias = options.alias.ok_or_else(|| ConfigureError {
-            path: config_file.into(),
-            source: Box::new(ConfigureErrorKind::MissingAlias),
-        })?;
-        let url = options.url.ok_or_else(|| ConfigureError {
-            path: config_file.into(),
-            source: Box::new(ConfigureErrorKind::MissingUrl),
-        })?;
-        
-        // Validate URL only when needed
-        let parsed_url = Url::parse(&url)
-            .map_err(|e| ConfigureError {
-                path: config_file.into(),
-                source: Box::new(ConfigureErrorKind::InvalidUrl(e)),
-            })?;
-        
-        if let Some(replace_alias) = options.replace {
-            replace_repository(&mut doc, &replace_alias, &alias, &parsed_url, options.force_source)
+    let (operation, response_alias, response_url, message) = match action {
+        RepositoryAction::Clear => {
+            clear_repositories(&mut doc)
                 .map_err(|e| ConfigureError {
                     path: config_file.into(),
                     source: Box::new(e),
                 })?;
-            operation = "replace".to_string();
-            message = "Repository replaced successfully".to_string();
-        } else {
-            let add_options = AddRepositoryOptions {
-                force_source: options.force_source,
-                before: options.before,
-                after: options.after,
-                first: options.first,
-                last: options.last,
-            };
-            add_repository(&mut doc, &alias, &parsed_url, add_options)
-            .map_err(|e| ConfigureError {
-                path: config_file.into(),
-                source: Box::new(e),
-            })?;
-            operation = "add".to_string();
-            message = "Repository configured successfully".to_string();
+            (RepositoryOperation::Clear, None, None, "All repositories cleared".to_string())
         }
         
-        response_alias = Some(alias);
-        response_url = Some(parsed_url.to_string());
-    }
+        RepositoryAction::Remove { alias } => {
+            remove_repository(&mut doc, &alias)
+                .map_err(|e| ConfigureError {
+                    path: config_file.into(),
+                    source: Box::new(e),
+                })?;
+            (RepositoryOperation::Remove, Some(alias), None, "Repository removed successfully".to_string())
+        }
+        
+        RepositoryAction::Replace { old_alias, new_alias, url, force_source } => {
+            replace_repository(&mut doc, &old_alias, &new_alias, &url, force_source)
+                .map_err(|e| ConfigureError {
+                    path: config_file.into(),
+                    source: Box::new(e),
+                })?;
+            (RepositoryOperation::Replace, Some(new_alias), Some(url.to_string()), "Repository replaced successfully".to_string())
+        }
+        
+        RepositoryAction::Add { alias, url, positioning, force_source } => {
+            add_repository(&mut doc, &alias, &url, positioning, force_source)
+                .map_err(|e| ConfigureError {
+                    path: config_file.into(),
+                    source: Box::new(e),
+                })?;
+            (RepositoryOperation::Add, Some(alias), Some(url.to_string()), "Repository configured successfully".to_string())
+        }
+    };
 
     // Write the updated configuration
     write(config_file, doc.to_string())
@@ -212,7 +186,7 @@ fn configure_repository_impl(
         })?;
 
     // Output result
-    if options.is_json_output {
+    if is_json_output {
         let response = ConfigureRepositoryResponse {
             operation,
             alias: response_alias,
@@ -227,30 +201,87 @@ fn configure_repository_impl(
             })?);
     } else {
         // Print detailed text output similar to JSON structure
-        match operation.as_str() {
-            "add" => {
+        match operation {
+            RepositoryOperation::Add => {
                 println!("Repository '{}' added successfully with URL: {}", 
                          response_alias.as_ref().unwrap(), 
                          response_url.as_ref().unwrap());
             }
-            "replace" => {
+            RepositoryOperation::Replace => {
                 println!("Repository replaced successfully - new alias: '{}', URL: {}", 
                          response_alias.as_ref().unwrap(), 
                          response_url.as_ref().unwrap());
             }
-            "remove" => {
+            RepositoryOperation::Remove => {
                 println!("Repository '{}' removed successfully", 
                          response_alias.as_ref().unwrap());
             }
-            "clear" => {
+            RepositoryOperation::Clear => {
                 println!("All repositories cleared successfully");
             }
-            _ => println!("{}", message),
         }
     }
 
     Ok(())
 }
+
+
+pub fn parse_repository_action(args: CliArgs) -> Result<RepositoryAction, ConfigureError> {
+    if args.clear {
+        return Ok(RepositoryAction::Clear);
+    }
+    
+    if let Some(remove_alias) = args.remove {
+        return Ok(RepositoryAction::Remove { alias: remove_alias });
+    }
+    
+    // For add/replace operations, we need alias and url
+    let alias = args.alias.ok_or_else(|| ConfigureError {
+        path: std::path::Path::new("").into(), // Will be updated by caller
+        source: Box::new(ConfigureErrorKind::MissingAlias),
+    })?;
+    let url = args.url.ok_or_else(|| ConfigureError {
+        path: std::path::Path::new("").into(), // Will be updated by caller
+        source: Box::new(ConfigureErrorKind::MissingUrl),
+    })?;
+    
+    // Validate URL
+    let parsed_url = Url::parse(&url)
+        .map_err(|e| ConfigureError {
+            path: std::path::Path::new("").into(), // Will be updated by caller
+            source: Box::new(ConfigureErrorKind::InvalidUrl(e)),
+        })?;
+    
+    if let Some(old_alias) = args.replace {
+        return Ok(RepositoryAction::Replace {
+            old_alias,
+            new_alias: alias,
+            url: parsed_url,
+            force_source: args.force_source,
+        });
+    }
+    
+    // Determine positioning
+    let positioning = if args.first {
+        RepositoryPositioning::First
+    } else if args.last {
+        RepositoryPositioning::Last
+    } else if let Some(before_alias) = args.before {
+        RepositoryPositioning::Before(before_alias)
+    } else if let Some(after_alias) = args.after {
+        RepositoryPositioning::After(after_alias)
+    } else {
+        RepositoryPositioning::Last // Default
+    };
+    
+    Ok(RepositoryAction::Add {
+        alias,
+        url: parsed_url,
+        positioning,
+        force_source: args.force_source,
+    })
+}
+
 
 fn get_mut_repositories_array(doc: &mut DocumentMut) -> Result<&mut Array, ConfigureErrorKind> {
     let project_table = doc
@@ -310,7 +341,8 @@ fn add_repository(
     doc: &mut DocumentMut,
     alias: &str,
     url: &Url,
-    options: AddRepositoryOptions,
+    positioning: RepositoryPositioning,
+    force_source: bool,
 ) -> Result<(), ConfigureErrorKind> {
     let repos = get_mut_repositories_array(doc)?;
     
@@ -319,22 +351,20 @@ fn add_repository(
         return Err(ConfigureErrorKind::DuplicateAlias(alias.to_string()));
     }
     
-    let new_repo = create_repository_value(alias, url, options.force_source);
+    let new_repo = create_repository_value(alias, url, force_source);
     
-    let insert_index = if options.first {
-        0
-    } else if options.last {
-        repos.len()
-    } else if let Some(before_alias) = options.before {
-        find_repository_index(repos, &before_alias)
-            .ok_or_else(|| ConfigureErrorKind::AliasNotFound(before_alias.to_string()))?
-    } else if let Some(after_alias) = options.after {
-        let after_index = find_repository_index(repos, &after_alias)
-            .ok_or_else(|| ConfigureErrorKind::AliasNotFound(after_alias.to_string()))?;
-        after_index + 1
-    } else {
-        // Default to last
-        repos.len()
+    let insert_index = match positioning {
+        RepositoryPositioning::First => 0,
+        RepositoryPositioning::Last => repos.len(),
+        RepositoryPositioning::Before(before_alias) => {
+            find_repository_index(repos, &before_alias)
+                .ok_or(ConfigureErrorKind::AliasNotFound(before_alias))?
+        }
+        RepositoryPositioning::After(after_alias) => {
+            let after_index = find_repository_index(repos, &after_alias)
+                .ok_or(ConfigureErrorKind::AliasNotFound(after_alias))?;
+            after_index + 1
+        }
     };
     
     repos.insert(insert_index, new_repo);
@@ -389,6 +419,27 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
     
+    fn execute_test_action(
+        config_path: &std::path::Path,
+        alias: Option<String>,
+        url: Option<String>,
+        force_source: bool,
+        before: Option<String>,
+        after: Option<String>,
+        first: bool,
+        last: bool,
+        replace: Option<String>,
+        remove: Option<String>,
+        clear: bool,
+    ) -> Result<(), ConfigureError> {
+        let cli_args = CliArgs {
+            alias, url, force_source, before, after, first, last, replace, remove, clear
+        };
+        
+        let action = parse_repository_action(cli_args)?;
+        execute_repository_action(config_path, action, false)
+    }
+
     fn create_test_config() -> (TempDir, std::path::PathBuf) {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("rproject.toml");
@@ -412,7 +463,7 @@ dependencies = [
     fn test_add_first() {
         let (_temp_dir, config_path) = create_test_config();
         
-        configure_repository(
+        execute_test_action(
             &config_path,
             Some("ppm".to_string()),
             Some("https://packagemanager.posit.co/cran/latest".to_string()),
@@ -423,7 +474,6 @@ dependencies = [
             false,
             None,
             None,
-            false,
             false,
         ).unwrap();
         
@@ -435,7 +485,7 @@ dependencies = [
     fn test_add_after() {
         let (_temp_dir, config_path) = create_test_config();
         
-        configure_repository(
+        execute_test_action(
             &config_path,
             Some("ppm-old".to_string()),
             Some("https://packagemanager.posit.co/cran/2024-11-16".to_string()),
@@ -447,7 +497,6 @@ dependencies = [
             None,
             None,
             false,
-            false,
         ).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
@@ -458,7 +507,7 @@ dependencies = [
     fn test_add_before() {
         let (_temp_dir, config_path) = create_test_config();
         
-        configure_repository(
+        execute_test_action(
             &config_path,
             Some("ppm".to_string()),
             Some("https://packagemanager.posit.co/cran/latest".to_string()),
@@ -469,7 +518,6 @@ dependencies = [
             false,
             None,
             None,
-            false,
             false,
         ).unwrap();
         
@@ -481,7 +529,7 @@ dependencies = [
     fn test_replace() {
         let (_temp_dir, config_path) = create_test_config();
         
-        configure_repository(
+        execute_test_action(
             &config_path,
             Some("ppm".to_string()),
             Some("https://packagemanager.posit.co/cran/latest".to_string()),
@@ -493,7 +541,6 @@ dependencies = [
             Some("posit".to_string()),
             None,
             false,
-            false,
         ).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
@@ -504,7 +551,7 @@ dependencies = [
     fn test_remove() {
         let (_temp_dir, config_path) = create_test_config();
         
-        configure_repository(
+        execute_test_action(
             &config_path,
             None,
             None,
@@ -515,7 +562,6 @@ dependencies = [
             false,
             None,
             Some("posit".to_string()),
-            false,
             false,
         ).unwrap();
         
@@ -527,7 +573,7 @@ dependencies = [
     fn test_clear() {
         let (_temp_dir, config_path) = create_test_config();
         
-        configure_repository(
+        execute_test_action(
             &config_path,
             None,
             None,
@@ -539,7 +585,6 @@ dependencies = [
             None,
             None,
             true,
-            false,
         ).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
@@ -550,7 +595,7 @@ dependencies = [
     fn test_duplicate_alias_error() {
         let (_temp_dir, config_path) = create_test_config();
         
-        let result = configure_repository(
+        let result = execute_test_action(
             &config_path,
             Some("posit".to_string()),
             Some("https://packagemanager.posit.co/cran/latest".to_string()),
@@ -561,7 +606,6 @@ dependencies = [
             false,
             None,
             None,
-            false,
             false,
         );
         
@@ -574,7 +618,7 @@ dependencies = [
     fn test_invalid_url_error() {
         let (_temp_dir, config_path) = create_test_config();
         
-        let result = configure_repository(
+        let result = execute_test_action(
             &config_path,
             Some("invalid".to_string()),
             Some("not-a-url".to_string()),
@@ -585,7 +629,6 @@ dependencies = [
             false,
             None,
             None,
-            false,
             false,
         );
         

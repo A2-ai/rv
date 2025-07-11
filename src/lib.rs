@@ -29,7 +29,7 @@ pub mod consts;
 pub use activate::{activate, deactivate};
 pub use add::{add_packages, read_and_verify_config};
 pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
-pub use configure::configure_repository;
+pub use configure::{execute_repository_action, parse_repository_action, RepositoryAction, RepositoryPositioning, RepositoryOperation, CliArgs};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
 pub use git::{CommandExecutor, GitExecutor, GitRepository};

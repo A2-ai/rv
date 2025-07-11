@@ -17,10 +17,17 @@ rv configure repository --alias <name> --url <url> [positioning/operation flags]
 
 ### Critical Implementation Details
 
-**Core Function**: `configure_repository()` in `src/configure.rs`
-- Takes all CLI args as parameters
-- Returns `Result<()>`
-- Handles all operations: add, replace, remove, clear
+**Current API**: `execute_repository_action()` + `parse_repository_action()` in `src/configure.rs`
+- Clean separation: CLI parsing → Action enum → execution  
+- Type-safe operations with `RepositoryAction` enum
+- Main.rs uses this improved API
+- Returns `Result<(), ConfigureError>`
+
+**Type-safe Architecture**:
+- `RepositoryAction` enum with operation-specific variants
+- `RepositoryPositioning` enum for precise placement control  
+- `RepositoryOperation` enum for type-safe responses
+- `CliArgs` struct for organized parameter passing
 
 **TOML Handling**: Uses `toml_edit::DocumentMut` 
 - Preserves formatting and comments

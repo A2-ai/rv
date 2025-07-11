@@ -14,7 +14,7 @@ use rv::cli::{
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, configure_repository, deactivate,
+    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, parse_repository_action, CliArgs, deactivate,
     read_and_verify_config, system_req,
 };
 
@@ -874,8 +874,7 @@ fn try_main() -> Result<()> {
                     remove,
                     clear,
                 } => {
-                    configure_repository(
-                        &cli.config_file,
+                    let cli_args = CliArgs {
                         alias,
                         url,
                         force_source,
@@ -886,8 +885,12 @@ fn try_main() -> Result<()> {
                         replace,
                         remove,
                         clear,
-                        output_format.is_json(),
-                    )?;
+                    };
+                    
+                    let action = parse_repository_action(cli_args)
+                        .map_err(|e| e.with_path(cli.config_file.clone()))?;
+                    
+                    execute_repository_action(&cli.config_file, action, output_format.is_json())?;
                 }
             }
         }
