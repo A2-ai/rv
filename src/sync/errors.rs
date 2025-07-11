@@ -4,6 +4,7 @@ use crate::sync::LinkError;
 use std::fmt;
 use std::fmt::Formatter;
 use std::io;
+use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
@@ -28,6 +29,8 @@ pub enum SyncErrorKind {
         "Unable to sync - one or more packages ({0}) we want to remove is loaded in the session, please restart your R session and re-run the rv command."
     )]
     NfsError(String),
+    #[error("Invalid package found at `{path}`: {error}")]
+    InvalidPackage { path: PathBuf, error: String },
 }
 
 impl From<InstallError> for SyncError {

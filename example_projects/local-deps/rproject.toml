@@ -1,3 +1,6 @@
+# Test that local source directory package installs properly
+# Contains dummy.rdx in rv/library to test error case when installing from local 
+# where any <package name>.rdx in the directory would trigger `rv` to consider the package to be binary
 [project]
 name = "simple"
 r_version = "4.4"
