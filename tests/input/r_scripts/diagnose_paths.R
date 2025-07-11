@@ -6,7 +6,7 @@ cat("R Working Directory:", getwd(), "\n")
 if (file.exists(".Rprofile")) {
   cat("✅ .Rprofile EXISTS - sourcing it...\n")
   source(".Rprofile")
-  cat("✅ .Rprofile sourced - rv libpaths should now be active!\n")
+  cat("✅ .Rprofile sourced\n")
 } else {
   cat("❌ .Rprofile NOT FOUND\n")
 }

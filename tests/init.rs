@@ -135,11 +135,20 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 .spawn()
                                 .expect("Failed to start R process");
                             
-                            r_stdin = Some(process.stdin.take().expect("Failed to get R stdin"));
-                            r_process = Some(process);
+                            let mut stdin = process.stdin.take().expect("Failed to get R stdin");
                             
                             // Give R time to start up properly
                             thread::sleep(Duration::from_millis(2000));
+                            
+                            // Add markers for the R startup step (empty content between markers)
+                            writeln!(stdin, "cat(\"===STEP_START_{}===\\n\")", step.name.replace(" ", "_"))
+                                .map_err(|e| anyhow::anyhow!("Failed to write step start marker: {}", e))?;
+                            writeln!(stdin, "cat(\"===STEP_END_{}===\\n\")", step.name.replace(" ", "_"))
+                                .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
+                            writeln!(stdin, "flush.console()").ok();
+                            
+                            r_stdin = Some(stdin);
+                            r_process = Some(process);
                             "".to_string()
                         } else if step.run.ends_with(".R") {
                             // Execute R script
@@ -157,9 +166,17 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     }
                                 }
                                 
+                                // Add step start marker
+                                writeln!(stdin, "cat(\"===STEP_START_{}===\\n\")", step.name.replace(" ", "_"))
+                                    .map_err(|e| anyhow::anyhow!("Failed to write step start marker: {}", e))?;
+                                
                                 let script_content = load_r_script(&step.run)?;
                                 writeln!(stdin, "{}", script_content)
                                     .map_err(|e| anyhow::anyhow!("Failed to write R script (process may have died): {}", e))?;
+                                
+                                // Add step end marker
+                                writeln!(stdin, "cat(\"===STEP_END_{}===\\n\")", step.name.replace(" ", "_"))
+                                    .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
                                 writeln!(stdin, "flush.console()").ok(); // Force output
                                 thread::sleep(Duration::from_millis(1000));
                                 "R_SCRIPT_EXECUTED".to_string() // Placeholder - real output captured at end
@@ -182,8 +199,16 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     }
                                 }
                                 
+                                // Add step start marker
+                                writeln!(stdin, "cat(\"===STEP_START_{}===\\n\")", step.name.replace(" ", "_"))
+                                    .map_err(|e| anyhow::anyhow!("Failed to write step start marker: {}", e))?;
+                                
                                 writeln!(stdin, "{}", step.run)
                                     .map_err(|e| anyhow::anyhow!("Failed to write R command (process may have died): {}", e))?;
+                                
+                                // Add step end marker
+                                writeln!(stdin, "cat(\"===STEP_END_{}===\\n\")", step.name.replace(" ", "_"))
+                                    .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
                                 writeln!(stdin, "flush.console()").ok(); // Force output
                                 thread::sleep(Duration::from_millis(1000));
                                 "R_COMMAND_EXECUTED".to_string() // Placeholder - real output captured at end
@@ -225,13 +250,26 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     let r_stdout = String::from_utf8_lossy(&final_output.stdout);
                     outputs.push(format!("R_FINAL_OUTPUT: {}", r_stdout));
                     
-                    // Check R assertions against final output
-                    println!("🔍 Checking R assertions against final output...");
+                    // Parse step-specific outputs from R session
+                    println!("🔍 Parsing step-specific outputs from R session...");
+                    let step_outputs = parse_step_outputs(&r_stdout);
+                    
+                    // Check R assertions against step-specific output
+                    println!("🔍 Checking R assertions against step-specific outputs...");
                     for &step_idx in &step_indices {
                         let step = &thread_steps[step_idx];
                         if let Some(assertion) = &step.assert {
                             print!("   ├─ Checking '{}' assertion... ", step.name);
-                            match check_assertion(assertion, &r_stdout) {
+                            
+                            // Get step-specific output, fallback to full output if parsing failed
+                            let step_output = step_outputs.get(&step.name)
+                                .map(|s| s.as_str())
+                                .unwrap_or_else(|| {
+                                    println!("⚠️ No parsed output for step '{}', using full R output", step.name);
+                                    &r_stdout
+                                });
+                            
+                            match check_assertion(assertion, step_output) {
                                 Ok(()) => println!("✅ passed"),
                                 Err(e) => {
                                     println!("❌ failed");
@@ -332,6 +370,48 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
         },
     }
     Ok(())
+}
+
+fn parse_step_outputs(full_output: &str) -> HashMap<String, String> {
+    let mut step_outputs = HashMap::new();
+    let lines: Vec<&str> = full_output.lines().collect();
+    let mut i = 0;
+    
+    while i < lines.len() {
+        if let Some(line) = lines.get(i) {
+            if line.starts_with("===STEP_START_") && line.ends_with("===") {
+                // Extract step name from marker
+                let step_name = line
+                    .strip_prefix("===STEP_START_")
+                    .and_then(|s| s.strip_suffix("==="))
+                    .unwrap_or("unknown")
+                    .replace("_", " ");
+                
+                // Find the corresponding end marker
+                let mut step_content = Vec::new();
+                i += 1; // Move past the start marker
+                
+                while i < lines.len() {
+                    if let Some(current_line) = lines.get(i) {
+                        if current_line.starts_with("===STEP_END_") && current_line.ends_with("===") {
+                            // Found the end marker, stop collecting
+                            break;
+                        } else {
+                            step_content.push(*current_line);
+                        }
+                    }
+                    i += 1;
+                }
+                
+                // Store the step output
+                let content = step_content.join("\n");
+                step_outputs.insert(step_name, content);
+            }
+        }
+        i += 1;
+    }
+    
+    step_outputs
 }
 
 #[test]
