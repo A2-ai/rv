@@ -33,7 +33,7 @@ jobs:
         R --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
         R --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
         
-    - name: Run diagnostic paths test
+    - name: Run tests
       run: cargo test --features=cli --test init -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1

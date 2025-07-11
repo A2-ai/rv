@@ -40,15 +40,17 @@ test:
     run: "R"
     thread: r
     restart: true
+    assert: "rv libpaths active!"
 
   - name: "rv plan"
     run: "rv plan"
     thread: rv
+    assert: "+ R6"
 
   - name: "rv sync"
     run: "rv sync"
     thread: rv
-    assert: 
+    assert:
       - "- R6"
       - "+ R6 (2.6.1, binary from https://packagemanager.posit.co/cran/2025-07-10)"
   

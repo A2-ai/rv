@@ -45,6 +45,7 @@ enum TestAssertion {
 #[derive(Debug, Clone)]
 struct StepResult {
     name: String,
+    step_index: usize,
     output: String,
     assertion_passed: Option<bool>,
     assertion_error: Option<String>,
@@ -184,22 +185,8 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             println!("   ├─ Output: {}", result.trim());
                         }
                         
-                        // Check assertion immediately for rv commands
-                        let (assertion_passed, assertion_error) = if let Some(assertion) = &step.assert {
-                            println!("   ├─ Checking assertion...");
-                            match check_assertion(assertion, &result) {
-                                Ok(()) => {
-                                    println!("   └─ ✅ Assertion passed");
-                                    (Some(true), None)
-                                },
-                                Err(e) => {
-                                    println!("   └─ ❌ Assertion failed");
-                                    (Some(false), Some(e.to_string()))
-                                }
-                            }
-                        } else {
-                            (None, None)
-                        };
+                        // Store assertion for checking at the end
+                        let (assertion_passed, assertion_error) = (None, None);
                         
                         (result, assertion_passed, assertion_error)
                     },
@@ -235,7 +222,17 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             r_stdin = Some(stdin);
                             r_process = Some(process);
                             
+                            // If this is a restart, we need to add a step end marker
+                            // after the new R process starts up, so the parser can capture the startup output
                             if step.restart {
+                                // Add step end marker for the restart step to capture R startup output
+                                if let Some(stdin) = &mut r_stdin {
+                                    writeln!(stdin, "cat('# STEP_END: {}\\n')", step.name)
+                                        .map_err(|e| anyhow::anyhow!("Failed to write restart step end marker: {}", e))?;
+                                    
+                                    use std::io::Write;
+                                    stdin.flush().map_err(|e| anyhow::anyhow!("Failed to flush R stdin after restart: {}", e))?;
+                                }
                                 ("R process restarted".to_string(), None, None)
                             } else {
                                 ("R process started".to_string(), None, None)
@@ -299,16 +296,14 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 // Store step result
                 let step_result = StepResult {
                     name: step.name.clone(),
+                    step_index: step_idx,
                     output,
                     assertion_passed,
                     assertion_error: assertion_error.clone(),
                 };
                 step_results.push(step_result);
                 
-                // Fail fast if assertion failed
-                if let Some(error) = assertion_error {
-                    return Err(anyhow::anyhow!("Assertion failed: {}", error));
-                }
+                // Don't fail fast - collect all results first
                 
                 // Wait for all threads to complete their commands before moving to next step
                 thread_completion_barriers[step_idx].wait();
@@ -344,31 +339,11 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     
                     println!("🔍 Parsing R session output into {} steps", r_step_names.len());
                     
-                    // Update step results with actual outputs and check assertions
+                    // Update step results with actual outputs (assertions checked at end)
                     for step_result in &mut step_results {
                         if let Some(step_output) = parsed_outputs.get(&step_result.name) {
                             step_result.output = step_output.clone();
-                            
-                            // Find the original step to get its assertion
-                            if let Some(original_step) = thread_steps.iter().find(|s| s.name == step_result.name) {
-                                if let Some(assertion) = &original_step.assert {
-                                    println!("   ├─ Checking '{}' assertion against {} chars of output", 
-                                        step_result.name, step_output.len());
-                                    
-                                    match check_assertion(assertion, step_output) {
-                                        Ok(()) => {
-                                            println!("   └─ ✅ Assertion passed");
-                                            step_result.assertion_passed = Some(true);
-                                        },
-                                        Err(e) => {
-                                            println!("   └─ ❌ Assertion failed: {}", e);
-                                            step_result.assertion_passed = Some(false);
-                                            step_result.assertion_error = Some(e.to_string());
-                                            return Err(e);
-                                        }
-                                    }
-                                }
-                            }
+                            println!("   ├─ Captured '{}' output: {} chars", step_result.name, step_output.len());
                         } else {
                             println!("   ⚠️ No output found for step '{}'", step_result.name);
                         }
@@ -398,35 +373,75 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     for (thread_name, rx) in rx_map {
         let thread_output = rx.recv().map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
         println!("✅ {} thread completed successfully", thread_name.to_uppercase());
-        
-        // Print step results summary for this thread
-        println!("📊 {} step results:", thread_name.to_uppercase());
-        for step_result in &thread_output.step_results {
-            let status = match step_result.assertion_passed {
-                Some(true) => "✅ PASS",
-                Some(false) => "❌ FAIL", 
-                None => "⏭️ NO ASSERTION",
-            };
-            println!("   • {} - {} (output: {} chars)", step_result.name, status, step_result.output.len());
-            
-            if let Some(ref error) = step_result.assertion_error {
-                println!("     └─ Error: {}", error);
-            }
-        }
-        
         all_thread_outputs.push(thread_output);
     }
     
-    // Provide easy access to step outputs for debugging
-    println!("\n🔍 All step outputs available for inspection:");
+    // Now check all assertions after we have all outputs
+    println!("\n🔍 Checking all assertions...");
+    let mut assertion_failures = Vec::new();
+    
     for thread_output in &all_thread_outputs {
         for step_result in &thread_output.step_results {
-            println!("   {}::{} -> {} chars of output", 
-                thread_output.thread_name, 
-                step_result.name, 
-                step_result.output.len()
-            );
+            // Find the original step by index to get its assertion
+            if let Some(original_step) = workflow.test.steps.get(step_result.step_index) {
+                if let Some(assertion) = &original_step.assert {
+                    match assertion {
+                        TestAssertion::Single(s) => {
+                            print!("   ├─ Checking '{}' single assertion... ", step_result.name);
+                            println!("      Content: '{}'", s);
+                        },
+                        TestAssertion::Multiple(list) => {
+                            print!("   ├─ Checking '{}' multiple assertion ({} items)... ", step_result.name, list.len());
+                            for (i, item) in list.iter().enumerate() {
+                                println!("      {}: '{}'", i + 1, item);
+                            }
+                        },
+                    }
+                    
+                    match check_assertion(assertion, &step_result.output) {
+                        Ok(()) => {
+                            println!("✅ passed");
+                        },
+                        Err(e) => {
+                            println!("❌ failed");
+                            assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
+                        }
+                    }
+                } else {
+                    println!("   ├─ '{}' - ⏭️ no assertion", step_result.name);
+                }
+            }
         }
+    }
+    
+    // Print step results summary
+    println!("\n📊 Final step results:");
+    for thread_output in &all_thread_outputs {
+        println!("  {} thread:", thread_output.thread_name.to_uppercase());
+        for step_result in &thread_output.step_results {
+            let has_assertion = workflow.test.steps.get(step_result.step_index)
+                .map(|s| s.assert.is_some())
+                .unwrap_or(false);
+            
+            if has_assertion {
+                let failed = assertion_failures.iter().any(|(name, _, _)| name == &step_result.name);
+                let status = if failed { "❌ FAIL" } else { "✅ PASS" };
+                println!("   • {} - {} (output: {} chars)", step_result.name, status, step_result.output.len());
+            } else {
+                println!("   • {} - ⏭️ NO ASSERTION (output: {} chars)", step_result.name, step_result.output.len());
+            }
+        }
+    }
+    
+    // If there were assertion failures, report them all
+    if !assertion_failures.is_empty() {
+        println!("\n💥 Assertion failures:");
+        for (step_name, error, output) in &assertion_failures {
+            println!("\n   Step '{}' failed:", step_name);
+            println!("   Error: {}", error);
+            println!("   Output ({} chars): {}", output.len(), output);
+        }
+        return Err(anyhow::anyhow!("Test failed with {} assertion failures", assertion_failures.len()));
     }
     
     Ok(())
@@ -486,14 +501,19 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
             }
         },
         TestAssertion::Multiple(expected_list) => {
-            for expected in expected_list {
+            println!("      Checking {} assertions:", expected_list.len());
+            for (i, expected) in expected_list.iter().enumerate() {
+                println!("        {} - Checking for: '{}'", i + 1, expected);
                 if !output.contains(expected) {
+                    println!("        ❌ NOT FOUND");
                     return Err(anyhow::anyhow!(
                         "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}", 
                         expected, 
                         output.len(),
                         output
                     ));
+                } else {
+                    println!("        ✅ FOUND");
                 }
             }
         },
