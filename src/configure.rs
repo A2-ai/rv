@@ -26,7 +26,7 @@ fn read_config_as_document(config_file: &Path) -> Result<DocumentMut, ConfigLoad
 
 
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum RepositoryOperation {
     Add,
@@ -64,27 +64,14 @@ pub enum RepositoryAction {
 }
 
 #[derive(Debug, Serialize)]
-struct ConfigureRepositoryResponse {
-    operation: RepositoryOperation,
-    alias: Option<String>,
-    url: Option<String>,
-    success: bool,
-    message: String,
-}
-
-#[derive(Debug)]
-pub struct CliArgs {
+pub struct ConfigureRepositoryResponse {
+    pub operation: RepositoryOperation,
     pub alias: Option<String>,
     pub url: Option<String>,
-    pub force_source: bool,
-    pub before: Option<String>,
-    pub after: Option<String>,
-    pub first: bool,
-    pub last: bool,
-    pub replace: Option<String>,
-    pub remove: Option<String>,
-    pub clear: bool,
+    pub success: bool,
+    pub message: String,
 }
+
 
 
 
@@ -106,22 +93,14 @@ impl ConfigureError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigureErrorKind {
-    #[error("Invalid URL: {0}")]
-    InvalidUrl(url::ParseError),
     #[error("Duplicate alias: {0}")]
     DuplicateAlias(String),
     #[error("Alias not found: {0}")]
     AliasNotFound(String),
-    #[error("--alias is required for this operation")]
-    MissingAlias,
-    #[error("--url is required for this operation")]
-    MissingUrl,
     #[error("IO error: {0}")]
     Io(std::io::Error),
     #[error("Config load error: {0}")]
     ConfigLoad(ConfigLoadError),
-    #[error("JSON serialization error: {0}")]
-    SerdeJson(serde_json::Error),
     #[error("Missing [project] table")]
     MissingProjectTable,
     #[error("repositories field is not an array")]
@@ -131,8 +110,7 @@ pub enum ConfigureErrorKind {
 pub fn execute_repository_action(
     config_file: &Path,
     action: RepositoryAction,
-    is_json_output: bool,
-) -> Result<(), ConfigureError> {
+) -> Result<ConfigureRepositoryResponse, ConfigureError> {
     let mut doc = read_config_as_document(config_file)
         .map_err(|e| ConfigureError {
             path: config_file.into(),
@@ -185,102 +163,17 @@ pub fn execute_repository_action(
             source: Box::new(ConfigureErrorKind::Io(e)),
         })?;
 
-    // Output result
-    if is_json_output {
-        let response = ConfigureRepositoryResponse {
-            operation,
-            alias: response_alias,
-            url: response_url,
-            success: true,
-            message,
-        };
-        println!("{}", serde_json::to_string_pretty(&response)
-            .map_err(|e| ConfigureError {
-                path: config_file.into(), 
-                source: Box::new(ConfigureErrorKind::SerdeJson(e)),
-            })?);
-    } else {
-        // Print detailed text output similar to JSON structure
-        match operation {
-            RepositoryOperation::Add => {
-                println!("Repository '{}' added successfully with URL: {}", 
-                         response_alias.as_ref().unwrap(), 
-                         response_url.as_ref().unwrap());
-            }
-            RepositoryOperation::Replace => {
-                println!("Repository replaced successfully - new alias: '{}', URL: {}", 
-                         response_alias.as_ref().unwrap(), 
-                         response_url.as_ref().unwrap());
-            }
-            RepositoryOperation::Remove => {
-                println!("Repository '{}' removed successfully", 
-                         response_alias.as_ref().unwrap());
-            }
-            RepositoryOperation::Clear => {
-                println!("All repositories cleared successfully");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-
-pub fn parse_repository_action(args: CliArgs) -> Result<RepositoryAction, ConfigureError> {
-    if args.clear {
-        return Ok(RepositoryAction::Clear);
-    }
-    
-    if let Some(remove_alias) = args.remove {
-        return Ok(RepositoryAction::Remove { alias: remove_alias });
-    }
-    
-    // For add/replace operations, we need alias and url
-    let alias = args.alias.ok_or_else(|| ConfigureError {
-        path: std::path::Path::new("").into(), // Will be updated by caller
-        source: Box::new(ConfigureErrorKind::MissingAlias),
-    })?;
-    let url = args.url.ok_or_else(|| ConfigureError {
-        path: std::path::Path::new("").into(), // Will be updated by caller
-        source: Box::new(ConfigureErrorKind::MissingUrl),
-    })?;
-    
-    // Validate URL
-    let parsed_url = Url::parse(&url)
-        .map_err(|e| ConfigureError {
-            path: std::path::Path::new("").into(), // Will be updated by caller
-            source: Box::new(ConfigureErrorKind::InvalidUrl(e)),
-        })?;
-    
-    if let Some(old_alias) = args.replace {
-        return Ok(RepositoryAction::Replace {
-            old_alias,
-            new_alias: alias,
-            url: parsed_url,
-            force_source: args.force_source,
-        });
-    }
-    
-    // Determine positioning
-    let positioning = if args.first {
-        RepositoryPositioning::First
-    } else if args.last {
-        RepositoryPositioning::Last
-    } else if let Some(before_alias) = args.before {
-        RepositoryPositioning::Before(before_alias)
-    } else if let Some(after_alias) = args.after {
-        RepositoryPositioning::After(after_alias)
-    } else {
-        RepositoryPositioning::Last // Default
-    };
-    
-    Ok(RepositoryAction::Add {
-        alias,
-        url: parsed_url,
-        positioning,
-        force_source: args.force_source,
+    // Return response data for CLI to handle output
+    Ok(ConfigureRepositoryResponse {
+        operation,
+        alias: response_alias,
+        url: response_url,
+        success: true,
+        message,
     })
 }
+
+
 
 
 fn get_mut_repositories_array(doc: &mut DocumentMut) -> Result<&mut Array, ConfigureErrorKind> {
@@ -450,7 +343,7 @@ dependencies = [
             force_source: false,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_first", result);
@@ -467,7 +360,7 @@ dependencies = [
             force_source: false,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_after", result);
@@ -484,7 +377,7 @@ dependencies = [
             force_source: false,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_before", result);
@@ -501,7 +394,7 @@ dependencies = [
             force_source: false,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_replace", result);
@@ -515,7 +408,7 @@ dependencies = [
             alias: "posit".to_string(),
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_remove", result);
@@ -527,7 +420,7 @@ dependencies = [
         
         let action = RepositoryAction::Clear;
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_clear", result);
@@ -544,34 +437,13 @@ dependencies = [
             force_source: false,
         };
         
-        let result = execute_repository_action(&config_path, action, false);
+        let result = execute_repository_action(&config_path, action);
         
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(format!("{:?}", error.source).contains("DuplicateAlias"));
     }
     
-    #[test] 
-    fn test_invalid_url_error() {
-        let (_temp_dir, _config_path) = create_test_config();
-        
-        // Test invalid URL in parsing phase
-        let cli_args = CliArgs {
-            alias: Some("invalid".to_string()),
-            url: Some("not-a-url".to_string()),
-            force_source: false,
-            before: None,
-            after: None,
-            first: false,
-            last: false,
-            replace: None,
-            remove: None,
-            clear: false,
-        };
-        
-        let result = parse_repository_action(cli_args);
-        assert!(result.is_err());
-    }
 
     #[test]
     fn test_add_last_default() {
@@ -584,7 +456,7 @@ dependencies = [
             force_source: false,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_last", result);
@@ -601,7 +473,7 @@ dependencies = [
             force_source: true,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_add_force_source", result);
@@ -618,7 +490,7 @@ dependencies = [
             force_source: true,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_replace_force_source", result);
@@ -635,7 +507,7 @@ dependencies = [
             force_source: false,
         };
         
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_replace_same_alias", result);
@@ -652,7 +524,7 @@ dependencies = [
             force_source: false,
         };
         
-        let result = execute_repository_action(&config_path, action, false);
+        let result = execute_repository_action(&config_path, action);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(format!("{:?}", error.source).contains("AliasNotFound"));
@@ -669,7 +541,7 @@ dependencies = [
             force_source: false,
         };
         
-        let result = execute_repository_action(&config_path, action, false);
+        let result = execute_repository_action(&config_path, action);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(format!("{:?}", error.source).contains("AliasNotFound"));
@@ -686,7 +558,7 @@ dependencies = [
             force_source: false,
         };
         
-        let result = execute_repository_action(&config_path, action, false);
+        let result = execute_repository_action(&config_path, action);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(format!("{:?}", error.source).contains("AliasNotFound"));
@@ -700,31 +572,12 @@ dependencies = [
             alias: "nonexistent".to_string(),
         };
         
-        let result = execute_repository_action(&config_path, action, false);
+        let result = execute_repository_action(&config_path, action);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(format!("{:?}", error.source).contains("AliasNotFound"));
     }
 
-    #[test]
-    fn test_json_output() {
-        let (_temp_dir, config_path) = create_test_config();
-        
-        let action = RepositoryAction::Add {
-            alias: "test".to_string(),
-            url: Url::parse("https://example.com").unwrap(),
-            positioning: RepositoryPositioning::First,
-            force_source: false,
-        };
-        
-        // Test that JSON output doesn't panic (we can't easily capture stdout in tests)
-        execute_repository_action(&config_path, action, true).unwrap();
-        
-        // Verify the config was still updated correctly
-        let result = fs::read_to_string(&config_path).unwrap();
-        assert!(result.contains("test"));
-        assert!(result.contains("https://example.com"));
-    }
 
     #[test]
     fn test_clear_empty_repositories() {
@@ -743,7 +596,7 @@ dependencies = [
         fs::write(&config_path, config_content).unwrap();
         
         let action = RepositoryAction::Clear;
-        execute_repository_action(&config_path, action, false).unwrap();
+        execute_repository_action(&config_path, action).unwrap();
         
         let result = fs::read_to_string(&config_path).unwrap();
         insta::assert_snapshot!("configure_clear_empty", result);

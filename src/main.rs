@@ -14,9 +14,10 @@ use rv::cli::{
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, parse_repository_action, CliArgs, deactivate,
+    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, deactivate, RepositoryAction, RepositoryPositioning, ConfigureRepositoryResponse,
     read_and_verify_config, system_req,
 };
+use rv::RepositoryOperation as LibRepositoryOperation;
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -170,36 +171,67 @@ pub enum Command {
 pub enum ConfigureSubcommand {
     /// Configure project repositories
     Repository {
+        #[clap(subcommand)]
+        operation: RepositoryOperation,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RepositoryOperation {
+    /// Add a new repository
+    Add {
         /// Repository alias
         #[clap(long)]
-        alias: Option<String>,
+        alias: String,
         /// Repository URL
         #[clap(long)]
-        url: Option<String>,
+        url: String,
         /// Enable force_source for this repository
         #[clap(long)]
         force_source: bool,
-        /// Add the repository before the specified alias
-        #[clap(long, conflicts_with_all = ["after", "first", "last", "replace", "remove", "clear"])]
-        before: Option<String>,
-        /// Add the repository after the specified alias
-        #[clap(long, conflicts_with_all = ["before", "first", "last", "replace", "remove", "clear"])]
-        after: Option<String>,
-        /// Add the repository as the first entry
-        #[clap(long, conflicts_with_all = ["before", "after", "last", "replace", "remove", "clear"])]
-        first: bool,
-        /// Add the repository as the last entry
-        #[clap(long, conflicts_with_all = ["before", "after", "first", "replace", "remove", "clear"])]
-        last: bool,
-        /// Replace the existing repository with the specified alias
-        #[clap(long, conflicts_with_all = ["before", "after", "first", "last", "remove", "clear"])]
-        replace: Option<String>,
-        /// Remove the existing repository with the specified alias
-        #[clap(long, conflicts_with_all = ["before", "after", "first", "last", "replace", "clear"])]
-        remove: Option<String>,
-        /// Clear all repositories
-        #[clap(long, conflicts_with_all = ["before", "after", "first", "last", "replace", "remove"])]
-        clear: bool,
+        #[clap(subcommand)]
+        position: Option<RepositoryPosition>,
+    },
+    /// Replace an existing repository
+    Replace {
+        /// Old repository alias to replace
+        #[clap(long)]
+        old_alias: String,
+        /// New repository alias
+        #[clap(long)]
+        alias: String,
+        /// Repository URL
+        #[clap(long)]
+        url: String,
+        /// Enable force_source for this repository
+        #[clap(long)]
+        force_source: bool,
+    },
+    /// Remove an existing repository
+    Remove {
+        /// Repository alias to remove
+        #[clap(long)]
+        alias: String,
+    },
+    /// Clear all repositories
+    Clear,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RepositoryPosition {
+    /// Insert as first repository
+    First,
+    /// Insert as last repository (default)
+    Last,
+    /// Insert before the specified alias
+    Before {
+        /// Alias to insert before
+        alias: String,
+    },
+    /// Insert after the specified alias
+    After {
+        /// Alias to insert after
+        alias: String,
     },
 }
 
@@ -862,35 +894,74 @@ fn try_main() -> Result<()> {
         }
         Command::Configure { subcommand } => {
             match subcommand {
-                ConfigureSubcommand::Repository {
-                    alias,
-                    url,
-                    force_source,
-                    before,
-                    after,
-                    first,
-                    last,
-                    replace,
-                    remove,
-                    clear,
-                } => {
-                    let cli_args = CliArgs {
-                        alias,
-                        url,
-                        force_source,
-                        before,
-                        after,
-                        first,
-                        last,
-                        replace,
-                        remove,
-                        clear,
+                ConfigureSubcommand::Repository { operation } => {
+                    let action = match operation {
+                        RepositoryOperation::Clear => RepositoryAction::Clear,
+                        RepositoryOperation::Remove { alias } => {
+                            RepositoryAction::Remove { alias }
+                        }
+                        RepositoryOperation::Replace { old_alias, alias, url, force_source } => {
+                            let parsed_url = url::Url::parse(&url)
+                                .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+                            RepositoryAction::Replace {
+                                old_alias,
+                                new_alias: alias,
+                                url: parsed_url,
+                                force_source,
+                            }
+                        }
+                        RepositoryOperation::Add { alias, url, force_source, position } => {
+                            let parsed_url = url::Url::parse(&url)
+                                .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+                            
+                            let positioning = match position {
+                                Some(RepositoryPosition::First) => RepositoryPositioning::First,
+                                Some(RepositoryPosition::Last) => RepositoryPositioning::Last,
+                                Some(RepositoryPosition::Before { alias: before_alias }) => {
+                                    RepositoryPositioning::Before(before_alias)
+                                }
+                                Some(RepositoryPosition::After { alias: after_alias }) => {
+                                    RepositoryPositioning::After(after_alias)
+                                }
+                                None => RepositoryPositioning::Last, // Default
+                            };
+                            
+                            RepositoryAction::Add {
+                                alias,
+                                url: parsed_url,
+                                positioning,
+                                force_source,
+                            }
+                        }
                     };
                     
-                    let action = parse_repository_action(cli_args)
-                        .map_err(|e| e.with_path(cli.config_file.clone()))?;
+                    let response = execute_repository_action(&cli.config_file, action)?;
                     
-                    execute_repository_action(&cli.config_file, action, output_format.is_json())?;
+                    // Handle output based on format preference
+                    if output_format.is_json() {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        // Print detailed text output
+                        match response.operation {
+                            LibRepositoryOperation::Add => {
+                                println!("Repository '{}' added successfully with URL: {}", 
+                                         response.alias.as_ref().unwrap(), 
+                                         response.url.as_ref().unwrap());
+                            }
+                            LibRepositoryOperation::Replace => {
+                                println!("Repository replaced successfully - new alias: '{}', URL: {}", 
+                                         response.alias.as_ref().unwrap(), 
+                                         response.url.as_ref().unwrap());
+                            }
+                            LibRepositoryOperation::Remove => {
+                                println!("Repository '{}' removed successfully", 
+                                         response.alias.as_ref().unwrap());
+                            }
+                            LibRepositoryOperation::Clear => {
+                                println!("All repositories cleared successfully");
+                            }
+                        }
+                    }
                 }
             }
         }
