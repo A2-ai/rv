@@ -445,22 +445,34 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         }
     }
     
-    // Print final results organized by thread
+    // Print final results in execution order
     println!("\n📊 Final Results:");
+    
+    // Collect all step results with their thread info and sort by execution order
+    let mut all_steps: Vec<(&StepResult, &str)> = Vec::new();
     for thread_output in &all_thread_outputs {
-        println!("  {} thread:", thread_output.thread_name.to_uppercase());
         for step_result in &thread_output.step_results {
-            let has_assertion = workflow.test.steps.get(step_result.step_index)
-                .map(|s| s.assert.is_some())
-                .unwrap_or(false);
-            
-            if has_assertion {
-                let failed = assertion_failures.iter().any(|(name, _, _)| name == &step_result.name);
-                let status = if failed { "❌ FAIL" } else { "✅ PASS" };
-                println!("   • {} - {} ({} chars)", step_result.name, status, step_result.output.len());
-            } else {
-                println!("   • {} - ⏭️ NO ASSERTION ({} chars)", step_result.name, step_result.output.len());
-            }
+            all_steps.push((step_result, &thread_output.thread_name));
+        }
+    }
+    
+    // Sort by step_index (execution order)
+    all_steps.sort_by_key(|(step_result, _)| step_result.step_index);
+    
+    // Display in execution order
+    for (step_result, thread_name) in all_steps {
+        let has_assertion = workflow.test.steps.get(step_result.step_index)
+            .map(|s| s.assert.is_some())
+            .unwrap_or(false);
+        
+        let thread_label = thread_name.to_uppercase();
+        
+        if has_assertion {
+            let failed = assertion_failures.iter().any(|(name, _, _)| name == &step_result.name);
+            let status = if failed { "❌ FAIL" } else { "✅ PASS" };
+            println!("   • [{}] {} - {} ({} chars)", thread_label, step_result.name, status, step_result.output.len());
+        } else {
+            println!("   • [{}] {} - ⏭️ NO ASSERTION ({} chars)", thread_label, step_result.name, step_result.output.len());
         }
     }
     
