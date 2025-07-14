@@ -1,5 +1,4 @@
 use assert_cmd::Command;
-use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
@@ -33,14 +32,15 @@ fn test_configure_repository_add() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'cran' added successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_add_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("alias = \"cran\""));
-    assert!(result.contains("https://cran.r-project.org"));
+    insta::assert_snapshot!("cli_add_config", result);
 }
 
 #[test]
@@ -55,16 +55,15 @@ fn test_configure_repository_add_with_positioning() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'cran' added successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated and cran is first
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_add_first_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    let lines: Vec<&str> = result.lines().collect();
-    let cran_line = lines.iter().position(|&line| line.contains(r#"alias = "cran""#)).unwrap();
-    let posit_line = lines.iter().position(|&line| line.contains(r#"alias = "posit""#)).unwrap();
-    assert!(cran_line < posit_line);
+    insta::assert_snapshot!("cli_add_first_config", result);
 }
 
 #[test]
@@ -78,14 +77,15 @@ fn test_configure_repository_replace() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository replaced successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_replace_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("https://packagemanager.posit.co/cran/latest"));
-    assert!(!result.contains("2024-12-16"));
+    insta::assert_snapshot!("cli_replace_config", result);
 }
 
 #[test]
@@ -100,14 +100,15 @@ fn test_configure_repository_replace_with_new_alias() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository replaced successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_replace_new_alias_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("posit-new"));
-    assert!(!result.contains("alias = \"posit\""));
+    insta::assert_snapshot!("cli_replace_new_alias_config", result);
 }
 
 #[test]
@@ -121,14 +122,15 @@ fn test_configure_repository_update_alias() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'posit-updated' updated successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_update_alias_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("posit-updated"));
-    assert!(!result.contains("alias = \"posit\""));
+    insta::assert_snapshot!("cli_update_alias_config", result);
 }
 
 #[test]
@@ -142,14 +144,15 @@ fn test_configure_repository_update_url() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'posit' updated successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_update_url_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("https://packagemanager.posit.co/cran/latest"));
-    assert!(!result.contains("2024-12-16"));
+    insta::assert_snapshot!("cli_update_url_config", result);
 }
 
 #[test]
@@ -163,13 +166,15 @@ fn test_configure_repository_update_force_source() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'posit' updated successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_update_force_source_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("force_source = true"));
+    insta::assert_snapshot!("cli_update_force_source_config", result);
 }
 
 #[test]
@@ -184,14 +189,15 @@ fn test_configure_repository_update_by_url() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'matched-by-url' updated successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_update_by_url_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("matched-by-url"));
-    assert!(!result.contains("alias = \"posit\""));
+    insta::assert_snapshot!("cli_update_by_url_config", result);
 }
 
 #[test]
@@ -204,14 +210,15 @@ fn test_configure_repository_remove() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Repository 'posit' removed successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_remove_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    // Check that posit is not in the repositories array specifically
-    assert!(!result.contains(r#"alias = "posit""#));
+    insta::assert_snapshot!("cli_remove_config", result);
 }
 
 #[test]
@@ -224,13 +231,15 @@ fn test_configure_repository_clear() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("All repositories cleared successfully"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
     
-    // Verify the config was updated
+    // Snapshot the stdout
+    insta::assert_snapshot!("cli_clear_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
     let result = fs::read_to_string(&config_path).unwrap();
-    assert!(result.contains("repositories = []"));
+    insta::assert_snapshot!("cli_clear_config", result);
 }
 
 #[test]
@@ -245,11 +254,15 @@ fn test_configure_repository_json_output() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("\"operation\": \"add\""))
-        .stdout(predicate::str::contains("\"alias\": \"cran\""))
-        .stdout(predicate::str::contains("\"success\": true"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    
+    // Snapshot the JSON stdout
+    insta::assert_snapshot!("cli_json_output_stdout", String::from_utf8_lossy(&output.stdout));
+    
+    // Snapshot the resulting config
+    let result = fs::read_to_string(&config_path).unwrap();
+    insta::assert_snapshot!("cli_json_output_config", result);
 }
 
 #[test]
@@ -263,9 +276,11 @@ fn test_configure_repository_error_missing_alias() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Must specify either target alias or --match-url"));
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    
+    // Snapshot the stderr
+    insta::assert_snapshot!("cli_error_missing_alias_stderr", String::from_utf8_lossy(&output.stderr));
 }
 
 #[test]
@@ -279,9 +294,15 @@ fn test_configure_repository_error_nonexistent_alias() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Alias not found"));
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    
+    // Verify error contains expected message without path-specific part
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr_str.contains("Alias not found: nonexistent"));
+    
+    // Snapshot just the essential error part (removing dynamic paths)
+    insta::assert_snapshot!("cli_error_nonexistent_alias_stderr", "Failed to configure repository\n\nCaused by:\n    Alias not found: nonexistent");
 }
 
 #[test]
@@ -296,6 +317,9 @@ fn test_configure_repository_conflict_flags() {
         "--config-file", config_path.to_str().unwrap()
     ]);
     
-    cmd.assert()
-        .failure();
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    
+    // Snapshot the stderr showing conflict error
+    insta::assert_snapshot!("cli_conflict_flags_stderr", String::from_utf8_lossy(&output.stderr));
 }

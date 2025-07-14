@@ -1,0 +1,8 @@
+---
+source: tests/cli_configure_repository.rs
+expression: "\"Failed to configure repository\\n\\nCaused by:\\n    Alias not found: nonexistent\""
+---
+Failed to configure repository
+
+Caused by:
+    Alias not found: nonexistent

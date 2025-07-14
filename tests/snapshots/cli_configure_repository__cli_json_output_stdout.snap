@@ -1,0 +1,11 @@
+---
+source: tests/cli_configure_repository.rs
+expression: "String::from_utf8_lossy(&output.stdout)"
+---
+{
+  "operation": "add",
+  "alias": "cran",
+  "url": "https://cran.r-project.org/",
+  "success": true,
+  "message": "Repository configured successfully"
+}

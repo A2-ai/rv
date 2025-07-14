@@ -1,0 +1,9 @@
+---
+source: tests/cli_configure_repository.rs
+expression: "String::from_utf8_lossy(&output.stderr)"
+---
+error: the argument '--first' cannot be used with '--last'
+
+Usage: rv configure repository add --url <URL> --first --config-file <CONFIG_FILE> <ALIAS>
+
+For more information, try '--help'.
