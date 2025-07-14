@@ -320,6 +320,7 @@ fn test_configure_repository_conflict_flags() {
     let output = cmd.output().unwrap();
     assert!(!output.status.success());
     
-    // Snapshot the stderr showing conflict error
-    insta::assert_snapshot!("cli_conflict_flags_stderr", String::from_utf8_lossy(&output.stderr));
+    // Normalize binary name for cross-platform compatibility (rv vs rv.exe)
+    let stderr_str = String::from_utf8_lossy(&output.stderr).replace("rv.exe", "rv");
+    insta::assert_snapshot!("cli_conflict_flags_stderr", stderr_str);
 }

@@ -1,6 +1,6 @@
 ---
 source: tests/cli_configure_repository.rs
-expression: "String::from_utf8_lossy(&output.stderr)"
+expression: stderr_str
 ---
 error: the argument '--first' cannot be used with '--last'
 
