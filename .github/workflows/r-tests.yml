@@ -2,7 +2,7 @@ name: R Integration Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ r-tests ]
   pull_request:
     branches: [ r-tests ]
 
