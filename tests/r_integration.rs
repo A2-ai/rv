@@ -162,6 +162,7 @@ struct ThreadOutput {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum CoordinatorMessage {
     StepCompleted { thread_name: String, step_index: usize },
     StepTimedOut { thread_name: String, step_index: usize },
@@ -169,6 +170,7 @@ enum CoordinatorMessage {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum StepStatus {
     Pending,
     Running,
@@ -177,6 +179,7 @@ enum StepStatus {
     Failed,
 }
 
+#[allow(dead_code)]
 struct StepCoordinator {
     num_threads: usize,
     num_steps: usize,
@@ -191,6 +194,7 @@ struct RProcessManager {
     process: Option<std::process::Child>,
     stdin: Option<std::process::ChildStdin>,
     last_health_check: Instant,
+    #[allow(dead_code)]
     process_id: Option<u32>,
 }
 
@@ -300,6 +304,7 @@ impl RProcessManager {
         Ok(())
     }
     
+    #[allow(dead_code)]
     fn kill_process(&mut self) -> Result<()> {
         debug_print("Attempting to kill R process due to timeout");
         
@@ -397,6 +402,7 @@ impl StepCoordinator {
         }
     }
     
+    #[allow(dead_code)]
     fn get_sender(&self) -> mpsc::Sender<CoordinatorMessage> {
         self.message_tx.clone()
     }
@@ -486,6 +492,7 @@ impl StepCoordinator {
         Ok(())
     }
     
+    #[allow(dead_code)]
     fn notify_step_timeout(&self, step_index: usize, thread_name: &str) -> Result<()> {
         let thread_index = self.get_thread_index(thread_name)
             .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
@@ -512,6 +519,7 @@ impl StepCoordinator {
         Ok(())
     }
     
+    #[allow(dead_code)]
     fn should_continue(&self, step_index: usize) -> bool {
         let status = self.step_status.lock().unwrap();
         // Continue if no threads have failed and at least one thread hasn't timed out
