@@ -242,8 +242,18 @@ impl RProcessManager {
         let r_executable = Self::find_r_executable()?;
         debug_print(&format!("Starting R process '{}' in directory: {}", r_executable, test_dir.display()));
         
+        let args = if cfg!(windows) {
+            // Windows R.exe requires --vanilla or --no-save, doesn't support --interactive
+            vec!["--no-save", "--no-restore"]
+        } else {
+            // Unix R supports --interactive
+            vec!["--interactive", "--no-restore"]
+        };
+        
+        debug_print(&format!("Using R args: {:?}", args));
+        
         let mut process = std::process::Command::new(&r_executable)
-            .args(["--interactive", "--no-restore"])
+            .args(args)
             .current_dir(test_dir)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
