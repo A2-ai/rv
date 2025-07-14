@@ -8,7 +8,11 @@ on:
 
 jobs:
   test:
-    runs-on: macos-latest
+    name: R Integration Tests (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     
     steps:
     - uses: actions/checkout@v4
@@ -25,10 +29,16 @@ jobs:
     - name: Build rv
       run: cargo build --features=cli --release
 
-    - name: Add rv to PATH
+    - name: Add rv to PATH (Unix)
+      if: runner.os != 'Windows'
       run: echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
+      
+    - name: Add rv to PATH (Windows)
+      if: runner.os == 'Windows'
+      run: echo "${{ github.workspace }}/target/release" >> $env:GITHUB_PATH
     
-    - name: Verify R installation
+    - name: Verify R installation (Unix)
+      if: runner.os != 'Windows'
       run: |
         R --version
         which R
@@ -38,7 +48,18 @@ jobs:
         R --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
         R --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
         
+    - name: Verify R installation (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        R --version
+        where R
+        R --slave -e "cat('R is working:', R.version.string, '\n')"
+        R --slave -e "cat('Library paths:', paste(.libPaths(), collapse=', '), '\n')"
+        R --slave -e "cat('Working directory:', getwd(), '\n')"
+        R --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
+        R --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
+        
     - name: Run tests
-      run: cargo test --features=cli --test init -- --nocapture --test-threads=1
+      run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1

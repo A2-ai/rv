@@ -284,11 +284,11 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     let (prev_stdout, prev_stderr) = manager.shutdown_and_capture_output()
                                         .map_err(|e| anyhow::anyhow!("Failed to shutdown R process during restart: {}", e))?;
                                     
-                                    // Accumulate the output from the previous session (stdout + stderr mixed)
+                                    // Accumulate the output from the previous session
                                     accumulated_r_output.push_str(&prev_stdout);
                                     
-                                    // Mix stderr directly for cross-platform compatibility
                                     if !prev_stderr.is_empty() {
+                                        accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
                                         accumulated_r_output.push_str(&String::from_utf8_lossy(&prev_stderr));
                                     }
                                     
@@ -375,12 +375,11 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     let (final_stdout, final_stderr) = manager.shutdown_and_capture_output()
                         .map_err(|e| anyhow::anyhow!("Failed to shutdown R process for thread cleanup: {}", e))?;
                     
-                    // Combine accumulated output with final output (stdout + stderr mixed together)
+                    // Combine accumulated output with final output
                     accumulated_r_output.push_str(&final_stdout);
                     
-                    // Mix stderr directly into output for cross-platform compatibility
-                    // (rv libpaths message goes to stderr on Linux, stdout on macOS)
                     if !final_stderr.is_empty() {
+                        accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
                         accumulated_r_output.push_str(&String::from_utf8_lossy(&final_stderr));
                     }
                     
