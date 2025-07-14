@@ -8,6 +8,7 @@ use fs_err as fs;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Instant;
 
 const RV: &str = "rv";
 
@@ -53,6 +54,95 @@ struct StepResult {
 struct ThreadOutput {
     thread_name: String,
     step_results: Vec<StepResult>,
+}
+
+struct RProcessManager {
+    process: Option<std::process::Child>,
+    stdin: Option<std::process::ChildStdin>,
+    last_health_check: Instant,
+}
+
+impl RProcessManager {
+    fn start_r_process(test_dir: &Path) -> Result<Self> {
+        let mut process = std::process::Command::new("R")
+            .args(["--interactive", "--no-restore"])
+            .current_dir(test_dir)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to start R process: {}. Is R installed and in PATH?", e))?;
+        
+        let stdin = process.stdin.take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get R stdin"))?;
+        
+        Ok(Self {
+            process: Some(process),
+            stdin: Some(stdin),
+            last_health_check: Instant::now(),
+        })
+    }
+    
+    fn is_alive(&mut self) -> Result<bool> {
+        if let Some(process) = &mut self.process {
+            match process.try_wait()
+                .map_err(|e| anyhow::anyhow!("Failed to check R process status: {}", e))? 
+            {
+                Some(exit_status) => {
+                    println!("⚠️ R process exited with status: {}", exit_status);
+                    Ok(false)
+                }
+                None => {
+                    self.last_health_check = Instant::now();
+                    Ok(true)
+                }
+            }
+        } else {
+            Ok(false)
+        }
+    }
+    
+    fn send_command(&mut self, command: &str) -> Result<()> {
+        if !self.is_alive()? {
+            return Err(anyhow::anyhow!("R process is not running"));
+        }
+        
+        if let Some(stdin) = &mut self.stdin {
+            writeln!(stdin, "{}", command)
+                .map_err(|e| anyhow::anyhow!("Failed to write '{}' to R stdin: {}", command, e))?;
+            stdin.flush()
+                .map_err(|e| anyhow::anyhow!("Failed to flush R stdin after command '{}': {}", command, e))?;
+        } else {
+            return Err(anyhow::anyhow!("R stdin not available"));
+        }
+        
+        Ok(())
+    }
+    
+    fn shutdown_and_capture_output(mut self) -> Result<(String, Vec<u8>)> {
+        let accumulated_output = String::new();
+        
+        if let (Some(mut stdin), Some(process)) = (self.stdin.take(), self.process.take()) {
+            if let Err(e) = writeln!(stdin, "quit(save = 'no')") {
+                println!("⚠️ Failed to send quit command to R: {}", e);
+            }
+            drop(stdin); // Close stdin to signal R to exit
+            
+            let final_output = process.wait_with_output()
+                .map_err(|e| anyhow::anyhow!("Failed to wait for R process termination: {}", e))?;
+            
+            if !final_output.status.success() {
+                println!("⚠️ R process exited with non-zero status: {:?}", final_output.status);
+            }
+            
+            let stdout = final_output.stdout;
+            let stderr = final_output.stderr;
+            
+            Ok((String::from_utf8_lossy(&stdout).to_string(), stderr))
+        } else {
+            Ok((accumulated_output, Vec::new()))
+        }
+    }
 }
 
 fn load_r_script(script_name: &str) -> Result<String> {
@@ -154,16 +244,13 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         
         let handle = thread::spawn(move || -> Result<()> {
             let mut step_results = Vec::new();
-            let mut r_process: Option<std::process::Child> = None;
-            let mut r_stdin: Option<std::process::ChildStdin> = None;
+            let mut r_manager: Option<RProcessManager> = None;
             let mut accumulated_r_output = String::new();
             
             // Process all steps in order, participating in barriers even if not executing
             for step_idx in 0..thread_steps.len() {
                 // Wait for this step's start - all threads begin this step together
-                println!("🔄 {} thread waiting at start barrier for step {}", thread_name_clone.to_uppercase(), step_idx);
                 thread_start_barriers[step_idx].wait();
-                println!("🔄 {} thread passed start barrier for step {}", thread_name_clone.to_uppercase(), step_idx);
                 
                 // Only execute if this step belongs to our thread
                 if !step_indices.contains(&step_idx) {
@@ -191,20 +278,18 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                         // Handle R commands
                         if step.run == "R" {
                             // Check if this is a restart
-                            if step.restart && r_process.is_some() {
-                                // Restart: capture existing output first, then start new process
-                                if let (Some(mut stdin), Some(process)) = (r_stdin.take(), r_process.take()) {
-                                    writeln!(stdin, "quit(save = 'no')").ok();
-                                    let final_output = process.wait_with_output()
-                                        .map_err(|e| anyhow::anyhow!("Failed to wait for R process during restart: {}", e))?;
+                            if step.restart {
+                                if let Some(manager) = r_manager.take() {
+                                    // Capture output from previous session
+                                    let (prev_stdout, prev_stderr) = manager.shutdown_and_capture_output()
+                                        .map_err(|e| anyhow::anyhow!("Failed to shutdown R process during restart: {}", e))?;
                                     
-                                    // Accumulate the output from the previous session (both stdout and stderr)
-                                    accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
+                                    // Accumulate the output from the previous session
+                                    accumulated_r_output.push_str(&prev_stdout);
                                     
-                                    let prev_stderr = String::from_utf8_lossy(&final_output.stderr);
                                     if !prev_stderr.is_empty() {
                                         accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
-                                        accumulated_r_output.push_str(&prev_stderr);
+                                        accumulated_r_output.push_str(&String::from_utf8_lossy(&prev_stderr));
                                     }
                                     
                                     accumulated_r_output.push_str("\n# === R PROCESS RESTARTED ===\n");
@@ -212,30 +297,14 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             }
                             
                             // Start (or restart) R process
-                            let mut process = std::process::Command::new("R")
-                                .args(["--interactive"])
-                                .current_dir(&thread_test_dir)
-                                .stdin(std::process::Stdio::piped())
-                                .stdout(std::process::Stdio::piped())
-                                .stderr(std::process::Stdio::piped())
-                                .spawn()
-                                .expect("Failed to start R process");
+                            r_manager = Some(RProcessManager::start_r_process(&thread_test_dir)
+                                .map_err(|e| anyhow::anyhow!("Failed to start R process for step '{}': {}", step.name, e))?);
                             
-                            let stdin = process.stdin.take().expect("Failed to get R stdin");
-                            
-                            r_stdin = Some(stdin);
-                            r_process = Some(process);
-                            
-                            // If this is a restart, we need to add a step end marker
-                            // after the new R process starts up, so the parser can capture the startup output
+                            // If this is a restart, add a step end marker
                             if step.restart {
-                                // Add step end marker for the restart step to capture R startup output
-                                if let Some(stdin) = &mut r_stdin {
-                                    writeln!(stdin, "cat('# STEP_END: {}\\n')", step.name)
+                                if let Some(manager) = &mut r_manager {
+                                    manager.send_command(&format!("cat('# STEP_END: {}\\n')", step.name))
                                         .map_err(|e| anyhow::anyhow!("Failed to write restart step end marker: {}", e))?;
-                                    
-                                    use std::io::Write;
-                                    stdin.flush().map_err(|e| anyhow::anyhow!("Failed to flush R stdin after restart: {}", e))?;
                                 }
                                 "R process restarted".to_string()
                             } else {
@@ -243,57 +312,43 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             }
                         } else {
                             // Execute R script or command
-                            if let (Some(stdin), Some(process)) = (&mut r_stdin, &mut r_process) {
+                            if let Some(manager) = &mut r_manager {
                                 // Check if R process is still alive
-                                match process.try_wait() {
-                                    Ok(Some(exit_status)) => {
-                                        return Err(anyhow::anyhow!("R process exited with status: {}", exit_status));
-                                    },
-                                    Ok(None) => {
-                                        // Process is still running, continue
-                                    },
-                                    Err(e) => {
-                                        return Err(anyhow::anyhow!("Failed to check R process status: {}", e));
-                                    }
+                                if !manager.is_alive()? {
+                                    return Err(anyhow::anyhow!("R process died unexpectedly during step '{}'", step.name));
                                 }
                                 
                                 // First, add a marker for the startup step if this is the first command
-                                // (We can tell by checking if there are any existing step results for R thread)
                                 let r_steps_so_far = step_results.len();
                                 
                                 if r_steps_so_far == 1 {
                                     // This is the first command after R startup, add startup marker
-                                    // First, add a simple command to ensure R is fully loaded
-                                    writeln!(stdin, "# R startup complete")
+                                    manager.send_command("# R startup complete")
                                         .map_err(|e| anyhow::anyhow!("Failed to write startup comment: {}", e))?;
-                                    writeln!(stdin, "cat('# STEP_END: start R\\n')")
+                                    manager.send_command(&format!("cat('# STEP_END: start R\\n')"))
                                         .map_err(|e| anyhow::anyhow!("Failed to write startup marker: {}", e))?;
                                 }
                                 
                                 // Execute the step
                                 if step.run.ends_with(".R") {
-                                    let script_content = load_r_script(&step.run)?;
-                                    writeln!(stdin, "{}", script_content)
-                                        .map_err(|e| anyhow::anyhow!("Failed to write R script: {}", e))?;
+                                    let script_content = load_r_script(&step.run)
+                                        .map_err(|e| anyhow::anyhow!("Failed to load R script for step '{}': {}", step.name, e))?;
+                                    manager.send_command(&script_content)
+                                        .map_err(|e| anyhow::anyhow!("Failed to send R script for step '{}': {}", step.name, e))?;
                                 } else {
-                                    writeln!(stdin, "{}", step.run)
-                                        .map_err(|e| anyhow::anyhow!("Failed to write R command: {}", e))?;
+                                    manager.send_command(&step.run)
+                                        .map_err(|e| anyhow::anyhow!("Failed to send R command for step '{}': {}", step.name, e))?;
                                 }
                                 
                                 // Add step end marker after the command
-                                writeln!(stdin, "cat('# STEP_END: {}\\n')", step.name)
-                                    .map_err(|e| anyhow::anyhow!("Failed to write step end marker: {}", e))?;
-                                
-                                // Force flush of stdin to ensure R gets the commands
-                                use std::io::Write;
-                                stdin.flush().map_err(|e| anyhow::anyhow!("Failed to flush R stdin: {}", e))?;
+                                manager.send_command(&format!("cat('# STEP_END: {}\\n')", step.name))
+                                    .map_err(|e| anyhow::anyhow!("Failed to write step end marker for '{}': {}", step.name, e))?;
                                 
                                 println!("   ├─ Command sent (will wait at completion barrier)");
                                 
-                                // We'll check assertions after capturing all output at the end
                                 "Command executed".to_string()
                             } else {
-                                return Err(anyhow::anyhow!("R process not started"));
+                                return Err(anyhow::anyhow!("R process not started for step '{}'", step.name));
                             }
                         }
                     },
@@ -316,37 +371,18 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             
             // Clean up R process if it exists and capture all output
             if thread_name_clone == "r" {
-                if let (Some(mut stdin), Some(process)) = (r_stdin, r_process) {
-                    println!("🔄 Sending quit command to R process");
-                    if let Err(e) = writeln!(stdin, "quit(save = 'no')") {
-                        println!("⚠️ Failed to send quit command: {}", e);
-                    }
-                    drop(stdin); // Close stdin to signal R to exit
+                if let Some(manager) = r_manager {
+                    let (final_stdout, final_stderr) = manager.shutdown_and_capture_output()
+                        .map_err(|e| anyhow::anyhow!("Failed to shutdown R process for thread cleanup: {}", e))?;
                     
-                    println!("🔄 Waiting for R process to complete");
-                    let final_output = process.wait_with_output()
-                        .map_err(|e| anyhow::anyhow!("Failed to wait for R process: {}", e))?;
+                    // Combine accumulated output with final output
+                    accumulated_r_output.push_str(&final_stdout);
                     
-                    println!("🔄 R process completed with exit status: {:?}", final_output.status);
-                    
-                    // Combine accumulated output with final output (both stdout and stderr)
-                    accumulated_r_output.push_str(&String::from_utf8_lossy(&final_output.stdout));
-                    
-                    let final_stderr = String::from_utf8_lossy(&final_output.stderr);
                     if !final_stderr.is_empty() {
                         accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
-                        accumulated_r_output.push_str(&final_stderr);
+                        accumulated_r_output.push_str(&String::from_utf8_lossy(&final_stderr));
                     }
                     
-                    let full_r_stderr = final_stderr;
-                    
-                    println!("{}", "=".repeat(80));
-                    println!("COMPLETE R STDOUT ({} bytes total):", accumulated_r_output.len());
-                    println!("{}", accumulated_r_output);
-                    println!("{}", "=".repeat(80));
-                    println!("COMPLETE R STDERR ({} bytes):", final_output.stderr.len());
-                    println!("{}", full_r_stderr);
-                    println!("{}", "=".repeat(80));
                     
                     // Extract R step names from our step results
                     let r_step_names: Vec<String> = step_results.iter()
@@ -356,15 +392,10 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     // Parse the complete output to extract per-step outputs
                     let parsed_outputs = parse_r_step_outputs(&accumulated_r_output, &r_step_names);
                     
-                    println!("🔍 Parsing R session output into {} steps", r_step_names.len());
-                    
                     // Update step results with actual outputs (assertions checked at end)
                     for step_result in &mut step_results {
                         if let Some(step_output) = parsed_outputs.get(&step_result.name) {
                             step_result.output = step_output.clone();
-                            println!("   ├─ Captured '{}' output: {} chars", step_result.name, step_output.len());
-                        } else {
-                            println!("   ⚠️ No output found for step '{}'", step_result.name);
                         }
                     }
                 }
@@ -375,7 +406,8 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 thread_name: thread_name_clone.clone(),
                 step_results,
             };
-            thread_tx.send(thread_output).unwrap();
+            thread_tx.send(thread_output)
+                .map_err(|e| anyhow::anyhow!("Failed to send results from {} thread: {}", thread_name_clone, e))?;
             Ok(())
         });
         
@@ -384,57 +416,37 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     
     // Wait for all threads to complete
     for (thread_name, handle) in thread_handles {
-        handle.join().map_err(|_| anyhow::anyhow!("Thread {} panicked", thread_name))??;
+        handle.join()
+            .map_err(|_| anyhow::anyhow!("Thread '{}' panicked during execution", thread_name))?
+            .map_err(|e| anyhow::anyhow!("Thread '{}' failed: {}", thread_name, e))?;
     }
     
     // Collect step results from all threads
     let mut all_thread_outputs = Vec::new();
     for (thread_name, rx) in rx_map {
         let thread_output = rx.recv().map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
-        println!("✅ {} thread completed successfully", thread_name.to_uppercase());
         all_thread_outputs.push(thread_output);
     }
     
     // Now check all assertions after we have all outputs
-    println!("\n🔍 Checking all assertions...");
     let mut assertion_failures = Vec::new();
     
+    // Check assertions and collect failures
     for thread_output in &all_thread_outputs {
         for step_result in &thread_output.step_results {
             // Find the original step by index to get its assertion
             if let Some(original_step) = workflow.test.steps.get(step_result.step_index) {
                 if let Some(assertion) = &original_step.assert {
-                    match assertion {
-                        TestAssertion::Single(s) => {
-                            print!("   ├─ Checking '{}' single assertion... ", step_result.name);
-                            println!("      Content: '{}'", s);
-                        },
-                        TestAssertion::Multiple(list) => {
-                            print!("   ├─ Checking '{}' multiple assertion ({} items)... ", step_result.name, list.len());
-                            for (i, item) in list.iter().enumerate() {
-                                println!("      {}: '{}'", i + 1, item);
-                            }
-                        },
+                    if let Err(e) = check_assertion(assertion, &step_result.output) {
+                        assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
                     }
-                    
-                    match check_assertion(assertion, &step_result.output) {
-                        Ok(()) => {
-                            println!("✅ passed");
-                        },
-                        Err(e) => {
-                            println!("❌ failed");
-                            assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
-                        }
-                    }
-                } else {
-                    println!("   ├─ '{}' - ⏭️ no assertion", step_result.name);
                 }
             }
         }
     }
     
-    // Print step results summary
-    println!("\n📊 Final step results:");
+    // Print final results organized by thread
+    println!("\n📊 Final Results:");
     for thread_output in &all_thread_outputs {
         println!("  {} thread:", thread_output.thread_name.to_uppercase());
         for step_result in &thread_output.step_results {
@@ -445,9 +457,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             if has_assertion {
                 let failed = assertion_failures.iter().any(|(name, _, _)| name == &step_result.name);
                 let status = if failed { "❌ FAIL" } else { "✅ PASS" };
-                println!("   • {} - {} (output: {} chars)", step_result.name, status, step_result.output.len());
+                println!("   • {} - {} ({} chars)", step_result.name, status, step_result.output.len());
             } else {
-                println!("   • {} - ⏭️ NO ASSERTION (output: {} chars)", step_result.name, step_result.output.len());
+                println!("   • {} - ⏭️ NO ASSERTION ({} chars)", step_result.name, step_result.output.len());
             }
         }
     }
@@ -467,39 +479,48 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
 }
 
 fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Result<String> {
-    match command {
-        "rv init" => {
-            let output = Command::cargo_bin(RV)?
-                .arg("init")
-                .current_dir(test_dir)
-                .output()?;
-            if !output.status.success() {
-                return Err(anyhow::anyhow!("rv init failed"));
+    let (cmd, args) = match command {
+        "rv init" => ("init", vec![]),
+        "rv sync" => ("sync", vec![]),
+        "rv plan" => ("plan", vec![]),
+        cmd if cmd.starts_with("rv ") => {
+            let parts: Vec<&str> = cmd.split_whitespace().skip(1).collect();
+            if parts.is_empty() {
+                return Err(anyhow::anyhow!("Invalid rv command: {}", command));
             }
-            
-            // Copy config if needed
-            if config_path.exists() {
-                fs::copy(config_path, test_dir.join("rproject.toml"))?;
-            }
-            
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        },
-        "rv sync" => {
-            let output = Command::cargo_bin(RV)?
-                .arg("sync")
-                .current_dir(test_dir)
-                .output()?;
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        },
-        "rv plan" => {
-            let output = Command::cargo_bin(RV)?
-                .arg("plan")
-                .current_dir(test_dir)
-                .output()?;
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        },
-        _ => Err(anyhow::anyhow!("Unknown rv command: {}", command))?,
+            (parts[0], parts[1..].to_vec())
+        }
+        _ => return Err(anyhow::anyhow!("Unknown rv command: {}", command)),
+    };
+    
+    let output = Command::cargo_bin(RV)
+        .map_err(|e| anyhow::anyhow!("Failed to find rv binary: {}", e))?
+        .arg(cmd)
+        .args(args)
+        .current_dir(test_dir)
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to execute rv {}: {}", cmd, e))?;
+    
+    // CRITICAL: Check exit status
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(anyhow::anyhow!(
+            "rv {} failed with exit code: {}\nStdout: {}\nStderr: {}", 
+            command, 
+            output.status.code().unwrap_or(-1),
+            stdout,
+            stderr
+        ));
     }
+    
+    // Handle config copying for init
+    if cmd == "init" && config_path.exists() {
+        fs::copy(config_path, test_dir.join("rproject.toml"))
+            .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
+    }
+    
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
@@ -520,19 +541,14 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
             }
         },
         TestAssertion::Multiple(expected_list) => {
-            println!("      Checking {} assertions:", expected_list.len());
-            for (i, expected) in expected_list.iter().enumerate() {
-                println!("        {} - Checking for: '{}'", i + 1, expected);
+            for expected in expected_list.iter() {
                 if !output.contains(expected) {
-                    println!("        ❌ NOT FOUND");
                     return Err(anyhow::anyhow!(
                         "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}", 
                         expected, 
                         output.len(),
                         output
                     ));
-                } else {
-                    println!("        ✅ FOUND");
                 }
             }
         },
@@ -603,6 +619,13 @@ fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
         
         let workflow_content = fs::read_to_string(&workflow_file)
             .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", workflow_file.display(), e))?;
+        
+        // Skip empty workflow files or comment-only files
+        let trimmed_content = workflow_content.trim();
+        if trimmed_content.is_empty() || trimmed_content.starts_with('#') {
+            println!("⚠️ Skipping empty/comment workflow file: {}", file_name);
+            continue;
+        }
         
         // Parse and show workflow summary
         if let Ok(workflow) = serde_yaml::from_str::<WorkflowTest>(&workflow_content) {
