@@ -3,14 +3,117 @@ use assert_cmd::Command;
 use tempfile::TempDir;
 use std::thread;
 use std::io::Write;
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Mutex, Condvar};
 use fs_err as fs;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use std::sync::mpsc;
 
 const RV: &str = "rv";
+
+fn debug_print(msg: &str) {
+    if std::env::var("RV_TEST_DEBUG").is_ok() {
+        println!("🐛 DEBUG: {}", msg);
+    }
+}
+
+// New timeout execution for R commands that can actually interrupt the process
+fn execute_r_command_with_timeout<F>(
+    step_name: &str,
+    timeout_secs: Option<u64>,
+    r_manager: &mut Option<RProcessManager>,
+    operation: F,
+) -> Result<String>
+where
+    F: FnOnce(&mut RProcessManager) -> Result<String>,
+{
+    if let Some(timeout) = timeout_secs {
+        debug_print(&format!("Executing R step '{}' with timeout: {}s", step_name, timeout));
+    } else {
+        debug_print(&format!("Executing R step '{}' with no timeout", step_name));
+    }
+    
+    if let Some(manager) = r_manager {
+        if let Some(timeout_duration) = timeout_secs.map(Duration::from_secs) {
+            debug_print(&format!("Starting timeout monitor for step '{}'", step_name));
+            
+            // Send the command first  
+            let operation_result = operation(manager);
+            if operation_result.is_err() {
+                return operation_result;
+            }
+            
+            debug_print(&format!("Command sent, now waiting {}s for R to execute it", timeout_duration.as_secs()));
+            
+            // Now wait for the timeout duration to see if R completes the command
+            std::thread::sleep(timeout_duration);
+            
+            // After timeout, capture whatever output we can before killing the process
+            debug_print(&format!("Timeout expired for step '{}', capturing output before killing R process", step_name));
+            
+            // Try to capture output before clearing the manager
+            let captured_output = match r_manager.take() {
+                Some(dying_manager) => {
+                    debug_print("Attempting to capture R output before timeout failure");
+                    match dying_manager.shutdown_and_capture_output() {
+                        Ok((stdout, stderr)) => {
+                            format!("R output captured after timeout:\n\nSTDOUT ({} chars):\n{}\n\nSTDERR ({} chars):\n{}", 
+                                   stdout.len(), stdout,
+                                   stderr.len(), String::from_utf8_lossy(&stderr))
+                        }
+                        Err(e) => {
+                            format!("Failed to capture R output after timeout: {}", e)
+                        }
+                    }
+                }
+                None => {
+                    "No R process available for output capture".to_string()
+                }
+            };
+            
+            return Err(anyhow::anyhow!("Step '{}' timed out after {}s\n\nCaptured output:\n{}", 
+                                     step_name, timeout_duration.as_secs(), captured_output));
+        } else {
+            // No timeout, execute normally
+            operation(manager)
+        }
+    } else {
+        Err(anyhow::anyhow!("R process not available for step '{}'", step_name))
+    }
+}
+
+// Keep the old function for non-R commands
+fn execute_with_timeout<F, T>(
+    step_name: &str, 
+    timeout_secs: Option<u64>, 
+    operation: F
+) -> Result<T>
+where
+    F: FnOnce() -> Result<T>,
+{
+    if let Some(timeout) = timeout_secs {
+        debug_print(&format!("Executing step '{}' with timeout: {}s", step_name, timeout));
+    } else {
+        debug_print(&format!("Executing step '{}' with no timeout", step_name));
+    }
+    
+    let start = Instant::now();
+    let result = operation();
+    let elapsed = start.elapsed();
+    
+    match result {
+        Ok(value) => {
+            debug_print(&format!("Step '{}' completed in {}s", step_name, elapsed.as_secs()));
+            Ok(value)
+        }
+        Err(e) => {
+            debug_print(&format!("Step '{}' failed after {}s: {}", step_name, elapsed.as_secs(), e));
+            Err(e)
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Clone)]
 struct WorkflowTest {
@@ -34,6 +137,8 @@ struct TestStep {
     assert: Option<TestAssertion>,
     #[serde(default)]
     restart: bool,
+    #[serde(default)]
+    timeout: Option<u64>, // timeout in seconds
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -56,19 +161,50 @@ struct ThreadOutput {
     step_results: Vec<StepResult>,
 }
 
+#[derive(Debug, Clone)]
+enum CoordinatorMessage {
+    StepCompleted { thread_name: String, step_index: usize },
+    StepTimedOut { thread_name: String, step_index: usize },
+    ThreadFailed { thread_name: String, error: String },
+}
+
+#[derive(Debug, Clone)]
+enum StepStatus {
+    Pending,
+    Running,
+    Completed,
+    TimedOut,
+    Failed,
+}
+
+struct StepCoordinator {
+    num_threads: usize,
+    num_steps: usize,
+    step_status: Arc<Mutex<Vec<Vec<StepStatus>>>>, // [step_index][thread_index] 
+    thread_names: Vec<String>,
+    message_tx: mpsc::Sender<CoordinatorMessage>,
+    message_rx: Arc<Mutex<mpsc::Receiver<CoordinatorMessage>>>,
+    step_waiters: Arc<(Mutex<Vec<bool>>, Condvar)>, // One bool per step for coordination
+}
+
 struct RProcessManager {
     process: Option<std::process::Child>,
     stdin: Option<std::process::ChildStdin>,
     last_health_check: Instant,
+    process_id: Option<u32>,
 }
 
 impl RProcessManager {
     fn find_r_executable() -> Result<String> {
+        debug_print("Starting R executable detection");
+        
         // Check for explicit configuration first
         if let Ok(r_path) = std::env::var("RV_R_EXECUTABLE") {
+            debug_print(&format!("Using RV_R_EXECUTABLE: {}", r_path));
             return Ok(r_path);
         }
         if let Ok(r_path) = std::env::var("R_EXECUTABLE") {
+            debug_print(&format!("Using R_EXECUTABLE: {}", r_path));
             return Ok(r_path);
         }
         
@@ -79,22 +215,28 @@ impl RProcessManager {
             vec!["R"]
         };
         
+        debug_print(&format!("Trying candidates: {:?}", candidates));
+        
         for candidate in candidates {
+            debug_print(&format!("Testing candidate: {}", candidate));
             if std::process::Command::new(candidate)
                 .arg("--version")
                 .output()
                 .is_ok() 
             {
+                debug_print(&format!("Found working R executable: {}", candidate));
                 return Ok(candidate.to_string());
             }
         }
         
         // Fallback - let the system try to find it
+        debug_print("Using fallback R executable");
         Ok("R".to_string())
     }
     
     fn start_r_process(test_dir: &Path) -> Result<Self> {
         let r_executable = Self::find_r_executable()?;
+        debug_print(&format!("Starting R process '{}' in directory: {}", r_executable, test_dir.display()));
         
         let mut process = std::process::Command::new(&r_executable)
             .args(["--interactive", "--no-restore"])
@@ -105,6 +247,9 @@ impl RProcessManager {
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to start R process with '{}': {}. Is R installed and in PATH?", r_executable, e))?;
         
+        debug_print("R process started successfully");
+        
+        let process_id = process.id();
         let stdin = process.stdin.take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get R stdin"))?;
         
@@ -112,6 +257,7 @@ impl RProcessManager {
             process: Some(process),
             stdin: Some(stdin),
             last_health_check: Instant::now(),
+            process_id: Some(process_id),
         })
     }
     
@@ -135,6 +281,8 @@ impl RProcessManager {
     }
     
     fn send_command(&mut self, command: &str) -> Result<()> {
+        debug_print(&format!("Sending R command: {}", command));
+        
         if !self.is_alive()? {
             return Err(anyhow::anyhow!("R process is not running"));
         }
@@ -144,6 +292,7 @@ impl RProcessManager {
                 .map_err(|e| anyhow::anyhow!("Failed to write '{}' to R stdin: {}", command, e))?;
             stdin.flush()
                 .map_err(|e| anyhow::anyhow!("Failed to flush R stdin after command '{}': {}", command, e))?;
+            debug_print(&format!("Successfully sent R command: {}", command));
         } else {
             return Err(anyhow::anyhow!("R stdin not available"));
         }
@@ -151,29 +300,223 @@ impl RProcessManager {
         Ok(())
     }
     
+    fn kill_process(&mut self) -> Result<()> {
+        debug_print("Attempting to kill R process due to timeout");
+        
+        if let Some(mut process) = self.process.take() {
+            // Try to kill the process
+            match process.kill() {
+                Ok(()) => {
+                    debug_print("Successfully sent kill signal to R process");
+                    // Wait a bit for the process to die
+                    match process.wait() {
+                        Ok(status) => {
+                            debug_print(&format!("R process terminated with status: {:?}", status));
+                        }
+                        Err(e) => {
+                            debug_print(&format!("Error waiting for R process to die: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug_print(&format!("Failed to kill R process: {}", e));
+                    return Err(anyhow::anyhow!("Failed to kill R process: {}", e));
+                }
+            }
+        }
+        
+        // Clean up stdin
+        self.stdin = None;
+        self.process_id = None;
+        
+        Ok(())
+    }
+    
+    fn debug_pause_after_command(&self) {
+        if std::env::var("RV_TEST_DEBUG").is_ok() {
+            debug_print("Pausing briefly to let R process command");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    
     fn shutdown_and_capture_output(mut self) -> Result<(String, Vec<u8>)> {
+        debug_print("Shutting down R process and capturing output");
         let accumulated_output = String::new();
         
         if let (Some(mut stdin), Some(process)) = (self.stdin.take(), self.process.take()) {
+            debug_print("Sending quit command to R");
             if let Err(e) = writeln!(stdin, "quit(save = 'no')") {
-                println!("⚠️ Failed to send quit command to R: {}", e);
+                debug_print(&format!("Failed to send quit command to R: {}", e));
             }
             drop(stdin); // Close stdin to signal R to exit
             
+            debug_print("Waiting for R process to complete");
             let final_output = process.wait_with_output()
                 .map_err(|e| anyhow::anyhow!("Failed to wait for R process termination: {}", e))?;
             
+            debug_print(&format!("R process completed with status: {:?}", final_output.status));
             if !final_output.status.success() {
-                println!("⚠️ R process exited with non-zero status: {:?}", final_output.status);
+                debug_print(&format!("R process exited with non-zero status: {:?}", final_output.status));
             }
             
             let stdout = final_output.stdout;
             let stderr = final_output.stderr;
             
+            debug_print(&format!("Captured R stdout: {} bytes, stderr: {} bytes", stdout.len(), stderr.len()));
+            
             Ok((String::from_utf8_lossy(&stdout).to_string(), stderr))
         } else {
+            debug_print("No R process to shutdown");
             Ok((accumulated_output, Vec::new()))
         }
+    }
+}
+
+impl StepCoordinator {
+    fn new(thread_names: Vec<String>, num_steps: usize) -> Self {
+        let num_threads = thread_names.len();
+        let (message_tx, message_rx) = mpsc::channel();
+        
+        // Initialize step status - all steps start as Pending for all threads
+        let step_status = Arc::new(Mutex::new(
+            (0..num_steps)
+                .map(|_| vec![StepStatus::Pending; num_threads])
+                .collect()
+        ));
+        
+        let step_waiters = Arc::new((Mutex::new(vec![false; num_steps]), Condvar::new()));
+        
+        Self {
+            num_threads,
+            num_steps,
+            step_status,
+            thread_names,
+            message_tx,
+            message_rx: Arc::new(Mutex::new(message_rx)),
+            step_waiters,
+        }
+    }
+    
+    fn get_sender(&self) -> mpsc::Sender<CoordinatorMessage> {
+        self.message_tx.clone()
+    }
+    
+    fn get_thread_index(&self, thread_name: &str) -> Option<usize> {
+        self.thread_names.iter().position(|name| name == thread_name)
+    }
+    
+    fn wait_for_step_start(&self, step_index: usize, thread_name: &str, timeout: Option<Duration>) -> Result<()> {
+        let thread_index = self.get_thread_index(thread_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
+            
+        debug_print(&format!("Thread {} waiting for step {} to start", thread_name, step_index));
+        
+        // Mark this thread as ready for this step
+        {
+            let mut status = self.step_status.lock().unwrap();
+            status[step_index][thread_index] = StepStatus::Running;
+        }
+        
+        // Check if all threads are ready for this step
+        let all_ready = {
+            let status = self.step_status.lock().unwrap();
+            status[step_index].iter().all(|s| matches!(s, StepStatus::Running | StepStatus::Completed | StepStatus::TimedOut | StepStatus::Failed))
+        };
+        
+        if all_ready {
+            debug_print(&format!("All threads ready for step {}, proceeding", step_index));
+            let (lock, cvar) = &*self.step_waiters;
+            let mut step_ready = lock.lock().unwrap();
+            step_ready[step_index] = true;
+            cvar.notify_all();
+            return Ok(());
+        }
+        
+        // Wait for other threads to be ready
+        let (lock, cvar) = &*self.step_waiters;
+        let mut step_ready = lock.lock().unwrap();
+        
+        let wait_result = if let Some(timeout_duration) = timeout {
+            let start_time = Instant::now();
+            loop {
+                if step_ready[step_index] {
+                    break Ok(());
+                }
+                
+                let elapsed = start_time.elapsed();
+                if elapsed >= timeout_duration {
+                    break Err(anyhow::anyhow!("Timeout waiting for step {} start", step_index));
+                }
+                
+                let remaining = timeout_duration - elapsed;
+                let (new_lock, timeout_result) = cvar.wait_timeout(step_ready, remaining).unwrap();
+                step_ready = new_lock;
+                
+                if timeout_result.timed_out() {
+                    break Err(anyhow::anyhow!("Timeout waiting for step {} start", step_index));
+                }
+            }
+        } else {
+            while !step_ready[step_index] {
+                step_ready = cvar.wait(step_ready).unwrap();
+            }
+            Ok(())
+        };
+        
+        wait_result
+    }
+    
+    fn notify_step_completed(&self, step_index: usize, thread_name: &str) -> Result<()> {
+        let thread_index = self.get_thread_index(thread_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
+            
+        debug_print(&format!("Thread {} completed step {}", thread_name, step_index));
+        
+        {
+            let mut status = self.step_status.lock().unwrap();
+            status[step_index][thread_index] = StepStatus::Completed;
+        }
+        
+        // Send completion message
+        self.message_tx.send(CoordinatorMessage::StepCompleted { 
+            thread_name: thread_name.to_string(), 
+            step_index 
+        }).map_err(|e| anyhow::anyhow!("Failed to send completion message: {}", e))?;
+        
+        Ok(())
+    }
+    
+    fn notify_step_timeout(&self, step_index: usize, thread_name: &str) -> Result<()> {
+        let thread_index = self.get_thread_index(thread_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
+            
+        debug_print(&format!("Thread {} timed out on step {}", thread_name, step_index));
+        
+        {
+            let mut status = self.step_status.lock().unwrap();
+            status[step_index][thread_index] = StepStatus::TimedOut;
+        }
+        
+        // Send timeout message
+        self.message_tx.send(CoordinatorMessage::StepTimedOut { 
+            thread_name: thread_name.to_string(), 
+            step_index 
+        }).map_err(|e| anyhow::anyhow!("Failed to send timeout message: {}", e))?;
+        
+        // Wake up anyone waiting for this step
+        let (lock, cvar) = &*self.step_waiters;
+        let mut step_ready = lock.lock().unwrap();
+        step_ready[step_index] = true;
+        cvar.notify_all();
+        
+        Ok(())
+    }
+    
+    fn should_continue(&self, step_index: usize) -> bool {
+        let status = self.step_status.lock().unwrap();
+        // Continue if no threads have failed and at least one thread hasn't timed out
+        !status[step_index].iter().any(|s| matches!(s, StepStatus::Failed)) &&
+        status[step_index].iter().any(|s| matches!(s, StepStatus::Running | StepStatus::Completed))
     }
 }
 
@@ -238,21 +581,15 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     // Get absolute path to config file
     let config_path = std::env::current_dir()?.join("tests/input").join(&workflow.config);
     
-    // Count unique threads to set up barriers
+    // Count unique threads to set up coordination
     let mut thread_steps: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, step) in workflow.test.steps.iter().enumerate() {
         thread_steps.entry(step.thread.clone()).or_default().push(i);
     }
     
-    // Create barriers for synchronization between steps - each step needs all threads to sync
-    // We need two barriers per step: one for start, one for completion
-    let num_threads = thread_steps.len();
-    let start_barriers: Vec<Arc<Barrier>> = (0..workflow.test.steps.len())
-        .map(|_| Arc::new(Barrier::new(num_threads)))
-        .collect();
-    let completion_barriers: Vec<Arc<Barrier>> = (0..workflow.test.steps.len())
-        .map(|_| Arc::new(Barrier::new(num_threads)))
-        .collect();
+    // Create StepCoordinator instead of barriers
+    let thread_names: Vec<String> = thread_steps.keys().cloned().collect();
+    let coordinator = Arc::new(StepCoordinator::new(thread_names.clone(), workflow.test.steps.len()));
     
     // Channels for collecting step results from each thread
     let (tx_map, rx_map): (HashMap<String, _>, HashMap<String, _>) = thread_steps.keys()
@@ -266,8 +603,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     let mut thread_handles = HashMap::new();
     
     for (thread_name, step_indices) in thread_steps {
-        let thread_start_barriers = start_barriers.clone();
-        let thread_completion_barriers = completion_barriers.clone();
+        let thread_coordinator = coordinator.clone();
         let thread_steps = workflow.test.steps.clone();
         let thread_test_dir = test_dir.clone();
         let thread_config_path = config_path.clone();
@@ -279,15 +615,16 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             let mut r_manager: Option<RProcessManager> = None;
             let mut accumulated_r_output = String::new();
             
-            // Process all steps in order, participating in barriers even if not executing
+            // Process all steps in order, coordinating with other threads
             for step_idx in 0..thread_steps.len() {
-                // Wait for this step's start - all threads begin this step together
-                thread_start_barriers[step_idx].wait();
+                // Wait for this step to start (simple coordination without timeout)
+                thread_coordinator.wait_for_step_start(step_idx, &thread_name_clone, None)?;
                 
                 // Only execute if this step belongs to our thread
                 if !step_indices.contains(&step_idx) {
-                    // Even if we don't execute, we must wait at the completion barrier
-                    thread_completion_barriers[step_idx].wait();
+                    // Even if we don't execute, we must notify completion
+                    thread_coordinator.notify_step_completed(step_idx, &thread_name_clone)
+                        .unwrap_or_else(|e| debug_print(&format!("Failed to notify completion: {}", e)));
                     continue;
                 }
                 
@@ -295,16 +632,20 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 
                 println!("🟡 {}: {}", thread_name_clone.to_uppercase(), step.name);
                 println!("   └─ Running: {}", step.run);
+                if let Some(timeout) = step.timeout {
+                    println!("   └─ Timeout: {}s", timeout);
+                }
                 
                 let output = match thread_name_clone.as_str() {
                     "rv" => {
-                        // Handle rv commands
-                        let result = execute_rv_command(&step.run, &thread_test_dir, &thread_config_path)?;
-                        if !result.trim().is_empty() {
-                            println!("   ├─ Output: {}", result.trim());
-                        }
-                        
-                        result
+                        // Handle rv commands with original timeout mechanism
+                        execute_with_timeout(&step.name, step.timeout, || {
+                            let result = execute_rv_command(&step.run, &thread_test_dir, &thread_config_path)?;
+                            if !result.trim().is_empty() {
+                                println!("   ├─ Output: {}", result.trim());
+                            }
+                            Ok(result)
+                        })?
                     },
                     "r" => {
                         // Handle R commands
@@ -343,12 +684,16 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 "R process started".to_string()
                             }
                         } else {
-                            // Execute R script or command
-                            if let Some(manager) = &mut r_manager {
+                            // Execute R script or command with timeout
+                            execute_r_command_with_timeout(&step.name, step.timeout, &mut r_manager, |manager| {
                                 // Check if R process is still alive
                                 if !manager.is_alive()? {
+                                    debug_print(&format!("R process died during step '{}'", step.name));
                                     return Err(anyhow::anyhow!("R process died unexpectedly during step '{}'", step.name));
                                 }
+                                
+                                // Debug: Pause to let R process commands
+                                manager.debug_pause_after_command();
                                 
                                 // First, add a marker for the startup step if this is the first command
                                 let r_steps_so_far = step_results.len();
@@ -376,12 +721,13 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 manager.send_command(&format!("cat('# STEP_END: {}\\n')", step.name))
                                     .map_err(|e| anyhow::anyhow!("Failed to write step end marker for '{}': {}", step.name, e))?;
                                 
-                                println!("   ├─ Command sent (will wait at completion barrier)");
+                                // Debug: Pause after sending commands
+                                manager.debug_pause_after_command();
                                 
-                                "Command executed".to_string()
-                            } else {
-                                return Err(anyhow::anyhow!("R process not started for step '{}'", step.name));
-                            }
+                                println!("   ├─ Command sent");
+                                
+                                Ok("Command executed".to_string())
+                            })?
                         }
                     },
                     _ => return Err(anyhow::anyhow!("Unknown thread type: {}", thread_name_clone)),
@@ -395,10 +741,9 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 };
                 step_results.push(step_result);
                 
-                // Don't fail fast - collect all results first
-                
-                // Wait for all threads to complete their commands before moving to next step
-                thread_completion_barriers[step_idx].wait();
+                // Notify completion to coordinator
+                thread_coordinator.notify_step_completed(step_idx, &thread_name_clone)
+                    .map_err(|e| anyhow::anyhow!("Failed to notify step completion: {}", e))?;
             }
             
             // Clean up R process if it exists and capture all output

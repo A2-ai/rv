@@ -1,0 +1,18 @@
+project-dir: timeout-test
+config: simple-rproject.toml
+
+test:
+  steps:  
+  - name: "rv init"
+    run: "rv init"
+    thread: rv
+    
+  - name: "start R"
+    run: "R"
+    thread: r
+
+  - name: "should timeout - 10s sleep with 5s limit"
+    run: wait.R 
+    thread: r
+    timeout: 5
+    assert: "I woke up"
