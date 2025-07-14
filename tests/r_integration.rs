@@ -63,15 +63,47 @@ struct RProcessManager {
 }
 
 impl RProcessManager {
+    fn find_r_executable() -> Result<String> {
+        // Check for explicit configuration first
+        if let Ok(r_path) = std::env::var("RV_R_EXECUTABLE") {
+            return Ok(r_path);
+        }
+        if let Ok(r_path) = std::env::var("R_EXECUTABLE") {
+            return Ok(r_path);
+        }
+        
+        // Auto-detect based on platform
+        let candidates = if cfg!(windows) {
+            vec!["R.exe", "R"]
+        } else {
+            vec!["R"]
+        };
+        
+        for candidate in candidates {
+            if std::process::Command::new(candidate)
+                .arg("--version")
+                .output()
+                .is_ok() 
+            {
+                return Ok(candidate.to_string());
+            }
+        }
+        
+        // Fallback - let the system try to find it
+        Ok("R".to_string())
+    }
+    
     fn start_r_process(test_dir: &Path) -> Result<Self> {
-        let mut process = std::process::Command::new("R")
+        let r_executable = Self::find_r_executable()?;
+        
+        let mut process = std::process::Command::new(&r_executable)
             .args(["--interactive", "--no-restore"])
             .current_dir(test_dir)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| anyhow::anyhow!("Failed to start R process: {}. Is R installed and in PATH?", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to start R process with '{}': {}. Is R installed and in PATH?", r_executable, e))?;
         
         let stdin = process.stdin.take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get R stdin"))?;

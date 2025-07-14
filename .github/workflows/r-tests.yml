@@ -50,18 +50,24 @@ jobs:
         
     - name: Verify R installation (Windows)
       if: runner.os == 'Windows'
-      shell: cmd
       run: |
-        R --version
-        where R
-        R --slave -e "cat('R is working:', R.version.string, '\n')"
-        R --slave -e "cat('Library paths:', paste(.libPaths(), collapse=', '), '\n')"
-        R --slave -e "cat('Working directory:', getwd(), '\n')"
-        R --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
-        R --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
+        R.exe --version
+        where R.exe
+        R.exe --slave -e "cat('R is working:', R.version.string, '\n')"
+        R.exe --slave -e "cat('Library paths:', paste(.libPaths(), collapse=', '), '\n')"
+        R.exe --slave -e "cat('Working directory:', getwd(), '\n')"
+        R.exe --slave -e "cat('R_LIBS_USER:', Sys.getenv('R_LIBS_USER'), '\n')"
+        R.exe --slave -e "cat('R_LIBS_SITE:', Sys.getenv('R_LIBS_SITE'), '\n')"
         
-    - name: Run tests
-      shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
+    - name: Run tests (Unix)
+      if: runner.os != 'Windows'
+      run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
+      env:
+        RUST_BACKTRACE: 1
+        
+    - name: Run tests (Windows)
+      if: runner.os == 'Windows'
+      shell: cmd
       run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1
