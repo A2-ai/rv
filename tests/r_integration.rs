@@ -243,8 +243,9 @@ impl RProcessManager {
         debug_print(&format!("Starting R process '{}' in directory: {}", r_executable, test_dir.display()));
         
         let args = if cfg!(windows) {
-            // Windows R.exe requires --vanilla or --no-save, doesn't support --interactive
-            vec!["--no-save", "--no-restore"]
+            // Windows R.exe requires --no-save instead of --interactive
+            // Don't use --no-restore so .Rprofile gets sourced
+            vec!["--no-save"]
         } else {
             // Unix R supports --interactive
             vec!["--interactive", "--no-restore"]
@@ -252,13 +253,35 @@ impl RProcessManager {
         
         debug_print(&format!("Using R args: {:?}", args));
         
-        let mut process = std::process::Command::new(&r_executable)
-            .args(args)
+        // Ensure R process can find rv by inheriting PATH and potentially adding target/release
+        let mut cmd = std::process::Command::new(&r_executable);
+        cmd.args(args)
             .current_dir(test_dir)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+            .stderr(std::process::Stdio::piped());
+        
+        // Try to ensure rv is in PATH for the R process
+        if let Ok(current_path) = std::env::var("PATH") {
+            // Add target/release to PATH if it's not already there
+            let target_release = std::env::current_dir()
+                .map(|p| p.join("target").join("release"))
+                .ok();
+            
+            if let Some(target_path) = target_release {
+                let target_path_str = target_path.to_string_lossy();
+                if !current_path.contains(&*target_path_str) {
+                    let separator = if cfg!(windows) { ";" } else { ":" };
+                    let new_path = format!("{}{}{}", current_path, separator, target_path_str);
+                    debug_print(&format!("Adding to PATH for R process: {}", target_path_str));
+                    cmd.env("PATH", new_path);
+                } else {
+                    debug_print("target/release already in PATH");
+                }
+            }
+        }
+        
+        let mut process = cmd.spawn()
             .map_err(|e| anyhow::anyhow!("Failed to start R process with '{}': {}. Is R installed and in PATH?", r_executable, e))?;
         
         debug_print("R process started successfully");
@@ -947,6 +970,30 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
     if cmd == "init" && config_path.exists() {
         fs::copy(config_path, test_dir.join("rproject.toml"))
             .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
+        debug_print("Copied config file after rv init");
+    }
+    
+    // Debug: Check what files exist in test directory after rv init
+    if cmd == "init" {
+        debug_print("Files in test directory after rv init:");
+        if let Ok(entries) = fs::read_dir(test_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    debug_print(&format!("  - {}", entry.file_name().to_string_lossy()));
+                }
+            }
+        }
+        
+        // Check if .Rprofile exists and show its content
+        let rprofile_path = test_dir.join(".Rprofile");
+        if rprofile_path.exists() {
+            debug_print(".Rprofile exists, content:");
+            if let Ok(content) = fs::read_to_string(&rprofile_path) {
+                debug_print(&format!("  {}", content.replace('\n', "\n  ")));
+            }
+        } else {
+            debug_print(".Rprofile does NOT exist - this is the problem!");
+        }
     }
     
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
