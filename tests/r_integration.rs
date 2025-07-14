@@ -921,6 +921,7 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
         _ => return Err(anyhow::anyhow!("Unknown rv command: {}", command)),
     };
     
+    debug_print(&format!("Looking for rv binary for command: {}", command));
     let output = Command::cargo_bin(RV)
         .map_err(|e| anyhow::anyhow!("Failed to find rv binary: {}", e))?
         .arg(cmd)
