@@ -272,6 +272,27 @@ impl RProcessManager {
             {
                 Some(exit_status) => {
                     println!("⚠️ R process exited with status: {}", exit_status);
+                    
+                    // Try to capture output from the dead process
+                    if let Some(dead_process) = self.process.take() {
+                        match dead_process.wait_with_output() {
+                            Ok(output) => {
+                                let stdout = String::from_utf8_lossy(&output.stdout);
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                
+                                if !stdout.trim().is_empty() {
+                                    println!("📤 R STDOUT ({} chars):\n{}", stdout.len(), stdout);
+                                }
+                                if !stderr.trim().is_empty() {
+                                    println!("📤 R STDERR ({} chars):\n{}", stderr.len(), stderr);
+                                }
+                            }
+                            Err(e) => {
+                                debug_print(&format!("Failed to capture output from dead R process: {}", e));
+                            }
+                        }
+                    }
+                    
                     Ok(false)
                 }
                 None => {
