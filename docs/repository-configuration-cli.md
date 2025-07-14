@@ -1,268 +1,333 @@
-# rv configure repository - Command Examples
+# Repository Configuration CLI
 
-## Overview
+This document describes the command-line interface for configuring repositories in rv projects.
 
-The `rv configure repository` command allows you to:
-- Add repositories with precise positioning (`--first`, `--last`, `--before`, `--after`)
-- Replace existing repositories (`--replace`)
-- Remove specific repositories (`--remove`)
-- Clear all repositories (`--clear`)
-- Enable force source compilation (`--force-source`)
-- Output results in JSON format (`--json`) or detailed text format
+## Command Structure
 
-Both output formats provide comprehensive information including operation type, repository alias, and URL details.
+All repository configuration commands follow this structure:
+```bash
+rv configure repository <operation> [arguments] [options]
+```
 
-### Initial Configuration
+## Operations
+
+### Add Repository
+
+Add a new repository to the project configuration.
+
+```bash
+rv configure repository add <alias> --url <url> [options]
+```
+
+**Arguments:**
+- `<alias>` - Repository alias/name
+
+**Options:**
+- `--url <url>` - Repository URL (required)
+- `--force-source` - Enable force_source for this repository
+- `--first` - Add as first repository
+- `--last` - Add as last repository (default)
+- `--before <alias>` - Add before the specified alias
+- `--after <alias>` - Add after the specified alias
+
+**Examples:**
+```bash
+# Add repository at end (default)
+rv configure repository add cran --url https://cran.r-project.org
+
+# Add repository at beginning
+rv configure repository add cran --url https://cran.r-project.org --first
+
+# Add repository with positioning
+rv configure repository add cran --url https://cran.r-project.org --before posit
+
+# Add repository with force_source
+rv configure repository add bioc --url https://bioconductor.org/packages/3.18/bioc --force-source
+```
+
+### Replace Repository
+
+Replace an existing repository completely, optionally changing the alias.
+
+```bash
+rv configure repository replace <old_alias> --url <url> [options]
+```
+
+**Arguments:**
+- `<old_alias>` - Alias of repository to replace
+
+**Options:**
+- `--url <url>` - New repository URL (required)
+- `--alias <new_alias>` - New alias (optional, keeps original if not specified)
+- `--force-source` - Enable force_source for this repository
+
+**Examples:**
+```bash
+# Replace repository keeping same alias
+rv configure repository replace posit --url https://packagemanager.posit.co/cran/latest
+
+# Replace repository with new alias
+rv configure repository replace posit --alias posit-new --url https://packagemanager.posit.co/cran/latest
+
+# Replace with force_source
+rv configure repository replace posit --url https://packagemanager.posit.co/cran/latest --force-source
+```
+
+### Update Repository
+
+Update specific fields of an existing repository without replacing everything.
+
+```bash
+rv configure repository update [<alias>] [options]
+rv configure repository update --match-url <url> [options]
+```
+
+**Arguments:**
+- `<alias>` - Repository alias to update (optional if using --match-url)
+
+**Options:**
+- `--match-url <url>` - Match repository by URL instead of alias
+- `--alias <new_alias>` - Update the repository alias
+- `--url <new_url>` - Update the repository URL
+- `--force-source` - Enable force_source
+- `--no-force-source` - Disable force_source
+
+**Examples:**
+```bash
+# Update alias only
+rv configure repository update posit --alias posit-updated
+
+# Update URL only
+rv configure repository update posit --url https://packagemanager.posit.co/cran/latest
+
+# Enable force_source
+rv configure repository update posit --force-source
+
+# Disable force_source
+rv configure repository update posit --no-force-source
+
+# Update multiple fields
+rv configure repository update posit --alias posit-new --url https://packagemanager.posit.co/cran/latest --force-source
+
+# Match by URL and update alias
+rv configure repository update --match-url https://packagemanager.posit.co/cran/2024-12-16/ --alias matched-by-url
+```
+
+### Remove Repository
+
+Remove an existing repository from the configuration.
+
+```bash
+rv configure repository remove <alias>
+```
+
+**Arguments:**
+- `<alias>` - Alias of repository to remove
+
+**Examples:**
+```bash
+rv configure repository remove posit
+```
+
+### Clear Repositories
+
+Remove all repositories from the configuration.
+
+```bash
+rv configure repository clear
+```
+
+**Examples:**
+```bash
+rv configure repository clear
+```
+
+## Global Options
+
+These options can be used with any operation:
+
+- `--config-file <path>` - Specify config file path (default: rproject.toml)
+- `--json` - Output results in JSON format
+
+## URL Validation
+
+All URLs are validated and normalized according to RFC 3986 standards:
+- Invalid URLs will cause the command to fail with an error
+- URLs are automatically normalized (e.g., `https://cran.r-project.org` becomes `https://cran.r-project.org/`)
+- Both HTTP and HTTPS URLs are supported
+
+## Error Handling
+
+Common errors and their meanings:
+
+- `Duplicate alias: <alias>` - Attempting to add/update with an existing alias
+- `Alias not found: <alias>` - Specified alias doesn't exist in configuration
+- `Invalid URL: <error>` - URL format is invalid
+- Conflicting positioning flags - Cannot use multiple positioning options together
+
+## Output Formats
+
+### Plain Text Output
+```
+Repository 'cran' added successfully with URL: https://cran.r-project.org/
+```
+
+### JSON Output
+```json
+{
+  "operation": "add",
+  "alias": "cran", 
+  "url": "https://cran.r-project.org/",
+  "success": true,
+  "message": "Repository configured successfully"
+}
+```
+
+## Configuration File Impact
+
+All operations modify the `rproject.toml` file (or specified config file) directly. The repositories array is automatically formatted for readability:
+
 ```toml
 [project]
-name = "demo-project"
+name = "test"
 r_version = "4.4"
 repositories = [
-    {alias = "cran", url = "https://cran.r-project.org"},
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/" },
+    { alias = "cran", url = "https://cran.r-project.org/" },
 ]
 dependencies = [
     "dplyr",
-    "ggplot2",
 ]
 ```
 
-## Example 1: Add repository as first entry
+## Complete Examples from Integration Tests
 
-**Command:**
-
+### Example 1: Basic Add Operation
 ```bash
-rv configure repository --config-file test-example/rproject.toml --alias "ppm-latest" --url "https://packagemanager.posit.co/cran/latest" --first
+rv configure repository add cran --url https://cran.r-project.org --config-file rproject.toml
 ```
 
 **Output:**
 ```
-Repository 'ppm-latest' added successfully with URL: https://packagemanager.posit.co/cran/latest
+Repository 'cran' added successfully with URL: https://cran.r-project.org/
 ```
 
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-    { alias = "ppm-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    {alias = "cran", url = "https://cran.r-project.org"},
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"},
+    { alias = "cran", url = "https://cran.r-project.org/" },
+]
+```
+
+### Example 2: Add with Positioning
+```bash
+rv configure repository add cran --url https://cran.r-project.org --first --config-file rproject.toml
+```
+
+**Result:**
+```toml
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org/" },
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"},
 ]
-dependencies = [
-    "dplyr",
-    "ggplot2",
-]
 ```
 
-## Example 2: Add repository as last entry
-
-**Command:**
+### Example 3: Replace Operation
 ```bash
-rv configure repository --config-file test-example/rproject.toml --alias "bioconductor" --url "https://bioconductor.org/packages/3.18/bioc" --last
+rv configure repository replace posit --url https://packagemanager.posit.co/cran/latest --config-file rproject.toml
 ```
 
-**Output:**
-```
-Repository 'bioconductor' added successfully with URL: https://bioconductor.org/packages/3.18/bioc
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-    { alias = "ppm-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    {alias = "cran", url = "https://cran.r-project.org"},
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"},
-    { alias = "bioconductor", url = "https://bioconductor.org/packages/3.18/bioc" },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/latest" }
 ]
 ```
 
-## Example 3: Add repository before an existing one
-
-**Command:**
+### Example 4: Replace with New Alias
 ```bash
-rv configure repository --config-file test-example/rproject.toml --alias "ppm-2024-06" --url "https://packagemanager.posit.co/cran/2024-06-01" --before "posit"
+rv configure repository replace posit --alias posit-new --url https://packagemanager.posit.co/cran/latest --config-file rproject.toml
 ```
 
-**Output:**
-```
-Repository 'ppm-2024-06' added successfully with URL: https://packagemanager.posit.co/cran/2024-06-01
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-    { alias = "ppm-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    {alias = "cran", url = "https://cran.r-project.org"},
-    { alias = "ppm-2024-06", url = "https://packagemanager.posit.co/cran/2024-06-01" },
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"},
-    { alias = "bioconductor", url = "https://bioconductor.org/packages/3.18/bioc" },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
+    { alias = "posit-new", url = "https://packagemanager.posit.co/cran/latest" }
 ]
 ```
 
-## Example 4: Add repository after an existing one
-
-**Command:**
+### Example 5: Update Alias
 ```bash
-rv configure repository --config-file test-example/rproject.toml --alias "ppm-2024-01" --url "https://packagemanager.posit.co/cran/2024-01-01" --after "cran"
+rv configure repository update posit --alias posit-updated --config-file rproject.toml
 ```
 
-**Output:**
-```
-Repository 'ppm-2024-01' added successfully with URL: https://packagemanager.posit.co/cran/2024-01-01
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-    { alias = "ppm-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    {alias = "cran", url = "https://cran.r-project.org"},
-    { alias = "ppm-2024-01", url = "https://packagemanager.posit.co/cran/2024-01-01" },
-    { alias = "ppm-2024-06", url = "https://packagemanager.posit.co/cran/2024-06-01" },
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"},
-    { alias = "bioconductor", url = "https://bioconductor.org/packages/3.18/bioc" },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
+    { alias = "posit-updated", url = "https://packagemanager.posit.co/cran/2024-12-16/" }
 ]
 ```
 
-## Example 5: Replace an existing repository
-
-**Command:**
+### Example 6: Update URL
 ```bash
-rv configure repository --config-file test-example/rproject.toml --alias "posit-latest" --url "https://packagemanager.posit.co/cran/latest" --replace "posit"
+rv configure repository update posit --url https://packagemanager.posit.co/cran/latest --config-file rproject.toml
 ```
 
-**Output:**
-```
-Repository replaced successfully - new alias: 'posit-latest', URL: https://packagemanager.posit.co/cran/latest
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-    { alias = "ppm-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    {alias = "cran", url = "https://cran.r-project.org"},
-    { alias = "ppm-2024-01", url = "https://packagemanager.posit.co/cran/2024-01-01" },
-    { alias = "ppm-2024-06", url = "https://packagemanager.posit.co/cran/2024-06-01" },
-    { alias = "posit-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    { alias = "bioconductor", url = "https://bioconductor.org/packages/3.18/bioc" },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/latest" }
 ]
 ```
 
-## Example 6: Remove a repository
-
-**Command:**
+### Example 7: Enable Force Source
 ```bash
-rv configure repository --config-file test-example/rproject.toml --remove "cran"
+rv configure repository update posit --force-source --config-file rproject.toml
 ```
 
-**Output:**
-```
-Repository 'cran' removed successfully
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-    { alias = "ppm-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    { alias = "ppm-2024-01", url = "https://packagemanager.posit.co/cran/2024-01-01" },
-    { alias = "ppm-2024-06", url = "https://packagemanager.posit.co/cran/2024-06-01" },
-    { alias = "posit-latest", url = "https://packagemanager.posit.co/cran/latest" },
-    { alias = "bioconductor", url = "https://bioconductor.org/packages/3.18/bioc" },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/", force_source = true }
 ]
 ```
 
-## Example 7: Clear all repositories
-
-**Command:**
+### Example 8: Update by URL
 ```bash
-rv configure repository --config-file test-example/rproject.toml --clear
+rv configure repository update --match-url https://packagemanager.posit.co/cran/2024-12-16/ --alias matched-by-url --config-file rproject.toml
 ```
 
-**Output:**
-```
-All repositories cleared successfully
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
 repositories = [
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
+    { alias = "matched-by-url", url = "https://packagemanager.posit.co/cran/2024-12-16/" }
 ]
 ```
 
-## Example 8: Add repository with force_source flag
-
-**Command:**
+### Example 9: Remove Repository
 ```bash
-rv configure repository --config-file test-example/rproject.toml --alias "bioc-data" --url "https://bioconductor.org/packages/3.18/data/annotation" --force-source
+rv configure repository remove posit --config-file rproject.toml
 ```
 
-**Output:**
-```
-Repository 'bioc-data' added successfully with URL: https://bioconductor.org/packages/3.18/data/annotation
-```
-
-**Resulting rproject.toml:**
+**Result:**
 ```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
-repositories = [
-    { alias = "bioc-data", url = "https://bioconductor.org/packages/3.18/data/annotation", force_source = true },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
-]
+repositories = []
 ```
 
-## Example 9: JSON output
-
-**Command:**
+### Example 10: Clear All Repositories
 ```bash
-rv --json configure repository --config-file test-example/rproject.toml --alias "cran" --url "https://cran.r-project.org" --first
+rv configure repository clear --config-file rproject.toml
+```
+
+**Result:**
+```toml
+repositories = []
+```
+
+### Example 11: JSON Output
+```bash
+rv --json configure repository add cran --url https://cran.r-project.org --config-file rproject.toml
 ```
 
 **Output:**
@@ -275,110 +340,3 @@ rv --json configure repository --config-file test-example/rproject.toml --alias 
   "message": "Repository configured successfully"
 }
 ```
-
-**Resulting rproject.toml:**
-```toml
-[project]
-name = "demo-project"
-r_version = "4.4"
-repositories = [
-    { alias = "cran", url = "https://cran.r-project.org/" },
-    { alias = "bioc-data", url = "https://bioconductor.org/packages/3.18/data/annotation", force_source = true },
-]
-dependencies = [
-    "dplyr",
-    "ggplot2",
-]
-```
-
-## Example 10: Error scenarios
-
-### Duplicate alias error
-
-**Command:**
-```bash
-rv configure repository --config-file test-example/rproject.toml --alias "cran" --url "https://packagemanager.posit.co/cran/2024-11-01" --first
-```
-
-**Output:**
-```
-Repository with alias 'cran' already exists
-```
-
-### Invalid URL error
-
-**Command:**
-```bash
-rv configure repository --config-file test-example/rproject.toml --alias "invalid" --url "not-a-valid-url" --first
-```
-
-**Output:**
-```
-relative URL without a base
-```
-
-## Additional JSON Examples
-
-### JSON output for remove operation
-**Command:**
-```bash
-rv --json configure repository --config-file test-example/rproject.toml --remove "cran"
-```
-
-**Output:**
-```json
-{
-  "operation": "remove",
-  "alias": "cran",
-  "url": null,
-  "success": true,
-  "message": "Repository removed successfully"
-}
-```
-
-### JSON output for replace operation
-**Command:**
-```bash
-rv --json configure repository --config-file test-example/rproject.toml --alias "cran-updated" --url "https://packagemanager.posit.co/cran/latest" --replace "cran"
-```
-
-**Output:**
-```json
-{
-  "operation": "replace",
-  "alias": "cran-updated",
-  "url": "https://packagemanager.posit.co/cran/latest",
-  "success": true,
-  "message": "Repository replaced successfully"
-}
-```
-
-### JSON output for clear operation
-**Command:**
-```bash
-rv --json configure repository --config-file test-example/rproject.toml --clear
-```
-
-**Output:**
-```json
-{
-  "operation": "clear",
-  "alias": null,
-  "url": null,
-  "success": true,
-  "message": "All repositories cleared"
-}
-```
-
-## Summary
-
-The `rv configure repository` command provides comprehensive repository management capabilities:
-
-1. **Positioning Control**: Add repositories exactly where needed with `--first`, `--last`, `--before`, and `--after` flags
-2. **Repository Management**: Replace existing repositories with `--replace`, remove specific ones with `--remove`, or clear all with `--clear`
-3. **Advanced Options**: Enable source compilation with `--force-source` flag
-4. **JSON Integration**: Comprehensive JSON output support for programmatic usage with `--json` flag, including operation type, alias, URL, success status, and descriptive messages
-5. **Error Handling**: Clear error messages for duplicate aliases, invalid URLs, and missing references
-6. **TOML Preservation**: Maintains file formatting and structure using `toml_edit`
-
-All commands preserve existing project structure and dependencies while only modifying the repositories section as requested.
