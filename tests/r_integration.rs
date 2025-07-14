@@ -247,8 +247,8 @@ impl RProcessManager {
             // Don't use --no-restore so .Rprofile gets sourced
             vec!["--no-save"]
         } else {
-            // Unix R supports --interactive
-            vec!["--interactive", "--no-restore"]
+            // Unix R supports --interactive, but also don't use --no-restore so .Rprofile gets sourced
+            vec!["--interactive"]
         };
         
         debug_print(&format!("Using R args: {:?}", args));
