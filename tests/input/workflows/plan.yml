@@ -1,0 +1,15 @@
+project-dir: plan-test
+config: plan-rproject.toml
+
+test:
+  steps:
+  - name: "rv init"
+    run: "rv init"
+    thread: rv
+    assert: "rv project successfully initialized at ."
+  
+  - name: "rv plan"
+    run: "rv plan"
+    thread: rv
+    insta: "snapshots/plan-test.snap"
+ 

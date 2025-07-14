@@ -136,6 +136,8 @@ struct TestStep {
     #[serde(default)]
     assert: Option<TestAssertion>,
     #[serde(default)]
+    insta: Option<String>, // snapshot file path
+    #[serde(default)]
     restart: bool,
     #[serde(default)]
     timeout: Option<u64>, // timeout in seconds
@@ -853,8 +855,16 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         for step_result in &thread_output.step_results {
             // Find the original step by index to get its assertion
             if let Some(original_step) = workflow.test.steps.get(step_result.step_index) {
+                // Check traditional assertions
                 if let Some(assertion) = &original_step.assert {
                     if let Err(e) = check_assertion(assertion, &step_result.output) {
+                        assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
+                    }
+                }
+                
+                // Check insta snapshots
+                if let Some(snapshot_name) = &original_step.insta {
+                    if let Err(e) = check_insta_snapshot(snapshot_name, &step_result.output) {
                         assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
                     }
                 }
@@ -878,16 +888,22 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     
     // Display in execution order
     for (step_result, thread_name) in all_steps {
-        let has_assertion = workflow.test.steps.get(step_result.step_index)
-            .map(|s| s.assert.is_some())
-            .unwrap_or(false);
+        let original_step = workflow.test.steps.get(step_result.step_index);
+        let has_assertion = original_step.map(|s| s.assert.is_some()).unwrap_or(false);
+        let has_insta = original_step.map(|s| s.insta.is_some()).unwrap_or(false);
         
         let thread_label = thread_name.to_uppercase();
         
-        if has_assertion {
+        if has_assertion || has_insta {
             let failed = assertion_failures.iter().any(|(name, _, _)| name == &step_result.name);
             let status = if failed { "❌ FAIL" } else { "✅ PASS" };
-            println!("   • [{}] {} - {} ({} chars)", thread_label, step_result.name, status, step_result.output.len());
+            let test_type = match (has_assertion, has_insta) {
+                (true, true) => "ASSERT+INSTA",
+                (true, false) => "ASSERT",
+                (false, true) => "INSTA",
+                (false, false) => unreachable!(),
+            };
+            println!("   • [{}] {} - {} {} ({} chars)", thread_label, step_result.name, status, test_type, step_result.output.len());
         } else {
             println!("   • [{}] {} - ⏭️ NO ASSERTION ({} chars)", thread_label, step_result.name, step_result.output.len());
         }
@@ -982,6 +998,12 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
             }
         },
     }
+    Ok(())
+}
+
+fn check_insta_snapshot(snapshot_name: &str, output: &str) -> Result<()> {
+    // Use insta to assert the snapshot
+    insta::assert_snapshot!(snapshot_name, output);
     Ok(())
 }
 
