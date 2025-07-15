@@ -77,7 +77,8 @@ test:
     thread: "rv" | "r"
     timeout: 30  # optional, seconds
     restart: true  # optional, for R thread only
-    assert: "expected output string" | ["multiple", "expected", "strings"]
+    assert: "expected output string" | ["multiple", "expected", "strings"]  # optional
+    insta: "snapshot-name"  # optional, for insta snapshot testing
 ```
 
 ### Thread Types
@@ -102,6 +103,71 @@ test:
 4. **Output Capture**: Step output captured for assertions
 5. **Completion**: Thread signals completion
 6. **Repeat**: Move to next step
+
+## Insta Snapshot Testing
+
+The testing framework supports cargo insta for deterministic output testing, particularly useful for `rv` commands that produce stable, predictable output.
+
+### When to Use Snapshots vs Assertions
+
+**Use Insta Snapshots for:**
+- `rv plan` - Shows dependency resolution (stable output)
+- `rv sync` - Shows package installation (with timing normalization)
+- Commands with predictable, system-independent output
+
+**Use Traditional Assertions for:**
+- `rv cache` - Contains system-specific paths
+- `rv summary` - Contains OS, CPU, and path information
+- Commands with variable or system-specific output
+
+### TestStep Structure with Insta
+
+Steps can use both `assert` and `insta` together:
+
+```yaml
+- name: "rv plan"
+  run: "rv plan"
+  thread: rv
+  insta: "my-plan-snapshot"  # Creates snapshot for full output
+  assert: "R6"  # Also check that R6 is mentioned
+```
+
+### Timing Filter Implementation
+
+Insta snapshots automatically filter out variable timing information to ensure deterministic tests:
+
+```rust
+fn filter_timing_from_output(output: &str) -> String {
+    // Replace "in 0ms", "in 15ms", etc. with "in Xms"
+    let re = regex::Regex::new(r" in \d+ms").unwrap();
+    re.replace_all(output, " in Xms").to_string()
+}
+```
+
+**Example output transformation:**
+```
++ callr (3.7.6, binary from ppm) in 1ms
++ R6 (2.6.1, binary from ppm) in 0ms
+```
+becomes:
+```
++ callr (3.7.6, binary from ppm) in Xms
++ R6 (2.6.1, binary from ppm) in Xms
+```
+
+### Snapshot Management
+
+**Snapshot Storage:** `tests/snapshots/r_integration__<snapshot-name>.snap`
+
+**Accepting New Snapshots:**
+```bash
+cargo insta accept
+```
+
+**Reviewing Changes:**
+```bash
+cargo insta review
+```
 
 ## Cross-Platform Considerations
 
@@ -143,8 +209,9 @@ The system handles Windows/Unix path differences automatically, particularly imp
 ### Example Workflow Files
 
 - **`full_r6_workflow.yml`** - Complex end-to-end test with package version management
+- **`plan-sync-add-cache-workflow.yml`** - Multi-step workflow using both insta snapshots and assertions
+- **`cache-test.yml`** - Simple workflow demonstrating insta snapshot usage
 - **`simple_timeout.yml`** - Demonstrates timeout functionality
-- **`cache.yml`** - Empty workflow file (skipped)
 
 ### R Scripts
 
@@ -235,8 +302,34 @@ cargo test --features=cli --test r_integration test_all_workflow_files -- --noca
 1. Create YAML file in `tests/input/workflows/`
 2. Define project-dir and config
 3. List steps with thread assignments
-4. Add assertions to verify behavior
+4. Choose between `assert` and `insta` for verification:
+   - Use `insta` for stable, predictable output
+   - Use `assert` for system-specific or variable output
 5. Test incrementally with debug output
+6. Accept snapshots with `cargo insta accept`
+
+**Example workflow with mixed testing approaches:**
+```yaml
+project-dir: my-test
+config: my-config.toml
+
+test:
+  steps:
+  - name: "rv init"
+    run: "rv init"
+    thread: rv
+    assert: "successfully initialized"
+    
+  - name: "rv plan"
+    run: "rv plan"
+    thread: rv
+    insta: "my-plan-snapshot"  # Stable output suitable for snapshots
+    
+  - name: "rv cache"
+    run: "rv cache"
+    thread: rv
+    assert: "https://packagemanager.posit.co"  # Path-dependent, use assertion
+```
 
 ### Adding Timeout to Existing Steps
 
@@ -258,6 +351,9 @@ Place `.R` files in `tests/input/r_scripts/` and reference them in workflows.
 ### Custom Assertions
 Modify `check_assertion()` function to support new assertion types beyond string matching.
 
+### Custom Snapshot Filters
+Extend `filter_timing_from_output()` function to handle additional variable content patterns that need normalization for deterministic testing.
+
 ### Additional Thread Types
 Extend the thread type system to support other external processes beyond rv and R.
 
@@ -267,10 +363,16 @@ Extend the thread type system to support other external processes beyond rv and 
 2. **Test cross-platform** - what works on one OS may fail on another
 3. **Use debug output** liberally when developing new workflows
 4. **Keep workflows focused** - test one behavior per workflow file
-5. **Add assertions** to every meaningful step
+5. **Choose the right testing approach**:
+   - **Insta snapshots** for stable, predictable output
+   - **Traditional assertions** for system-specific or variable content
 6. **Use descriptive step names** for clear error messages
 7. **Handle R process restarts** carefully - they're expensive operations
+8. **Accept snapshots promptly** - use `cargo insta accept` during development
+9. **Review snapshot changes** carefully - they represent expected behavior changes
 
 ## Conclusion
 
 This R integration testing system provides a robust foundation for testing complex interactions between rv and R. The timeout system prevents hanging tests, cross-platform support ensures reliability, and detailed error output enables effective debugging. The workflow-driven approach makes it easy to create comprehensive end-to-end tests that verify rv's behavior in realistic usage scenarios.
+
+The integration of cargo insta snapshot testing adds deterministic output verification for stable commands while traditional assertions handle system-specific content. The timing filter ensures snapshots remain consistent across different execution environments. Together, these tools provide comprehensive testing coverage for both rv's package management functionality and its integration with live R sessions.
