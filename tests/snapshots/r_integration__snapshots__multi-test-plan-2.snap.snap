@@ -1,0 +1,5 @@
+---
+source: tests/r_integration.rs
+expression: output
+---
+Nothing to do

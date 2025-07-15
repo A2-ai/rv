@@ -1002,9 +1002,18 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
 }
 
 fn check_insta_snapshot(snapshot_name: &str, output: &str) -> Result<()> {
+    // Filter out timing information that varies between runs
+    let filtered_output = filter_timing_from_output(output);
+    
     // Use insta to assert the snapshot
-    insta::assert_snapshot!(snapshot_name, output);
+    insta::assert_snapshot!(snapshot_name, filtered_output);
     Ok(())
+}
+
+fn filter_timing_from_output(output: &str) -> String {
+    // Replace timing patterns like "in 0ms", "in 1ms", etc. with "in Xms"
+    let re = regex::Regex::new(r" in \d+ms").unwrap();
+    re.replace_all(output, " in Xms").to_string()
 }
 
 

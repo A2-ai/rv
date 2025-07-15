@@ -1,0 +1,59 @@
+project-dir: multi-test
+config: multi-rproject.toml
+
+test:
+  steps:
+  - name: "rv init"
+    run: "rv init"
+    thread: rv
+    assert: "rv project successfully initialized at ."
+  
+  - name: "start R"
+    run: "R"
+    thread: r
+    #assert: "rv libpaths active!" - this fails on ubuntu but I don't know why...
+  
+  - name: "rv plan"
+    run: "rv plan"
+    thread: rv
+    insta: snapshots/multi-test-plan.snap
+
+  - name: "rv sync"
+    run: "rv sync"
+    thread: rv
+    insta: snapshots/multi-test-sync.snap
+
+  - name: "load packages"
+    run: load_r6.R
+    thread: r
+    assert: "R6_VERSION: 2.6.1"
+  
+  - name: "rv add"
+    run: "rv add callr"
+    thread: rv
+    insta: snapshots/multi-test-add.snap
+
+  - name: "load new packages"
+    run: load_callr.R
+    thread: r
+    assert: "callr_VERSION: 3.7.6"
+
+  - name: "rv plan 2"
+    run: "rv plan"
+    thread: rv
+    insta: snapshots/multi-test-plan-2.snap
+
+  - name: "rv cache"
+    run: "rv cache"
+    thread: rv
+    assert: "ppm (https://packagemanager.posit.co/cran/2025-07-10"
+
+  - name: "rv summary"
+    run: "rv summary"
+    thread: rv
+    assert: 
+      - "R Version: 4.4"
+      - "Installed: 4/4"
+      - "ppm: 4/4 binary packages"
+      - "ppm (https://packagemanager.posit.co/cran/2025-07-10): 19579 binary packages, 22422 source packages"
+

@@ -1,0 +1,5 @@
+---
+source: tests/r_integration.rs
+expression: filtered_output
+---
++ R6 (2.6.1, binary from https://packagemanager.posit.co/cran/2025-07-10) in Xms
