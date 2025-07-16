@@ -16,6 +16,7 @@ pub(crate) fn install_package(
     library_dirs: &[&Path],
     cache: &DiskCache,
     r_cmd: &impl RCmd,
+    configure_args: &[String],
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let (local_path, sha) = match &pkg.source {
@@ -57,6 +58,7 @@ pub(crate) fn install_package(
             library_dirs.first().unwrap(),
             cancellation,
             &pkg.env_vars,
+            configure_args,
         )?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);

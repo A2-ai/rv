@@ -684,8 +684,8 @@ impl<'d> Resolver<'d> {
                 dep.env_vars = args.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
             }
         }
-        result.finalize();
 
+        result.finalize();
         result
     }
 }

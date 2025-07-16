@@ -7,17 +7,18 @@ use fs_err::{self as fs, read_to_string, write};
 use serde::Serialize;
 use serde_json::json;
 
+use rv::RepositoryOperation as LibRepositoryOperation;
 use rv::cli::utils::timeit;
 use rv::cli::{
     CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
-    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, deactivate, RepositoryAction, RepositoryPositioning, ConfigureRepositoryResponse, RepositoryMatcher, RepositoryUpdates,
-    read_and_verify_config, system_req,
+    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
+    RepositoryAction, RepositoryMatcher, RepositoryPositioning, RepositoryUpdates, Resolution,
+    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, deactivate,
+    execute_repository_action, read_and_verify_config, system_req,
 };
-use rv::RepositoryOperation as LibRepositoryOperation;
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -405,6 +406,8 @@ fn _sync(
                 &context.library,
                 &context.cache,
                 &context.system_dependencies,
+                context.config.configure_args(),
+                &context.cache.system_info,
                 save_install_logs_in.clone(),
                 context.staging_path(),
             );
@@ -897,15 +900,21 @@ fn try_main() -> Result<()> {
                 ConfigureSubcommand::Repository { operation } => {
                     let action = match operation {
                         RepositoryOperation::Clear => RepositoryAction::Clear,
-                        
-                        RepositoryOperation::Remove { alias } => {
-                            RepositoryAction::Remove { alias }
-                        }
-                        
-                        RepositoryOperation::Add { alias, url, force_source, first, last, before, after } => {
+
+                        RepositoryOperation::Remove { alias } => RepositoryAction::Remove { alias },
+
+                        RepositoryOperation::Add {
+                            alias,
+                            url,
+                            force_source,
+                            first,
+                            last,
+                            before,
+                            after,
+                        } => {
                             let parsed_url = url::Url::parse(&url)
                                 .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
-                            
+
                             let positioning = if first {
                                 RepositoryPositioning::First
                             } else if last {
@@ -917,7 +926,7 @@ fn try_main() -> Result<()> {
                             } else {
                                 RepositoryPositioning::Last // Default
                             };
-                            
+
                             RepositoryAction::Add {
                                 alias,
                                 url: parsed_url,
@@ -925,12 +934,17 @@ fn try_main() -> Result<()> {
                                 force_source,
                             }
                         }
-                        
-                        RepositoryOperation::Replace { old_alias, alias, url, force_source } => {
+
+                        RepositoryOperation::Replace {
+                            old_alias,
+                            alias,
+                            url,
+                            force_source,
+                        } => {
                             let parsed_url = url::Url::parse(&url)
                                 .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
                             let new_alias = alias.unwrap_or_else(|| old_alias.clone());
-                            
+
                             RepositoryAction::Replace {
                                 old_alias,
                                 new_alias,
@@ -938,8 +952,15 @@ fn try_main() -> Result<()> {
                                 force_source,
                             }
                         }
-                        
-                        RepositoryOperation::Update { target_alias, match_url, alias, url, force_source, no_force_source } => {
+
+                        RepositoryOperation::Update {
+                            target_alias,
+                            match_url,
+                            alias,
+                            url,
+                            force_source,
+                            no_force_source,
+                        } => {
                             // Determine matcher
                             let matcher = if let Some(match_url_str) = match_url {
                                 let parsed_url = url::Url::parse(&match_url_str)
@@ -948,17 +969,21 @@ fn try_main() -> Result<()> {
                             } else if let Some(target_alias) = target_alias {
                                 RepositoryMatcher::ByAlias(target_alias)
                             } else {
-                                return Err(anyhow::anyhow!("Must specify either target alias or --match-url"));
+                                return Err(anyhow::anyhow!(
+                                    "Must specify either target alias or --match-url"
+                                ));
                             };
-                            
+
                             // Parse URL if provided
                             let parsed_url = if let Some(url_str) = url {
-                                Some(url::Url::parse(&url_str)
-                                    .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?)
+                                Some(
+                                    url::Url::parse(&url_str)
+                                        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?,
+                                )
                             } else {
                                 None
                             };
-                            
+
                             // Determine force_source value
                             let force_source_update = if force_source {
                                 Some(true)
@@ -967,19 +992,19 @@ fn try_main() -> Result<()> {
                             } else {
                                 None
                             };
-                            
+
                             let updates = RepositoryUpdates {
                                 alias,
                                 url: parsed_url,
                                 force_source: force_source_update,
                             };
-                            
+
                             RepositoryAction::Update { matcher, updates }
                         }
                     };
-                    
+
                     let response = execute_repository_action(&cli.config_file, action)?;
-                    
+
                     // Handle output based on format preference
                     if output_format.is_json() {
                         println!("{}", serde_json::to_string_pretty(&response)?);
@@ -987,22 +1012,30 @@ fn try_main() -> Result<()> {
                         // Print detailed text output
                         match response.operation {
                             LibRepositoryOperation::Add => {
-                                println!("Repository '{}' added successfully with URL: {}", 
-                                         response.alias.as_ref().unwrap(), 
-                                         response.url.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' added successfully with URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Replace => {
-                                println!("Repository replaced successfully - new alias: '{}', URL: {}", 
-                                         response.alias.as_ref().unwrap(), 
-                                         response.url.as_ref().unwrap());
+                                println!(
+                                    "Repository replaced successfully - new alias: '{}', URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Update => {
-                                println!("Repository '{}' updated successfully", 
-                                         response.alias.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' updated successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Remove => {
-                                println!("Repository '{}' removed successfully", 
-                                         response.alias.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' removed successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Clear => {
                                 println!("All repositories cleared successfully");

@@ -38,6 +38,7 @@ pub trait RCmd: Send + Sync {
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
+        configure_args: &[String],
     ) -> Result<String, InstallError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
@@ -226,6 +227,7 @@ impl RCmd for RCommandLine {
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
+        configure_args: &[String],
     ) -> Result<String, InstallError> {
         let destination = destination.as_ref();
         // We create a temp build dir so we only remove an existing destination if we have something we can replace it with
@@ -279,7 +281,14 @@ impl RCmd for RCommandLine {
             ))
             .arg("--use-vanilla")
             .arg("--strip")
-            .arg("--strip-lib")
+            .arg("--strip-lib");
+
+        // Add configure args
+        for arg in configure_args {
+            command.arg("--configure-args").arg(arg);
+        }
+
+        command
             .arg(src_backup_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library_paths)
