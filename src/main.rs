@@ -14,7 +14,7 @@ use rv::cli::{
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
     CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, deactivate, RepositoryAction, RepositoryPositioning, ConfigureRepositoryResponse, RepositoryMatcher, RepositoryUpdates,
+    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, deactivate, RepositoryAction, RepositoryPositioning, RepositoryMatcher, RepositoryUpdates,
     read_and_verify_config, system_req,
 };
 use rv::RepositoryOperation as LibRepositoryOperation;
@@ -159,6 +159,9 @@ pub enum Command {
         /// Specify a R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
+        #[clap(long)]
+        /// Filter the tree to show only dependency paths that lead to the specified package
+        package: Option<String>,
     },
     /// Configure project settings
     Configure {
@@ -871,6 +874,7 @@ fn try_main() -> Result<()> {
             depth,
             hide_system_deps,
             r_version,
+            package,
         } => {
             let mut context = CliContext::new(&cli.config_file, r_version.into())?;
             context.load_databases_if_needed()?;
@@ -881,7 +885,7 @@ fn try_main() -> Result<()> {
                 context.show_progress_bar();
             }
             let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
-            let tree = tree(&context, &resolution.found, &resolution.failed);
+            let tree = tree(&context, &resolution.found, &resolution.failed, package.as_deref());
 
             if output_format.is_json() {
                 println!(

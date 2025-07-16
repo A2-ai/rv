@@ -3,7 +3,7 @@ use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{ResolvedDependency, UnresolvedDependency, Version};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum NodeKind {
@@ -203,10 +203,96 @@ impl Tree<'_> {
     }
 }
 
+/// Finds all paths from root nodes to the target package
+fn find_all_paths_to_target<'a>(
+    nodes: &[TreeNode<'a>], 
+    target: &str, 
+    current_path: Vec<&'a str>
+) -> Vec<Vec<&'a str>> {
+    let mut paths = Vec::new();
+    
+    for node in nodes {
+        let mut new_path = current_path.clone();
+        new_path.push(node.name);
+        
+        // If this node is our target, save this path
+        if node.name == target {
+            paths.push(new_path);
+            // Don't recurse into children - we found our target
+        } else {
+            // Not our target, recurse into children
+            let child_paths = find_all_paths_to_target(&node.children, target, new_path);
+            paths.extend(child_paths);
+        }
+    }
+    
+    paths
+}
+
+/// Builds a set of all node names that should be kept based on the paths
+fn build_nodes_to_keep(paths: &[Vec<&str>]) -> HashSet<String> {
+    let mut nodes_to_keep = HashSet::new();
+    
+    for path in paths {
+        for node_name in path {
+            nodes_to_keep.insert(node_name.to_string());
+        }
+    }
+    
+    nodes_to_keep
+}
+
+/// Filters the tree to keep only nodes that are on paths to the target
+fn filter_tree_by_marked_nodes<'a>(
+    nodes: Vec<TreeNode<'a>>, 
+    nodes_to_keep: &HashSet<String>,
+    target: &str
+) -> Vec<TreeNode<'a>> {
+    nodes.into_iter()
+        .filter_map(|mut node| {
+            // Only keep nodes that are marked
+            if nodes_to_keep.contains(node.name) {
+                if node.name == target {
+                    // If this is our target, clear its children - we don't care what it depends on
+                    node.children = vec![];
+                } else {
+                    // Otherwise, recursively filter children
+                    node.children = filter_tree_by_marked_nodes(
+                        node.children, 
+                        nodes_to_keep, 
+                        target
+                    );
+                }
+                Some(node)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Main filtering function that orchestrates the filtering process
+fn filter_tree_for_package<'a>(nodes: Vec<TreeNode<'a>>, target: &str) -> Vec<TreeNode<'a>> {
+    // Find all paths that lead to the target package
+    let paths = find_all_paths_to_target(&nodes, target, Vec::new());
+    
+    // If no paths found, return empty tree
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    
+    // Build set of node names to keep
+    let nodes_to_keep = build_nodes_to_keep(&paths);
+    
+    // Filter the tree
+    filter_tree_by_marked_nodes(nodes, &nodes_to_keep, target)
+}
+
 pub fn tree<'a>(
     context: &'a CliContext,
     resolved_deps: &'a [ResolvedDependency],
     unresolved_deps: &'a [UnresolvedDependency],
+    package_filter: Option<&str>,
 ) -> Tree<'a> {
     let deps_by_name: HashMap<_, _> = resolved_deps.iter().map(|d| (d.name.as_ref(), d)).collect();
     let unresolved_deps_by_name: HashMap<_, _> = unresolved_deps
@@ -245,5 +331,185 @@ pub fn tree<'a>(
         }
     }
 
-    Tree { nodes: out }
+    // Apply package filtering if specified
+    let filtered_nodes = if let Some(target_package) = package_filter {
+        filter_tree_for_package(out, target_package)
+    } else {
+        out
+    };
+
+    Tree { nodes: filtered_nodes }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_node<'a>(name: &'a str, children: Vec<TreeNode<'a>>) -> TreeNode<'a> {
+        TreeNode {
+            name,
+            version: None, // Simplified for testing
+            source: None,
+            package_type: None,
+            sys_deps: None,
+            resolved: true,
+            error: None,
+            version_req: None,
+            children,
+            ignored: false,
+        }
+    }
+
+    #[test]
+    fn test_filter_tree_for_package_simple() {
+        // Create a simple tree: root -> target
+        let target_node = create_test_node("target", vec![]);
+        let root_node = create_test_node("root", vec![target_node]);
+        let nodes = vec![root_node];
+
+        let filtered = filter_tree_for_package(nodes, "target");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "root");
+        assert_eq!(filtered[0].children.len(), 1);
+        assert_eq!(filtered[0].children[0].name, "target");
+        // Target should have no children (they're cleared)
+        assert_eq!(filtered[0].children[0].children.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_tree_for_package_not_found() {
+        // Create a tree without the target
+        let child_node = create_test_node("child", vec![]);
+        let root_node = create_test_node("root", vec![child_node]);
+        let nodes = vec![root_node];
+
+        let filtered = filter_tree_for_package(nodes, "nonexistent");
+
+        // Should return empty tree
+        assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_tree_for_package_multiple_paths() {
+        // Create tree with multiple paths to target:
+        // root1 -> target
+        // root2 -> intermediate -> target
+        let target1 = create_test_node("target", vec![]);
+        let target2 = create_test_node("target", vec![]);
+        let intermediate = create_test_node("intermediate", vec![target2]);
+        
+        let root1 = create_test_node("root1", vec![target1]);
+        let root2 = create_test_node("root2", vec![intermediate]);
+        let nodes = vec![root1, root2];
+
+        let filtered = filter_tree_for_package(nodes, "target");
+
+        assert_eq!(filtered.len(), 2);
+        
+        // Check first path: root1 -> target
+        assert_eq!(filtered[0].name, "root1");
+        assert_eq!(filtered[0].children.len(), 1);
+        assert_eq!(filtered[0].children[0].name, "target");
+        
+        // Check second path: root2 -> intermediate -> target
+        assert_eq!(filtered[1].name, "root2");
+        assert_eq!(filtered[1].children.len(), 1);
+        assert_eq!(filtered[1].children[0].name, "intermediate");
+        assert_eq!(filtered[1].children[0].children.len(), 1);
+        assert_eq!(filtered[1].children[0].children[0].name, "target");
+    }
+
+    #[test]
+    fn test_filter_tree_removes_irrelevant_branches() {
+        // Create tree:
+        // root -> target
+        //      -> irrelevant -> more_irrelevant
+        let target = create_test_node("target", vec![]);
+        let more_irrelevant = create_test_node("more_irrelevant", vec![]);
+        let irrelevant = create_test_node("irrelevant", vec![more_irrelevant]);
+        let root = create_test_node("root", vec![target, irrelevant]);
+        let nodes = vec![root];
+
+        let filtered = filter_tree_for_package(nodes, "target");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "root");
+        // Should only have the target child, not the irrelevant branch
+        assert_eq!(filtered[0].children.len(), 1);
+        assert_eq!(filtered[0].children[0].name, "target");
+    }
+
+    #[test]
+    fn test_filter_clears_target_children() {
+        // Create: target -> child1 -> child2
+        // When filtering for "target", its children should be cleared
+        let child2 = create_test_node("child2", vec![]);
+        let child1 = create_test_node("child1", vec![child2]);
+        let target = create_test_node("target", vec![child1]);
+        let nodes = vec![target];
+
+        let filtered = filter_tree_for_package(nodes, "target");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "target");
+        // Children should be cleared since this is the target
+        assert_eq!(filtered[0].children.len(), 0);
+    }
+
+    #[test]
+    fn test_find_all_paths_to_target() {
+        // Create tree with multiple paths:
+        // root1 -> target
+        // root2 -> intermediate -> target  
+        let target1 = create_test_node("target", vec![]);
+        let target2 = create_test_node("target", vec![]);
+        let intermediate = create_test_node("intermediate", vec![target2]);
+        let root1 = create_test_node("root1", vec![target1]);
+        let root2 = create_test_node("root2", vec![intermediate]);
+        let nodes = vec![root1, root2];
+
+        let paths = find_all_paths_to_target(&nodes, "target", Vec::new());
+
+        assert_eq!(paths.len(), 2);
+        
+        // Should find both paths
+        assert!(paths.contains(&vec!["root1", "target"]));
+        assert!(paths.contains(&vec!["root2", "intermediate", "target"]));
+    }
+
+    #[test]
+    fn test_filter_target_with_and_without_children() {
+        // Create tree where target appears both as intermediate and leaf:
+        // root -> target -> child
+        //      -> other -> target (leaf)
+        let target_leaf = create_test_node("target", vec![]);
+        let child = create_test_node("child", vec![]);
+        let target_intermediate = create_test_node("target", vec![child]);
+        let other = create_test_node("other", vec![target_leaf]);
+        let root = create_test_node("root", vec![target_intermediate, other]);
+        let nodes = vec![root];
+
+        let filtered = filter_tree_for_package(nodes, "target");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "root");
+        assert_eq!(filtered[0].children.len(), 2);
+        
+        // Both target nodes should have their children cleared
+        let target_children: Vec<_> = filtered[0].children.iter()
+            .filter(|child| child.name == "target")
+            .collect();
+        assert_eq!(target_children.len(), 1);
+        assert_eq!(target_children[0].children.len(), 0); // Children cleared
+        
+        // The "other" intermediate node should be kept
+        let other_children: Vec<_> = filtered[0].children.iter()
+            .filter(|child| child.name == "other")
+            .collect();
+        assert_eq!(other_children.len(), 1);
+        assert_eq!(other_children[0].children.len(), 1); // Contains target
+        assert_eq!(other_children[0].children[0].name, "target");
+        assert_eq!(other_children[0].children[0].children.len(), 0); // Target's children cleared
+    }
 }

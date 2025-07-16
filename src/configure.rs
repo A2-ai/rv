@@ -839,7 +839,7 @@ dependencies = [
         execute_repository_action(&config_path, action).unwrap();
         
         // Now try with a different existing alias - this should fail
-        let action = RepositoryAction::Update {
+        let _action = RepositoryAction::Update {
             matcher: RepositoryMatcher::ByAlias("posit".to_string()),
             updates: RepositoryUpdates {
                 alias: Some("posit".to_string()), // Wait, we need another repo first
