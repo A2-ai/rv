@@ -160,8 +160,8 @@ pub enum Command {
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
         #[clap(long)]
-        /// Filter the tree to show only dependency paths that lead to the specified package
-        package: Option<String>,
+        /// Invert the tree to show which top-level dependencies depend on the specified package
+        invert: Option<String>,
     },
     /// Configure project settings
     Configure {
@@ -874,7 +874,7 @@ fn try_main() -> Result<()> {
             depth,
             hide_system_deps,
             r_version,
-            package,
+            invert,
         } => {
             let mut context = CliContext::new(&cli.config_file, r_version.into())?;
             context.load_databases_if_needed()?;
@@ -885,7 +885,7 @@ fn try_main() -> Result<()> {
                 context.show_progress_bar();
             }
             let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
-            let tree = tree(&context, &resolution.found, &resolution.failed, package.as_deref());
+            let tree = tree(&context, &resolution.found, &resolution.failed, invert.as_deref());
 
             if output_format.is_json() {
                 println!(
