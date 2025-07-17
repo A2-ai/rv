@@ -1,0 +1,85 @@
+{
+  "R": {
+    "Version": "4.4.1",
+    "Repositories": [
+      {
+        "Name": "gh-pkg-mirror",
+        "URL": "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04"
+      },
+      {
+        "Name": "RSPM", 
+        "URL": "https://packagemanager.posit.co/cran/2024-12-04"
+      }
+    ]
+  },
+  "Packages": {
+    "dplyr": {
+      "Package": "dplyr",
+      "Version": "1.1.4",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Requirements": [
+        "R",
+        "cli",
+        "generics",
+        "glue",
+        "lifecycle",
+        "magrittr",
+        "methods",
+        "pillar",
+        "R6",
+        "rlang",
+        "tibble",
+        "tidyselect",
+        "utils",
+        "vctrs"
+      ]
+    },
+    "ggplot2": {
+      "Package": "ggplot2", 
+      "Version": "3.4.4",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Requirements": [
+        "R",
+        "cli",
+        "glue",
+        "gtable",
+        "isoband",
+        "lifecycle",
+        "MASS",
+        "mgcv",
+        "rlang",
+        "scales",
+        "tibble",
+        "vctrs",
+        "withr"
+      ]
+    },
+    "pmplots": {
+      "Package": "pmplots",
+      "Version": "0.8.1",
+      "Source": "Repository", 
+      "Repository": "gh-pkg-mirror",
+      "Requirements": [
+        "R",
+        "dplyr",
+        "ggplot2"
+      ]
+    },
+    "dvs": {
+      "Package": "dvs",
+      "Version": "0.1.0",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "dvs",
+      "RemoteUsername": "a2-ai",
+      "RemoteSha": "main",
+      "Requirements": [
+        "R",
+        "dplyr"
+      ]
+    }
+  }
+} 

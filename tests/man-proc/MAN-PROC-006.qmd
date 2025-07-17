@@ -1,0 +1,168 @@
+---
+title: "MAN-PROC-006: R Native Command Integration"
+editor: visual
+format: pdf
+---
+
+Procedure for testing R-native equivalents of RV commands and integration within R sessions, ensuring seamless package management from within R.
+
+## Prerequisites
+
+Before running this procedure, ensure: - RV tool is installed and available in PATH - R installed and accessible - Terminal/Command prompt access - Existing RV project for testing R integration
+
+## Test Procedure
+
+::: step
+### Step 1: Setup RV Project for R Integration Testing
+
+1.  Create new project: `mkdir rv-r-integration-test && cd rv-r-integration-test`
+2.  Initialize project: `rv init`
+3.  Add initial packages via CLI: `rv add dplyr ggplot2`
+4.  Activate project: `rv activate`
+5.  Verify initial setup
+
+*Take a screenshot* showing the terminal output.
+
+![Setting up RV project for R integration testing](images/man-proc-006-01.png){.screenshot}
+:::
+
+::: step
+### Step 2: Test R-Native Sync Command
+
+1.  Start R session
+2.  Test R-native sync equivalent
+3.  Verify sync behavior matches CLI command
+4.  Check package installation status
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R-native sync command](images/man-proc-006-02.png){.screenshot}
+:::
+
+::: step
+### Step 3: Test R-Native Add Command
+
+1.  Use R-native add command to install new packages
+2.  Verify packages are added to configuration
+3.  Check automatic synchronization
+4.  Compare behavior with CLI `rv add`
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R-native add command](images/man-proc-006-03.png){.screenshot}
+:::
+
+::: step
+### Step 4: Test R-Native Summary Command
+
+1.  Execute R-native summary command
+2.  Verify output matches CLI `rv summary`
+3.  Check information accuracy and completeness
+4.  Test formatting and readability
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R-native summary command](images/man-proc-006-04.png){.screenshot}
+:::
+
+::: step
+### Step 5: Test R-Native Plan Command
+
+1.  Make configuration change (add package to rproject.toml)
+2.  Use R-native plan command to preview changes
+3.  Verify preview accuracy without making changes
+4.  Compare with CLI `rv plan` behavior
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R-native plan command](images/man-proc-006-05.png){.screenshot}
+:::
+
+::: step
+### Step 6: Test R Environment Library Path Integration
+
+1.  Verify `.libPaths()` includes RV project library
+2.  Check library path priority order
+3.  Test package loading from RV library
+4.  Verify RV library is first in path
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R environment library path integration](images/man-proc-006-06.png){.screenshot}
+:::
+
+::: step
+### Step 7: Test R Repository Configuration Integration
+
+1.  Check repository configuration in R
+2.  Verify `getOption("repos")` reflects RV configuration
+3.  Test package installation uses RV repositories
+4.  Verify repository priority order
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R repository configuration integration](images/man-proc-006-07.png){.screenshot}
+:::
+
+::: step
+### Step 8: Test Cross-Command Consistency
+
+1.  Add package via R command: `rv_add("lubridate")`
+2.  Verify via CLI command: Exit R and run `rv summary`
+3.  Use CLI to add package: `rv add forcats`
+4.  Return to R and verify: `rv_summary()`
+
+*Take a screenshot* showing the terminal output.
+
+![Testing cross-command consistency](images/man-proc-006-08.png){.screenshot}
+:::
+
+::: step
+### Step 9: Test R Session State Persistence
+
+1.  Add packages via R commands
+2.  Exit and restart R session
+3.  Verify project state is maintained
+4.  Test that R commands work across sessions
+
+*Take a screenshot* showing the terminal output.
+
+![Testing R session state persistence](images/man-proc-006-09.png){.screenshot}
+:::
+
+::: step
+### Step 10: Test Error Handling and User Experience
+
+1.  Test R commands with invalid inputs
+2.  Verify error messages are helpful
+3.  Test recovery from error conditions
+4.  Compare error handling with CLI equivalents
+
+*Take a screenshot* showing the terminal output.
+
+![Testing error handling and user experience](images/man-proc-006-10.png){.screenshot}
+:::
+
+## Expected Results
+
+-   R-native commands provide identical functionality to CLI equivalents
+-   Package management works seamlessly from within R sessions
+-   Library paths are correctly configured for RV packages
+-   Repository configuration is properly integrated with R
+-   Commands maintain consistency across R and CLI interfaces
+-   Project state persists correctly across R sessions
+-   Error handling provides clear and helpful messages
+-   R integration feels natural and intuitive to R users
+
+## Test Validation
+
+-   [ ] Project setup for R integration successful
+-   [ ] R-native sync command works correctly
+-   [ ] R-native add command functions properly
+-   [ ] R-native summary command accurate
+-   [ ] R-native plan command previews correctly
+-   [ ] Library path integration working
+-   [ ] Repository configuration integrated
+-   [ ] Cross-command consistency maintained
+-   [ ] Session state persistence confirmed
+-   [ ] Error handling and UX satisfactory

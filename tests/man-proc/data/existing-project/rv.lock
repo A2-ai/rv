@@ -1,0 +1,35 @@
+version = 2
+
+[metadata]
+format_version = "2.0"
+r_version = "4.4"
+
+[[dependencies]]
+name = "dplyr"
+version = "1.1.4" 
+source = "https://packagemanager.posit.co/cran/2024-12-04"
+repository = "RSPM"
+
+[[dependencies]]
+name = "ggplot2"
+version = "3.4.4"
+source = "https://packagemanager.posit.co/cran/2024-12-04"
+repository = "RSPM"
+
+[[dependencies]]
+name = "pmplots"
+version = "0.8.1"
+source = "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04"
+repository = "gh-pkg-mirror"
+
+[[dependencies]]
+name = "tidyr"
+version = "1.3.0"
+source = "https://packagemanager.posit.co/cran/2024-12-04"
+repository = "RSPM"
+
+[[dependencies]]
+name = "readr"
+version = "2.1.4"
+source = "https://packagemanager.posit.co/cran/2024-12-04"
+repository = "RSPM" 

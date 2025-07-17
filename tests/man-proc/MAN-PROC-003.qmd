@@ -1,0 +1,167 @@
+---
+title: "MAN-PROC-003: renv Migration Procedure"
+editor: visual
+format: pdf
+---
+
+Complete procedure for migrating an existing renv project to RV format, including issue resolution and validation.
+
+## Prerequisites
+
+Before running this procedure, ensure: - RV tool is installed and available in PATH - R installed and accessible - Terminal/Command prompt access - renv project data in `tests/data/renv-project/`
+
+## Test Procedure
+
+::: step
+### Step 1: Setup renv Project for Migration
+
+1.  Navigate to test workspace: `mkdir rv-migration-test && cd rv-migration-test`
+2.  Copy renv project files: `cp -r ../tests/data/renv-project/* .`
+3.  Verify renv.lock is present: `ls -la renv.lock`
+4.  Review renv project structure: `head -20 renv.lock`
+
+*Take a screenshot* showing the terminal output.
+
+![Setting up renv project for migration](images/man-proc-003-01.png){.screenshot}
+:::
+
+::: step
+### Step 2: Execute renv Migration
+
+1.  Run migration command: `rv migrate renv`
+2.  Observe migration process and output
+3.  Document any migration warnings or errors
+4.  Note packages that fail to migrate
+
+*Take a screenshot* showing the terminal output.
+
+![Executing renv migration](images/man-proc-003-02.png){.screenshot}
+:::
+
+::: step
+### Step 3: Review Generated Configuration
+
+1.  Display generated configuration: `cat rproject.toml`
+2.  Verify project structure and metadata
+3.  Check repository assignments
+4.  Review migrated package specifications
+
+*Take a screenshot* showing the terminal output.
+
+![Reviewing generated configuration](images/man-proc-003-03.png){.screenshot}
+:::
+
+::: step
+### Step 4: Resolve Migration Issues
+
+1.  Add missing repository for failed packages
+2.  Add failed packages to dependencies section
+3.  Remove package-specific repositories if needed
+4.  Save configuration changes
+
+*Take a screenshot* showing the terminal output.
+
+![Resolving migration issues](images/man-proc-003-04.png){.screenshot}
+:::
+
+::: step
+### Step 5: Preview Migration Resolution
+
+1.  Run plan command: `rv plan`
+2.  Verify all packages can now be resolved
+3.  Check package sources and versions
+4.  Confirm no unresolved dependencies
+
+*Take a screenshot* showing the terminal output.
+
+![Previewing migration resolution](images/man-proc-003-05.png){.screenshot}
+:::
+
+::: step
+### Step 6: Complete Migration Synchronization
+
+1.  Execute synchronization: `rv sync`
+2.  Verify all packages install correctly
+3.  Check for dependency resolution
+4.  Confirm lock file generation
+
+*Take a screenshot* showing the terminal output.
+
+![Completing migration synchronization](images/man-proc-003-06.png){.screenshot}
+:::
+
+::: step
+### Step 7: Validate Migrated Project
+
+1.  Check project status: `rv summary`
+2.  Verify package counts match original renv.lock
+3.  Compare package versions with original
+4.  Test library path: `rv library`
+
+*Take a screenshot* showing the terminal output.
+
+![Validating migrated project](images/man-proc-003-07.png){.screenshot}
+:::
+
+::: step
+### Step 8: Test Package Version Consistency
+
+1.  Compare package versions between renv.lock and rv.lock
+2.  Document any version differences
+3.  Verify version changes are expected (e.g., from r-universe)
+4.  Test package functionality in R
+
+*Take a screenshot* showing the terminal output.
+
+![Testing package version consistency](images/man-proc-003-08.png){.screenshot}
+:::
+
+::: step
+### Step 9: Test Migrated R Environment
+
+1.  Activate migrated project: `rv activate`
+2.  Start R session and test package loading
+3.  Verify all packages are accessible
+4.  Test package functionality
+5.  Check repository configuration
+
+*Take a screenshot* showing the terminal output.
+
+![Testing migrated R environment](images/man-proc-003-09.png){.screenshot}
+:::
+
+::: step
+### Step 10: Document Migration Results
+
+1.  Create migration summary report
+2.  Document resolved issues and solutions
+3.  Note any version changes
+4.  Verify project integrity
+
+*Take a screenshot* showing the terminal output.
+
+![Documenting migration results](images/man-proc-003-10.png){.screenshot}
+:::
+
+## Expected Results
+
+-   renv.lock is successfully parsed and migrated
+-   Migration warnings identify packages needing attention
+-   Configuration issues are resolvable through repository additions
+-   All packages are successfully installed from appropriate sources
+-   Package versions remain consistent or are appropriately updated
+-   R environment functions correctly with migrated packages
+-   Lock file accurately reflects migrated state
+
+## Test Validation
+
+-   [ ] renv project setup correctly
+-   [ ] Migration command executes successfully
+-   [ ] Generated configuration is valid
+-   [ ] Migration issues identified and resolved
+-   [ ] Preview shows successful resolution
+-   [ ] Synchronization completes successfully
+-   [ ] Migrated project validates correctly
+-   [ ] Package versions are consistent
+-   [ ] R environment functions properly
+-   [ ] Migration results documented
