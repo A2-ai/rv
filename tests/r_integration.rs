@@ -177,6 +177,10 @@ struct TestStep {
 enum TestAssertion {
     Single(String),
     Multiple(Vec<String>),
+    Object {
+        contains: Option<Vec<String>>,
+        not_contains: Option<Vec<String>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -1211,32 +1215,47 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
     match assertion {
         TestAssertion::Single(expected) => {
             if !output.contains(expected) {
-                return Err(
-                    anyhow::anyhow!(
-                        "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}\n\nSearching for lines containing '{}':\n{}",
-                        expected,
-                        output.len(),
-                        output,
-                        expected.split(':').next().unwrap_or(expected),
-                        output
-                            .lines()
-                            .filter(|line| line
-                                .contains(expected.split(':').next().unwrap_or(expected)))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ),
-                );
+                return Err(anyhow::anyhow!(
+                    "Assertion failed: expected '{}' in output",
+                    expected
+                ));
             }
         }
         TestAssertion::Multiple(expected_list) => {
             for expected in expected_list.iter() {
                 if !output.contains(expected) {
                     return Err(anyhow::anyhow!(
-                        "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}",
-                        expected,
-                        output.len(),
-                        output
+                        "Assertion failed: expected '{}' in output",
+                        expected
                     ));
+                }
+            }
+        }
+        TestAssertion::Object {
+            contains,
+            not_contains,
+        } => {
+            // Check positive assertions
+            if let Some(contains_list) = contains {
+                for expected in contains_list.iter() {
+                    if !output.contains(expected) {
+                        return Err(anyhow::anyhow!(
+                            "Assertion failed: expected '{}' in output",
+                            expected
+                        ));
+                    }
+                }
+            }
+
+            // Check negative assertions
+            if let Some(not_contains_list) = not_contains {
+                for unexpected in not_contains_list.iter() {
+                    if output.contains(unexpected) {
+                        return Err(anyhow::anyhow!(
+                            "Assertion failed: did NOT expect '{}' in output",
+                            unexpected
+                        ));
+                    }
                 }
             }
         }
