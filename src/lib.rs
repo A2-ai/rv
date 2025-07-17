@@ -29,13 +29,16 @@ pub mod consts;
 pub use activate::{activate, deactivate};
 pub use add::{add_packages, read_and_verify_config};
 pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
-pub use configure::{execute_repository_action, RepositoryAction, RepositoryPositioning, RepositoryOperation, ConfigureRepositoryResponse, RepositoryMatcher, RepositoryUpdates};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
+pub use configure::{
+    ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
+    RepositoryPositioning, RepositoryUpdates, execute_repository_action,
+};
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
-pub use lockfile::Lockfile;
+pub use lockfile::{Lockfile, Source};
 pub use package::{Version, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
