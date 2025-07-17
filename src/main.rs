@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use url::Url;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use fs_err::{self as fs, read_to_string, write};
 use serde::Serialize;
 use serde_json::json;
@@ -13,11 +14,14 @@ use rv::cli::{
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
-    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
-    Resolver, SyncChange, SyncHandler, Version, activate, add_packages, execute_repository_action, deactivate, RepositoryAction, RepositoryPositioning, ConfigureRepositoryResponse, RepositoryMatcher, RepositoryUpdates,
-    read_and_verify_config, system_req,
+    CacheInfo, Config, ConfigureRepositoryResponse, GitExecutor, Http, Lockfile, ProjectSummary,
+    RCmd, RCommandLine, RepositoryAction, RepositoryMatcher, RepositoryPositioning,
+    RepositoryUpdates, Resolution, Resolver, SyncChange, SyncHandler, Version, activate,
+    add_packages, deactivate, execute_repository_action, read_and_verify_config, system_req,
 };
-use rv::RepositoryOperation as LibRepositoryOperation;
+use rv::{
+    DependencyAction, DependencyType, GitDepRef, RepositoryOperation as LibRepositoryOperation,
+};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -174,6 +178,10 @@ pub enum ConfigureSubcommand {
         #[clap(subcommand)]
         operation: RepositoryOperation,
     },
+    Dependency {
+        #[clap(subcommand)]
+        operation: DependencyOperation,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -242,6 +250,53 @@ pub enum RepositoryOperation {
     },
     /// Clear all repositories
     Clear,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DependencyOperation {
+    Add {
+        /// Name of the dependency to add
+        name: String,
+
+        /// Alias of the repository to specify
+        #[clap(long, conflicts_with_all = ["git", "url", "path"])]
+        repository: Option<String>,
+        /// Enable force_source
+        #[clap(long, requires = "repository")]
+        force_source: Option<bool>,
+
+        /// Direct HTTP URL from which to install from
+        #[clap(long, conflicts_with_all = ["git", "repository", "path"])]
+        url: Option<Url>,
+
+        /// Local path from which to install from
+        #[clap(long, conflicts_with_all = ["git", "repository", "url"])]
+        path: Option<PathBuf>,
+
+        /// A git repository URL (SSH or HTTP) - requires one and only one of branch, tag, or commit.
+        #[clap(long, conflicts_with_all = ["url", "repository", "path"])]
+        git: Option<String>,
+        /// Git Reference: branch name. (Requires --git; conflicts with tag, commit)
+        #[clap(long, requires = "git", conflicts_with_all = ["tag", "commit"])]
+        branch: Option<String>,
+        /// Git Reference: tag name. (Requires --git; conflicts with branch, commit)
+        #[clap(long, requires = "git", conflicts_with_all = ["branch", "commit"])]
+        tag: Option<String>,
+        /// Git Reference: exact commit sha. (Requires --git; conflicts with branch, tag)
+        #[clap(long, requires = "git", conflicts_with_all = ["branch", "tag"])]
+        commit: Option<String>,
+        /// Optional subdirectory within the git repo to use as the package root
+        #[clap(long, requires = "git")]
+        directory: Option<PathBuf>,
+
+        /// Enable the install_suggestions option
+        #[clap(long, short = 's')]
+        install_suggestions: bool,
+
+        /// Enable the dependencies_only option
+        #[clap(long, short = 'd')]
+        dependencies_only: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -897,15 +952,21 @@ fn try_main() -> Result<()> {
                 ConfigureSubcommand::Repository { operation } => {
                     let action = match operation {
                         RepositoryOperation::Clear => RepositoryAction::Clear,
-                        
-                        RepositoryOperation::Remove { alias } => {
-                            RepositoryAction::Remove { alias }
-                        }
-                        
-                        RepositoryOperation::Add { alias, url, force_source, first, last, before, after } => {
+
+                        RepositoryOperation::Remove { alias } => RepositoryAction::Remove { alias },
+
+                        RepositoryOperation::Add {
+                            alias,
+                            url,
+                            force_source,
+                            first,
+                            last,
+                            before,
+                            after,
+                        } => {
                             let parsed_url = url::Url::parse(&url)
                                 .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
-                            
+
                             let positioning = if first {
                                 RepositoryPositioning::First
                             } else if last {
@@ -917,7 +978,7 @@ fn try_main() -> Result<()> {
                             } else {
                                 RepositoryPositioning::Last // Default
                             };
-                            
+
                             RepositoryAction::Add {
                                 alias,
                                 url: parsed_url,
@@ -925,12 +986,17 @@ fn try_main() -> Result<()> {
                                 force_source,
                             }
                         }
-                        
-                        RepositoryOperation::Replace { old_alias, alias, url, force_source } => {
+
+                        RepositoryOperation::Replace {
+                            old_alias,
+                            alias,
+                            url,
+                            force_source,
+                        } => {
                             let parsed_url = url::Url::parse(&url)
                                 .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
                             let new_alias = alias.unwrap_or_else(|| old_alias.clone());
-                            
+
                             RepositoryAction::Replace {
                                 old_alias,
                                 new_alias,
@@ -938,8 +1004,15 @@ fn try_main() -> Result<()> {
                                 force_source,
                             }
                         }
-                        
-                        RepositoryOperation::Update { target_alias, match_url, alias, url, force_source, no_force_source } => {
+
+                        RepositoryOperation::Update {
+                            target_alias,
+                            match_url,
+                            alias,
+                            url,
+                            force_source,
+                            no_force_source,
+                        } => {
                             // Determine matcher
                             let matcher = if let Some(match_url_str) = match_url {
                                 let parsed_url = url::Url::parse(&match_url_str)
@@ -948,17 +1021,21 @@ fn try_main() -> Result<()> {
                             } else if let Some(target_alias) = target_alias {
                                 RepositoryMatcher::ByAlias(target_alias)
                             } else {
-                                return Err(anyhow::anyhow!("Must specify either target alias or --match-url"));
+                                return Err(anyhow::anyhow!(
+                                    "Must specify either target alias or --match-url"
+                                ));
                             };
-                            
+
                             // Parse URL if provided
                             let parsed_url = if let Some(url_str) = url {
-                                Some(url::Url::parse(&url_str)
-                                    .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?)
+                                Some(
+                                    url::Url::parse(&url_str)
+                                        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?,
+                                )
                             } else {
                                 None
                             };
-                            
+
                             // Determine force_source value
                             let force_source_update = if force_source {
                                 Some(true)
@@ -967,19 +1044,19 @@ fn try_main() -> Result<()> {
                             } else {
                                 None
                             };
-                            
+
                             let updates = RepositoryUpdates {
                                 alias,
                                 url: parsed_url,
                                 force_source: force_source_update,
                             };
-                            
+
                             RepositoryAction::Update { matcher, updates }
                         }
                     };
-                    
+
                     let response = execute_repository_action(&cli.config_file, action)?;
-                    
+
                     // Handle output based on format preference
                     if output_format.is_json() {
                         println!("{}", serde_json::to_string_pretty(&response)?);
@@ -987,28 +1064,83 @@ fn try_main() -> Result<()> {
                         // Print detailed text output
                         match response.operation {
                             LibRepositoryOperation::Add => {
-                                println!("Repository '{}' added successfully with URL: {}", 
-                                         response.alias.as_ref().unwrap(), 
-                                         response.url.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' added successfully with URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Replace => {
-                                println!("Repository replaced successfully - new alias: '{}', URL: {}", 
-                                         response.alias.as_ref().unwrap(), 
-                                         response.url.as_ref().unwrap());
+                                println!(
+                                    "Repository replaced successfully - new alias: '{}', URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Update => {
-                                println!("Repository '{}' updated successfully", 
-                                         response.alias.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' updated successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Remove => {
-                                println!("Repository '{}' removed successfully", 
-                                         response.alias.as_ref().unwrap());
+                                println!(
+                                    "Repository '{}' removed successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
                             }
                             LibRepositoryOperation::Clear => {
                                 println!("All repositories cleared successfully");
                             }
                         }
                     }
+                }
+                ConfigureSubcommand::Dependency { operation } => {
+                    let action = match operation {
+                        DependencyOperation::Add {
+                            name,
+                            repository,
+                            force_source,
+                            url,
+                            path,
+                            git,
+                            branch,
+                            tag,
+                            commit,
+                            directory,
+                            install_suggestions,
+                            dependencies_only,
+                        } => {
+                            let dependency_type = if let Some(repository) = repository {
+                                DependencyType::Repository {
+                                    repository,
+                                    force_source,
+                                }
+                            } else if let Some(url) = url {
+                                DependencyType::Url(url.try_into().map_err(|e| anyhow!("{e}"))?)
+                            } else if let Some(path) = path {
+                                DependencyType::Local(path)
+                            } else if let Some(git) = git {
+                                let git = git.as_str().try_into().map_err(|e| anyhow!("{e}"))?;
+                                let reference = GitDepRef::try_new(tag, branch, commit)
+                                    .map_err(|e| anyhow!("{e}"))?;
+                                DependencyType::Git {
+                                    git,
+                                    reference,
+                                    directory,
+                                }
+                            } else {
+                                DependencyType::Simple
+                            };
+
+                            DependencyAction::Add {
+                                name,
+                                dependency_type,
+                                install_suggestions,
+                                dependencies_only,
+                            }
+                        }
+                    };
                 }
             }
         }

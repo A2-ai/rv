@@ -7,10 +7,10 @@ use crate::consts::LOCKFILE_NAME;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HttpUrl(Url);
 
 impl<'de> Deserialize<'de> for HttpUrl {
@@ -29,6 +29,22 @@ impl<'de> Deserialize<'de> for HttpUrl {
         }
 
         Err(serde::de::Error::custom("Invalid URL"))
+    }
+}
+
+impl TryFrom<Url> for HttpUrl {
+    type Error = String;
+
+    fn try_from(value: Url) -> Result<Self, Self::Error> {
+        if value.scheme() == "http" || value.scheme() == "https" {
+            let mut url = value;
+            // Remove trailing slashes from the path
+            let path = url.path().trim_end_matches('/').to_string();
+            url.set_path(&path);
+            Ok(HttpUrl(url))
+        } else {
+            Err("Invalid URL: must start with http:// or https://".to_string())
+        }
     }
 }
 
