@@ -1,0 +1,8 @@
+library(dplyr)
+cat("DPLYR_VERSION:", as.character(packageVersion("dplyr")), "\n")
+library(ggplot2)
+cat("GGPLOT2_VERSION:", as.character(packageVersion("ggplot2")), "\n")
+library(tidyr)
+cat("TIDYR_VERSION:", as.character(packageVersion("tidyr")), "\n")
+library(readr)
+cat("READR_VERSION:", as.character(packageVersion("readr")), "\n")
