@@ -7,7 +7,7 @@ repositories = [
 ]
 
 dependencies = [
-    "rgl"
+    { name = "rgl", force_source = true},
 ]
 
 [project.configure_args]
