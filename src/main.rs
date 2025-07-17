@@ -254,6 +254,7 @@ pub enum RepositoryOperation {
 
 #[derive(Debug, Subcommand)]
 pub enum DependencyOperation {
+    /// Add a dependency
     Add {
         /// Name of the dependency to add
         name: String,
@@ -261,9 +262,13 @@ pub enum DependencyOperation {
         /// Alias of the repository to specify
         #[clap(long, conflicts_with_all = ["git", "url", "path"])]
         repository: Option<String>,
+
         /// Enable force_source
-        #[clap(long, requires = "repository")]
-        force_source: Option<bool>,
+        #[clap(long, conflicts_with_all = ["no_force_source", "url", "path", "git"])]
+        force_source: bool,
+        /// Enable force_source = false. This will override repository level force_source = true for this package
+        #[clap(long, conflicts_with_all = ["force_source", "url", "path", "git"])]
+        no_force_source: bool,
 
         /// Direct HTTP URL from which to install from
         #[clap(long, conflicts_with_all = ["git", "repository", "path"])]
@@ -297,6 +302,13 @@ pub enum DependencyOperation {
         #[clap(long, short = 'd')]
         dependencies_only: bool,
     },
+    /// Remove an existing dependency
+    Remove {
+        /// Name of the dependencies to remove
+        name: String,
+    },
+    /// Clear all dependencies
+    Clear,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1101,6 +1113,7 @@ fn try_main() -> Result<()> {
                             name,
                             repository,
                             force_source,
+                            no_force_source,
                             url,
                             path,
                             git,
@@ -1111,12 +1124,7 @@ fn try_main() -> Result<()> {
                             install_suggestions,
                             dependencies_only,
                         } => {
-                            let dependency_type = if let Some(repository) = repository {
-                                DependencyType::Repository {
-                                    repository,
-                                    force_source,
-                                }
-                            } else if let Some(url) = url {
+                            let dependency_type = if let Some(url) = url {
                                 DependencyType::Url(url.try_into().map_err(|e| anyhow!("{e}"))?)
                             } else if let Some(path) = path {
                                 DependencyType::Local(path)
@@ -1130,7 +1138,18 @@ fn try_main() -> Result<()> {
                                     directory,
                                 }
                             } else {
-                                DependencyType::Simple
+                                let force_source = match (force_source, no_force_source) {
+                                    (false, false) => None,
+                                    (true, false) => Some(true),
+                                    (false, true) => Some(false),
+                                    (true, true) => unreachable!("conflicts in clap subcommand")
+                                };
+
+                                if force_source.is_none() && repository.is_none() {
+                                    DependencyType::Simple
+                                } else {
+                                    DependencyType::Detailed { repository, force_source }
+                                }
                             };
 
                             DependencyAction::Add {
@@ -1140,7 +1159,11 @@ fn try_main() -> Result<()> {
                                 dependencies_only,
                             }
                         }
+                        DependencyOperation::Remove { name } => DependencyAction::Remove { name: name },
+                        DependencyOperation::Clear => DependencyAction::Clear,
                     };
+
+                    let response = action.execute_action(&cli.config_file)?;
                 }
             }
         }

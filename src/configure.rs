@@ -1,9 +1,7 @@
 use fs_err::write;
 use serde::Serialize;
 use std::{
-    error::Error,
-    fmt::Display,
-    path::{Path, PathBuf},
+    collections::HashSet, error::Error, fmt::Display, path::{Path, PathBuf}
 };
 use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 use url::Url;
@@ -147,8 +145,10 @@ pub enum ConfigureErrorKind {
     MissingProjectTable,
     #[error("repositories field is not an array")]
     InvalidRepositoriesField,
-    #[error("Duplicate package: {0}")]
+    #[error("Duplicate package(s): {0}")]
     DuplicatePackage(String),
+    #[error("Package(s) not found: {0}")]
+    PackageNotFound(String),
 }
 
 pub fn execute_repository_action(
@@ -163,7 +163,7 @@ pub fn execute_repository_action(
     // Handle different operations and track what we did
     let (operation, response_alias, response_url, message) = match action {
         RepositoryAction::Clear => {
-            clear_repositories(&mut doc).map_err(|e| ConfigureError {
+            clear_field(&mut doc, ConfigureField::Repository).map_err(|e| ConfigureError {
                 path: config_file.into(),
                 source: Box::new(e),
             })?;
@@ -259,7 +259,7 @@ pub fn execute_repository_action(
     })
 }
 
-fn get_mut_field_array(
+fn get_mut_array(
     doc: &mut DocumentMut,
     field: ConfigureField,
 ) -> Result<&mut Array, ConfigureErrorKind> {
@@ -277,14 +277,14 @@ fn get_mut_field_array(
     Ok(repos)
 }
 
-fn clear_repositories(doc: &mut DocumentMut) -> Result<(), ConfigureErrorKind> {
-    let repos = get_mut_field_array(doc, ConfigureField::Repository)?;
+fn clear_field(doc: &mut DocumentMut, field: ConfigureField) -> Result<(), ConfigureErrorKind> {
+    let repos = get_mut_array(doc, field)?;
     repos.clear();
     Ok(())
 }
 
 fn remove_repository(doc: &mut DocumentMut, alias: &str) -> Result<(), ConfigureErrorKind> {
-    let repos = get_mut_field_array(doc, ConfigureField::Repository)?;
+    let repos = get_mut_array(doc, ConfigureField::Repository)?;
 
     let index = find_repository_index(repos, alias)
         .ok_or_else(|| ConfigureErrorKind::AliasNotFound(alias.to_string()))?;
@@ -300,7 +300,7 @@ fn replace_repository(
     url: &Url,
     force_source: bool,
 ) -> Result<(), ConfigureErrorKind> {
-    let repos = get_mut_field_array(doc, ConfigureField::Repository)?;
+    let repos = get_mut_array(doc, ConfigureField::Repository)?;
 
     let index = find_repository_index(repos, replace_alias)
         .ok_or_else(|| ConfigureErrorKind::AliasNotFound(replace_alias.to_string()))?;
@@ -321,7 +321,7 @@ fn update_repository(
     matcher: &RepositoryMatcher,
     updates: &RepositoryUpdates,
 ) -> Result<(String, Option<String>, Option<String>), ConfigureErrorKind> {
-    let repos = get_mut_field_array(doc, ConfigureField::Repository)?;
+    let repos = get_mut_array(doc, ConfigureField::Repository)?;
 
     // Find the repository to update
     let index = match matcher {
@@ -377,7 +377,7 @@ fn add_repository(
     positioning: RepositoryPositioning,
     force_source: bool,
 ) -> Result<(), ConfigureErrorKind> {
-    let repos = get_mut_field_array(doc, ConfigureField::Repository)?;
+    let repos = get_mut_array(doc, ConfigureField::Repository)?;
 
     // Check for duplicate alias
     if find_repository_index(repos, alias).is_some() {
@@ -481,8 +481,8 @@ impl GitDepRef {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum DependencyType {
     Simple,
-    Repository {
-        repository: String,
+    Detailed {
+        repository: Option<String>,
         force_source: Option<bool>,
     },
     Local(PathBuf),
@@ -498,14 +498,16 @@ impl DependencyType {
     fn insert_into_inline_table(&self, table: &mut InlineTable) {
         match self {
             Self::Simple => (),
-            Self::Repository {
+            Self::Detailed {
                 repository,
                 force_source,
             } => {
-                table.insert(
-                    "repository",
-                    Value::String(Formatted::new(repository.to_string())),
-                );
+                if let Some(repo) = repository {
+                    table.insert(
+                        "repository",
+                        Value::String(Formatted::new(repo.to_string())),
+                    );
+                }
                 if let Some(force_source) = force_source {
                     table.insert(
                         "force_source",
@@ -553,13 +555,15 @@ impl DependencyType {
 #[derive(Debug, Serialize)]
 enum DependencyOperation {
     Add,
+    Remove,
+    Clear,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ConfigureDependencyResponse {
     operation: DependencyOperation,
-    name: String,
-    dependency_type: DependencyType,
+    name: Option<String>,
+    dependency_type: Option<DependencyType>,
     success: bool,
     message: String,
 }
@@ -572,6 +576,10 @@ pub enum DependencyAction {
         install_suggestions: bool,
         dependencies_only: bool,
     },
+    Remove {
+        name: String,
+    },
+    Clear,
 }
 
 impl DependencyAction {
@@ -606,10 +614,38 @@ impl DependencyAction {
 
                 ConfigureDependencyResponse {
                     operation: DependencyOperation::Add,
-                    name: name.to_string(),
-                    dependency_type: dependency_type.clone(),
+                    name: Some(name.to_string()),
+                    dependency_type: Some(dependency_type.clone()),
                     success: true,
                     message: "Dependency configured successfully".to_string(),
+                }
+            }
+            DependencyAction::Remove { name } => {
+                remove_dependency(&mut doc, name).map_err(|e| ConfigureError {
+                    path: config_file.into(),
+                    source: Box::new(e),
+                })?;
+
+                ConfigureDependencyResponse {
+                    operation: DependencyOperation::Remove,
+                    name: Some(name.to_string()),
+                    dependency_type: None,
+                    success: true,
+                    message: "Dependency removed successfully".to_string()
+                }
+            }
+            DependencyAction::Clear => {
+                clear_field(&mut doc, ConfigureField::Dependency).map_err(|e| ConfigureError {
+                    path: config_file.into(),
+                    source: Box::new(e),
+                })?;
+
+                ConfigureDependencyResponse {
+                    operation: DependencyOperation::Clear,
+                    name: None,
+                    dependency_type: None,
+                    success: true,
+                    message: "All dependencies cleared".to_string(),
                 }
             }
         };
@@ -630,9 +666,9 @@ fn add_dependency(
     install_suggestions: bool,
     dependencies_only: bool,
 ) -> Result<(), ConfigureErrorKind> {
-    let deps = get_mut_field_array(doc, ConfigureField::Dependency)?;
+    let deps = get_mut_array(doc, ConfigureField::Dependency)?;
     if find_dependency_index(deps, name).is_some() {
-        return Err(ConfigureErrorKind::DuplicateAlias(name.to_string()));
+        return Err(ConfigureErrorKind::DuplicatePackage(name.to_string()));
     }
 
     let new_dep = create_dependency_value(name, dep_type, install_suggestions, dependencies_only);
@@ -642,6 +678,17 @@ fn add_dependency(
     format_array(deps);
 
     Ok(())
+}
+
+fn remove_dependency(doc: &mut DocumentMut, name: &str) -> Result<(), ConfigureErrorKind> {
+    let deps = get_mut_array(doc, ConfigureField::Dependency)?;
+
+    if let Some(idx) = find_dependency_index(deps, name) {
+        deps.remove(idx);
+        Ok(())
+    } else {
+        Err(ConfigureErrorKind::PackageNotFound(name.to_string()))
+    }
 }
 
 fn find_dependency_index(deps: &Array, name: &str) -> Option<usize> {
