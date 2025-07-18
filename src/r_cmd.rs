@@ -288,12 +288,6 @@ impl RCmd for RCommandLine {
         // https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Configure-example-1
         #[cfg(unix)]
         if !configure_args.is_empty() {
-            let combined_args = configure_args.join(" ");
-            log::debug!(
-                "Adding configure args for {}: {}",
-                source_folder.as_ref().display(),
-                combined_args
-            );
             #[cfg(unix)]
             if !configure_args.is_empty() {
                 let combined_args = configure_args.join(" ");
