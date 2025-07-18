@@ -33,7 +33,7 @@ use std::{
     io::Write,
     path::Path,
     str::FromStr,
-    sync::{mpsc, Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -275,20 +275,12 @@ struct ThreadOutput {
     step_results: Vec<StepResult>,
 }
 
-#[derive(Debug, Clone)]
-enum CoordinatorMessage {
-    StepCompleted { thread_name: String, step_index: usize },
-    #[allow(dead_code)] // Currently unused but may be needed for timeout handling
-    StepTimedOut { thread_name: String, step_index: usize },
-}
 
 #[derive(Debug, Clone)]
 enum StepStatus {
     Pending,
     Running,
     Completed,
-    TimedOut,
-    Failed,
 }
 
 /// Coordinates step execution across multiple threads to ensure deterministic test execution.
@@ -305,12 +297,8 @@ enum StepStatus {
 /// - All threads must participate in each step (even if they don't execute)
 /// - Coordinator ensures deterministic execution order across runs
 struct StepCoordinator {
-    num_threads: usize,
-    num_steps: usize,
     step_status: Arc<Mutex<Vec<Vec<StepStatus>>>>, // [step_index][thread_index] 
     thread_names: Vec<String>,
-    message_tx: mpsc::Sender<CoordinatorMessage>,
-    message_rx: Arc<Mutex<mpsc::Receiver<CoordinatorMessage>>>,
     step_waiters: Arc<(Mutex<Vec<bool>>, Condvar)>, // One bool per step for coordination
 }
 
@@ -564,7 +552,6 @@ impl RProcessManager {
 impl StepCoordinator {
     fn new(thread_names: Vec<String>, num_steps: usize) -> Self {
         let num_threads = thread_names.len();
-        let (message_tx, message_rx) = mpsc::channel();
         
         // Initialize step status - all steps start as Pending for all threads
         let step_status = Arc::new(Mutex::new(
@@ -576,20 +563,12 @@ impl StepCoordinator {
         let step_waiters = Arc::new((Mutex::new(vec![false; num_steps]), Condvar::new()));
         
         Self {
-            num_threads,
-            num_steps,
             step_status,
             thread_names,
-            message_tx,
-            message_rx: Arc::new(Mutex::new(message_rx)),
             step_waiters,
         }
     }
     
-    #[allow(dead_code)]
-    fn get_sender(&self) -> mpsc::Sender<CoordinatorMessage> {
-        self.message_tx.clone()
-    }
     
     fn get_thread_index(&self, thread_name: &str) -> Option<usize> {
         self.thread_names.iter().position(|name| name == thread_name)
@@ -610,7 +589,7 @@ impl StepCoordinator {
         // Check if all threads are ready for this step
         let all_ready = {
             let status = self.step_status.lock().unwrap();
-            status[step_index].iter().all(|s| matches!(s, StepStatus::Running | StepStatus::Completed | StepStatus::TimedOut | StepStatus::Failed))
+            status[step_index].iter().all(|s| matches!(s, StepStatus::Running | StepStatus::Completed))
         };
         
         if all_ready {
@@ -667,47 +646,14 @@ impl StepCoordinator {
             status[step_index][thread_index] = StepStatus::Completed;
         }
         
-        // Send completion message
-        self.message_tx.send(CoordinatorMessage::StepCompleted { 
-            thread_name: thread_name.to_string(), 
-            step_index 
-        }).map_err(|e| anyhow::anyhow!("Failed to send completion message: {}", e))?;
-        
         Ok(())
     }
     
-    #[allow(dead_code)]
-    fn notify_step_timeout(&self, step_index: usize, thread_name: &str) -> Result<()> {
-        let thread_index = self.get_thread_index(thread_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown thread '{}' (expected 'rv' or 'r')", thread_name))?;
-            
-        debug_print(&format!("Thread {} timed out on step {}", thread_name, step_index));
-        
-        {
-            let mut status = self.step_status.lock().unwrap();
-            status[step_index][thread_index] = StepStatus::TimedOut;
-        }
-        
-        // Send timeout message
-        self.message_tx.send(CoordinatorMessage::StepTimedOut { 
-            thread_name: thread_name.to_string(), 
-            step_index 
-        }).map_err(|e| anyhow::anyhow!("Failed to send timeout message: {}", e))?;
-        
-        // Wake up anyone waiting for this step
-        let (lock, cvar) = &*self.step_waiters;
-        let mut step_ready = lock.lock().unwrap();
-        step_ready[step_index] = true;
-        cvar.notify_all();
-        
-        Ok(())
-    }
     
     #[allow(dead_code)]
     fn should_continue(&self, step_index: usize) -> bool {
         let status = self.step_status.lock().unwrap();
-        // Continue if no threads have failed and at least one thread hasn't timed out
-        !status[step_index].iter().any(|s| matches!(s, StepStatus::Failed)) &&
+        // Continue if at least one thread is still running or completed
         status[step_index].iter().any(|s| matches!(s, StepStatus::Running | StepStatus::Completed))
     }
 }
