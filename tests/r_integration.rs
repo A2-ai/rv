@@ -981,7 +981,17 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
             .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
     }
     
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    // Combine stdout and stderr for successful commands (similar to R thread behavior)
+    let mut combined_output = String::from_utf8_lossy(&output.stdout).to_string();
+    
+    if !output.stderr.is_empty() {
+        if !combined_output.is_empty() && !combined_output.ends_with('\n') {
+            combined_output.push('\n');
+        }
+        combined_output.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+    
+    Ok(combined_output)
 }
 
 fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {

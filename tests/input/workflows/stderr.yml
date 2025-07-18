@@ -7,7 +7,17 @@ test:
     run: "R"
     thread: r
     #assert: "rv libpaths active!" - this fails on ubuntu but I don't know why...
-  
+  - name: "print wd"
+    run: |
+      cat(basename(getwd()))
+    thread: r
+    assert: "stderr-test"
+
+  - name: "create new dir with empty .Rprofile"
+    run: |
+      file.create(".Rprofile")
+    thread: r 
+
   - name: "run R code"
     run: |
         cat("Hello World")
@@ -23,6 +33,8 @@ test:
     run: "rv init"
     thread: rv
     assert: 
-      contains: "rv project successfully initialized at ."
+      contains: 
+        - "WARNING: Could not set default repositories. Set with your company preferred package URL or public url (i.e. `https://packagemanager.posit.co/cran/latest`)"
+        - "rv project successfully initialized at ."
       not-contains: "this is not in stdout"
  
