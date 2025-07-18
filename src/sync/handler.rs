@@ -10,6 +10,7 @@ use ctrlc;
 use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::config::ConfigureArgsRule;
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
 use crate::package::PackageType;
@@ -22,6 +23,7 @@ use crate::sync::{LinkMode, sources};
 use crate::utils::get_max_workers;
 use crate::{
     BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
+    SystemInfo,
 };
 
 fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
@@ -76,6 +78,8 @@ pub struct SyncHandler<'a> {
     library: &'a Library,
     cache: &'a DiskCache,
     system_dependencies: &'a HashMap<String, Vec<String>>,
+    configure_args: &'a HashMap<String, Vec<ConfigureArgsRule>>,
+    system_info: &'a SystemInfo,
     staging_path: PathBuf,
     save_install_logs_in: Option<PathBuf>,
     dry_run: bool,
@@ -90,6 +94,8 @@ impl<'a> SyncHandler<'a> {
         library: &'a Library,
         cache: &'a DiskCache,
         system_dependencies: &'a HashMap<String, Vec<String>>,
+        configure_args: &'a HashMap<String, Vec<ConfigureArgsRule>>,
+        system_info: &'a SystemInfo,
         save_install_logs_in: Option<PathBuf>,
         staging_path: impl AsRef<Path>,
     ) -> Self {
@@ -98,6 +104,8 @@ impl<'a> SyncHandler<'a> {
             library,
             cache,
             system_dependencies,
+            configure_args,
+            system_info,
             save_install_logs_in,
             staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
@@ -122,6 +130,20 @@ impl<'a> SyncHandler<'a> {
 
     pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
         self.uses_lockfile = uses_lockfile;
+    }
+
+    /// Resolve configure_args for a package based on current system info
+    fn get_configure_args(&self, package_name: &str) -> Vec<String> {
+        if let Some(rules) = self.configure_args.get(package_name) {
+            // Find first matching rule
+            for rule in rules {
+                if let Some(args) = rule.matches(self.system_info) {
+                    return args.to_vec();
+                }
+            }
+        }
+
+        Vec::new()
     }
 
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
@@ -151,12 +173,15 @@ impl<'a> SyncHandler<'a> {
         // we want the staging to take precedence over the library, but still have
         // the library in the paths for lookup
         let library_dirs = vec![&self.staging_path, self.library.path()];
+        let configure_args = self.get_configure_args(&dep.name);
+
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
                 dep,
                 &library_dirs,
                 self.cache,
                 r_cmd,
+                &configure_args,
                 cancellation,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
@@ -165,6 +190,7 @@ impl<'a> SyncHandler<'a> {
                 self.cache,
                 r_cmd,
                 &GitExecutor {},
+                &configure_args,
                 cancellation,
             ),
             Source::Local { .. } => sources::local::install_package(
@@ -173,11 +199,17 @@ impl<'a> SyncHandler<'a> {
                 &library_dirs,
                 self.cache,
                 r_cmd,
+                &configure_args,
                 cancellation,
             ),
-            Source::Url { .. } => {
-                sources::url::install_package(dep, &library_dirs, self.cache, r_cmd, cancellation)
-            }
+            Source::Url { .. } => sources::url::install_package(
+                dep,
+                &library_dirs,
+                self.cache,
+                r_cmd,
+                &configure_args,
+                cancellation,
+            ),
             Source::Builtin { .. } => Ok(()),
         }
     }

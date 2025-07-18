@@ -38,6 +38,9 @@ jobs:
       - name: Build System Info
         run: rustc --version
 
+      - name: check formatting
+        run: cargo fmt --check
+
       - name: check with all features enabled
         run: |
           cargo check
