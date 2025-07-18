@@ -6,7 +6,9 @@ test:
   - name: "rv init"
     run: "rv init"
     thread: rv
-    assert: "rv project successfully initialized at ."
+    assert: 
+      contains: "rv project successfully initialized at ."
+      not-contains: "this is not in stdout"
   
   - name: "rv plan"
     run: "rv plan"

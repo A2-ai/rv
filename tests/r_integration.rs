@@ -148,6 +148,22 @@ struct TestStep {
 enum TestAssertion {
     Single(String),
     Multiple(Vec<String>),
+    Structured(StructuredAssertion),
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct StructuredAssertion {
+    #[serde(default)]
+    contains: Option<StringOrList>,
+    #[serde(default, rename = "not-contains")]
+    not_contains: Option<StringOrList>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+enum StringOrList {
+    Single(String),
+    Multiple(Vec<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -971,34 +987,93 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
 fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
     match assertion {
         TestAssertion::Single(expected) => {
-            if !output.contains(expected) {
+            check_contains_assertion(expected, output)
+        },
+        TestAssertion::Multiple(expected_list) => {
+            for expected in expected_list.iter() {
+                check_contains_assertion(expected, output)?;
+            }
+            Ok(())
+        },
+        TestAssertion::Structured(structured) => {
+            // Check positive assertions (contains)
+            if let Some(contains) = &structured.contains {
+                check_string_or_list_contains(contains, output)?;
+            }
+            
+            // Check negative assertions (not-contains)
+            if let Some(not_contains) = &structured.not_contains {
+                check_string_or_list_not_contains(not_contains, output)?;
+            }
+            
+            Ok(())
+        },
+    }
+}
+
+fn check_contains_assertion(expected: &str, output: &str) -> Result<()> {
+    if !output.contains(expected) {
+        return Err(anyhow::anyhow!(
+            "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}\n\nSearching for lines containing '{}':\n{}", 
+            expected, 
+            output.len(),
+            output,
+            expected.split(':').next().unwrap_or(expected),
+            output.lines()
+                .filter(|line| line.contains(expected.split(':').next().unwrap_or(expected)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    Ok(())
+}
+
+fn check_string_or_list_contains(contains: &StringOrList, output: &str) -> Result<()> {
+    match contains {
+        StringOrList::Single(expected) => {
+            check_contains_assertion(expected, output)
+        },
+        StringOrList::Multiple(expected_list) => {
+            for expected in expected_list.iter() {
+                check_contains_assertion(expected, output)?;
+            }
+            Ok(())
+        },
+    }
+}
+
+fn check_string_or_list_not_contains(not_contains: &StringOrList, output: &str) -> Result<()> {
+    match not_contains {
+        StringOrList::Single(expected) => {
+            if output.contains(expected) {
                 return Err(anyhow::anyhow!(
-                    "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}\n\nSearching for lines containing '{}':\n{}", 
+                    "Negative assertion failed: found '{}' in output (expected NOT to find it).\n\nFull output ({} chars):\n{}\n\nLines containing '{}':\n{}", 
                     expected, 
                     output.len(),
                     output,
-                    expected.split(':').next().unwrap_or(expected),
+                    expected,
                     output.lines()
-                        .filter(|line| line.contains(expected.split(':').next().unwrap_or(expected)))
+                        .filter(|line| line.contains(expected))
                         .collect::<Vec<_>>()
                         .join("\n")
                 ));
             }
+            Ok(())
         },
-        TestAssertion::Multiple(expected_list) => {
+        StringOrList::Multiple(expected_list) => {
             for expected in expected_list.iter() {
-                if !output.contains(expected) {
+                if output.contains(expected) {
                     return Err(anyhow::anyhow!(
-                        "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}", 
+                        "Negative assertion failed: found '{}' in output (expected NOT to find it).\n\nFull output ({} chars):\n{}", 
                         expected, 
                         output.len(),
                         output
                     ));
                 }
             }
+            Ok(())
         },
     }
-    Ok(())
 }
 
 fn check_insta_snapshot(snapshot_name: &str, output: &str) -> Result<()> {
@@ -1019,7 +1094,8 @@ fn filter_timing_from_output(output: &str) -> String {
 
 #[test]
 fn test_all_workflow_files() -> Result<()> {
-    run_workflow_tests(None)
+    let filter = std::env::var("RV_TEST_FILTER").ok();
+    run_workflow_tests(filter.as_deref())
 }
 
 fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
@@ -1039,10 +1115,15 @@ fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
         if path.extension().map_or(false, |ext| ext == "yml" || ext == "yaml") {
             // Apply filter if specified
             if let Some(filter_str) = filter {
-                let file_name = path.file_stem()
+                let file_stem = path.file_stem()
                     .and_then(|n| n.to_str())
                     .unwrap_or("");
-                if !file_name.contains(filter_str) {
+                let file_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                
+                // Match against either the full filename (with extension) or just the stem
+                if !file_name.contains(filter_str) && !file_stem.contains(filter_str) {
                     continue;
                 }
             }

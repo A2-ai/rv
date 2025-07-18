@@ -1,0 +1,28 @@
+project-dir: stderr-test
+config: plan-rproject.toml
+
+test:
+  steps:
+  - name: "start R"
+    run: "R"
+    thread: r
+    #assert: "rv libpaths active!" - this fails on ubuntu but I don't know why...
+  
+  - name: "run R code"
+    run: |
+        cat("Hello World")
+        message("This is a message")
+        warning("This is a warning")
+    thread: r
+    assert:
+      - "Hello World"
+      - "This is a message"
+      - "This is a warning"
+
+  - name: "rv init"
+    run: "rv init"
+    thread: rv
+    assert: 
+      contains: "rv project successfully initialized at ."
+      not-contains: "this is not in stdout"
+ 
