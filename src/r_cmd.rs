@@ -294,9 +294,10 @@ impl RCmd for RCommandLine {
                 source_folder.as_ref().display(),
                 combined_args
             );
-            command.arg("--configure-args").arg(combined_args);
+            command
+                .arg("--configure-args")
+                .arg(format!("'{}'", combined_args));
         }
-
         command
             .arg(src_backup_dir.path())
             // Override where R should look for deps
