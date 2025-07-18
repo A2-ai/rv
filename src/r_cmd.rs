@@ -294,9 +294,16 @@ impl RCmd for RCommandLine {
                 source_folder.as_ref().display(),
                 combined_args
             );
-            command
-                .arg("--configure-args")
-                .arg(format!("'{}'", combined_args));
+            #[cfg(unix)]
+            if !configure_args.is_empty() {
+                let combined_args = configure_args.join(" ");
+                log::debug!(
+                    "Adding configure args for {}: {}",
+                    source_folder.as_ref().display(),
+                    combined_args
+                );
+                command.arg(format!("--configure-args={}", combined_args));
+            }
         }
         command
             .arg(src_backup_dir.path())
