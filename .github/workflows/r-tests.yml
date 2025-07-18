@@ -27,7 +27,7 @@ jobs:
       with:
         toolchain: stable
         
-    - name: Cache Rust dependencies
+    - name: Cache Rust dependencies and binary
       uses: actions/cache@v4
       with:
         path: |
@@ -36,11 +36,12 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'src/**') }}
         restore-keys: |
+          ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
           ${{ runner.os }}-cargo-
           
-    - name: Build rv
+    - name: Build rv (if not cached)
       run: cargo build --features=cli --release
 
     - name: Add rv to PATH (Unix)
