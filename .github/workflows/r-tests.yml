@@ -64,10 +64,12 @@ jobs:
       run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1
-        
+        RV_TEST_FILTER: stderr
+
     - name: Run tests (Windows)
       if: runner.os == 'Windows'
       shell: cmd
       run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
       env:
         RUST_BACKTRACE: 1
+        RV_TEST_FILTER: stderr
