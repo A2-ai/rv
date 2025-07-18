@@ -1,25 +1,120 @@
+//! Integration test suite for rv (R package manager) with multi-threaded R and rv command execution.
+//!
+//! This test suite provides a declarative YAML-based workflow testing framework that can execute
+//! rv commands and R scripts in coordinated threads. Key features:
+//!
+//! - **Multi-threaded execution**: Coordinates `rv` and `r` threads with step-by-step synchronization
+//! - **Flexible assertions**: Supports both simple string matching and structured contains/not-contains assertions
+//! - **Snapshot testing**: Integration with `insta` for reproducible output verification
+//! - **R process management**: Long-running R sessions with proper cleanup and restart capabilities
+//! - **Debug support**: Comprehensive debugging output via `RV_TEST_DEBUG` environment variable
+//! - **Test filtering**: Selective test execution via `RV_TEST_FILTER` environment variable
+//!
+//! ## Architecture
+//!
+//! Tests are defined in YAML workflow files that specify:
+//! - Steps to execute in `rv` and `r` threads
+//! - Assertions to validate output (stdout/stderr separation)
+//! - Snapshot comparisons for deterministic output verification  
+//! - Timeout and restart behavior for robust testing
+//!
+//! ## Thread Coordination
+//!
+//! The test framework uses a step coordinator to ensure deterministic execution order
+//! across multiple threads, enabling complex integration scenarios while maintaining
+//! test reliability and reproducibility.
+
 use anyhow::Result;
 use assert_cmd::Command;
-use tempfile::TempDir;
-use std::thread;
-use std::io::Write;
-use std::sync::{Arc, Mutex, Condvar};
 use fs_err as fs;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::path::Path;
-use std::time::{Duration, Instant};
-use std::sync::mpsc;
+use std::{
+    collections::HashMap,
+    io::Write,
+    path::Path,
+    str::FromStr,
+    sync::{mpsc, Arc, Condvar, Mutex},
+    thread,
+    time::{Duration, Instant},
+};
+use tempfile::TempDir;
 
+// Constants for test configuration
 const RV: &str = "rv";
 
+// Timeout and timing constants
+const DEBUG_PAUSE_MS: u64 = 100;
+const OUTPUT_TRUNCATE_LONG: usize = 1000;
+const OUTPUT_TRUNCATE_SHOW: usize = 400;
+
+// Test environment variables
+const ENV_TEST_DEBUG: &str = "RV_TEST_DEBUG";
+const ENV_TEST_FILTER: &str = "RV_TEST_FILTER";
+const ENV_R_EXECUTABLE: &str = "RV_R_EXECUTABLE";
+const ENV_R_EXECUTABLE_ALT: &str = "R_EXECUTABLE";
+
+// R process constants
+const R_QUIT_COMMAND: &str = "quit(save = 'no')";
+const R_STEP_END_PREFIX: &str = "# STEP_END: ";
+const R_STARTUP_MARKER: &str = "start R";
+
+// Test result display constants  
+const RESULT_SEPARATOR_MAIN: &str = "═";
+const RESULT_SEPARATOR_SUB: &str = "─";
+const SEPARATOR_WIDTH: usize = 80;
+
+/// Represents the supported thread types in workflow tests.
+/// 
+/// Thread types are defined in YAML workflow files and determine
+/// how commands are executed (rv commands vs R script commands).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ThreadType {
+    /// Executes rv commands (sync, plan, add, etc.)
+    Rv,
+    /// Executes R commands and scripts in a long-running R process
+    R,
+}
+
+impl FromStr for ThreadType {
+    type Err = anyhow::Error;
+    
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "rv" => Ok(ThreadType::Rv),
+            "r" => Ok(ThreadType::R),
+            _ => Err(anyhow::anyhow!("Unknown thread type: '{}' (supported: 'rv', 'r')", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for ThreadType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ThreadType::Rv => write!(f, "rv"),
+            ThreadType::R => write!(f, "r"),
+        }
+    }
+}
+
 fn debug_print(msg: &str) {
-    if std::env::var("RV_TEST_DEBUG").is_ok() {
+    if std::env::var(ENV_TEST_DEBUG).is_ok() {
         println!("🐛 DEBUG: {}", msg);
     }
 }
 
 // New timeout execution for R commands that can actually interrupt the process
+/// Executes R commands with optional timeout and process management.
+///
+/// ## Critical Behavior:
+/// - Sends command to R process via stdin
+/// - Does NOT wait for output - R parsing happens later via step markers
+/// - Timeout kills the entire R process (destructive operation)
+/// - After timeout, captures whatever output is available before killing
+///
+/// ## Assumptions:
+/// - R process writes step end markers for output parsing
+/// - Timeout duration accounts for R startup time and command execution
+/// - R process death requires full restart and state loss
 fn execute_r_command_with_timeout<F>(
     step_name: &str,
     timeout_secs: Option<u64>,
@@ -181,15 +276,13 @@ struct ThreadOutput {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 enum CoordinatorMessage {
     StepCompleted { thread_name: String, step_index: usize },
+    #[allow(dead_code)] // Currently unused but may be needed for timeout handling
     StepTimedOut { thread_name: String, step_index: usize },
-    ThreadFailed { thread_name: String, error: String },
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 enum StepStatus {
     Pending,
     Running,
@@ -198,7 +291,19 @@ enum StepStatus {
     Failed,
 }
 
-#[allow(dead_code)]
+/// Coordinates step execution across multiple threads to ensure deterministic test execution.
+/// 
+/// ## Threading Model:
+/// - Each workflow defines steps that belong to specific threads (usually 'rv' and 'r')
+/// - All threads must reach a step before any thread can proceed to the next step
+/// - Uses condition variables and mutexes for synchronization
+/// - Step completion is tracked per-thread using a 2D status matrix
+/// 
+/// ## Critical Assumptions:
+/// - Thread names are defined in YAML workflow files (commonly 'rv' and 'r')
+/// - Steps execute sequentially within each thread
+/// - All threads must participate in each step (even if they don't execute)
+/// - Coordinator ensures deterministic execution order across runs
 struct StepCoordinator {
     num_threads: usize,
     num_steps: usize,
@@ -209,11 +314,25 @@ struct StepCoordinator {
     step_waiters: Arc<(Mutex<Vec<bool>>, Condvar)>, // One bool per step for coordination
 }
 
+/// Manages a long-running R process for executing R commands in integration tests.
+///
+/// ## Critical Assumptions:
+/// - R process remains interactive and responsive to stdin commands
+/// - R outputs step end markers (`# STEP_END: <step_name>`) to stdout for parsing
+/// - R process can be gracefully terminated with `quit(save = 'no')`
+/// - Platform differences: Windows uses `R.exe`, Unix uses `R`
+/// - R startup includes .Rprofile loading (no --no-restore flag)
+///
+/// ## Process Lifecycle:
+/// 1. Start R with platform-specific arguments (--interactive on Unix, --no-save on Windows)
+/// 2. Execute commands by writing to stdin and flushing
+/// 3. Parse output by looking for step end markers
+/// 4. Health check by monitoring process status
+/// 5. Graceful shutdown by sending quit command and capturing final output
 struct RProcessManager {
     process: Option<std::process::Child>,
     stdin: Option<std::process::ChildStdin>,
     last_health_check: Instant,
-    #[allow(dead_code)]
     process_id: Option<u32>,
 }
 
@@ -222,12 +341,12 @@ impl RProcessManager {
         debug_print("Starting R executable detection");
         
         // Check for explicit configuration first
-        if let Ok(r_path) = std::env::var("RV_R_EXECUTABLE") {
-            debug_print(&format!("Using RV_R_EXECUTABLE: {}", r_path));
+        if let Ok(r_path) = std::env::var(ENV_R_EXECUTABLE) {
+            debug_print(&format!("Using {}: {}", ENV_R_EXECUTABLE, r_path));
             return Ok(r_path);
         }
-        if let Ok(r_path) = std::env::var("R_EXECUTABLE") {
-            debug_print(&format!("Using R_EXECUTABLE: {}", r_path));
+        if let Ok(r_path) = std::env::var(ENV_R_EXECUTABLE_ALT) {
+            debug_print(&format!("Using {}: {}", ENV_R_EXECUTABLE_ALT, r_path));
             return Ok(r_path);
         }
         
@@ -279,13 +398,24 @@ impl RProcessManager {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| anyhow::anyhow!("Failed to start R process with '{}': {}. Is R installed and in PATH?", r_executable, e))?;
+            .map_err(|e| anyhow::anyhow!(
+                "Failed to start R process with executable '{}': {}\n\n\
+                Troubleshooting:\n\
+                - Ensure R is installed and accessible\n\
+                - Check that '{}' is in your PATH\n\
+                - Verify R version compatibility (4.4.x recommended)\n\
+                - On Windows, try setting RV_R_EXECUTABLE=R.exe", 
+                r_executable, e, r_executable
+            ))?;
         
         debug_print("R process started successfully");
         
         let process_id = process.id();
         let stdin = process.stdin.take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get R stdin"))?;
+            .ok_or_else(|| anyhow::anyhow!(
+                "Failed to get R stdin pipe. This indicates R process failed to start properly.\n\
+                The R process may have crashed immediately after startup."
+            ))?;
         
         Ok(Self {
             process: Some(process),
@@ -298,7 +428,10 @@ impl RProcessManager {
     fn is_alive(&mut self) -> Result<bool> {
         if let Some(process) = &mut self.process {
             match process.try_wait()
-                .map_err(|e| anyhow::anyhow!("Failed to check R process status: {}", e))? 
+                .map_err(|e| anyhow::anyhow!(
+                    "Unable to check R process health status: {}\n\
+                    This may indicate system resource issues.", e
+                ))? 
             {
                 Some(exit_status) => {
                     println!("⚠️ R process exited with status: {}", exit_status);
@@ -339,17 +472,17 @@ impl RProcessManager {
         debug_print(&format!("Sending R command: {}", command));
         
         if !self.is_alive()? {
-            return Err(anyhow::anyhow!("R process is not running"));
+            return Err(anyhow::anyhow!("Cannot send command to R: process not running (may have crashed)"));
         }
         
         if let Some(stdin) = &mut self.stdin {
             writeln!(stdin, "{}", command)
-                .map_err(|e| anyhow::anyhow!("Failed to write '{}' to R stdin: {}", command, e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to write '{}' to R stdin: {} (broken pipe?)", command, e))?;
             stdin.flush()
-                .map_err(|e| anyhow::anyhow!("Failed to flush R stdin after command '{}': {}", command, e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to flush R stdin after '{}': {} (R process died?)", command, e))?;
             debug_print(&format!("Successfully sent R command: {}", command));
         } else {
-            return Err(anyhow::anyhow!("R stdin not available"));
+            return Err(anyhow::anyhow!("R stdin not available (process not initialized or terminated)"));
         }
         
         Ok(())
@@ -389,9 +522,9 @@ impl RProcessManager {
     }
     
     fn debug_pause_after_command(&self) {
-        if std::env::var("RV_TEST_DEBUG").is_ok() {
+        if std::env::var(ENV_TEST_DEBUG).is_ok() {
             debug_print("Pausing briefly to let R process command");
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(DEBUG_PAUSE_MS));
         }
     }
     
@@ -401,7 +534,7 @@ impl RProcessManager {
         
         if let (Some(mut stdin), Some(process)) = (self.stdin.take(), self.process.take()) {
             debug_print("Sending quit command to R");
-            if let Err(e) = writeln!(stdin, "quit(save = 'no')") {
+            if let Err(e) = writeln!(stdin, "{}", R_QUIT_COMMAND) {
                 debug_print(&format!("Failed to send quit command to R: {}", e));
             }
             drop(stdin); // Close stdin to signal R to exit
@@ -464,7 +597,7 @@ impl StepCoordinator {
     
     fn wait_for_step_start(&self, step_index: usize, thread_name: &str, timeout: Option<Duration>) -> Result<()> {
         let thread_index = self.get_thread_index(thread_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
+            .ok_or_else(|| anyhow::anyhow!("Unknown thread '{}' (expected 'rv' or 'r')", thread_name))?;
             
         debug_print(&format!("Thread {} waiting for step {} to start", thread_name, step_index));
         
@@ -525,7 +658,7 @@ impl StepCoordinator {
     
     fn notify_step_completed(&self, step_index: usize, thread_name: &str) -> Result<()> {
         let thread_index = self.get_thread_index(thread_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
+            .ok_or_else(|| anyhow::anyhow!("Unknown thread '{}' (expected 'rv' or 'r')", thread_name))?;
             
         debug_print(&format!("Thread {} completed step {}", thread_name, step_index));
         
@@ -546,7 +679,7 @@ impl StepCoordinator {
     #[allow(dead_code)]
     fn notify_step_timeout(&self, step_index: usize, thread_name: &str) -> Result<()> {
         let thread_index = self.get_thread_index(thread_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
+            .ok_or_else(|| anyhow::anyhow!("Unknown thread '{}' (expected 'rv' or 'r')", thread_name))?;
             
         debug_print(&format!("Thread {} timed out on step {}", thread_name, step_index));
         
@@ -582,17 +715,25 @@ impl StepCoordinator {
 fn load_r_script(script_name: &str) -> Result<String> {
     let script_path = format!("tests/input/r_scripts/{}", script_name);
     fs::read_to_string(&script_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load R script {}: {}", script_path, e))
+        .map_err(|e| anyhow::anyhow!("Failed to load R script '{}': {} (check file exists and is readable)", script_path, e))
 }
 
+/// Parses R process output into per-step results using step end markers.
+///
+/// ## Critical Assumptions:
+/// - R process outputs `# STEP_END: <step_name>` markers after each command
+/// - First step is R startup (ends with `# STEP_END: start R`)
+/// - Output between markers belongs to the preceding step
+/// - All step names are known in advance from the workflow definition
+/// - Markers appear in the same order as step execution
 fn parse_r_step_outputs(full_output: &str, step_names: &[String]) -> HashMap<String, String> {
     let mut step_outputs = HashMap::new();
     
     // Find all step end markers with their positions
     let mut markers = Vec::new();
     for (i, line) in full_output.lines().enumerate() {
-        if line.starts_with("# STEP_END: ") {
-            if let Some(step_name) = line.strip_prefix("# STEP_END: ") {
+        if line.starts_with(R_STEP_END_PREFIX) {
+            if let Some(step_name) = line.strip_prefix(R_STEP_END_PREFIX) {
                 markers.push((i, step_name.to_string()));
             }
         }
@@ -627,7 +768,21 @@ fn parse_r_step_outputs(full_output: &str, step_names: &[String]) -> HashMap<Str
     step_outputs
 }
 
-fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
+/// Test execution context containing all setup data for a workflow test.
+struct TestContext {
+    workflow: WorkflowTest,
+    test_dir: std::path::PathBuf,
+    config_path: std::path::PathBuf,
+    thread_steps: HashMap<String, Vec<usize>>,
+    coordinator: Arc<StepCoordinator>,
+    tx_map: HashMap<String, std::sync::mpsc::Sender<ThreadOutput>>,
+    rx_map: HashMap<String, std::sync::mpsc::Receiver<ThreadOutput>>,
+    #[allow(dead_code)] // Keep temp_dir alive for the duration of the test
+    _temp_dir: TempDir,
+}
+
+/// Sets up the test environment and coordination structures for a workflow test.
+fn setup_test_context(workflow_yaml: &str) -> Result<TestContext> {
     let workflow: WorkflowTest = serde_yaml::from_str(workflow_yaml)?;
     
     let temp_dir = TempDir::new()?;
@@ -646,7 +801,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         thread_steps.entry(step.thread.clone()).or_default().push(i);
     }
     
-    // Create StepCoordinator instead of barriers
+    // Create StepCoordinator
     let thread_names: Vec<String> = thread_steps.keys().cloned().collect();
     let coordinator = Arc::new(StepCoordinator::new(thread_names.clone(), workflow.test.steps.len()));
     
@@ -658,15 +813,53 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         })
         .unzip();
     
+    Ok(TestContext {
+        workflow,
+        test_dir,
+        config_path,
+        thread_steps,
+        coordinator,
+        tx_map,
+        rx_map,
+        _temp_dir: temp_dir,
+    })
+}
+
+/// Executes a complete workflow test from YAML definition.
+///
+/// ## Execution Flow:
+/// 1. Parse YAML workflow into test steps
+/// 2. Create temporary directory and copy config files  
+/// 3. Group steps by thread and create coordination mechanism
+/// 4. Spawn threads for each thread type (rv, r, etc.)
+/// 5. Execute steps in synchronized order across threads
+/// 6. Collect all outputs and run assertions/snapshots
+/// 7. Clean up processes and temporary resources
+///
+/// ## Critical Thread Coordination:
+/// - All threads wait at each step boundary before proceeding
+/// - R thread maintains long-running process across steps
+/// - rv thread executes individual commands synchronously
+/// - Step completion notifications ensure deterministic execution
+/// - Output parsing happens after all execution completes
+///
+/// ## Error Handling Strategy:
+/// - Individual step failures fail the entire test
+/// - R process crashes trigger restart or test failure
+/// - Assertion failures are collected and reported together
+/// - Resource cleanup happens regardless of test outcome
+fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
+    let context = setup_test_context(workflow_yaml)?;
+    
     // Spawn threads
     let mut thread_handles = HashMap::new();
     
-    for (thread_name, step_indices) in thread_steps {
-        let thread_coordinator = coordinator.clone();
-        let thread_steps = workflow.test.steps.clone();
-        let thread_test_dir = test_dir.clone();
-        let thread_config_path = config_path.clone();
-        let thread_tx = tx_map[&thread_name].clone();
+    for (thread_name, step_indices) in context.thread_steps {
+        let thread_coordinator = context.coordinator.clone();
+        let thread_steps = context.workflow.test.steps.clone();
+        let thread_test_dir = context.test_dir.clone();
+        let thread_config_path = context.config_path.clone();
+        let thread_tx = context.tx_map[&thread_name].clone();
         let thread_name_clone = thread_name.clone();
         
         let handle = thread::spawn(move || -> Result<()> {
@@ -733,12 +926,12 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                             
                             // Start (or restart) R process
                             r_manager = Some(RProcessManager::start_r_process(&thread_test_dir)
-                                .map_err(|e| anyhow::anyhow!("Failed to start R process for step '{}': {}", step.name, e))?);
+                                .map_err(|e| anyhow::anyhow!("Failed to start R process for step '{}': {} (check R installation)", step.name, e))?);
                             
                             // If this is a restart, add a step end marker
                             if step.restart {
                                 if let Some(manager) = &mut r_manager {
-                                    manager.send_command(&format!("cat('# STEP_END: {}\\n')", step.name))
+                                    manager.send_command(&format!("cat('{}{}\\n')", R_STEP_END_PREFIX, step.name))
                                         .map_err(|e| anyhow::anyhow!("Failed to write restart step end marker: {}", e))?;
                                 }
                                 "R process restarted".to_string()
@@ -751,7 +944,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 // Check if R process is still alive
                                 if !manager.is_alive()? {
                                     debug_print(&format!("R process died during step '{}'", step.name));
-                                    return Err(anyhow::anyhow!("R process died unexpectedly during step '{}'", step.name));
+                                    return Err(anyhow::anyhow!("R process died unexpectedly during step '{}' (check R logs)", step.name));
                                 }
                                 
                                 // Debug: Pause to let R process commands
@@ -764,7 +957,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                     // This is the first command after R startup, add startup marker
                                     manager.send_command("# R startup complete")
                                         .map_err(|e| anyhow::anyhow!("Failed to write startup comment: {}", e))?;
-                                    manager.send_command(&format!("cat('# STEP_END: start R\\n')"))
+                                    manager.send_command(&format!("cat('{}{}\\n')", R_STEP_END_PREFIX, R_STARTUP_MARKER))
                                         .map_err(|e| anyhow::anyhow!("Failed to write startup marker: {}", e))?;
                                 }
                                 
@@ -780,7 +973,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 }
                                 
                                 // Add step end marker after the command
-                                manager.send_command(&format!("cat('# STEP_END: {}\\n')", step.name))
+                                manager.send_command(&format!("cat('{}{}\\n')", R_STEP_END_PREFIX, step.name))
                                     .map_err(|e| anyhow::anyhow!("Failed to write step end marker for '{}': {}", step.name, e))?;
                                 
                                 // Debug: Pause after sending commands
@@ -794,7 +987,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                         // Wrap R output in tuple with empty stderr for consistency
                         (r_output, String::new())
                     },
-                    _ => return Err(anyhow::anyhow!("Unknown thread type: {}", thread_name_clone)),
+                    _ => return Err(anyhow::anyhow!("Unknown thread type: '{}' (only 'rv' and 'r' are supported)", thread_name_clone)),
                 };
                 
                 // Store step result  
@@ -866,7 +1059,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     
     // Collect step results from all threads
     let mut all_thread_outputs = Vec::new();
-    for (thread_name, rx) in rx_map {
+    for (thread_name, rx) in context.rx_map {
         let thread_output = rx.recv().map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
         all_thread_outputs.push(thread_output);
     }
@@ -878,7 +1071,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     for thread_output in &all_thread_outputs {
         for step_result in &thread_output.step_results {
             // Find the original step by index to get its assertion
-            if let Some(original_step) = workflow.test.steps.get(step_result.step_index) {
+            if let Some(original_step) = context.workflow.test.steps.get(step_result.step_index) {
                 // Check traditional assertions
                 if let Some(assertion) = &original_step.assert {
                     if let Err(e) = check_assertion(assertion, &step_result.stdout, &step_result.stderr) {
@@ -918,7 +1111,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     
     // Display in execution order
     for (step_result, thread_name) in all_steps {
-        let original_step = workflow.test.steps.get(step_result.step_index);
+        let original_step = context.workflow.test.steps.get(step_result.step_index);
         let has_assertion = original_step.map(|s| s.assert.is_some()).unwrap_or(false);
         let has_insta = original_step.map(|s| s.insta.is_some()).unwrap_or(false);
         
@@ -961,7 +1154,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         }
         
         // In debug mode, show all thread outputs for debugging
-        if std::env::var("RV_TEST_DEBUG").is_ok() {
+        if std::env::var(ENV_TEST_DEBUG).is_ok() {
             println!("\n🔍 All Thread Debug Output:");
             for thread_output in &all_thread_outputs {
                 if !thread_output.step_results.is_empty() {
@@ -973,12 +1166,12 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                         // Show stdout
                         if !step_result.stdout.is_empty() {
                             println!("   STDOUT ({} chars):", step_result.stdout.len());
-                            if step_result.stdout.len() > 1000 {
+                            if step_result.stdout.len() > OUTPUT_TRUNCATE_LONG {
                                 // Truncate very long stdout
                                 let truncated = format!("{}...\n[TRUNCATED {} chars]...\n{}", 
-                                    &step_result.stdout[..400],
-                                    step_result.stdout.len() - 800,
-                                    &step_result.stdout[step_result.stdout.len()-400..]);
+                                    &step_result.stdout[..OUTPUT_TRUNCATE_SHOW],
+                                    step_result.stdout.len() - (OUTPUT_TRUNCATE_SHOW * 2),
+                                    &step_result.stdout[step_result.stdout.len()-OUTPUT_TRUNCATE_SHOW..]);
                                 println!("   {}", truncated);
                             } else {
                                 println!("   {}", step_result.stdout);
@@ -988,12 +1181,12 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                         // Show stderr if present
                         if !step_result.stderr.is_empty() {
                             println!("   STDERR ({} chars):", step_result.stderr.len());
-                            if step_result.stderr.len() > 1000 {
+                            if step_result.stderr.len() > OUTPUT_TRUNCATE_LONG {
                                 // Truncate very long stderr
                                 let truncated = format!("{}...\n[TRUNCATED {} chars]...\n{}", 
-                                    &step_result.stderr[..400],
-                                    step_result.stderr.len() - 800,
-                                    &step_result.stderr[step_result.stderr.len()-400..]);
+                                    &step_result.stderr[..OUTPUT_TRUNCATE_SHOW],
+                                    step_result.stderr.len() - (OUTPUT_TRUNCATE_SHOW * 2),
+                                    &step_result.stderr[step_result.stderr.len()-OUTPUT_TRUNCATE_SHOW..]);
                                 println!("   {}", truncated);
                             } else {
                                 println!("   {}", step_result.stderr);
@@ -1004,12 +1197,25 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             }
         }
         
-        return Err(anyhow::anyhow!("Test failed with {} assertion failures", assertion_failures.len()));
+        return Err(anyhow::anyhow!("Test failed: {} assertion failure(s) found (see details above)", assertion_failures.len()));
     }
     
     Ok(())
 }
 
+/// Executes rv commands and returns separated stdout/stderr.
+///
+/// ## Return Value Contract:
+/// - Returns (stdout, stderr) tuple for separate handling
+/// - Snapshots use ONLY stdout for deterministic comparisons
+/// - Assertions check stdout first, then stderr if not found
+/// - Both streams are captured but used for different purposes
+///
+/// ## Critical Assumptions:
+/// - rv binary is available in PATH or built with `cargo build --features=cli`
+/// - Commands execute synchronously and return immediately
+/// - Exit status is checked - non-zero status becomes an error
+/// - Config file copying happens automatically for 'init' command
 fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Result<(String, String)> {
     let (cmd, args) = match command {
         "rv init" => ("init", vec![]),
@@ -1018,20 +1224,20 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
         cmd if cmd.starts_with("rv ") => {
             let parts: Vec<&str> = cmd.split_whitespace().skip(1).collect();
             if parts.is_empty() {
-                return Err(anyhow::anyhow!("Invalid rv command: {}", command));
+                return Err(anyhow::anyhow!("Invalid rv command: '{}' (expected 'rv <subcommand>')", command));
             }
             (parts[0], parts[1..].to_vec())
         }
-        _ => return Err(anyhow::anyhow!("Unknown rv command: {}", command)),
+        _ => return Err(anyhow::anyhow!("Unknown rv command: '{}' (supported: init, sync, plan, add, etc.)", command)),
     };
     
     let output = Command::cargo_bin(RV)
-        .map_err(|e| anyhow::anyhow!("Failed to find rv binary: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to find rv binary: {} (run 'cargo build --features=cli'?)", e))?
         .arg(cmd)
         .args(args)
         .current_dir(test_dir)
         .output()
-        .map_err(|e| anyhow::anyhow!("Failed to execute rv {}: {}", cmd, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to execute 'rv {}': {} (check rv is built and accessible)", cmd, e))?;
     
     // CRITICAL: Check exit status
     if !output.status.success() {
@@ -1049,7 +1255,7 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
     // Handle config copying for init
     if cmd == "init" && config_path.exists() {
         fs::copy(config_path, test_dir.join("rproject.toml"))
-            .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to copy config file: {} (check source file permissions)", e))?;
     }
     
     // Return separate stdout and stderr (snapshots use stdout, assertions check both)
@@ -1185,7 +1391,7 @@ fn filter_timing_from_output(output: &str) -> String {
 
 #[test]
 fn test_all_workflow_files() -> Result<()> {
-    let filter = std::env::var("RV_TEST_FILTER").ok();
+    let filter = std::env::var(ENV_TEST_FILTER).ok();
     run_workflow_tests(filter.as_deref())
 }
 
@@ -1239,7 +1445,7 @@ fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
     } else {
         println!("🚀 Found {} workflow test files to run", num_workflow_files);
     }
-    println!("{}", "═".repeat(80));
+    println!("{}", RESULT_SEPARATOR_MAIN.repeat(SEPARATOR_WIDTH));
     
     for workflow_file in workflow_files {
         let file_name = workflow_file.file_name()
@@ -1250,7 +1456,7 @@ fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
         println!("📁 Loading workflow from: {}", workflow_file.display());
         
         let workflow_content = fs::read_to_string(&workflow_file)
-            .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", workflow_file.display(), e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read workflow file '{}': {} (check file exists and permissions)", workflow_file.display(), e))?;
         
         // Skip empty workflow files or comment-only files
         let trimmed_content = workflow_content.trim();
@@ -1274,7 +1480,7 @@ fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
         match run_workflow_test(&workflow_content) {
             Ok(()) => {
                 println!("🎉 {} completed successfully!", file_name);
-                println!("{}", "─".repeat(80));
+                println!("{}", RESULT_SEPARATOR_SUB.repeat(SEPARATOR_WIDTH));
             },
             Err(e) => {
                 eprintln!("💥 {} failed: {}", file_name, e);
@@ -1284,7 +1490,7 @@ fn run_workflow_tests(filter: Option<&str>) -> Result<()> {
     }
     
     println!("\n🏁 All {} workflow tests completed successfully!", num_workflow_files);
-    println!("{}", "═".repeat(80));
+    println!("{}", RESULT_SEPARATOR_MAIN.repeat(SEPARATOR_WIDTH));
     
     Ok(())
 }
