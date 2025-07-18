@@ -1,0 +1,169 @@
+---
+title: "MAN-PROC-005: Repository Configuration and Multi-Source Management"
+editor: visual
+format: pdf
+---
+
+Procedure for configuring multiple repositories, package source assignments, and advanced configuration options including Git, URL, and local sources.
+
+## Prerequisites
+
+Before running this procedure, ensure: - RV tool is installed and available in PATH - R installed and accessible - Terminal/Command prompt access - Git available for Git source testing - Sample package files available for local source testing
+
+## Test Procedure
+
+::: step
+### Step 1: Initialize Project with Basic Repository Setup
+
+1.  Create new project: `mkdir rv-repo-config-test && cd rv-repo-config-test`
+2.  Initialize project: `rv init`
+3.  Verify default repository configuration: `cat rproject.toml`
+4.  Document initial setup
+
+*Take a screenshot* showing the terminal output.
+
+![Initializing project with basic repository setup](images/man-proc-005-01.png){.screenshot}
+:::
+
+::: step
+### Step 2: Configure Multiple Standard Repositories
+
+1.  Add multiple repositories to configuration
+2.  Verify repository priority order
+3.  Test repository accessibility: `rv plan`
+
+*Take a screenshot* showing the terminal output.
+
+![Configuring multiple standard repositories](images/man-proc-005-02.png){.screenshot}
+:::
+
+::: step
+### Step 3: Test Package-Specific Repository Assignment
+
+1.  Add packages with specific repository assignments
+2.  Preview package sources: `rv plan`
+3.  Verify packages use assigned repositories
+4.  Confirm unassigned packages use first available
+
+*Take a screenshot* showing the terminal output.
+
+![Testing package-specific repository assignment](images/man-proc-005-03.png){.screenshot}
+:::
+
+::: step
+### Step 4: Configure Git Source Packages
+
+1.  Add Git source package to configuration
+2.  Test Git source resolution: `rv plan`
+3.  Execute installation: `rv sync`
+4.  Verify Git package is installed correctly
+
+*Take a screenshot* showing the terminal output.
+
+![Configuring Git source packages](images/man-proc-005-04.png){.screenshot}
+:::
+
+::: step
+### Step 5: Test URL-Based Package Installation
+
+1.  Add URL package to configuration
+2.  Test URL source resolution: `rv plan`
+3.  Verify URL package handling
+4.  Document URL source behavior
+
+*Take a screenshot* showing the terminal output.
+
+![Testing URL-based package installation](images/man-proc-005-05.png){.screenshot}
+:::
+
+::: step
+### Step 6: Configure Local Package Sources
+
+1.  Create sample local package directory: `mkdir local-packages`
+2.  Add local package to configuration
+3.  Test local source resolution: `rv plan`
+4.  Verify local package installation
+
+*Take a screenshot* showing the terminal output.
+
+![Configuring local package sources](images/man-proc-005-06.png){.screenshot}
+:::
+
+::: step
+### Step 7: Test Source vs Binary Installation Preferences
+
+1.  Configure source installation preference
+2.  Preview installation methods: `rv plan`
+3.  Execute installation: `rv sync`
+4.  Verify compilation occurs for source packages
+
+*Take a screenshot* showing the terminal output.
+
+![Testing source vs binary installation preferences](images/man-proc-005-07.png){.screenshot}
+:::
+
+::: step
+### Step 8: Test Dependencies-Only Installation
+
+1.  Configure dependencies-only package
+2.  Preview dependency installation: `rv plan`
+3.  Execute installation: `rv sync`
+4.  Verify target package is not installed
+
+*Take a screenshot* showing the terminal output.
+
+![Testing dependencies-only installation](images/man-proc-005-08.png){.screenshot}
+:::
+
+::: step
+### Step 9: Test Custom Library Path Configuration
+
+1.  Configure custom library path
+2.  Execute synchronization: `rv sync`
+3.  Verify packages install to custom path
+4.  Check library path: `rv library`
+
+*Take a screenshot* showing the terminal output.
+
+![Testing custom library path configuration](images/man-proc-005-09.png){.screenshot}
+:::
+
+::: step
+### Step 10: Validate Complete Multi-Source Environment
+
+1.  Activate project: `rv activate`
+2.  Start R session and test all package types
+3.  Verify repository configuration in R
+4.  Test package functionality from different sources
+5.  Check final project status: `rv summary`
+
+*Take a screenshot* showing the terminal output.
+
+![Validating complete multi-source environment](images/man-proc-005-10.png){.screenshot}
+:::
+
+## Expected Results
+
+-   Multiple repositories are configured correctly with proper priority
+-   Package-specific repository assignments work as expected
+-   Git source packages install and function correctly
+-   URL-based packages are handled appropriately
+-   Local packages install from specified paths
+-   Source vs binary installation preferences are respected
+-   Dependencies-only installation works correctly
+-   Custom library paths are used for package installation
+-   R environment reflects all repository and package configurations
+-   All package sources integrate seamlessly
+
+## Test Validation
+
+-   [ ] Project initialized with basic repository setup
+-   [ ] Multiple repositories configured correctly
+-   [ ] Package-specific repository assignment works
+-   [ ] Git source packages install successfully
+-   [ ] URL-based package installation functions
+-   [ ] Local package sources work correctly
+-   [ ] Source/binary preferences respected
+-   [ ] Dependencies-only installation works
+-   [ ] Custom library path configuration functions
+-   [ ] Complete multi-source environment validates

@@ -1,0 +1,168 @@
+---
+title: "MAN-PROC-002: Existing Project Integration and Management"
+editor: visual
+format: pdf
+---
+
+Procedure for working with an existing RV project from data folder, validating configuration, and performing project management tasks.
+
+## Prerequisites
+
+Before running this procedure, ensure: - RV tool is installed and available in PATH - R installed and accessible - Terminal/Command prompt access - Existing project data in `tests/data/existing-project/`
+
+## Test Procedure
+
+::: step
+### Step 1: Copy Existing Project Data
+
+1.  Navigate to test workspace: `mkdir rv-existing-test && cd rv-existing-test`
+2.  Copy existing project files: `cp -r ../tests/data/existing-project/* .`
+3.  Verify project files are present: `ls -la`
+4.  Check initial project structure
+
+*Take a screenshot* showing the terminal output.
+
+![Copying existing project data](images/man-proc-002-01.png){.screenshot}
+:::
+
+::: step
+### Step 2: Validate Existing Configuration
+
+1.  Display project configuration: `cat rproject.toml`
+2.  Verify project metadata and structure
+3.  Check repository configuration
+4.  Review declared dependencies
+
+*Take a screenshot* showing the terminal output.
+
+![Validating existing configuration](images/man-proc-002-02.png){.screenshot}
+:::
+
+::: step
+### Step 3: Validate Lock File Integrity
+
+1.  Display lock file: `cat rv.lock`
+2.  Verify lock file format version
+3.  Check package entries match configuration
+4.  Validate source and version information
+
+*Take a screenshot* showing the terminal output.
+
+![Validating lock file integrity](images/man-proc-002-03.png){.screenshot}
+:::
+
+::: step
+### Step 4: Check Project Status and Information
+
+1.  Get project information: `rv info`
+2.  Display project summary: `rv summary`
+3.  Check library path: `rv library`
+4.  Verify project state consistency
+
+*Take a screenshot* showing the terminal output.
+
+![Checking project status and information](images/man-proc-002-04.png){.screenshot}
+:::
+
+::: step
+### Step 5: Synchronize Existing Project
+
+1.  Run synchronization: `rv sync`
+2.  Verify all packages are installed correctly
+3.  Check for any missing or outdated packages
+4.  Confirm lock file is updated if needed
+
+*Take a screenshot* showing the terminal output.
+
+![Synchronizing existing project](images/man-proc-002-05.png){.screenshot}
+:::
+
+::: step
+### Step 6: Add New Package to Existing Project
+
+1.  Add new package: `rv add stringr`
+2.  Verify package is added to configuration
+3.  Check automatic synchronization
+4.  Confirm library is updated
+
+*Take a screenshot* showing the terminal output.
+
+![Adding new package to existing project](images/man-proc-002-06.png){.screenshot}
+:::
+
+::: step
+### Step 7: Test Project Management Commands
+
+1.  Preview changes with plan: `rv plan` (after manual config edit)
+2.  Get updated project summary: `rv summary`
+3.  Check library path remains consistent: `rv library`
+4.  Verify information accuracy
+
+*Take a screenshot* showing the terminal output.
+
+![Testing project management commands](images/man-proc-002-07.png){.screenshot}
+:::
+
+::: step
+### Step 8: Activate and Test R Environment
+
+1.  Activate project: `rv activate`
+2.  Start R session and verify environment
+3.  Check `.libPaths()` includes project library
+4.  Test loading project packages
+5.  Verify repository configuration in R
+
+*Take a screenshot* showing the terminal output.
+
+![Activating and testing R environment](images/man-proc-002-08.png){.screenshot}
+:::
+
+::: step
+### Step 9: Test System Dependency Reporting
+
+1.  Check for system dependency status in `rv info`
+2.  Verify dependency warnings are shown
+3.  Document any missing system tools
+4.  Confirm warnings don't block functionality
+
+*Take a screenshot* showing the terminal output.
+
+![Testing system dependency reporting](images/man-proc-002-09.png){.screenshot}
+:::
+
+::: step
+### Step 10: Deactivate and Validate State
+
+1.  Exit R session
+2.  Deactivate project: `rv deactivate`
+3.  Verify environment is restored
+4.  Run final project validation: `rv summary`
+5.  Confirm project integrity
+
+*Take a screenshot* showing the terminal output.
+
+![Deactivating and validating state](images/man-proc-002-10.png){.screenshot}
+:::
+
+## Expected Results
+
+-   Existing project integrates successfully
+-   Configuration and lock file are validated correctly
+-   Project synchronization works properly
+-   Package management commands function correctly
+-   R environment is configured appropriately
+-   System dependencies are checked and reported
+-   Project maintains consistency throughout operations
+
+## Test Validation
+
+-   [ ] Project files copied successfully
+-   [ ] Configuration validated correctly
+-   [ ] Lock file integrity confirmed
+-   [ ] Project status commands work
+-   [ ] Synchronization completes successfully
+-   [ ] Package addition functions properly
+-   [ ] Management commands work correctly
+-   [ ] R environment configured properly
+-   [ ] System dependencies checked
+-   [ ] Project state remains consistent

@@ -1,0 +1,166 @@
+---
+title: "MAN-PROC-004: Lockfile Management and Package Upgrades"
+editor: visual
+format: pdf
+---
+
+Procedure for lockfile validation, package version management, upgrades, and lockfile migration during RV version upgrades.
+
+## Prerequisites
+
+Before running this procedure, ensure: - RV tool is installed and available in PATH - R installed and accessible - Terminal/Command prompt access - Git available for tracking changes - Existing RV project with packages installed
+
+## Test Procedure
+
+::: step
+### Step 1: Setup Project with Older Package Versions
+
+1.  Create new project: `mkdir rv-lockfile-test && cd rv-lockfile-test`
+2.  Initialize project: `rv init`
+3.  Add specific package versions to configuration
+4.  Synchronize to install older versions: `rv sync`
+
+*Take a screenshot* showing the terminal output.
+
+![Setting up project with older package versions](images/man-proc-004-01.png){.screenshot}
+:::
+
+::: step
+### Step 2: Validate Initial Lock File Structure
+
+1.  Examine lock file: `cat rv.lock`
+2.  Verify lock file format version
+3.  Check package version tracking
+4.  Document initial package sources
+
+*Take a screenshot* showing the terminal output.
+
+![Validating initial lock file structure](images/man-proc-004-02.png){.screenshot}
+:::
+
+::: step
+### Step 3: Test Package Upgrade Planning
+
+1.  Remove version constraints from configuration
+2.  Run upgrade preview: `rv plan --upgrade`
+3.  Verify upgrade candidates are identified
+4.  Check source repositories remain consistent
+
+*Take a screenshot* showing the terminal output.
+
+![Testing package upgrade planning](images/man-proc-004-03.png){.screenshot}
+:::
+
+::: step
+### Step 4: Execute Package Upgrades
+
+1.  Execute upgrade: `rv upgrade`
+2.  Monitor upgrade process
+3.  Verify packages are updated correctly
+4.  Check lock file reflects new versions
+
+*Take a screenshot* showing the terminal output.
+
+![Executing package upgrades](images/man-proc-004-04.png){.screenshot}
+:::
+
+::: step
+### Step 5: Validate Lock File Updates
+
+1.  Compare lock file before and after upgrade
+2.  Verify version numbers are updated
+3.  Check source information remains accurate
+4.  Confirm metadata is preserved
+
+*Take a screenshot* showing the terminal output.
+
+![Validating lock file updates](images/man-proc-004-05.png){.screenshot}
+:::
+
+::: step
+### Step 6: Test Lock File Migration Scenario
+
+1.  Create Git commit with current state: `git add . && git commit -m "Pre-upgrade state"`
+2.  Simulate RV version upgrade (copy old format lock file)
+3.  Run synchronization: `rv sync`
+4.  Observe automatic lock file format migration
+
+*Take a screenshot* showing the terminal output.
+
+![Testing lock file migration scenario](images/man-proc-004-06.png){.screenshot}
+:::
+
+::: step
+### Step 7: Validate Lock File Migration
+
+1.  Check Git diff for lock file changes: `git diff rv.lock`
+2.  Verify structural changes without version changes
+3.  Confirm all packages are preserved
+4.  Validate migration maintains integrity
+
+*Take a screenshot* showing the terminal output.
+
+![Validating lock file migration](images/man-proc-004-07.png){.screenshot}
+:::
+
+::: step
+### Step 8: Test Upgrade Guidance and Notifications
+
+1.  Review upgrade messages and guidance
+2.  Check for clear change notifications
+3.  Verify upgrade instructions are helpful
+4.  Document user experience quality
+
+*Take a screenshot* showing the terminal output.
+
+![Testing upgrade guidance and notifications](images/man-proc-004-08.png){.screenshot}
+:::
+
+::: step
+### Step 9: Test Package Downgrade Scenario
+
+1.  Manually specify older version in configuration
+2.  Use plan to preview downgrade: `rv plan`
+3.  Execute downgrade: `rv sync`
+4.  Verify lock file reflects downgrade
+
+*Take a screenshot* showing the terminal output.
+
+![Testing package downgrade scenario](images/man-proc-004-09.png){.screenshot}
+:::
+
+::: step
+### Step 10: Validate Complete Lock File Integrity
+
+1.  Run comprehensive project validation: `rv summary`
+2.  Check lock file completeness and accuracy
+3.  Verify package installation consistency
+4.  Test R environment functionality
+
+*Take a screenshot* showing the terminal output.
+
+![Validating complete lock file integrity](images/man-proc-004-10.png){.screenshot}
+:::
+
+## Expected Results
+
+-   Lock file accurately tracks package versions and sources
+-   Package upgrades work correctly and update lock file
+-   Lock file migration preserves package versions during format changes
+-   Upgrade guidance provides clear information and next steps
+-   Package downgrades are supported and tracked correctly
+-   Lock file maintains integrity throughout all operations
+-   R environment remains functional after all changes
+
+## Test Validation
+
+-   [ ] Project setup with older versions successful
+-   [ ] Initial lock file structure validated
+-   [ ] Upgrade planning identifies candidates correctly
+-   [ ] Package upgrades execute successfully
+-   [ ] Lock file updates reflect changes accurately
+-   [ ] Lock file migration works correctly
+-   [ ] Migration preserves package integrity
+-   [ ] Upgrade guidance is clear and helpful
+-   [ ] Package downgrades function properly
+-   [ ] Complete lock file integrity confirmed

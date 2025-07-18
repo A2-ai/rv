@@ -1,0 +1,156 @@
+---
+title: "MAN-PROC-001: Project Creation and Package Management Workflow"
+editor: visual
+format: pdf
+---
+
+End-to-end procedure for creating a new RV project from scratch, adding packages, synchronizing, and managing the environment through a complete workflow.
+
+## Prerequisites
+
+Before running this procedure, ensure: - RV tool is installed and available in PATH - R installed and accessible - Terminal/Command prompt access - Write permissions in test directory
+
+## Test Procedure
+
+::: step
+### Step 1: Initialize Project Without .Rprofile Repository Settings
+
+1.  Create and navigate to new directory: `mkdir rv-workflow-test && cd rv-workflow-test`
+2.  Create .Rprofile file: `touch .Rprofile`
+3.  Verify .Rprofile is created `ls -a`
+4.  Verify .Rprofile is empty: `cat .Rprofile`
+5.  Initialize project: `rv init`
+6.  Verify warning message for missing repository settings appears
+7.  Confirm project still initializes successfully (should have a .rv directory and rproject.toml file) despite warning: `ls -a`
+8.  Clean up: `cd .. && rm -rf rv-workflow-test`
+
+*Take a screenshot* showing the terminal output.
+
+![Initializing project without .Rprofile repository settings](images/man-proc-001-01.png){.screenshot}
+:::
+
+::: step
+### Step 2: Initialize Project With .Rprofile Repository Settings
+
+1.  Create and navigate to new directory: `mkdir rv-workflow-test && cd rv-workflow-test`
+2.  Create .Rprofile file: `touch .Rprofile`
+3.  Add repository settings to .Rprofile: `echo 'options("repos" = c("PPM" = "https://packagemanager.posit.co/cran/latest"))' > .Rprofile`
+4.  Verify .Rprofile contents: `cat .Rprofile`
+5.  Initialize RV project: `rv init`
+6.  Verify message: Project is initialized successfully (no warning message appears)
+7.  Verify project is initialized in the current directory: `ls -a`, should have a .rv directory and rproject.toml file
+
+*Take a screenshot* showing the terminal output.
+
+![Initializing project with .Rprofile repository settings](images/man-proc-001-02.png){.screenshot}
+:::
+
+::: step
+### Step 3: Validate Initial Configuration
+
+1.  Display configuration: `cat rproject.toml`
+2.  Verify project name matches directory
+3.  Confirm R version is set appropriately
+4.  Check default repository configuration
+5.  Verify empty dependencies array
+
+*Take a screenshot* showing the terminal output.
+
+![Validating initial configuration](images/man-proc-001-03.png){.screenshot}
+:::
+
+::: step
+### Step 4: Add Packages via Command Line
+
+1.  Add multiple packages: `rv add dplyr ggplot2 tidyr`
+2.  Verify packages are added to configuration: `cat rproject.toml`
+3.  Check updated project status: `rv summary`
+4.  Confirm packages are automatically synchronized
+
+*Take a screenshot* showing the terminal output.
+
+![Adding packages via command line](images/man-proc-001-04.png){.screenshot}
+:::
+
+::: step
+### Step 5: Preview Changes with Plan
+
+1.  Open rproject.toml using a text editor: `nano rproject.toml`
+2.  Add new package "readr" to the dependencies array
+
+![Adding new package 'readr' to rproject.toml](images/man-proc-001-05.png){.screenshot}
+
+3.  Run preview command: `rv plan`
+4.  Verify plan shows intended changes without executing
+5.  Confirm no actual changes occur to library (no packages are installed) (no packages are installed)
+
+*Take a screenshot* showing the terminal output. ![Previewing changes with plan](images/man-proc-001-06.png){.screenshot}
+:::
+
+::: step
+### Step 6: Synchronize Environment
+
+1.  Execute synchronization: `rv sync`
+2.  Verify all packages are installed correctly
+3.  Confirm lock file is created/updated: `ls -la rv.lock`
+
+*Take a screenshot* showing the terminal output.
+
+![Synchronizing environment](images/man-proc-001-07.png){.screenshot}
+:::
+
+::: step
+### Step 7: Validate Project Information Commands
+
+1.  Check library path: `rv library`
+2.  Display project summary: `rv summary`
+3.  Get basic project info: `rv info --library --r-version --repositories`
+4.  Verify all information is accurate and consistent
+
+*Take a screenshot* showing the terminal output.
+
+![Validating project information commands](images/man-proc-001-08.png){.screenshot}
+:::
+
+::: step
+### Step 8: Test Project Activation
+
+1.  Activate project environment: `rv activate -c ./rproject.toml`
+2.  Start R session and verify environment: `R`
+3.  Check `.libPaths()` in R includes project library: `.libPaths()`
+4.  Verify `getOption("repos")` reflects project repositories: `getOption("repos")`
+5.  Test loading installed package in R: `library(ggplot2)`
+6.  Verify package is loaded: `find.package("ggplot2")`
+7.  Exit R session: `quit()`
+
+*Take a screenshot* showing the terminal output.
+
+![Testing project activation](images/man-proc-001-09.png){.screenshot}
+:::
+
+::: step
+### Step 9: Test Project Deactivation
+
+1.  Deactivate project: `rv deactivate -c ./rproject.toml`
+2.  Verify environment is restored to system defaults: `R`
+3.  Confirm project library is no longer in active path: `.libPaths()`
+4.  Exit R session: `quit()`
+
+*Take a screenshot* showing the terminal output.
+
+![Testing project deactivation](images/man-proc-001-10.png){.screenshot}
+:::
+
+::: step
+### Step 10: Validate Cache and Project Status
+
+1.  Check cache information: `rv cache`
+2.  Verify cache shows PPM repository with hash
+3.  Validate cache directory exists and is accessible: `ls ~/.cache/rv`
+4.  Check repository cache contents: `ls ~/.cache/rv/[hash]` (use actual hash from step 1)
+5.  Check final project status: `rv summary`
+
+*Take a screenshot* showing the terminal output.
+
+![Validating cache and project status](images/man-proc-001-11.png){.screenshot}
+:::

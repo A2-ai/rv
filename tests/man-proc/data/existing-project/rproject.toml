@@ -1,0 +1,15 @@
+[project]
+name = "existing-project"
+r_version = "4.4"
+repositories = [
+  {alias = "gh-pkg-mirror", url = "https://a2-ai.github.io/gh-pkg-mirror/2024-12-04"},
+  {alias = "RSPM", url = "https://packagemanager.posit.co/cran/2024-12-04"},
+  {alias = "a2-ai", url = "https://a2-ai.r-universe.dev"},
+]
+dependencies = [
+  "dplyr",
+  "ggplot2", 
+  "pmplots",
+  "tidyr",
+  "readr"
+] 
