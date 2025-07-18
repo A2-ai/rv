@@ -170,7 +170,8 @@ enum StringOrList {
 struct StepResult {
     name: String,
     step_index: usize,
-    output: String,
+    stdout: String,
+    stderr: String,
 }
 
 #[derive(Debug)]
@@ -698,16 +699,19 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     "rv" => {
                         // Handle rv commands with original timeout mechanism
                         execute_with_timeout(&step.name, step.timeout, || {
-                            let result = execute_rv_command(&step.run, &thread_test_dir, &thread_config_path)?;
-                            if !result.trim().is_empty() {
-                                println!("   ├─ Output: {}", result.trim());
+                            let (stdout, stderr) = execute_rv_command(&step.run, &thread_test_dir, &thread_config_path)?;
+                            if !stdout.trim().is_empty() {
+                                println!("   ├─ Output: {}", stdout.trim());
                             }
-                            Ok(result)
+                            if !stderr.trim().is_empty() {
+                                println!("   ├─ Stderr: {}", stderr.trim());
+                            }
+                            Ok((stdout, stderr))
                         })?
                     },
                     "r" => {
-                        // Handle R commands
-                        if step.run == "R" {
+                        // Handle R commands - wrap strings in tuples for consistency
+                        let r_output = if step.run == "R" {
                             // Check if this is a restart
                             if step.restart {
                                 if let Some(manager) = r_manager.take() {
@@ -786,16 +790,20 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                                 
                                 Ok("Command executed".to_string())
                             })?
-                        }
+                        };
+                        // Wrap R output in tuple with empty stderr for consistency
+                        (r_output, String::new())
                     },
                     _ => return Err(anyhow::anyhow!("Unknown thread type: {}", thread_name_clone)),
                 };
                 
-                // Store step result
+                // Store step result  
+                let (stdout, stderr) = output;
                 let step_result = StepResult {
                     name: step.name.clone(),
                     step_index: step_idx,
-                    output,
+                    stdout,
+                    stderr,
                 };
                 step_results.push(step_result);
                 
@@ -830,7 +838,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                     // Update step results with actual outputs (assertions checked at end)
                     for step_result in &mut step_results {
                         if let Some(step_output) = parsed_outputs.get(&step_result.name) {
-                            step_result.output = step_output.clone();
+                            step_result.stdout = step_output.clone();
                         }
                     }
                 }
@@ -873,15 +881,21 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             if let Some(original_step) = workflow.test.steps.get(step_result.step_index) {
                 // Check traditional assertions
                 if let Some(assertion) = &original_step.assert {
-                    if let Err(e) = check_assertion(assertion, &step_result.output) {
-                        assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
+                    if let Err(e) = check_assertion(assertion, &step_result.stdout, &step_result.stderr) {
+                        // Include both stdout and stderr in failure reporting
+                        let combined_output = if step_result.stderr.is_empty() {
+                            step_result.stdout.clone()
+                        } else {
+                            format!("{}\n--- STDERR ---\n{}", step_result.stdout, step_result.stderr)
+                        };
+                        assertion_failures.push((step_result.name.clone(), e.to_string(), combined_output));
                     }
                 }
                 
-                // Check insta snapshots
+                // Check insta snapshots (only use stdout for clean, predictable snapshots)
                 if let Some(snapshot_name) = &original_step.insta {
-                    if let Err(e) = check_insta_snapshot(snapshot_name, &step_result.output) {
-                        assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.output.clone()));
+                    if let Err(e) = check_insta_snapshot(snapshot_name, &step_result.stdout) {
+                        assertion_failures.push((step_result.name.clone(), e.to_string(), step_result.stdout.clone()));
                     }
                 }
             }
@@ -919,9 +933,21 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 (false, true) => "INSTA",
                 (false, false) => unreachable!(),
             };
-            println!("   • [{}] {} - {} {} ({} chars)", thread_label, step_result.name, status, test_type, step_result.output.len());
+            let total_chars = step_result.stdout.len() + step_result.stderr.len();
+            let char_info = if step_result.stderr.is_empty() {
+                format!("{} chars", total_chars)
+            } else {
+                format!("{} chars: {} stdout, {} stderr", total_chars, step_result.stdout.len(), step_result.stderr.len())
+            };
+            println!("   • [{}] {} - {} {} ({})", thread_label, step_result.name, status, test_type, char_info);
         } else {
-            println!("   • [{}] {} - ⏭️ NO ASSERTION ({} chars)", thread_label, step_result.name, step_result.output.len());
+            let total_chars = step_result.stdout.len() + step_result.stderr.len();
+            let char_info = if step_result.stderr.is_empty() {
+                format!("{} chars", total_chars)
+            } else {
+                format!("{} chars: {} stdout, {} stderr", total_chars, step_result.stdout.len(), step_result.stderr.len())
+            };
+            println!("   • [{}] {} - ⏭️ NO ASSERTION ({})", thread_label, step_result.name, char_info);
         }
     }
     
@@ -941,16 +967,37 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
                 if !thread_output.step_results.is_empty() {
                     println!("\n   === {} THREAD ===", thread_output.thread_name.to_uppercase());
                     for step_result in &thread_output.step_results {
-                        println!("\n   Step '{}' ({} chars):", step_result.name, step_result.output.len());
-                        if step_result.output.len() > 2000 {
-                            // Truncate very long outputs but show beginning and end
-                            let truncated = format!("{}...\n[TRUNCATED {} chars]...\n{}", 
-                                &step_result.output[..800],
-                                step_result.output.len() - 1600,
-                                &step_result.output[step_result.output.len()-800..]);
-                            println!("   {}", truncated);
-                        } else {
-                            println!("   {}", step_result.output);
+                        let total_chars = step_result.stdout.len() + step_result.stderr.len();
+                        println!("\n   Step '{}' ({} total chars):", step_result.name, total_chars);
+                        
+                        // Show stdout
+                        if !step_result.stdout.is_empty() {
+                            println!("   STDOUT ({} chars):", step_result.stdout.len());
+                            if step_result.stdout.len() > 1000 {
+                                // Truncate very long stdout
+                                let truncated = format!("{}...\n[TRUNCATED {} chars]...\n{}", 
+                                    &step_result.stdout[..400],
+                                    step_result.stdout.len() - 800,
+                                    &step_result.stdout[step_result.stdout.len()-400..]);
+                                println!("   {}", truncated);
+                            } else {
+                                println!("   {}", step_result.stdout);
+                            }
+                        }
+                        
+                        // Show stderr if present
+                        if !step_result.stderr.is_empty() {
+                            println!("   STDERR ({} chars):", step_result.stderr.len());
+                            if step_result.stderr.len() > 1000 {
+                                // Truncate very long stderr
+                                let truncated = format!("{}...\n[TRUNCATED {} chars]...\n{}", 
+                                    &step_result.stderr[..400],
+                                    step_result.stderr.len() - 800,
+                                    &step_result.stderr[step_result.stderr.len()-400..]);
+                                println!("   {}", truncated);
+                            } else {
+                                println!("   {}", step_result.stderr);
+                            }
                         }
                     }
                 }
@@ -963,7 +1010,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     Ok(())
 }
 
-fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Result<String> {
+fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Result<(String, String)> {
     let (cmd, args) = match command {
         "rv init" => ("init", vec![]),
         "rv sync" => ("sync", vec![]),
@@ -1005,39 +1052,33 @@ fn execute_rv_command(command: &str, test_dir: &Path, config_path: &Path) -> Res
             .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
     }
     
-    // Combine stdout and stderr for successful commands (similar to R thread behavior)
-    let mut combined_output = String::from_utf8_lossy(&output.stdout).to_string();
+    // Return separate stdout and stderr (snapshots use stdout, assertions check both)
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     
-    if !output.stderr.is_empty() {
-        if !combined_output.is_empty() && !combined_output.ends_with('\n') {
-            combined_output.push('\n');
-        }
-        combined_output.push_str(&String::from_utf8_lossy(&output.stderr));
-    }
-    
-    Ok(combined_output)
+    Ok((stdout, stderr))
 }
 
-fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
+fn check_assertion(assertion: &TestAssertion, stdout: &str, stderr: &str) -> Result<()> {
     match assertion {
         TestAssertion::Single(expected) => {
-            check_contains_assertion(expected, output)
+            check_contains_assertion_combined(expected, stdout, stderr)
         },
         TestAssertion::Multiple(expected_list) => {
             for expected in expected_list.iter() {
-                check_contains_assertion(expected, output)?;
+                check_contains_assertion_combined(expected, stdout, stderr)?;
             }
             Ok(())
         },
         TestAssertion::Structured(structured) => {
             // Check positive assertions (contains)
             if let Some(contains) = &structured.contains {
-                check_string_or_list_contains(contains, output)?;
+                check_string_or_list_contains_combined(contains, stdout, stderr)?;
             }
             
             // Check negative assertions (not-contains)
             if let Some(not_contains) = &structured.not_contains {
-                check_string_or_list_not_contains(not_contains, output)?;
+                check_string_or_list_not_contains_combined(not_contains, stdout, stderr)?;
             }
             
             Ok(())
@@ -1045,63 +1086,79 @@ fn check_assertion(assertion: &TestAssertion, output: &str) -> Result<()> {
     }
 }
 
-fn check_contains_assertion(expected: &str, output: &str) -> Result<()> {
-    if !output.contains(expected) {
-        return Err(anyhow::anyhow!(
-            "Assertion failed: expected '{}' in output.\n\nFull output ({} chars):\n{}\n\nSearching for lines containing '{}':\n{}", 
-            expected, 
-            output.len(),
-            output,
-            expected.split(':').next().unwrap_or(expected),
-            output.lines()
-                .filter(|line| line.contains(expected.split(':').next().unwrap_or(expected)))
-                .collect::<Vec<_>>()
-                .join("\n")
-        ));
+
+// Combined assertion functions that check stdout first, then stderr
+fn check_contains_assertion_combined(expected: &str, stdout: &str, stderr: &str) -> Result<()> {
+    // First try stdout
+    if stdout.contains(expected) {
+        return Ok(());
     }
-    Ok(())
+    
+    // Then try stderr
+    if stderr.contains(expected) {
+        return Ok(());
+    }
+    
+    // Not found in either - provide detailed error message
+    return Err(anyhow::anyhow!(
+        "Assertion failed: expected '{}' in output.\n\nSTDOUT ({} chars):\n{}\n\nSTDERR ({} chars):\n{}\n\nSearching for lines containing '{}':\nSTDOUT matches:\n{}\nSTDERR matches:\n{}", 
+        expected,
+        stdout.len(),
+        stdout,
+        stderr.len(),
+        stderr,
+        expected.split(':').next().unwrap_or(expected),
+        stdout.lines()
+            .filter(|line| line.contains(expected.split(':').next().unwrap_or(expected)))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        stderr.lines()
+            .filter(|line| line.contains(expected.split(':').next().unwrap_or(expected)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ));
 }
 
-fn check_string_or_list_contains(contains: &StringOrList, output: &str) -> Result<()> {
+fn check_string_or_list_contains_combined(contains: &StringOrList, stdout: &str, stderr: &str) -> Result<()> {
     match contains {
         StringOrList::Single(expected) => {
-            check_contains_assertion(expected, output)
+            check_contains_assertion_combined(expected, stdout, stderr)
         },
         StringOrList::Multiple(expected_list) => {
             for expected in expected_list.iter() {
-                check_contains_assertion(expected, output)?;
+                check_contains_assertion_combined(expected, stdout, stderr)?;
             }
             Ok(())
         },
     }
 }
 
-fn check_string_or_list_not_contains(not_contains: &StringOrList, output: &str) -> Result<()> {
+fn check_string_or_list_not_contains_combined(not_contains: &StringOrList, stdout: &str, stderr: &str) -> Result<()> {
     match not_contains {
         StringOrList::Single(expected) => {
-            if output.contains(expected) {
+            // For negative assertions, fail if found in either stdout OR stderr
+            if stdout.contains(expected) || stderr.contains(expected) {
                 return Err(anyhow::anyhow!(
-                    "Negative assertion failed: found '{}' in output (expected NOT to find it).\n\nFull output ({} chars):\n{}\n\nLines containing '{}':\n{}", 
-                    expected, 
-                    output.len(),
-                    output,
+                    "Negative assertion failed: found '{}' in output (expected NOT to find it).\n\nSTDOUT ({} chars):\n{}\n\nSTDERR ({} chars):\n{}", 
                     expected,
-                    output.lines()
-                        .filter(|line| line.contains(expected))
-                        .collect::<Vec<_>>()
-                        .join("\n")
+                    stdout.len(),
+                    stdout,
+                    stderr.len(),
+                    stderr
                 ));
             }
             Ok(())
         },
         StringOrList::Multiple(expected_list) => {
             for expected in expected_list.iter() {
-                if output.contains(expected) {
+                if stdout.contains(expected) || stderr.contains(expected) {
                     return Err(anyhow::anyhow!(
-                        "Negative assertion failed: found '{}' in output (expected NOT to find it).\n\nFull output ({} chars):\n{}", 
-                        expected, 
-                        output.len(),
-                        output
+                        "Negative assertion failed: found '{}' in output (expected NOT to find it).\n\nSTDOUT ({} chars):\n{}\n\nSTDERR ({} chars):\n{}", 
+                        expected,
+                        stdout.len(),
+                        stdout,
+                        stderr.len(),
+                        stderr
                     ));
                 }
             }
