@@ -289,7 +289,11 @@ impl RCmd for RCommandLine {
         #[cfg(unix)]
         if !configure_args.is_empty() {
             let combined_args = configure_args.join(" ");
-            log::debug!("Adding configure args for {}: {}", source_folder.as_ref().display(), combined_args);
+            log::debug!(
+                "Adding configure args for {}: {}",
+                source_folder.as_ref().display(),
+                combined_args
+            );
             command.arg("--configure-args").arg(combined_args);
         }
 
