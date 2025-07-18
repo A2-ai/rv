@@ -296,7 +296,7 @@ impl RCmd for RCommandLine {
                     source_folder.as_ref().display(),
                     combined_args
                 );
-                command.arg(format!("--configure-args={}", combined_args));
+                command.arg(format!("--configure-args='{}'", combined_args));
             }
         }
         command
