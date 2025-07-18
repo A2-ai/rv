@@ -1,0 +1,5 @@
+---
+source: tests/cli_configure_repository.rs
+expression: "String::from_utf8_lossy(&output.stdout)"
+---
+Repository replaced successfully - new alias: 'posit', URL: https://packagemanager.posit.co/cran/latest

@@ -16,6 +16,7 @@ pub(crate) fn install_package(
     library_dirs: &[&Path],
     cache: &DiskCache,
     r_cmd: &impl RCmd,
+    configure_args: &[String],
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let (local_path, sha) = match &pkg.source {
@@ -34,7 +35,12 @@ pub(crate) fn install_package(
         canon_path.clone()
     };
 
-    if is_binary_package(&actual_path, pkg.name.as_ref()) {
+    if is_binary_package(&actual_path, pkg.name.as_ref()).map_err(|err| SyncError {
+        source: crate::sync::errors::SyncErrorKind::InvalidPackage {
+            path: actual_path.to_path_buf(),
+            error: err.to_string(),
+        },
+    })? {
         log::debug!(
             "Local package in {} is a binary package, copying files to library.",
             actual_path.display()
@@ -52,6 +58,7 @@ pub(crate) fn install_package(
             library_dirs.first().unwrap(),
             cancellation,
             &pkg.env_vars,
+            configure_args,
         )?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);

@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 license = "MIT"
 
@@ -67,11 +67,12 @@ cli = [
 
 [dev-dependencies]
 anyhow = "1"
-assert_cmd = "2.0.17"
+assert_cmd = "2"
 insta = "1"
 mockito = "1"
 pretty_assertions = "1.4.1"
 serde_yaml = "0.9"
+predicates = "3"
 
 [profile.release]
 codegen-units = 1

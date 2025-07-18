@@ -2,109 +2,85 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-`rv` is a Rust-based R package manager that provides a fast, reproducible, and declarative way to manage R packages. It serves as an alternative to renv, allowing users to define project dependencies in a `rproject.toml` configuration file and synchronize their R library with lockfiles.
-
 ## Development Commands
 
-### Building and Running
-```bash
-# Build and run with arguments
-just run <args>
-# or alternatively
-cargo run --features=cli --release -- <args>
-
-# Examples
-just run sync
-just run add --dry-run
-just run plan
-```
+### Build and Run
+- `just run <args>` - Build and run rv with arguments (e.g., `just run sync`)  
+- `cargo run --features=cli -- <args>` - Alternative build/run command
+- `just install` - Install rv binary locally
+- `cargo install --path . --features=cli` - Alternative install command
 
 ### Testing
-```bash
-# Run all tests
-just test
-# or alternatively
-cargo test --features=cli
+- `just test` - Run all unit tests
+- `cargo test --features=cli` - Alternative test command
+- Snapshot tests require R version 4.4.x to be installed
 
-# Note: Snapshot tests require R version 4.4.x
-```
+### Code Quality
+- The codebase uses standard Rust formatting and linting
+- No specific lint/clippy commands configured in justfile or Cargo.toml
+- Use `cargo fmt` and `cargo clippy` for standard Rust code quality checks
 
-### Installation
-```bash
-# Install as binary
-just install
-# or alternatively
-cargo install --path . --features cli
-```
+## Project Architecture
 
-## Architecture Overview
-
-### Core Modules Structure
-
-**CLI Layer** (`src/cli/`):
-- `commands/` - Command implementations (init, migrate, tree)
-- `context.rs` - CLI context and R command lookup
-- Main CLI parsing in `src/main.rs`
-
-**Core Library** (`src/lib.rs`):
-- **Resolver** (`src/resolver/`) - Dependency resolution engine with SAT solver
-- **Sync** (`src/sync/`) - Package installation and synchronization
-- **Cache** (`src/cache/`) - Disk-based caching system
-- **Config** (`src/config.rs`) - Configuration file parsing
-- **Package** (`src/package/`) - R package metadata handling
-- **Repository** (`src/repository.rs`) - Repository database management
-- **Git** (`src/git/`) - Git dependency handling
-- **Lockfile** (`src/lockfile.rs`) - Lock file management
+### Core Purpose
+**rv** is a fast, reproducible R package manager written in Rust that manages R dependencies through configuration files (`rproject.toml`), lock files (`rv.lock`), and project-specific package libraries.
 
 ### Key Components
 
-**Dependency Resolution**:
-- Multi-source resolution (repositories, git, local, URL)
-- SAT-based conflict resolution
-- Version requirement satisfaction
-- Lockfile-based caching
+**Configuration System** (`src/config.rs`)
+- `rproject.toml` files define project dependencies and repositories
+- Supports multiple dependency types: simple strings, git repos, local paths, URLs
+- Repository aliases allow specific package sourcing (CRAN, R-Universe, etc.)
+- Environment variables for package compilation
 
-**Package Sources**:
-- Repository packages (CRAN, R-Universe, private repos)
-- Git dependencies (branch/tag/commit)
-- Local packages (directory or tarball)
-- URL dependencies
-- Built-in R packages
+**Dependency Resolution** (`src/resolver/`)
+- Multi-source resolution: local → builtin → lockfile → repositories → git/URL
+- Queue-based breadth-first dependency resolution
+- Version requirement satisfaction and conflict detection
+- Handles R's dependency types: depends, imports, suggests, enhances, linking_to
 
-**Configuration**:
-- TOML-based project configuration (`rproject.toml`)
-- Repository definitions with priority ordering
-- Package-specific options (force_source, install_suggestions, dependencies_only)
-- Environment variable support
+**Synchronization** (`src/sync/`)
+- `SyncHandler` orchestrates package installation/removal
+- Parallel compilation and installation with staging directories
+- Safety checks (prevents removing packages in use via lsof)
+- System dependency tracking for Linux package requirements
 
-## Key Files and Their Purposes
+**Caching** (`src/cache/`)
+- `DiskCache` manages package databases, downloads, and git repos
+- Organized by R version and system architecture  
+- Tracks installation status and system requirements
 
-- `src/main.rs` - CLI entry point with command parsing
-- `src/resolver/mod.rs` - Core dependency resolution logic
-- `src/sync/mod.rs` - Package installation orchestration
-- `src/config.rs` - Configuration file structure and parsing
-- `src/cli/context.rs` - CLI context setup and R version detection
-- `example_projects/` - Example configurations for different use cases
+**CLI Interface** (`src/main.rs`, `src/cli/`)
+- Primary commands: `init`, `sync`, `plan`, `add`, `upgrade`, `tree`
+- `CliContext` manages project state across commands
+- JSON output support for programmatic usage
 
-## Configuration File Format
+### Data Flow
+```
+rproject.toml → Config → Resolver → Resolution → SyncHandler → Library
+Dependencies → Repositories → Cache → Lockfile → Staging → Installed Packages
+```
 
-Projects use `rproject.toml` files to define:
-- R version requirements
-- Repository URLs and priorities
-- Dependencies with various source types
-- Package-specific installation options
+### Key File Relationships
+- **`rproject.toml`**: Project configuration with dependencies
+- **`rv.lock`**: Exact resolved dependency tree with versions/SHAs for reproducibility
+- **`rv/library/`**: Project-specific package installation directory
+- **Cache directories**: Persistent storage for downloads and metadata
 
-## Testing Strategy
+### R Version Handling
+- Supports R version detection via `RCommandLine` 
+- Library paths are namespaced by R version and architecture
+- Builtin package detection through R's installed.packages()
+- Uses R CMD INSTALL for package installation
 
-- Unit tests throughout modules
-- Snapshot testing for resolver outputs
-- Integration tests in `src/tests/`
-- Test data in `src/tests/` subdirectories (descriptions, package files, resolution scenarios)
+### Testing Structure
+- Unit tests with `cargo test`
+- Snapshot testing with `insta` crate for resolver behavior
+- Test fixtures in `src/tests/` including sample DESCRIPTION files, configs, and resolution scenarios
+- Example projects in `example_projects/` directory
 
-## Common Development Workflows
-
-When adding new dependency sources, implement in the resolver's lookup methods. When modifying package installation, focus on the sync module. Configuration changes require updates to the config parser and potentially migration logic.
-
-The codebase follows Rust conventions with comprehensive error handling using `thiserror` and structured logging. The CLI provides both human-readable and JSON output formats for automation.
+### Special Considerations
+- Requires R to be installed and accessible via PATH
+- Git CLI required for git-based dependencies
+- System dependency detection currently Ubuntu/Debian only
+- Windows support with R.bat fallback detection

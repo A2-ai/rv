@@ -3,6 +3,7 @@ mod add;
 mod cache;
 mod cancellation;
 mod config;
+mod configure;
 mod fs;
 mod git;
 mod http;
@@ -30,6 +31,10 @@ pub use add::{add_packages, read_and_verify_config};
 pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
+pub use configure::{
+    ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
+    RepositoryPositioning, RepositoryUpdates, execute_repository_action,
+};
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;

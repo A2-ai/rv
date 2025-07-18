@@ -21,6 +21,7 @@ pub(crate) fn install_package(
     library_dirs: &[&Path],
     cache: &DiskCache,
     r_cmd: &impl RCmd,
+    configure_args: &[String],
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let pkg_paths =
@@ -34,6 +35,7 @@ pub(crate) fn install_package(
             &pkg_paths.binary,
             cancellation.clone(),
             &pkg.env_vars,
+            configure_args,
         ) {
             Ok(output) => {
                 // not using the path for the cache
@@ -123,10 +125,15 @@ pub(crate) fn install_package(
                 } else {
                     // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
                     // source files. We have to check first whether what we have is actually binary content.
-                    if !is_binary_package(
-                        pkg_paths.binary.join(pkg.name.as_ref()),
-                        pkg.name.as_ref(),
-                    ) {
+                    let bin_path = pkg_paths.binary.join(pkg.name.as_ref());
+                    if !is_binary_package(&bin_path, pkg.name.as_ref()).map_err(|err| {
+                        SyncError {
+                            source: crate::sync::errors::SyncErrorKind::InvalidPackage {
+                                path: bin_path,
+                                error: err.to_string(),
+                            },
+                        }
+                    })? {
                         log::debug!("{} was expected as binary, found to be source.", pkg.name);
                         // Move it to the source destination if we don't have it already
                         if pkg_paths.source.is_dir() {

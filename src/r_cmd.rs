@@ -38,6 +38,7 @@ pub trait RCmd: Send + Sync {
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
+        configure_args: &[String],
     ) -> Result<String, InstallError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
@@ -168,7 +169,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
                 if let Ok(ver) = (RCommandLine {
                     r: Some(path.clone()),
                 })
-                    .version()
+                .version()
                 {
                     if r_version.hazy_match(&ver) {
                         log::debug!(" R {r_version} found at {}", path.display());
@@ -226,6 +227,7 @@ impl RCmd for RCommandLine {
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
+        configure_args: &[String],
     ) -> Result<String, InstallError> {
         let destination = destination.as_ref();
         // We create a temp build dir so we only remove an existing destination if we have something we can replace it with
@@ -279,7 +281,25 @@ impl RCmd for RCommandLine {
             ))
             .arg("--use-vanilla")
             .arg("--strip")
-            .arg("--strip-lib")
+            .arg("--strip-lib");
+
+        // Add configure args (Unix only - Windows R CMD INSTALL doesn't support --configure-args)
+        // configure-args are unix only and should be a single string per:
+        // https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Configure-example-1
+        #[cfg(unix)]
+        if !configure_args.is_empty() {
+            #[cfg(unix)]
+            if !configure_args.is_empty() {
+                let combined_args = configure_args.join(" ");
+                log::debug!(
+                    "Adding configure args for {}: {}",
+                    source_folder.as_ref().display(),
+                    combined_args
+                );
+                command.arg(format!("--configure-args='{}'", combined_args));
+            }
+        }
+        command
             .arg(src_backup_dir.path())
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library_paths)

@@ -3,11 +3,12 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::SystemInfo;
 use crate::consts::LOCKFILE_NAME;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -212,6 +213,100 @@ impl ConfigDependency {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OsTarget {
+    Linux,
+    Macos,
+    Windows,
+}
+
+impl OsTarget {
+    fn matches(&self, system_info: &crate::system_info::SystemInfo) -> bool {
+        use crate::system_info::OsType;
+        match (&system_info.os_type, self) {
+            (OsType::Linux(_), OsTarget::Linux) => true,
+            (OsType::MacOs, OsTarget::Macos) => true,
+            (OsType::Windows, OsTarget::Windows) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArchTarget {
+    #[serde(alias = "amd64")]
+    X86_64,
+    #[serde(alias = "aarch64")]
+    Arm64,
+    X86,
+    Arm,
+}
+
+impl ArchTarget {
+    fn matches(&self, system_info: &SystemInfo) -> bool {
+        let current_arch = system_info.arch().unwrap_or("unknown");
+        match (current_arch, self) {
+            ("x86_64" | "amd64", ArchTarget::X86_64) => true,
+            ("aarch64" | "arm64", ArchTarget::Arm64) => true,
+            ("x86" | "i386" | "i686", ArchTarget::X86) => true,
+            ("arm" | "armv7", ArchTarget::Arm) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ConfigureArgsRule {
+    OsArch {
+        os: OsTarget,
+        arch: ArchTarget,
+        args: Vec<String>,
+    },
+    Os {
+        os: OsTarget,
+        args: Vec<String>,
+    },
+    Arch {
+        arch: ArchTarget,
+        args: Vec<String>,
+    },
+    Default {
+        args: Vec<String>,
+    },
+}
+
+impl ConfigureArgsRule {
+    pub fn matches(&self, system_info: &SystemInfo) -> Option<&[String]> {
+        match self {
+            ConfigureArgsRule::OsArch { os, arch, args } => {
+                if os.matches(system_info) && arch.matches(system_info) {
+                    Some(args)
+                } else {
+                    None
+                }
+            }
+            ConfigureArgsRule::Os { os, args } => {
+                if os.matches(system_info) {
+                    Some(args)
+                } else {
+                    None
+                }
+            }
+            ConfigureArgsRule::Arch { arch, args } => {
+                if arch.matches(system_info) {
+                    Some(args)
+                } else {
+                    None
+                }
+            }
+            ConfigureArgsRule::Default { args } => Some(args),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
@@ -250,6 +345,9 @@ pub(crate) struct Project {
     /// this will not be used
     #[serde(default)]
     packages_env_vars: HashMap<String, HashMap<String, String>>,
+    /// Package-specific configure.args with system targeting
+    #[serde(default)]
+    pub configure_args: HashMap<String, Vec<ConfigureArgsRule>>,
 }
 
 // That's the way to do it with serde :/
@@ -374,6 +472,23 @@ impl Config {
 
     pub fn lockfile_name(&self) -> &str {
         self.lockfile_name.as_deref().unwrap_or(LOCKFILE_NAME)
+    }
+
+    pub fn get_configure_args(&self, package_name: &str, system_info: &SystemInfo) -> &[String] {
+        if let Some(rules) = self.project.configure_args.get(package_name) {
+            // Find first matching rule
+            for rule in rules {
+                if let Some(args) = rule.matches(system_info) {
+                    return args;
+                }
+            }
+        }
+
+        &[]
+    }
+
+    pub fn configure_args(&self) -> &HashMap<String, Vec<ConfigureArgsRule>> {
+        &self.project.configure_args
     }
 }
 

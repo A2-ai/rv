@@ -254,6 +254,7 @@ impl From<RUniversePackage> for Package {
             remote_url: Some(pkg.remote_url),
             remote_sha: Some(pkg.remote_sha),
             remote_subdir: pkg.remote_subdir,
+            built: None,
         }
     }
 }

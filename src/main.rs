@@ -7,15 +7,17 @@ use fs_err::{self as fs, read_to_string, write};
 use serde::Serialize;
 use serde_json::json;
 
+use rv::RepositoryOperation as LibRepositoryOperation;
 use rv::cli::utils::timeit;
 use rv::cli::{
     CliContext, RCommandLookup, find_r_repositories, init, init_structure, migrate_renv, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
-    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine, Resolution,
+    CacheInfo, Config, GitExecutor, Http, Lockfile, ProjectSummary, RCmd, RCommandLine,
+    RepositoryAction, RepositoryMatcher, RepositoryPositioning, RepositoryUpdates, Resolution,
     Resolver, SyncChange, SyncHandler, Version, activate, add_packages, deactivate,
-    read_and_verify_config, system_req,
+    execute_repository_action, read_and_verify_config, system_req,
 };
 
 #[derive(Parser)]
@@ -159,6 +161,88 @@ pub enum Command {
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
     },
+    /// Configure project settings
+    Configure {
+        #[command(subcommand)]
+        subcommand: ConfigureSubcommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigureSubcommand {
+    /// Configure project repositories
+    Repository {
+        #[clap(subcommand)]
+        operation: RepositoryOperation,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RepositoryOperation {
+    /// Add a new repository
+    Add {
+        /// Repository alias
+        alias: String,
+        /// Repository URL
+        #[clap(long)]
+        url: String,
+        /// Enable force_source for this repository
+        #[clap(long)]
+        force_source: bool,
+        /// Add as first repository
+        #[clap(long, conflicts_with_all = ["last", "before", "after"])]
+        first: bool,
+        /// Add as last repository (default)
+        #[clap(long, conflicts_with_all = ["first", "before", "after"])]
+        last: bool,
+        /// Add before the specified alias
+        #[clap(long, conflicts_with_all = ["first", "last", "after"])]
+        before: Option<String>,
+        /// Add after the specified alias
+        #[clap(long, conflicts_with_all = ["first", "last", "before"])]
+        after: Option<String>,
+    },
+    /// Replace an existing repository (keeps original alias if not specified)
+    Replace {
+        /// Repository alias to replace
+        old_alias: String,
+        /// New repository alias (optional, keeps original if not specified)
+        #[clap(long)]
+        alias: Option<String>,
+        /// Repository URL
+        #[clap(long)]
+        url: String,
+        /// Enable/disable force_source for this repository
+        #[clap(long)]
+        force_source: bool,
+    },
+    /// Update an existing repository (partial updates)
+    Update {
+        /// Repository alias to update (if not using --match-url)
+        target_alias: Option<String>,
+        /// Match repository by URL instead of alias
+        #[clap(long, conflicts_with = "target_alias")]
+        match_url: Option<String>,
+        /// New repository alias
+        #[clap(long)]
+        alias: Option<String>,
+        /// New repository URL
+        #[clap(long)]
+        url: Option<String>,
+        /// Enable force_source
+        #[clap(long, conflicts_with = "no_force_source")]
+        force_source: bool,
+        /// Disable force_source
+        #[clap(long, conflicts_with = "force_source")]
+        no_force_source: bool,
+    },
+    /// Remove an existing repository
+    Remove {
+        /// Repository alias to remove
+        alias: String,
+    },
+    /// Clear all repositories
+    Clear,
 }
 
 #[derive(Debug, Subcommand)]
@@ -322,6 +406,9 @@ fn _sync(
                 &context.library,
                 &context.cache,
                 &context.system_dependencies,
+                context.config.configure_args(),
+                &context.cache.system_info,
+                save_install_logs_in.clone(),
                 context.staging_path(),
             );
             if dry_run {
@@ -364,16 +451,6 @@ fn _sync(
 
             for change in changes.iter_mut() {
                 change.update_sys_deps_status(&sysdeps_status);
-            }
-
-            if let Some(log_folder) = save_install_logs_in {
-                fs::create_dir_all(&log_folder)?;
-                for change in changes.iter().filter(|x| x.installed) {
-                    let log_path = change.log_path(&context.cache);
-                    if log_path.exists() {
-                        fs::copy(log_path, log_folder.join(&format!("{}.log", change.name)))?;
-                    }
-                }
             }
 
             if output_format.is_json() {
@@ -816,6 +893,156 @@ fn try_main() -> Result<()> {
                 );
             } else {
                 tree.print(depth, !hide_system_deps);
+            }
+        }
+        Command::Configure { subcommand } => {
+            match subcommand {
+                ConfigureSubcommand::Repository { operation } => {
+                    let action = match operation {
+                        RepositoryOperation::Clear => RepositoryAction::Clear,
+
+                        RepositoryOperation::Remove { alias } => RepositoryAction::Remove { alias },
+
+                        RepositoryOperation::Add {
+                            alias,
+                            url,
+                            force_source,
+                            first,
+                            last,
+                            before,
+                            after,
+                        } => {
+                            let parsed_url = url::Url::parse(&url)
+                                .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+
+                            let positioning = if first {
+                                RepositoryPositioning::First
+                            } else if last {
+                                RepositoryPositioning::Last
+                            } else if let Some(before_alias) = before {
+                                RepositoryPositioning::Before(before_alias)
+                            } else if let Some(after_alias) = after {
+                                RepositoryPositioning::After(after_alias)
+                            } else {
+                                RepositoryPositioning::Last // Default
+                            };
+
+                            RepositoryAction::Add {
+                                alias,
+                                url: parsed_url,
+                                positioning,
+                                force_source,
+                            }
+                        }
+
+                        RepositoryOperation::Replace {
+                            old_alias,
+                            alias,
+                            url,
+                            force_source,
+                        } => {
+                            let parsed_url = url::Url::parse(&url)
+                                .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+                            let new_alias = alias.unwrap_or_else(|| old_alias.clone());
+
+                            RepositoryAction::Replace {
+                                old_alias,
+                                new_alias,
+                                url: parsed_url,
+                                force_source,
+                            }
+                        }
+
+                        RepositoryOperation::Update {
+                            target_alias,
+                            match_url,
+                            alias,
+                            url,
+                            force_source,
+                            no_force_source,
+                        } => {
+                            // Determine matcher
+                            let matcher = if let Some(match_url_str) = match_url {
+                                let parsed_url = url::Url::parse(&match_url_str)
+                                    .map_err(|e| anyhow::anyhow!("Invalid match URL: {}", e))?;
+                                RepositoryMatcher::ByUrl(parsed_url)
+                            } else if let Some(target_alias) = target_alias {
+                                RepositoryMatcher::ByAlias(target_alias)
+                            } else {
+                                return Err(anyhow::anyhow!(
+                                    "Must specify either target alias or --match-url"
+                                ));
+                            };
+
+                            // Parse URL if provided
+                            let parsed_url = if let Some(url_str) = url {
+                                Some(
+                                    url::Url::parse(&url_str)
+                                        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?,
+                                )
+                            } else {
+                                None
+                            };
+
+                            // Determine force_source value
+                            let force_source_update = if force_source {
+                                Some(true)
+                            } else if no_force_source {
+                                Some(false)
+                            } else {
+                                None
+                            };
+
+                            let updates = RepositoryUpdates {
+                                alias,
+                                url: parsed_url,
+                                force_source: force_source_update,
+                            };
+
+                            RepositoryAction::Update { matcher, updates }
+                        }
+                    };
+
+                    let response = execute_repository_action(&cli.config_file, action)?;
+
+                    // Handle output based on format preference
+                    if output_format.is_json() {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        // Print detailed text output
+                        match response.operation {
+                            LibRepositoryOperation::Add => {
+                                println!(
+                                    "Repository '{}' added successfully with URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
+                            }
+                            LibRepositoryOperation::Replace => {
+                                println!(
+                                    "Repository replaced successfully - new alias: '{}', URL: {}",
+                                    response.alias.as_ref().unwrap(),
+                                    response.url.as_ref().unwrap()
+                                );
+                            }
+                            LibRepositoryOperation::Update => {
+                                println!(
+                                    "Repository '{}' updated successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
+                            }
+                            LibRepositoryOperation::Remove => {
+                                println!(
+                                    "Repository '{}' removed successfully",
+                                    response.alias.as_ref().unwrap()
+                                );
+                            }
+                            LibRepositoryOperation::Clear => {
+                                println!("All repositories cleared successfully");
+                            }
+                        }
+                    }
+                }
             }
         }
     }

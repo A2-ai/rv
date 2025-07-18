@@ -17,6 +17,7 @@ pub(crate) fn install_package(
     cache: &DiskCache,
     r_cmd: &impl RCmd,
     git_exec: &(impl CommandExecutor + Clone + 'static),
+    configure_args: &[String],
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let pkg_paths = cache.get_package_paths(&pkg.source, None, None);
@@ -52,6 +53,7 @@ pub(crate) fn install_package(
             &pkg_paths.binary,
             cancellation,
             &pkg.env_vars,
+            configure_args,
         )?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);

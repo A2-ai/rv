@@ -95,6 +95,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                         package.remotes.insert(original, out);
                     }
                 }
+                "Built" => package.built = Some(value.to_string()),
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
                 _ => continue,

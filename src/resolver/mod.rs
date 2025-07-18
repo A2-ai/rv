@@ -383,7 +383,7 @@ impl<'d> Resolver<'d> {
             )
             .into());
         }
-        let is_binary = is_binary_package(&install_path, &package.name);
+        let is_binary = is_binary_package(&install_path, &package.name)?;
         let (resolved_dep, deps) = ResolvedDependency::from_url_package(
             &package,
             if is_binary {
@@ -684,8 +684,8 @@ impl<'d> Resolver<'d> {
                 dep.env_vars = args.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
             }
         }
-        result.finalize();
 
+        result.finalize();
         result
     }
 }
