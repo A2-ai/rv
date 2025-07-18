@@ -283,9 +283,14 @@ impl RCmd for RCommandLine {
             .arg("--strip")
             .arg("--strip-lib");
 
-        // Add configure args
-        for arg in configure_args {
-            command.arg("--configure-args").arg(arg);
+        // Add configure args (Unix only - Windows R CMD INSTALL doesn't support --configure-args)
+        // configure-args are unix only and should be a single string per:
+        // https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Configure-example-1
+        #[cfg(unix)]
+        if !configure_args.is_empty() {
+            let combined_args = configure_args.join(" ");
+            log::debug!("Adding configure args for {}: {}", source_folder.as_ref().display(), combined_args);
+            command.arg("--configure-args").arg(combined_args);
         }
 
         command
