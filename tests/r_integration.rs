@@ -933,6 +933,30 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             println!("   Error: {}", error);
             println!("   Output ({} chars): {}", output.len(), output);
         }
+        
+        // In debug mode, show all thread outputs for debugging
+        if std::env::var("RV_TEST_DEBUG").is_ok() {
+            println!("\n🔍 All Thread Debug Output:");
+            for thread_output in &all_thread_outputs {
+                if !thread_output.step_results.is_empty() {
+                    println!("\n   === {} THREAD ===", thread_output.thread_name.to_uppercase());
+                    for step_result in &thread_output.step_results {
+                        println!("\n   Step '{}' ({} chars):", step_result.name, step_result.output.len());
+                        if step_result.output.len() > 2000 {
+                            // Truncate very long outputs but show beginning and end
+                            let truncated = format!("{}...\n[TRUNCATED {} chars]...\n{}", 
+                                &step_result.output[..800],
+                                step_result.output.len() - 1600,
+                                &step_result.output[step_result.output.len()-800..]);
+                            println!("   {}", truncated);
+                        } else {
+                            println!("   {}", step_result.output);
+                        }
+                    }
+                }
+            }
+        }
+        
         return Err(anyhow::anyhow!("Test failed with {} assertion failures", assertion_failures.len()));
     }
     

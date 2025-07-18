@@ -16,6 +16,7 @@ test:
   - name: "create empty .Rprofile"
     run: |
       file.create(".Rprofile")
+      writeLines("options(\"repos\" = c(\"CRAN\" = \"\@CRAN\@\"))", ".Rprofile")
       cat(readLines(".Rprofile"))
     thread: r 
     assert: ""
