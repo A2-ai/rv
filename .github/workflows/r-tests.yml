@@ -26,22 +26,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-        
-    - name: Cache Rust dependencies and binary
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'src/**') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-          ${{ runner.os }}-cargo-
-          
-    - name: Build rv (if not cached)
+    - name: Build rv
       run: cargo build --features=cli --release
 
     - name: Add rv to PATH (Unix)
@@ -78,8 +63,8 @@ jobs:
       if: runner.os != 'Windows'
       run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
       env:
+        RUST_BACKTRACE: 1
         RV_TEST_FILTER: stderr
-        RV_TEST_DEBUG: 1
 
     - name: Run tests (Windows)
       if: runner.os == 'Windows'
@@ -87,4 +72,5 @@ jobs:
       run: cargo test --features=cli --test r_integration -- --nocapture --test-threads=1
       env:
         RV_TEST_FILTER: stderr
-        RV_TEST_DEBUG: 1
+        RUST_BACKTRACE: 1
+
