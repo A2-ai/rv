@@ -1,0 +1,73 @@
+project-dir: rv-val-002
+config: rv-val.toml
+
+test:
+  steps:
+  - name: "Start R"
+    run: "R"
+    thread: r
+  
+  - name: "Create sample renv project"
+    run: |
+      # Create a realistic renv.lock file manually
+      renv_lock_content <- '{
+        "R": {
+          "Version": "4.4",
+          "Repositories": [
+            {
+              "Name": "CRAN",
+              "URL": "https://cran.rstudio.com"
+            }
+          ]
+        },
+        "Packages": {
+          "dplyr": {
+            "Package": "dplyr",
+            "Version": "1.1.4",
+            "Source": "Repository",
+            "Repository": "CRAN",
+            "Requirements": [
+              "R", "cli", "glue", "lifecycle", "magrittr", "rlang", "tibble", "tidyselect", "vctrs"
+            ]
+          },
+          "ggplot2": {
+            "Package": "ggplot2", 
+            "Version": "3.5.2",
+            "Source": "Repository",
+            "Repository": "CRAN",
+            "Requirements": [
+              "R", "cli", "glue", "gtable", "isoband", "lifecycle", "rlang", "scales", "tibble", "vctrs", "withr"
+            ]
+          },
+          "jsonlite": {
+            "Package": "jsonlite",
+            "Version": "2.0.0",
+            "Source": "Repository", 
+            "Repository": "CRAN",
+            "Requirements": [
+              "R", "methods"
+            ]
+          }
+        }
+      }'
+      
+      # Write the renv.lock file
+      writeLines(renv_lock_content, "renv.lock")
+      
+      # Create basic .Rprofile for renv
+      writeLines("source(\"renv/activate.R\")", ".Rprofile")
+      
+      # Verify files were created
+      cat("Created files:", paste(list.files("."), collapse=", "), "\n")
+      cat("renv.lock exists:", file.exists("renv.lock"), "\n")
+    thread: r
+    assert:
+      contains:
+        - "renv.lock exists: TRUE"
+
+  - name: "Migrate renv project using rv"  
+    run: "rv migrate renv"
+    thread: rv
+    assert: 
+      contains: 
+       - "renv.lock was successfully migrated to rproject.toml" 

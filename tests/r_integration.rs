@@ -67,7 +67,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     let (_temp_dir, test_dir, config_path) = setup_test_environment(&workflow)?;
     let (thread_steps, coordinator, tx_map, rx_map) = prepare_thread_coordination(&workflow)?;
 
-    let all_thread_outputs = execute_workflow_threads(
+    let (all_thread_outputs, thread_errors) = execute_workflow_threads(
         &workflow,
         &test_dir,
         &config_path,
@@ -77,7 +77,7 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
         rx_map,
     )?;
 
-    validate_and_report_results(&workflow, all_thread_outputs)
+    validate_and_report_results(&workflow, all_thread_outputs, thread_errors)
 }
 
 fn execute_workflow_threads(
@@ -88,7 +88,7 @@ fn execute_workflow_threads(
     coordinator: Arc<StepCoordinator>,
     tx_map: HashMap<String, std::sync::mpsc::Sender<ThreadOutput>>,
     rx_map: HashMap<String, std::sync::mpsc::Receiver<ThreadOutput>>,
-) -> Result<Vec<ThreadOutput>> {
+) -> Result<(Vec<ThreadOutput>, Vec<String>)> {
     // Spawn threads
     let mut thread_handles = HashMap::new();
 
@@ -100,15 +100,17 @@ fn execute_workflow_threads(
         let thread_tx = tx_map[&thread_name].clone();
         let thread_name_clone = thread_name.clone();
 
-        let handle = thread::spawn(move || -> Result<()> {
+        let handle = thread::spawn(move || {
             let mut step_results = Vec::new();
             let mut r_manager: Option<RProcessManager> = None;
             let mut accumulated_r_output = String::new();
-
-            // Process all steps in order, coordinating with other threads
-            for step_idx in 0..thread_steps.len() {
-                // Wait for this step to start (simple coordination without timeout)
-                thread_coordinator.wait_for_step_start(step_idx, &thread_name_clone, None)?;
+            
+            // Execute thread logic and capture any errors
+            let thread_result = (|| -> Result<()> {
+                // Process all steps in order, coordinating with other threads
+                for step_idx in 0..thread_steps.len() {
+                    // Wait for this step to start (simple coordination without timeout)
+                    thread_coordinator.wait_for_step_start(step_idx, &thread_name_clone, None)?;
 
                 // Only execute if this step belongs to our thread
                 if !step_indices.contains(&step_idx) {
@@ -365,47 +367,62 @@ fn execute_workflow_threads(
                 }
             }
 
-            // Send results through channel
+                Ok(())
+            })();
+            
+            // Always send results through channel, even if there were errors
             let thread_output = ThreadOutput {
                 thread_name: thread_name_clone.clone(),
                 step_results,
             };
-            thread_tx.send(thread_output).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to send results from {} thread: {}",
-                    thread_name_clone,
-                    e
-                )
-            })?;
-            Ok(())
+            
+            // Send the output (ignore send errors since main thread may have exited)
+            let _ = thread_tx.send(thread_output);
+            
+            // Return the result of thread execution
+            thread_result
         });
 
         thread_handles.insert(thread_name, handle);
     }
 
-    // Wait for all threads to complete
+    // Wait for all threads to complete and collect any errors
+    let mut thread_errors = Vec::new();
     for (thread_name, handle) in thread_handles {
-        handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("Thread '{}' panicked during execution", thread_name))?
-            .map_err(|e| anyhow::anyhow!("Thread '{}' failed: {}", thread_name, e))?;
+        match handle.join() {
+            Ok(thread_result) => {
+                if let Err(e) = thread_result {
+                    thread_errors.push(format!("Thread '{}' failed: {}", thread_name, e));
+                }
+            }
+            Err(_) => {
+                thread_errors.push(format!("Thread '{}' panicked during execution", thread_name));
+            }
+        }
     }
 
-    // Collect step results from all threads
+    // Collect step results from all threads (even if some failed)
     let mut all_thread_outputs = Vec::new();
     for (thread_name, rx) in rx_map {
-        let thread_output = rx
-            .recv()
-            .map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
-        all_thread_outputs.push(thread_output);
+        match rx.recv() {
+            Ok(thread_output) => {
+                all_thread_outputs.push(thread_output);
+            }
+            Err(e) => {
+                // Thread failed before sending output, but continue collecting others
+                debug_print(&format!("Failed to receive output from {}: {}", thread_name, e));
+            }
+        }
     }
     
-    Ok(all_thread_outputs)
+    // Return both outputs and any errors
+    Ok((all_thread_outputs, thread_errors))
 }
 
 fn validate_and_report_results(
     workflow: &WorkflowTest,
     all_thread_outputs: Vec<ThreadOutput>,
+    thread_errors: Vec<String>,
 ) -> Result<()> {
 
     // Now check all assertions after we have all outputs
@@ -525,6 +542,68 @@ fn validate_and_report_results(
         }
     }
 
+    // In verbose mode, always show all captured stdout/stderr for debugging
+    if std::env::var("RV_TEST_VERBOSE").is_ok() {
+        println!("\n🔍 All Captured Output (RV_TEST_VERBOSE detected):");
+        for thread_output in &all_thread_outputs {
+            if !thread_output.step_results.is_empty() {
+                println!(
+                    "\n   === {} THREAD ===",
+                    thread_output.thread_name.to_uppercase()
+                );
+                for step_result in &thread_output.step_results {
+                    let total_chars = step_result.stdout.len() + step_result.stderr.len();
+                    println!(
+                        "\n   Step '{}' ({} total chars):",
+                        step_result.name, total_chars
+                    );
+
+                    // Show stdout
+                    if !step_result.stdout.is_empty() {
+                        println!("   STDOUT ({} chars):", step_result.stdout.len());
+                        if step_result.stdout.len() > 1000 {
+                            // Truncate very long stdout
+                            let truncated = format!(
+                                "{}...\n[TRUNCATED {} chars]...\n{}",
+                                &step_result.stdout[..400],
+                                step_result.stdout.len() - 800,
+                                &step_result.stdout[step_result.stdout.len() - 400..]
+                            );
+                            println!("   {}", truncated);
+                        } else {
+                            println!("   {}", step_result.stdout);
+                        }
+                    }
+
+                    // Show stderr if present
+                    if !step_result.stderr.is_empty() {
+                        println!("   STDERR ({} chars):", step_result.stderr.len());
+                        if step_result.stderr.len() > 1000 {
+                            // Truncate very long stderr
+                            let truncated = format!(
+                                "{}...\n[TRUNCATED {} chars]...\n{}",
+                                &step_result.stderr[..400],
+                                step_result.stderr.len() - 800,
+                                &step_result.stderr[step_result.stderr.len() - 400..]
+                            );
+                            println!("   {}", truncated);
+                        } else {
+                            println!("   {}", step_result.stderr);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Report any thread execution errors
+    if !thread_errors.is_empty() {
+        println!("\n💥 Thread execution errors:");
+        for error in &thread_errors {
+            println!("   {}", error);
+        }
+    }
+
     // If there were assertion failures, report them all
     if !assertion_failures.is_empty() {
         println!("\n💥 Assertion failures:");
@@ -533,63 +612,15 @@ fn validate_and_report_results(
             println!("   Error: {}", error);
             println!("   Output ({} chars): {}", output.len(), output);
         }
+    }
 
-        // In debug mode, show all thread outputs for debugging
-        if std::env::var("RV_TEST_DEBUG").is_ok() {
-            println!("\n🔍 All Thread Debug Output:");
-            for thread_output in &all_thread_outputs {
-                if !thread_output.step_results.is_empty() {
-                    println!(
-                        "\n   === {} THREAD ===",
-                        thread_output.thread_name.to_uppercase()
-                    );
-                    for step_result in &thread_output.step_results {
-                        let total_chars = step_result.stdout.len() + step_result.stderr.len();
-                        println!(
-                            "\n   Step '{}' ({} total chars):",
-                            step_result.name, total_chars
-                        );
-
-                        // Show stdout
-                        if !step_result.stdout.is_empty() {
-                            println!("   STDOUT ({} chars):", step_result.stdout.len());
-                            if step_result.stdout.len() > 1000 {
-                                // Truncate very long stdout
-                                let truncated = format!(
-                                    "{}...\n[TRUNCATED {} chars]...\n{}",
-                                    &step_result.stdout[..400],
-                                    step_result.stdout.len() - 800,
-                                    &step_result.stdout[step_result.stdout.len() - 400..]
-                                );
-                                println!("   {}", truncated);
-                            } else {
-                                println!("   {}", step_result.stdout);
-                            }
-                        }
-
-                        // Show stderr if present
-                        if !step_result.stderr.is_empty() {
-                            println!("   STDERR ({} chars):", step_result.stderr.len());
-                            if step_result.stderr.len() > 1000 {
-                                // Truncate very long stderr
-                                let truncated = format!(
-                                    "{}...\n[TRUNCATED {} chars]...\n{}",
-                                    &step_result.stderr[..400],
-                                    step_result.stderr.len() - 800,
-                                    &step_result.stderr[step_result.stderr.len() - 400..]
-                                );
-                                println!("   {}", truncated);
-                            } else {
-                                println!("   {}", step_result.stderr);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
+    // Fail if there were any errors
+    if !thread_errors.is_empty() || !assertion_failures.is_empty() {
+        let total_errors = thread_errors.len() + assertion_failures.len();
         return Err(anyhow::anyhow!(
-            "Test failed with {} assertion failures",
+            "Test failed with {} total errors ({} thread errors, {} assertion failures)",
+            total_errors,
+            thread_errors.len(),
             assertion_failures.len()
         ));
     }

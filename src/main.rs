@@ -253,6 +253,7 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Include the patch in the R version
         strict_r_version: bool,
+        #[clap(long)] 
         /// Turn off rv access through .rv R environment
         no_r_environment: bool,
     },

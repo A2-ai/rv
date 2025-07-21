@@ -1,0 +1,12 @@
+[project]
+
+name = "rv-val"
+r_version = "4.4"
+
+repositories = [
+ 	{alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"}
+]
+
+dependencies = [
+
+]
