@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use std::sync::mpsc;
+
 
 const RV: &str = "rv";
 
@@ -19,7 +19,7 @@ fn debug_print(msg: &str) {
     }
 }
 
-// New timeout execution for R commands that can actually interrupt the process
+// Improved timeout execution for R commands with better process monitoring
 fn execute_r_command_with_timeout<F>(
     step_name: &str,
     timeout_secs: Option<u64>,
@@ -39,42 +39,55 @@ where
         if let Some(timeout_duration) = timeout_secs.map(Duration::from_secs) {
             debug_print(&format!("Starting timeout monitor for step '{}'", step_name));
             
-            // Send the command first  
+            // Start timing the operation
+            let start_time = Instant::now();
+            
+            // Execute the operation
             let operation_result = operation(manager);
-            if operation_result.is_err() {
-                return operation_result;
-            }
             
-            debug_print(&format!("Command sent, now waiting {}s for R to execute it", timeout_duration.as_secs()));
+            // Check if the operation completed within the timeout
+            let elapsed = start_time.elapsed();
             
-            // Now wait for the timeout duration to see if R completes the command
-            std::thread::sleep(timeout_duration);
-            
-            // After timeout, capture whatever output we can before killing the process
-            debug_print(&format!("Timeout expired for step '{}', capturing output before killing R process", step_name));
-            
-            // Try to capture output before clearing the manager
-            let captured_output = match r_manager.take() {
-                Some(dying_manager) => {
-                    debug_print("Attempting to capture R output before timeout failure");
-                    match dying_manager.shutdown_and_capture_output() {
-                        Ok((stdout, stderr)) => {
-                            format!("R output captured after timeout:\n\nSTDOUT ({} chars):\n{}\n\nSTDERR ({} chars):\n{}", 
-                                   stdout.len(), stdout,
-                                   stderr.len(), String::from_utf8_lossy(&stderr))
+            if elapsed > timeout_duration {
+                debug_print(&format!("Step '{}' took {}s, exceeding timeout of {}s", 
+                                   step_name, elapsed.as_secs(), timeout_duration.as_secs()));
+                
+                // The operation completed but took too long
+                // Try to capture output and kill the R process if it's still running
+                let captured_output = if let Some(manager) = r_manager {
+                    if manager.is_alive().unwrap_or(false) {
+                        debug_print("R process is still alive after timeout, attempting cleanup");
+                        
+                        // Try to capture current state before cleanup
+                        match manager.try_capture_output() {
+                            Ok((stdout, stderr)) => {
+                                // Now attempt to kill the process
+                                if let Err(e) = manager.force_shutdown() {
+                                    debug_print(&format!("Failed to force shutdown R process: {}", e));
+                                }
+                                
+                                format!("R output captured after timeout:\n\nSTDOUT ({} chars):\n{}\n\nSTDERR ({} chars):\n{}", 
+                                       stdout.len(), stdout,
+                                       stderr.len(), String::from_utf8_lossy(&stderr))
+                            }
+                            Err(e) => {
+                                format!("Failed to capture R output after timeout: {}", e)
+                            }
                         }
-                        Err(e) => {
-                            format!("Failed to capture R output after timeout: {}", e)
-                        }
+                    } else {
+                        "R process was not running after timeout".to_string()
                     }
-                }
-                None => {
-                    "No R process available for output capture".to_string()
-                }
-            };
-            
-            return Err(anyhow::anyhow!("Step '{}' timed out after {}s\n\nCaptured output:\n{}", 
-                                     step_name, timeout_duration.as_secs(), captured_output));
+                } else {
+                    "No R process manager available".to_string()
+                };
+                
+                return Err(anyhow::anyhow!("Step '{}' timed out after {}s (actual: {}s)\n\nCaptured output:\n{}", 
+                                         step_name, timeout_duration.as_secs(), elapsed.as_secs(), captured_output));
+            } else {
+                debug_print(&format!("Step '{}' completed in {}s (within timeout of {}s)", 
+                                   step_name, elapsed.as_secs(), timeout_duration.as_secs()));
+                operation_result
+            }
         } else {
             // No timeout, execute normally
             operation(manager)
@@ -181,31 +194,15 @@ struct ThreadOutput {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
-enum CoordinatorMessage {
-    StepCompleted { thread_name: String, step_index: usize },
-    StepTimedOut { thread_name: String, step_index: usize },
-    ThreadFailed { thread_name: String, error: String },
-}
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
 enum StepStatus {
     Pending,
     Running,
     Completed,
-    TimedOut,
-    Failed,
 }
 
-#[allow(dead_code)]
 struct StepCoordinator {
-    num_threads: usize,
-    num_steps: usize,
     step_status: Arc<Mutex<Vec<Vec<StepStatus>>>>, // [step_index][thread_index] 
     thread_names: Vec<String>,
-    message_tx: mpsc::Sender<CoordinatorMessage>,
-    message_rx: Arc<Mutex<mpsc::Receiver<CoordinatorMessage>>>,
     step_waiters: Arc<(Mutex<Vec<bool>>, Condvar)>, // One bool per step for coordination
 }
 
@@ -213,8 +210,6 @@ struct RProcessManager {
     process: Option<std::process::Child>,
     stdin: Option<std::process::ChildStdin>,
     last_health_check: Instant,
-    #[allow(dead_code)]
-    process_id: Option<u32>,
 }
 
 impl RProcessManager {
@@ -283,7 +278,6 @@ impl RProcessManager {
         
         debug_print("R process started successfully");
         
-        let process_id = process.id();
         let stdin = process.stdin.take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get R stdin"))?;
         
@@ -291,7 +285,6 @@ impl RProcessManager {
             process: Some(process),
             stdin: Some(stdin),
             last_health_check: Instant::now(),
-            process_id: Some(process_id),
         })
     }
     
@@ -355,12 +348,33 @@ impl RProcessManager {
         Ok(())
     }
     
-    #[allow(dead_code)]
-    fn kill_process(&mut self) -> Result<()> {
-        debug_print("Attempting to kill R process due to timeout");
+    
+    fn debug_pause_after_command(&self) {
+        if std::env::var("RV_TEST_DEBUG").is_ok() {
+            debug_print("Pausing briefly to let R process command");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    
+    fn try_capture_output(&self) -> Result<(String, Vec<u8>)> {
+        debug_print("Attempting to capture R output without shutdown");
+        
+        if let Some(_process) = &self.process {
+            // We can't capture output from a running process safely without consuming it
+            // This is a non-destructive check - just return empty output with a note  
+            debug_print("R process is still running, cannot capture output safely");
+            Ok(("R process still running - output not available".to_string(), Vec::new()))
+        } else {
+            debug_print("No R process available for output capture");
+            Ok(("No R process available".to_string(), Vec::new()))
+        }
+    }
+    
+    fn force_shutdown(&mut self) -> Result<()> {
+        debug_print("Forcing R process shutdown due to timeout");
         
         if let Some(mut process) = self.process.take() {
-            // Try to kill the process
+            // Try to kill the process forcefully
             match process.kill() {
                 Ok(()) => {
                     debug_print("Successfully sent kill signal to R process");
@@ -381,18 +395,10 @@ impl RProcessManager {
             }
         }
         
-        // Clean up stdin
+        // Clean up resources
         self.stdin = None;
-        self.process_id = None;
         
         Ok(())
-    }
-    
-    fn debug_pause_after_command(&self) {
-        if std::env::var("RV_TEST_DEBUG").is_ok() {
-            debug_print("Pausing briefly to let R process command");
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
     }
     
     fn shutdown_and_capture_output(mut self) -> Result<(String, Vec<u8>)> {
@@ -428,10 +434,87 @@ impl RProcessManager {
     }
 }
 
+impl Drop for RProcessManager {
+    fn drop(&mut self) {
+        debug_print("RProcessManager being dropped - ensuring R process cleanup");
+        
+        // Attempt graceful shutdown first
+        if let Some(mut process) = self.process.take() {
+            // Check if process is still running
+            match process.try_wait() {
+                Ok(Some(status)) => {
+                    debug_print(&format!("R process already exited with status: {:?}", status));
+                }
+                Ok(None) => {
+                    debug_print("R process still running, attempting graceful shutdown");
+                    
+                    // Try to send quit command if stdin is still available
+                    if let Some(mut stdin) = self.stdin.take() {
+                        if writeln!(stdin, "quit(save = 'no')").is_ok() {
+                            let _ = stdin.flush();
+                            debug_print("Sent quit command to R process");
+                        }
+                        drop(stdin);
+                    }
+                    
+                    // Wait a reasonable time for graceful shutdown
+                    let shutdown_timeout = std::time::Duration::from_secs(2);
+                    let start = std::time::Instant::now();
+                    
+                    while start.elapsed() < shutdown_timeout {
+                        match process.try_wait() {
+                            Ok(Some(status)) => {
+                                debug_print(&format!("R process gracefully exited with status: {:?}", status));
+                                return;
+                            }
+                            Ok(None) => {
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                continue;
+                            }
+                            Err(e) => {
+                                debug_print(&format!("Error checking R process status during shutdown: {}", e));
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If graceful shutdown failed, force kill
+                    debug_print("Graceful shutdown timed out, forcing R process termination");
+                    match process.kill() {
+                        Ok(()) => {
+                            debug_print("Successfully sent kill signal to R process");
+                            // Wait for the process to actually die
+                            match process.wait() {
+                                Ok(status) => {
+                                    debug_print(&format!("R process terminated with status: {:?}", status));
+                                }
+                                Err(e) => {
+                                    debug_print(&format!("Error waiting for R process termination: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug_print(&format!("Failed to kill R process: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug_print(&format!("Error checking R process status: {}", e));
+                }
+            }
+        }
+        
+        // Clean up stdin if it wasn't already taken
+        if self.stdin.is_some() {
+            debug_print("Cleaning up R process stdin");
+            self.stdin = None;
+        }
+    }
+}
+
 impl StepCoordinator {
     fn new(thread_names: Vec<String>, num_steps: usize) -> Self {
         let num_threads = thread_names.len();
-        let (message_tx, message_rx) = mpsc::channel();
         
         // Initialize step status - all steps start as Pending for all threads
         let step_status = Arc::new(Mutex::new(
@@ -443,20 +526,12 @@ impl StepCoordinator {
         let step_waiters = Arc::new((Mutex::new(vec![false; num_steps]), Condvar::new()));
         
         Self {
-            num_threads,
-            num_steps,
             step_status,
             thread_names,
-            message_tx,
-            message_rx: Arc::new(Mutex::new(message_rx)),
             step_waiters,
         }
     }
     
-    #[allow(dead_code)]
-    fn get_sender(&self) -> mpsc::Sender<CoordinatorMessage> {
-        self.message_tx.clone()
-    }
     
     fn get_thread_index(&self, thread_name: &str) -> Option<usize> {
         self.thread_names.iter().position(|name| name == thread_name)
@@ -477,7 +552,7 @@ impl StepCoordinator {
         // Check if all threads are ready for this step
         let all_ready = {
             let status = self.step_status.lock().unwrap();
-            status[step_index].iter().all(|s| matches!(s, StepStatus::Running | StepStatus::Completed | StepStatus::TimedOut | StepStatus::Failed))
+            status[step_index].iter().all(|s| matches!(s, StepStatus::Running | StepStatus::Completed))
         };
         
         if all_ready {
@@ -534,49 +609,12 @@ impl StepCoordinator {
             status[step_index][thread_index] = StepStatus::Completed;
         }
         
-        // Send completion message
-        self.message_tx.send(CoordinatorMessage::StepCompleted { 
-            thread_name: thread_name.to_string(), 
-            step_index 
-        }).map_err(|e| anyhow::anyhow!("Failed to send completion message: {}", e))?;
+        // Step completion recorded in step_status above
         
         Ok(())
     }
     
-    #[allow(dead_code)]
-    fn notify_step_timeout(&self, step_index: usize, thread_name: &str) -> Result<()> {
-        let thread_index = self.get_thread_index(thread_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown thread: {}", thread_name))?;
-            
-        debug_print(&format!("Thread {} timed out on step {}", thread_name, step_index));
-        
-        {
-            let mut status = self.step_status.lock().unwrap();
-            status[step_index][thread_index] = StepStatus::TimedOut;
-        }
-        
-        // Send timeout message
-        self.message_tx.send(CoordinatorMessage::StepTimedOut { 
-            thread_name: thread_name.to_string(), 
-            step_index 
-        }).map_err(|e| anyhow::anyhow!("Failed to send timeout message: {}", e))?;
-        
-        // Wake up anyone waiting for this step
-        let (lock, cvar) = &*self.step_waiters;
-        let mut step_ready = lock.lock().unwrap();
-        step_ready[step_index] = true;
-        cvar.notify_all();
-        
-        Ok(())
-    }
     
-    #[allow(dead_code)]
-    fn should_continue(&self, step_index: usize) -> bool {
-        let status = self.step_status.lock().unwrap();
-        // Continue if no threads have failed and at least one thread hasn't timed out
-        !status[step_index].iter().any(|s| matches!(s, StepStatus::Failed)) &&
-        status[step_index].iter().any(|s| matches!(s, StepStatus::Running | StepStatus::Completed))
-    }
 }
 
 fn load_r_script(script_name: &str) -> Result<String> {
