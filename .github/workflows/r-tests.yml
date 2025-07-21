@@ -2,9 +2,15 @@ name: R Integration Tests
 
 on:
   push:
-    branches: [ r-tests ]
+    branches:
+      - main 
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
   pull_request:
-    branches: [ r-tests ]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
 
 jobs:
   test:
