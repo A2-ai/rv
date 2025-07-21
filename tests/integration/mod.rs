@@ -1,14 +1,17 @@
 use serde::Deserialize;
 
-pub mod process_manager;
-pub mod coordinator;
 pub mod assertions;
 pub mod commands;
+pub mod coordinator;
+pub mod process_manager;
 
+pub use assertions::{check_assertion, filter_timing_from_output};
+pub use commands::{
+    execute_r_command_with_timeout, execute_rv_command, execute_with_timeout, load_r_script,
+    parse_r_step_outputs,
+};
+pub use coordinator::StepCoordinator;
 pub use process_manager::RProcessManager;
-pub use coordinator::{StepCoordinator, StepStatus};
-pub use assertions::{check_assertion, check_insta_snapshot};
-pub use commands::{execute_r_command_with_timeout, execute_with_timeout, execute_rv_command, load_r_script, parse_r_step_outputs};
 
 // Workflow data structures
 #[derive(Debug, Deserialize, Clone)]
