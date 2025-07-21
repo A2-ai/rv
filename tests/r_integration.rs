@@ -14,9 +14,7 @@ fn debug_print(msg: &str) {
     }
 }
 
-fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
-    let workflow: WorkflowTest = serde_yaml::from_str(workflow_yaml)?;
-
+fn setup_test_environment(workflow: &WorkflowTest) -> Result<(TempDir, std::path::PathBuf, std::path::PathBuf)> {
     let temp_dir = TempDir::new()?;
     let project_path = temp_dir.path();
     let test_dir = project_path.join(&workflow.project_dir);
@@ -28,7 +26,16 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
     let config_path = std::env::current_dir()?
         .join("tests/input")
         .join(&workflow.config);
+    
+    Ok((temp_dir, test_dir, config_path))
+}
 
+fn prepare_thread_coordination(workflow: &WorkflowTest) -> Result<(
+    HashMap<String, Vec<usize>>,
+    Arc<StepCoordinator>,
+    HashMap<String, std::sync::mpsc::Sender<ThreadOutput>>,
+    HashMap<String, std::sync::mpsc::Receiver<ThreadOutput>>
+)> {
     // Count unique threads to set up coordination
     let mut thread_steps: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, step) in workflow.test.steps.iter().enumerate() {
@@ -50,15 +57,46 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             ((thread_name.clone(), tx), (thread_name.clone(), rx))
         })
         .unzip();
+        
+    Ok((thread_steps, coordinator, tx_map, rx_map))
+}
 
+fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
+    let workflow: WorkflowTest = serde_yaml::from_str(workflow_yaml)?;
+
+    let (_temp_dir, test_dir, config_path) = setup_test_environment(&workflow)?;
+    let (thread_steps, coordinator, tx_map, rx_map) = prepare_thread_coordination(&workflow)?;
+
+    let all_thread_outputs = execute_workflow_threads(
+        &workflow,
+        &test_dir,
+        &config_path,
+        thread_steps,
+        coordinator,
+        tx_map,
+        rx_map,
+    )?;
+
+    validate_and_report_results(&workflow, all_thread_outputs)
+}
+
+fn execute_workflow_threads(
+    workflow: &WorkflowTest,
+    test_dir: &std::path::Path,
+    config_path: &std::path::Path,
+    thread_steps: HashMap<String, Vec<usize>>,
+    coordinator: Arc<StepCoordinator>,
+    tx_map: HashMap<String, std::sync::mpsc::Sender<ThreadOutput>>,
+    rx_map: HashMap<String, std::sync::mpsc::Receiver<ThreadOutput>>,
+) -> Result<Vec<ThreadOutput>> {
     // Spawn threads
     let mut thread_handles = HashMap::new();
 
     for (thread_name, step_indices) in thread_steps {
         let thread_coordinator = coordinator.clone();
         let thread_steps = workflow.test.steps.clone();
-        let thread_test_dir = test_dir.clone();
-        let thread_config_path = config_path.clone();
+        let thread_test_dir = test_dir.to_path_buf();
+        let thread_config_path = config_path.to_path_buf();
         let thread_tx = tx_map[&thread_name].clone();
         let thread_name_clone = thread_name.clone();
 
@@ -361,6 +399,14 @@ fn run_workflow_test(workflow_yaml: &str) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("Failed to receive output from {}: {}", thread_name, e))?;
         all_thread_outputs.push(thread_output);
     }
+    
+    Ok(all_thread_outputs)
+}
+
+fn validate_and_report_results(
+    workflow: &WorkflowTest,
+    all_thread_outputs: Vec<ThreadOutput>,
+) -> Result<()> {
 
     // Now check all assertions after we have all outputs
     let mut assertion_failures = Vec::new();
