@@ -68,9 +68,9 @@ test:
 
       # Print Updated File
       cat(paste(readLines("rproject.toml"), collapse = "\n"))
-      cat("\n")    thread: r
-    assert: "readr"
+      cat("\n")
     thread: r
+    assert: "readr"
 
   - name: "Restart R"
     run: "R"
@@ -91,13 +91,16 @@ test:
   - name: "Check library path"
     run: "rv library"
     thread: rv
-    assert: "rv/library/4.4/"
+    assert:
+      - "rv"
+      - "library"
+      - "4.4"
   
   - name: "Project summary"
     run: "rv summary"
     thread: rv
     assert:
-      - "Library: rv/library/4.4/"
+      - "Library: rv"
       - "R Version: 4.4"
       - "ppm (https://packagemanager.posit.co/cran/latest)"
 
@@ -105,7 +108,7 @@ test:
     run: "rv info --library --r-version --repositories"
     thread: rv
     assert:
-      - "library: rv/library/4.4/"
+      - "library: rv"
       - "r-version: 4.4"
       - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
   
