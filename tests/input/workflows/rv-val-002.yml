@@ -61,9 +61,12 @@ test:
       cat("Created files:", paste(list.files("."), collapse=", "), "\n")
       cat("renv.lock exists:", file.exists("renv.lock"), "\n")
     thread: r
-    assert:
-      contains:
-        - "renv.lock exists: TRUE"
+    assert: "renv.lock exists: TRUE"
+
+  - name: "Restart R"
+    run: "R"
+    restart: true
+    thread: r
 
   - name: "Migrate renv project using rv"  
     run: "rv migrate renv"

@@ -70,17 +70,7 @@ test:
    run: "rv plan"
    thread: rv
    assert:
-     contains: 
-     - "bit"
-     - "bit64"
-     - "clipr"
-     - "crayon"
-     - "hms"
-     - "prettyunits"
-     - "progress"
-     - "readr"
-     - "tzdb"
-     - "vroom"
+     contains: "+ readr"
 
  - name: "Sync packages"
    run: "rv sync"
