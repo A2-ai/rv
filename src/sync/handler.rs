@@ -639,19 +639,7 @@ impl<'a> SyncHandler<'a> {
                     if out.is_dir() {
                         fs::remove_dir_all(&out)?;
                     }
-                    match fs::rename(&path, &out) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            log::warn!(
-                                "Could not rename from {} to {}: {}. Falling back to copying files",
-                                path.display(),
-                                out.display(),
-                                e
-                            );
-                            fs::copy(&path, &out)?;
-                            fs::remove_dir_all(&out)?;
-                        }
-                    }
+                    fs::rename(&path, &out)?;
                 }
             }
 

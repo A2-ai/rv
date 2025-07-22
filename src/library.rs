@@ -6,7 +6,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::consts::{
-    DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME,
+    DESCRIPTION_FILENAME, LIBRARY_METADATA_FILENAME, LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME, STAGING_DIR_NAME,
 };
 use crate::fs::mtime_recursive;
 use crate::lockfile::Source;
@@ -151,6 +151,11 @@ impl Library {
             // the package name will be the name of the folder
             let path = entry.path();
             let name = path.file_name().unwrap().to_str().unwrap();
+
+            // If the staging dir exists in the library, we want to ignore it
+            if name == STAGING_DIR_NAME {
+                continue;
+            }
 
             let desc_path = path.join(DESCRIPTION_FILENAME);
             if !desc_path.exists() {
