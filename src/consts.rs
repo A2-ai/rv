@@ -62,8 +62,8 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
     "survival",
 ];
 
-pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({
-	if (!nzchar(Sys.which("rv"))) {
+pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
+	if (!nzchar(Sys.which("%rv command%"))) {
 		warning(
 			"rv is not installed! Install rv, then restart your R session",
 			call. = FALSE
@@ -71,14 +71,14 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({
 		return()
 	}
 	rv_info <- system2(
-		"rv",
+		"%rv command%",
 		c("info", "--library", "--r-version", "--repositories"),
 		stdout = TRUE
 	)
 	if (!is.null(attr(rv_info, "status"))) {
 		# if system2 fails it'll add a status attribute with the error code
-		stop("failed to run rv info, check your console for messages")
-		# return()
+		warning("failed to run rv info, check your console for messages")
+		return()
 	}
 	get_val <- function(prefix) {
 		line <- grep(paste0("^", prefix, ":"), rv_info, value = TRUE)
