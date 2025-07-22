@@ -23,7 +23,10 @@ test:
  - name: "Install packages"
    run: "rv add dplyr ggplot2 tidyr"
    thread: rv
-   insta: snapshots/rv-val-001-install.snap
+   assert: 
+    - "+ dplyr (1.1.4, binary from https://packagemanager.posit.co/cran/latest)"
+    - "+ ggplot2 (3.5.2, binary from https://packagemanager.posit.co/cran/latest)"
+    - "+ tidyr (1.3.1, binary from https://packagemanager.posit.co/cran/latest)"
 
  - name: "Manually add package readr to .toml"
    run: |
