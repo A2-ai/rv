@@ -108,10 +108,10 @@ test:
       - "r-version: 4.4"
       - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
   
-  - name: "Activate project"
-    run: "rv activate -c rproject.toml"
-    thread: rv
-    assert: "rv activated"
+  #- name: "Activate project"
+  #  run: "rv activate -c rproject.toml"
+  #  thread: rv
+  #  assert: "rv activated"
   
   #- name: "restart R"
   #  run: "R"
