@@ -2,133 +2,131 @@ project-dir: rv-val-001
 config: rv-val.toml
 
 test:
- steps:
- - name: "Start R"
-   run: "R"
-   thread: r
+  steps:
+  - name: "Start R"
+    run: "R"
+    thread: r
 
- - name: "Create Empty Rprofile"
-   run: |
-     file.create('.Rprofile')
-     writeLines('options("repos" = c("PPM" = "https://packagemanager.posit.co/cran/latest"))', ".Rprofile")
-   thread: r
+  - name: "Create Empty Rprofile"
+    run: |
+      file.create('.Rprofile')
+      writeLines('options("repos" = c("PPM" = "https://packagemanager.posit.co/cran/latest"))', ".Rprofile")
+    thread: r
 
- - name: "Initialize project using rv"
-   run: "rv init"
-   thread: rv
-   assert: 
-     contains: 
-      - "rv project successfully initialized at ."
+  - name: "Initialize project using rv"
+    run: "rv init"
+    thread: rv
+    assert: "rv project successfully initialized at ."
 
- - name: "Install packages"
-   run: "rv add dplyr ggplot2 tidyr"
-   thread: rv
-   assert: 
-    - "+ dplyr (1.1.4, binary from https://packagemanager.posit.co/cran/latest)"
-    - "+ ggplot2 (3.5.2, binary from https://packagemanager.posit.co/cran/latest)"
-    - "+ tidyr (1.3.1, binary from https://packagemanager.posit.co/cran/latest)"
+  - name: "restart R"
+    run: "R"
+    restart: true
+    thread: r
 
- - name: "Manually add package readr to .toml"
-   run: |
-     # Read the TOML file
-     toml_content <- readLines("rproject.toml")
-     
-     # Find the dependencies section
-     dep_start <- grep("^dependencies = \\[$", toml_content)
-     dep_end <- grep("^\\]$", toml_content)
-     
-     # Find the correct closing bracket for dependencies
-     # (the first ] after the dependencies = [ line)
-     dep_close <- dep_end[dep_end > dep_start][1]
-     
-     # Check if dependencies array is empty or has items
-     if (dep_close == dep_start + 1) {
-         # Empty dependencies array, add readr as first item
-         new_content <- c(
-             toml_content[1:dep_start],
-             '\t"readr",',
-             toml_content[dep_close:length(toml_content)]
-         )
-     } else {
-         # Has existing dependencies, add readr to the end
-         new_content <- c(
-             toml_content[1:(dep_close - 1)],
-             '\t"readr",',
-             toml_content[dep_close:length(toml_content)]
-         )
-     }
-     
-     # Write back to file
-     writeLines(new_content, "rproject.toml")
-     
-     # Print Updated File
-     cat(paste(readLines("rproject.toml"), collapse = "\n"))
-     cat("\n")
-   thread: r
-   assert:
-     contains: '"readr",'
+  - name: "Install packages"
+    run: "rv add dplyr ggplot2 tidyr"
+    thread: rv
+    assert: 
+     - "+ dplyr (1.1.4, binary from https://packagemanager.posit.co/cran/latest)"
+     - "+ ggplot2 (3.5.2, binary from https://packagemanager.posit.co/cran/latest)"
+     - "+ tidyr (1.3.1, binary from https://packagemanager.posit.co/cran/latest)"
+  
+  - name: "Manually add package readr to .toml"
+    run: |
+      # Read the TOML file
+      toml_content <- readLines("rproject.toml")
+       
+      # Find the dependencies section
+      dep_start <- grep("^dependencies = \\[$", toml_content)
+      dep_end <- grep("^\\]$", toml_content)
+      
+      # Find the correct closing bracket for dependencies
+      # (the first ] after the dependencies = [ line)
+      dep_close <- dep_end[dep_end > dep_start][1]
+      
+      # Check if dependencies array is empty or has items
+      if (dep_close == dep_start + 1) {
+          # Empty dependencies array, add readr as first item
+          new_content <- c(
+              toml_content[1:dep_start],
+              '\t"readr",',
+              toml_content[dep_close:length(toml_content)]
+          )
+      } else {
+          # Has existing dependencies, add readr to the end
+          new_content <- c(
+              toml_content[1:(dep_close - 1)],
+              '\t"readr",',
+              toml_content[dep_close:length(toml_content)]
+          )
+      }
+      
+      # Write back to file
+      writeLines(new_content, "rproject.toml")
+ 
+      # Print Updated File
+      cat(paste(readLines("rproject.toml"), collapse = "\n"))
+      cat("\n")
+    thread: r
+    assert: '"readr"'
 
+  - name: "Preview Packages"
+    run: "rv plan"
+    thread: rv
+    assert: "+ readr"
 
- - name: "Preview Packages"
-   run: "rv plan"
-   thread: rv
-   assert:
-     contains: "+ readr"
+  - name: "Sync packages"
+    run: "rv sync"
+    thread: rv
+    assert:
+      contains: "+ readr"
 
- - name: "Sync packages"
-   run: "rv sync"
-   thread: rv
-   assert:
-     contains: "+ readr"
+  - name: "Check library path"
+    run: "rv library"
+    thread: rv
+    assert: "rv/library/4.4/"
+  
+  - name: "Project summary"
+    run: "rv summary"
+    thread: rv
+    assert:
+      - "Library: rv/library/4.4/"
+      - "R Version: 4.4"
+      - "ppm (https://packagemanager.posit.co/cran/latest)"
 
- - name: "Check library path"
-   run: "rv library"
-   thread: rv
-   assert:
-     contains: "rv/library/4.4/arm64"
+  - name: "Project Info"
+    run: "rv info --library --r-version --repositories"
+    thread: rv
+    assert:
+      - "library: rv/library/4.4/"
+      - "r-version: 4.4"
+      - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
+  
+  - name: "Activate project"
+    run: "rv activate -c ./rproject.toml"
+    thread: rv
+    assert: "rv activated"
 
- - name: "Project summary"
-   run: "rv summary"
-   thread: rv
-   assert:
-     contains:
-       - "Library: rv/library/4.4/arm64"
-       - "R Version: 4.4"
-       - "ppm (https://packagemanager.posit.co/cran/latest)"
+  - name: "Load Installed packages"
+    run: |
+      .libPaths()
+      library(dplyr)
+      cat("dplyr version:", as.character(packageVersion("dplyr")))
+      library(ggplot2)
+      cat("ggplot2 version:", as.character(packageVersion("ggplot2")))
+      library(tidyr)
+      cat("tidyr version:", as.character(packageVersion("tidyr")))
+      library(readr)
+      cat("readr version:", as.character(packageVersion("readr")))
 
- - name: "Project Info"
-   run: "rv info --library --r-version --repositories"
-   thread: rv
-   assert:
-     contains:
-       - "library: rv/library/4.4/arm64"
-       - "r-version: 4.4"
-       - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
-
- - name: "Activate project"
-   run: "rv activate -c ./rproject.toml"
-   thread: rv
-   assert:
-     contains: "rv activated"
-
- - name: "Load Installed packages"
-   run: |
-     .libPaths()
-     library(dplyr)
-     library(ggplot2)
-     library(tidyr)
-     library(readr)
-   thread: r
-   assert:
-     contains: 
-       - "library"
-       - "dplyr"
-       - "ggplot2"
-       - "tidyr"
-       - "readr"
-
- - name: "Deactivate project"
-   run: "rv deactivate -c ./rproject.toml"
-   thread: rv
-   assert:
-     contains: "rv deactivated"
+    thread: r
+    assert:
+      - "dplyr version: 1.1.4"
+      - "ggplot2 version: 3.5.2"
+      - "tidyr version: 1.3.1"
+      - "readr version: 2.1.5"
+  
+  - name: "Deactivate project"
+    run: "rv deactivate -c ./rproject.toml"
+    thread: rv
+    assert: "rv deactivated"
