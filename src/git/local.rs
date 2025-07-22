@@ -126,8 +126,20 @@ impl GitRepository {
                 GitReference::Branch(branch) => {
                     self.checkout_branch(branch)?;
                 }
-                GitReference::Unknown("HEAD") => {
-                    self.checkout_head()?;
+                GitReference::Unknown(ref_name) => {
+                    if *ref_name == "HEAD" {
+                        self.checkout_head()?;
+                    } else {
+                        // Check if this unknown reference corresponds to a remote branch
+                        // After fetching with Unknown, branches are available as origin/branch_name
+                        if self.rev_parse(&format!("origin/{}", ref_name)).is_ok() {
+                            self.checkout_branch(ref_name)?;
+                            // or it could be a tag?
+                        } else if let Ok(oid) = self.rev_parse(&format!("origin/tags/{}", ref_name))
+                        {
+                            self.checkout(&oid)?;
+                        }
+                    }
                 }
                 _ => (),
             }
