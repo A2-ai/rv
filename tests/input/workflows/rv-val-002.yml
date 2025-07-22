@@ -51,11 +51,17 @@ test:
         }
       }'
       
-      # Write the renv.lock file
-      writeLines(renv_lock_content, "renv.lock")
+      # Write the renv.lock file with proper file handling
+      renv_conn <- file("renv.lock", "w")
+      writeLines(renv_lock_content, renv_conn)
+      flush(renv_conn)
+      close(renv_conn)
       
-      # Create basic .Rprofile for renv
-      writeLines("source(\"renv/activate.R\")", ".Rprofile")
+      # Create basic .Rprofile for renv with proper file handling
+      rprofile_conn <- file(".Rprofile", "w")
+      writeLines("source(\"renv/activate.R\")", rprofile_conn)
+      flush(rprofile_conn)
+      close(rprofile_conn)
       
       # Verify files were created
       cat("Created files:", paste(list.files("."), collapse=", "), "\n")
@@ -63,14 +69,7 @@ test:
     thread: r
     assert: "renv.lock exists: TRUE"
 
-  - name: "Restart R"
-    run: "R"
-    restart: true
-    thread: r
-
   - name: "Migrate renv project using rv"  
     run: "rv migrate renv"
     thread: rv
-    assert: 
-      contains: 
-       - "renv.lock was successfully migrated to rproject.toml" 
+    assert: "renv.lock was successfully migrated to rproject.toml" 

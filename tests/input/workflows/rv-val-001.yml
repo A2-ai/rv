@@ -10,7 +10,10 @@ test:
   - name: "Create Empty Rprofile"
     run: |
       file.create('.Rprofile')
-      writeLines('options("repos" = c("PPM" = "https://packagemanager.posit.co/cran/latest"))', ".Rprofile")
+      rprofile_conn <- file(".Rprofile", "w")
+      writeLines('options("repos" = c("PPM" = "https://packagemanager.posit.co/cran/latest"))', rprofile_conn)
+      flush(rprofile_conn)
+      close(rprofile_conn)
     thread: r
 
   - name: "Initialize project using rv"
@@ -61,8 +64,11 @@ test:
           )
       }
       
-      # Write back to file
-      writeLines(new_content, "rproject.toml")
+      # Write back to file with proper file handling
+      toml_conn <- file("rproject.toml", "w")
+      writeLines(new_content, toml_conn)
+      flush(toml_conn)
+      close(toml_conn)
  
       # Print Updated File
       cat(paste(readLines("rproject.toml"), collapse = "\n"))

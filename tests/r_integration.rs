@@ -14,7 +14,9 @@ fn debug_print(msg: &str) {
     }
 }
 
-fn setup_test_environment(workflow: &WorkflowTest) -> Result<(TempDir, std::path::PathBuf, std::path::PathBuf)> {
+fn setup_test_environment(
+    workflow: &WorkflowTest,
+) -> Result<(TempDir, std::path::PathBuf, std::path::PathBuf)> {
     let temp_dir = TempDir::new()?;
     let project_path = temp_dir.path();
     let test_dir = project_path.join(&workflow.project_dir);
@@ -26,15 +28,17 @@ fn setup_test_environment(workflow: &WorkflowTest) -> Result<(TempDir, std::path
     let config_path = std::env::current_dir()?
         .join("tests/input")
         .join(&workflow.config);
-    
+
     Ok((temp_dir, test_dir, config_path))
 }
 
-fn prepare_thread_coordination(workflow: &WorkflowTest) -> Result<(
+fn prepare_thread_coordination(
+    workflow: &WorkflowTest,
+) -> Result<(
     HashMap<String, Vec<usize>>,
     Arc<StepCoordinator>,
     HashMap<String, std::sync::mpsc::Sender<ThreadOutput>>,
-    HashMap<String, std::sync::mpsc::Receiver<ThreadOutput>>
+    HashMap<String, std::sync::mpsc::Receiver<ThreadOutput>>,
 )> {
     // Count unique threads to set up coordination
     let mut thread_steps: HashMap<String, Vec<usize>> = HashMap::new();
@@ -57,7 +61,7 @@ fn prepare_thread_coordination(workflow: &WorkflowTest) -> Result<(
             ((thread_name.clone(), tx), (thread_name.clone(), rx))
         })
         .unzip();
-        
+
     Ok((thread_steps, coordinator, tx_map, rx_map))
 }
 
@@ -104,7 +108,7 @@ fn execute_workflow_threads(
             let mut step_results = Vec::new();
             let mut r_manager: Option<RProcessManager> = None;
             let mut accumulated_r_output = String::new();
-            
+
             // Execute thread logic and capture any errors
             let thread_result = (|| -> Result<()> {
                 // Process all steps in order, coordinating with other threads
@@ -112,51 +116,51 @@ fn execute_workflow_threads(
                     // Wait for this step to start (simple coordination without timeout)
                     thread_coordinator.wait_for_step_start(step_idx, &thread_name_clone, None)?;
 
-                // Only execute if this step belongs to our thread
-                if !step_indices.contains(&step_idx) {
-                    // Even if we don't execute, we must notify completion
-                    thread_coordinator
-                        .notify_step_completed(step_idx, &thread_name_clone)
-                        .unwrap_or_else(|e| {
-                            debug_print(&format!("Failed to notify completion: {}", e))
-                        });
-                    continue;
-                }
-
-                let step = &thread_steps[step_idx];
-
-                println!("🟡 {}: {}", thread_name_clone.to_uppercase(), step.name);
-                println!("   └─ Running: {}", step.run);
-                if let Some(timeout) = step.timeout {
-                    println!("   └─ Timeout: {}s", timeout);
-                }
-
-                let output = match thread_name_clone.as_str() {
-                    "rv" => {
-                        // Handle rv commands with original timeout mechanism
-                        execute_with_timeout(&step.name, step.timeout, || {
-                            let (stdout, stderr) = execute_rv_command(
-                                &step.run,
-                                &thread_test_dir,
-                                &thread_config_path,
-                            )?;
-                            if !stdout.trim().is_empty() {
-                                println!("   ├─ Output: {}", stdout.trim());
-                            }
-                            if !stderr.trim().is_empty() {
-                                println!("   ├─ Stderr: {}", stderr.trim());
-                            }
-                            Ok((stdout, stderr))
-                        })?
+                    // Only execute if this step belongs to our thread
+                    if !step_indices.contains(&step_idx) {
+                        // Even if we don't execute, we must notify completion
+                        thread_coordinator
+                            .notify_step_completed(step_idx, &thread_name_clone)
+                            .unwrap_or_else(|e| {
+                                debug_print(&format!("Failed to notify completion: {}", e))
+                            });
+                        continue;
                     }
-                    "r" => {
-                        // Handle R commands - wrap strings in tuples for consistency
-                        let r_output = if step.run == "R" {
-                            // Check if this is a restart
-                            if step.restart {
-                                if let Some(manager) = r_manager.take() {
-                                    // Capture output from previous session
-                                    let (prev_stdout, prev_stderr) =
+
+                    let step = &thread_steps[step_idx];
+
+                    println!("🟡 {}: {}", thread_name_clone.to_uppercase(), step.name);
+                    println!("   └─ Running: {}", step.run);
+                    if let Some(timeout) = step.timeout {
+                        println!("   └─ Timeout: {}s", timeout);
+                    }
+
+                    let output = match thread_name_clone.as_str() {
+                        "rv" => {
+                            // Handle rv commands with original timeout mechanism
+                            execute_with_timeout(&step.name, step.timeout, || {
+                                let (stdout, stderr) = execute_rv_command(
+                                    &step.run,
+                                    &thread_test_dir,
+                                    &thread_config_path,
+                                )?;
+                                if !stdout.trim().is_empty() {
+                                    println!("   ├─ Output: {}", stdout.trim());
+                                }
+                                if !stderr.trim().is_empty() {
+                                    println!("   ├─ Stderr: {}", stderr.trim());
+                                }
+                                Ok((stdout, stderr))
+                            })?
+                        }
+                        "r" => {
+                            // Handle R commands - wrap strings in tuples for consistency
+                            let r_output = if step.run == "R" {
+                                // Check if this is a restart
+                                if step.restart {
+                                    if let Some(manager) = r_manager.take() {
+                                        // Capture output from previous session
+                                        let (prev_stdout, prev_stderr) =
                                         manager.shutdown_and_capture_output().map_err(|e| {
                                             anyhow::anyhow!(
                                                 "Failed to shutdown R process during restart: {}",
@@ -164,221 +168,225 @@ fn execute_workflow_threads(
                                             )
                                         })?;
 
-                                    // Accumulate the output from the previous session
-                                    accumulated_r_output.push_str(&prev_stdout);
+                                        // Accumulate the output from the previous session
+                                        accumulated_r_output.push_str(&prev_stdout);
 
-                                    if !prev_stderr.is_empty() {
+                                        if !prev_stderr.is_empty() {
+                                            accumulated_r_output
+                                                .push_str("\n# === STDERR OUTPUT ===\n");
+                                            accumulated_r_output
+                                                .push_str(&String::from_utf8_lossy(&prev_stderr));
+                                        }
+
                                         accumulated_r_output
-                                            .push_str("\n# === STDERR OUTPUT ===\n");
-                                        accumulated_r_output
-                                            .push_str(&String::from_utf8_lossy(&prev_stderr));
+                                            .push_str("\n# === R PROCESS RESTARTED ===\n");
                                     }
-
-                                    accumulated_r_output
-                                        .push_str("\n# === R PROCESS RESTARTED ===\n");
                                 }
-                            }
 
-                            // Start (or restart) R process
-                            r_manager =
-                                Some(RProcessManager::start_r_process(&thread_test_dir).map_err(
-                                    |e| {
-                                        anyhow::anyhow!(
-                                            "Failed to start R process for step '{}': {}",
-                                            step.name,
-                                            e
-                                        )
-                                    },
-                                )?);
-
-                            // If this is a restart, add a step end marker
-                            if step.restart {
-                                if let Some(manager) = &mut r_manager {
-                                    manager
-                                        .send_command(&format!(
-                                            "cat('# STEP_END: {}\\n')",
-                                            step.name
-                                        ))
-                                        .map_err(|e| {
+                                // Start (or restart) R process
+                                r_manager = Some(
+                                    RProcessManager::start_r_process(&thread_test_dir).map_err(
+                                        |e| {
                                             anyhow::anyhow!(
-                                                "Failed to write restart step end marker: {}",
+                                                "Failed to start R process for step '{}': {}",
+                                                step.name,
                                                 e
                                             )
-                                        })?;
-                                }
-                                "R process restarted".to_string()
-                            } else {
-                                "R process started".to_string()
-                            }
-                        } else {
-                            // Execute R script or command with timeout
-                            execute_r_command_with_timeout(
-                                &step.name,
-                                step.timeout,
-                                &mut r_manager,
-                                |manager| {
-                                    // Check if R process is still alive
-                                    if !manager.is_alive()? {
-                                        debug_print(&format!(
-                                            "R process died during step '{}'",
-                                            step.name
-                                        ));
-                                        return Err(anyhow::anyhow!(
-                                            "R process died unexpectedly during step '{}'",
-                                            step.name
-                                        ));
-                                    }
+                                        },
+                                    )?,
+                                );
 
-                                    // Debug: Pause to let R process commands
-                                    manager.debug_pause_after_command();
-
-                                    // First, add a marker for the startup step if this is the first command
-                                    let r_steps_so_far = step_results.len();
-
-                                    if r_steps_so_far == 1 {
-                                        // This is the first command after R startup, add startup marker
-                                        manager.send_command("# R startup complete").map_err(
-                                            |e| {
-                                                anyhow::anyhow!(
-                                                    "Failed to write startup comment: {}",
-                                                    e
-                                                )
-                                            },
-                                        )?;
+                                // If this is a restart, add a step end marker
+                                if step.restart {
+                                    if let Some(manager) = &mut r_manager {
                                         manager
-                                            .send_command(&format!("cat('# STEP_END: start R\\n')"))
+                                            .send_command(&format!(
+                                                "cat('# STEP_END: {}\\n')",
+                                                step.name
+                                            ))
                                             .map_err(|e| {
                                                 anyhow::anyhow!(
-                                                    "Failed to write startup marker: {}",
+                                                    "Failed to write restart step end marker: {}",
                                                     e
                                                 )
                                             })?;
                                     }
+                                    "R process restarted".to_string()
+                                } else {
+                                    "R process started".to_string()
+                                }
+                            } else {
+                                // Execute R script or command with timeout
+                                execute_r_command_with_timeout(
+                                    &step.name,
+                                    step.timeout,
+                                    &mut r_manager,
+                                    |manager| {
+                                        // Check if R process is still alive
+                                        if !manager.is_alive()? {
+                                            debug_print(&format!(
+                                                "R process died during step '{}'",
+                                                step.name
+                                            ));
+                                            return Err(anyhow::anyhow!(
+                                                "R process died unexpectedly during step '{}'",
+                                                step.name
+                                            ));
+                                        }
 
-                                    // Execute the step
-                                    if step.run.ends_with(".R") {
-                                        let script_content =
-                                            load_r_script(&step.run).map_err(|e| {
+                                        // Debug: Pause to let R process commands
+                                        manager.debug_pause_after_command();
+
+                                        // First, add a marker for the startup step if this is the first command
+                                        let r_steps_so_far = step_results.len();
+
+                                        if r_steps_so_far == 1 {
+                                            // This is the first command after R startup, add startup marker
+                                            manager.send_command("# R startup complete").map_err(
+                                                |e| {
+                                                    anyhow::anyhow!(
+                                                        "Failed to write startup comment: {}",
+                                                        e
+                                                    )
+                                                },
+                                            )?;
+                                            manager
+                                                .send_command(&format!(
+                                                    "cat('# STEP_END: start R\\n')"
+                                                ))
+                                                .map_err(|e| {
+                                                    anyhow::anyhow!(
+                                                        "Failed to write startup marker: {}",
+                                                        e
+                                                    )
+                                                })?;
+                                        }
+
+                                        // Execute the step
+                                        if step.run.ends_with(".R") {
+                                            let script_content =
+                                                load_r_script(&step.run).map_err(|e| {
+                                                    anyhow::anyhow!(
+                                                        "Failed to load R script for step '{}': {}",
+                                                        step.name,
+                                                        e
+                                                    )
+                                                })?;
+                                            manager.send_command(&script_content).map_err(|e| {
                                                 anyhow::anyhow!(
-                                                    "Failed to load R script for step '{}': {}",
+                                                    "Failed to send R script for step '{}': {}",
                                                     step.name,
                                                     e
                                                 )
                                             })?;
-                                        manager.send_command(&script_content).map_err(|e| {
-                                            anyhow::anyhow!(
-                                                "Failed to send R script for step '{}': {}",
-                                                step.name,
-                                                e
-                                            )
-                                        })?;
-                                    } else {
-                                        manager.send_command(&step.run).map_err(|e| {
-                                            anyhow::anyhow!(
-                                                "Failed to send R command for step '{}': {}",
-                                                step.name,
-                                                e
-                                            )
-                                        })?;
-                                    }
+                                        } else {
+                                            manager.send_command(&step.run).map_err(|e| {
+                                                anyhow::anyhow!(
+                                                    "Failed to send R command for step '{}': {}",
+                                                    step.name,
+                                                    e
+                                                )
+                                            })?;
+                                        }
 
-                                    // Add step end marker after the command
-                                    manager
-                                        .send_command(&format!(
-                                            "cat('# STEP_END: {}\\n')",
-                                            step.name
-                                        ))
-                                        .map_err(|e| {
-                                            anyhow::anyhow!(
-                                                "Failed to write step end marker for '{}': {}",
-                                                step.name,
-                                                e
-                                            )
-                                        })?;
+                                        // Add step end marker after the command
+                                        manager
+                                            .send_command(&format!(
+                                                "cat('# STEP_END: {}\\n')",
+                                                step.name
+                                            ))
+                                            .map_err(|e| {
+                                                anyhow::anyhow!(
+                                                    "Failed to write step end marker for '{}': {}",
+                                                    step.name,
+                                                    e
+                                                )
+                                            })?;
 
-                                    // Debug: Pause after sending commands
-                                    manager.debug_pause_after_command();
+                                        // Debug: Pause after sending commands
+                                        manager.debug_pause_after_command();
 
-                                    println!("   ├─ Command sent");
+                                        println!("   ├─ Command sent");
 
-                                    Ok("Command executed".to_string())
-                                },
-                            )?
-                        };
-                        // Wrap R output in tuple with empty stderr for consistency
-                        (r_output, String::new())
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "Unknown thread type: {}",
-                            thread_name_clone
-                        ));
-                    }
-                };
+                                        Ok("Command executed".to_string())
+                                    },
+                                )?
+                            };
+                            // Wrap R output in tuple with empty stderr for consistency
+                            (r_output, String::new())
+                        }
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "Unknown thread type: {}",
+                                thread_name_clone
+                            ));
+                        }
+                    };
 
-                // Store step result
-                let (stdout, stderr) = output;
-                let step_result = StepResult {
-                    name: step.name.clone(),
-                    step_index: step_idx,
-                    stdout,
-                    stderr,
-                };
-                step_results.push(step_result);
+                    // Store step result
+                    let (stdout, stderr) = output;
+                    let step_result = StepResult {
+                        name: step.name.clone(),
+                        step_index: step_idx,
+                        stdout,
+                        stderr,
+                    };
+                    step_results.push(step_result);
 
-                // Notify completion to coordinator
-                thread_coordinator
-                    .notify_step_completed(step_idx, &thread_name_clone)
-                    .map_err(|e| anyhow::anyhow!("Failed to notify step completion: {}", e))?;
-            }
+                    // Notify completion to coordinator
+                    thread_coordinator
+                        .notify_step_completed(step_idx, &thread_name_clone)
+                        .map_err(|e| anyhow::anyhow!("Failed to notify step completion: {}", e))?;
+                }
 
-            // Clean up R process if it exists and capture all output
-            if thread_name_clone == "r" {
-                if let Some(manager) = r_manager {
-                    let (final_stdout, final_stderr) =
-                        manager.shutdown_and_capture_output().map_err(|e| {
-                            anyhow::anyhow!(
-                                "Failed to shutdown R process for thread cleanup: {}",
-                                e
-                            )
-                        })?;
+                // Clean up R process if it exists and capture all output
+                if thread_name_clone == "r" {
+                    if let Some(manager) = r_manager {
+                        let (final_stdout, final_stderr) =
+                            manager.shutdown_and_capture_output().map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Failed to shutdown R process for thread cleanup: {}",
+                                    e
+                                )
+                            })?;
 
-                    // Combine accumulated output with final output
-                    accumulated_r_output.push_str(&final_stdout);
+                        // Combine accumulated output with final output
+                        accumulated_r_output.push_str(&final_stdout);
 
-                    if !final_stderr.is_empty() {
-                        accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
-                        accumulated_r_output.push_str(&String::from_utf8_lossy(&final_stderr));
-                    }
+                        if !final_stderr.is_empty() {
+                            accumulated_r_output.push_str("\n# === STDERR OUTPUT ===\n");
+                            accumulated_r_output.push_str(&String::from_utf8_lossy(&final_stderr));
+                        }
 
-                    // Extract R step names from our step results
-                    let r_step_names: Vec<String> =
-                        step_results.iter().map(|sr| sr.name.clone()).collect();
+                        // Extract R step names from our step results
+                        let r_step_names: Vec<String> =
+                            step_results.iter().map(|sr| sr.name.clone()).collect();
 
-                    // Parse the complete output to extract per-step outputs
-                    let parsed_outputs = parse_r_step_outputs(&accumulated_r_output, &r_step_names);
+                        // Parse the complete output to extract per-step outputs
+                        let parsed_outputs =
+                            parse_r_step_outputs(&accumulated_r_output, &r_step_names);
 
-                    // Update step results with actual outputs (assertions checked at end)
-                    for step_result in &mut step_results {
-                        if let Some(step_output) = parsed_outputs.get(&step_result.name) {
-                            step_result.stdout = step_output.clone();
+                        // Update step results with actual outputs (assertions checked at end)
+                        for step_result in &mut step_results {
+                            if let Some(step_output) = parsed_outputs.get(&step_result.name) {
+                                step_result.stdout = step_output.clone();
+                            }
                         }
                     }
                 }
-            }
 
                 Ok(())
             })();
-            
+
             // Always send results through channel, even if there were errors
             let thread_output = ThreadOutput {
                 thread_name: thread_name_clone.clone(),
                 step_results,
             };
-            
+
             // Send the output (ignore send errors since main thread may have exited)
             let _ = thread_tx.send(thread_output);
-            
+
             // Return the result of thread execution
             thread_result
         });
@@ -396,7 +404,10 @@ fn execute_workflow_threads(
                 }
             }
             Err(_) => {
-                thread_errors.push(format!("Thread '{}' panicked during execution", thread_name));
+                thread_errors.push(format!(
+                    "Thread '{}' panicked during execution",
+                    thread_name
+                ));
             }
         }
     }
@@ -410,11 +421,14 @@ fn execute_workflow_threads(
             }
             Err(e) => {
                 // Thread failed before sending output, but continue collecting others
-                debug_print(&format!("Failed to receive output from {}: {}", thread_name, e));
+                debug_print(&format!(
+                    "Failed to receive output from {}: {}",
+                    thread_name, e
+                ));
             }
         }
     }
-    
+
     // Return both outputs and any errors
     Ok((all_thread_outputs, thread_errors))
 }
@@ -424,7 +438,6 @@ fn validate_and_report_results(
     all_thread_outputs: Vec<ThreadOutput>,
     thread_errors: Vec<String>,
 ) -> Result<()> {
-
     // Now check all assertions after we have all outputs
     let mut assertion_failures = Vec::new();
 
