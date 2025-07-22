@@ -52,22 +52,21 @@ test:
       }'
       
       # Write the renv.lock file with proper file handling
-      renv_conn <- file("renv.lock", "w")
-      writeLines(renv_lock_content, renv_conn)
-      flush(renv_conn)
-      close(renv_conn)
+      writeLines(renv_lock_content, "renv.lock")
       
       # Create basic .Rprofile for renv with proper file handling
-      rprofile_conn <- file(".Rprofile", "w")
-      writeLines("source(\"renv/activate.R\")", rprofile_conn)
-      flush(rprofile_conn)
-      close(rprofile_conn)
+      writeLines("source(\"renv/activate.R\")", ".Rprofile")
       
       # Verify files were created
       cat("Created files:", paste(list.files("."), collapse=", "), "\n")
       cat("renv.lock exists:", file.exists("renv.lock"), "\n")
     thread: r
     assert: "renv.lock exists: TRUE"
+  
+  - name: "Restart R"
+    run: "R"
+    restart: true
+    thread: r
 
   - name: "Migrate renv project using rv"  
     run: "rv migrate renv"
