@@ -10,10 +10,8 @@ test:
   - name: "Create Empty Rprofile"
     run: |
       file.create('.Rprofile')
-      rprofile_conn <- file(".Rprofile", "w")
-      writeLines('options("repos" = c("PPM" = "https://packagemanager.posit.co/cran/latest"))', rprofile_conn)
-      flush(rprofile_conn)
-      close(rprofile_conn)
+      writeLines(
+      "options('repos' = c('PPM' = 'https://packagemanager.posit.co/cran/latest'))", ".Rprofile")
     thread: r
 
   - name: "Initialize project using rv"
@@ -66,7 +64,6 @@ test:
 
       writeLines(new_content, "rproject.toml")
 
-      # Print Updated File
       cat(paste(readLines("rproject.toml"), collapse = "\n"))
       cat("\n")
     thread: r
@@ -85,8 +82,7 @@ test:
   - name: "Sync packages"
     run: "rv sync"
     thread: rv
-    assert:
-      contains: "+ readr"
+    assert: "+ readr"
 
   - name: "Check library path"
     run: "rv library"
@@ -113,7 +109,7 @@ test:
       - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
   
   - name: "Activate project"
-    run: "rv activate -c ./rproject.toml"
+    run: "rv activate -c rproject.toml"
     thread: rv
     assert: "rv activated"
   
@@ -126,13 +122,13 @@ test:
     run: |
       .libPaths()
       library(dplyr)
-      cat("dplyr version:", as.character(packageVersion("dplyr")))
+      cat("dplyr version:", as.character(packageVersion("dplyr")), "\n")
       library(ggplot2)
-      cat("ggplot2 version:", as.character(packageVersion("ggplot2")))
+      cat("ggplot2 version:", as.character(packageVersion("ggplot2")), "\n")
       library(tidyr)
-      cat("tidyr version:", as.character(packageVersion("tidyr")))
+      cat("tidyr version:", as.character(packageVersion("tidyr")), "\n")
       library(readr)
-      cat("readr version:", as.character(packageVersion("readr")))
+      cat("readr version:", as.character(packageVersion("readr")), "\n")
 
     thread: r
     assert:
@@ -142,6 +138,6 @@ test:
       - "readr version: 2.1.5"
   
   - name: "Deactivate project"
-    run: "rv deactivate -c ./rproject.toml"
+    run: "rv deactivate -c rproject.toml"
     thread: rv
     assert: "rv deactivated"
