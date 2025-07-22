@@ -116,6 +116,11 @@ test:
     run: "rv activate -c ./rproject.toml"
     thread: rv
     assert: "rv activated"
+  
+  - name: "restart R"
+    run: "R"
+    restart: true
+    thread: r
 
   - name: "Load Installed packages"
     run: |
