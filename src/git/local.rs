@@ -165,6 +165,8 @@ impl GitRepository {
                     format!("Failed to checkout `{}`", oid.as_str()),
                 )
             })?;
+
+        self.update_submodules()?;
         Ok(())
     }
 
@@ -188,6 +190,8 @@ impl GitRepository {
                     format!("Failed to checkout branch `{branch_name}`"),
                 )
             })?;
+
+        self.update_submodules()?;
         Ok(())
     }
 
@@ -315,6 +319,25 @@ impl GitRepository {
 
     pub fn ref_as_oid(&self, reference: &str) -> Option<Oid> {
         self.rev_parse(reference).ok()
+    }
+
+    fn update_submodules(&self) -> Result<(), std::io::Error> {
+        self.executor
+            .execute(
+                Command::new("git")
+                    .arg("submodule")
+                    .arg("update")
+                    .arg("--init")
+                    .arg("--recursive")
+                    .current_dir(&self.path),
+            )
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to update submodules".to_string(),
+                )
+            })?;
+        Ok(())
     }
 }
 
