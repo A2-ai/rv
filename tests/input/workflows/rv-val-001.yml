@@ -109,7 +109,7 @@ test:
       - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
   
   #- name: "Activate project"
-  #  run: "rv activate -c rproject.toml"
+  #  run: "rv activate -c ./rproject.toml"
   #  thread: rv
   #  assert: "rv activated"
   
@@ -138,6 +138,6 @@ test:
       - "readr version: 2.1.5"
   
   - name: "Deactivate project"
-    run: "rv deactivate -c rproject.toml"
+    run: "rv deactivate -c ./rproject.toml"
     thread: rv
     assert: "rv deactivated"
