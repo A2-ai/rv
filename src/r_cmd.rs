@@ -227,7 +227,6 @@ impl RCmd for RCommandLine {
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
-        #[cfg(unix)]
         configure_args: &[String],
     ) -> Result<String, InstallError> {
         let destination = destination.as_ref();
