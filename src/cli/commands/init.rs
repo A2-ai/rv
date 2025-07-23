@@ -187,7 +187,7 @@ fn create_gitignore(project_directory: impl AsRef<Path>) -> Result<(), InitError
         return Ok(());
     }
 
-    let content = format!("{LIBRARY_ROOT_DIR_NAME}\n{STAGING_DIR_NAME}\n");
+    let content = format!("{LIBRARY_ROOT_DIR_NAME}\n");
 
     write(path, content)?;
     Ok(())

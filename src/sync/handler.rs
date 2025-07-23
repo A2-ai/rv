@@ -639,7 +639,7 @@ impl<'a> SyncHandler<'a> {
                     if out.is_dir() {
                         fs::remove_dir_all(&out)?;
                     }
-                    fs::rename(path, out)?;
+                    fs::rename(&path, &out)?;
                 }
             }
 

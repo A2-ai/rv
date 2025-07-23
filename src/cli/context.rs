@@ -187,11 +187,7 @@ impl CliContext {
     }
 
     pub fn staging_path(&self) -> PathBuf {
-        if self.library.custom {
-            self.project_dir.join(STAGING_DIR_NAME)
-        } else {
-            self.project_dir.join(RV_DIR_NAME).join(STAGING_DIR_NAME)
-        }
+        self.library.path.join(STAGING_DIR_NAME)
     }
 }
 
