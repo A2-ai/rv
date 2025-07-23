@@ -229,8 +229,24 @@ impl RProcessManager {
 
         if let (Some(mut stdin), Some(process)) = (self.stdin.take(), self.process.take()) {
             debug_print("Sending quit command to R");
+            
+            // On Windows, add a small delay to ensure output is flushed before quitting
+            if cfg!(windows) {
+                debug_print("Windows detected - adding flush delay");
+                if let Err(e) = writeln!(stdin, "flush.console()") {
+                    debug_print(&format!("Failed to send flush command to R: {}", e));
+                }
+                if let Err(e) = stdin.flush() {
+                    debug_print(&format!("Failed to flush stdin: {}", e));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            
             if let Err(e) = writeln!(stdin, "quit(save = 'no')") {
                 debug_print(&format!("Failed to send quit command to R: {}", e));
+            }
+            if let Err(e) = stdin.flush() {
+                debug_print(&format!("Failed to flush quit command: {}", e));
             }
             drop(stdin); // Close stdin to signal R to exit
 
