@@ -337,6 +337,9 @@ fn execute_workflow_threads(
                     // Check exit status immediately - fail fast if non-zero
                     if let Some(exit_status) = &step_result.exit_status {
                         if !exit_status.success() {
+                            // Signal abort to all other threads
+                            thread_coordinator.signal_abort();
+                            
                             let combined_output = if step_result.stderr.is_empty() {
                                 step_result.stdout.clone()
                             } else {

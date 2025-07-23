@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::{Arc, Barrier};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 fn debug_print(msg: &str) {
@@ -10,6 +11,7 @@ fn debug_print(msg: &str) {
 
 pub struct StepCoordinator {
     barrier: Arc<Barrier>,
+    abort_flag: Arc<AtomicBool>,
 }
 
 impl StepCoordinator {
@@ -17,6 +19,7 @@ impl StepCoordinator {
         let num_threads = thread_names.len();
         Self {
             barrier: Arc::new(Barrier::new(num_threads)),
+            abort_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -26,6 +29,14 @@ impl StepCoordinator {
         thread_name: &str,
         _timeout: Option<Duration>,
     ) -> Result<()> {
+        // Check if we should abort before waiting
+        if self.abort_flag.load(Ordering::Relaxed) {
+            return Err(anyhow::anyhow!(
+                "Thread {} aborting at step {} due to test failure",
+                thread_name, step_index
+            ));
+        }
+
         debug_print(&format!(
             "Thread {} hitting entry barrier for step {}",
             thread_name, step_index
@@ -33,6 +44,14 @@ impl StepCoordinator {
         
         // Entry barrier - everyone ready for this step?
         self.barrier.wait();
+        
+        // Check again after barrier in case abort was signaled during wait
+        if self.abort_flag.load(Ordering::Relaxed) {
+            return Err(anyhow::anyhow!(
+                "Thread {} aborting at step {} due to test failure",
+                thread_name, step_index
+            ));
+        }
         
         debug_print(&format!(
             "Thread {} proceeding with step {}",
@@ -57,5 +76,10 @@ impl StepCoordinator {
         ));
 
         Ok(())
+    }
+
+    pub fn signal_abort(&self) {
+        debug_print("Signaling abort to all threads");
+        self.abort_flag.store(true, Ordering::Relaxed);
     }
 }
