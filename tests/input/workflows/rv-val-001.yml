@@ -87,10 +87,7 @@ test:
   - name: "Check library path"
     run: "rv library"
     thread: rv
-    assert:
-      - "rv"
-      - "library"
-      - "4.4"
+    assert: "rv/library/4.4"
   
   - name: "Project summary"
     run: "rv summary"
@@ -104,7 +101,7 @@ test:
     run: "rv info --library --r-version --repositories"
     thread: rv
     assert:
-      - "library: rv"
+      - "library: rv/library/4.4"
       - "r-version: 4.4"
       - "repositories: (ppm, https://packagemanager.posit.co/cran/latest)"
   
@@ -113,10 +110,10 @@ test:
   #  thread: rv
   #  assert: "rv activated"
   
-  #- name: "restart R"
-  #  run: "R"
-  #  restart: true
-  #  thread: r
+  - name: "restart R"
+    run: "R"
+    restart: true
+    thread: r
 
   - name: "Load Installed packages"
     run: |
