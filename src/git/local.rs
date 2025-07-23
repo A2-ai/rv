@@ -3,9 +3,10 @@ use std::process::Command;
 
 use fs_err as fs;
 
-use crate::consts::DESCRIPTION_FILENAME;
+use crate::consts::{DESCRIPTION_FILENAME, SUBMODULE_UPDATE_DISABLE_ENV_VAR_NAME};
 use crate::git::CommandExecutor;
 use crate::git::reference::{GitReference, Oid};
+use crate::utils::is_env_var_truthy;
 
 const HEAD_LINE_START: &str = "HEAD branch: ";
 
@@ -322,6 +323,11 @@ impl GitRepository {
     }
 
     fn update_submodules(&self) -> Result<(), std::io::Error> {
+        if is_env_var_truthy(SUBMODULE_UPDATE_DISABLE_ENV_VAR_NAME) {
+            log::debug!("Skipping update submodule as env var is truthy");
+            return Ok(());
+        }
+
         self.executor
             .execute(
                 Command::new("git")
