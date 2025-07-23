@@ -71,6 +71,7 @@ pub struct StepResult {
     pub step_index: usize,
     pub stdout: String,
     pub stderr: String,
+    pub exit_status: Option<std::process::ExitStatus>,
 }
 
 #[derive(Debug)]

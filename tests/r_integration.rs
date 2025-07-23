@@ -108,6 +108,7 @@ fn execute_workflow_threads(
             let mut step_results = Vec::new();
             let mut r_manager: Option<RProcessManager> = None;
             let mut accumulated_r_output = String::new();
+            let mut r_exit_status: Option<std::process::ExitStatus> = None;
 
             // Execute thread logic and capture any errors
             let thread_result = (|| -> Result<()> {
@@ -139,7 +140,7 @@ fn execute_workflow_threads(
                         "rv" => {
                             // Handle rv commands with original timeout mechanism
                             execute_with_timeout(&step.name, step.timeout, || {
-                                let (stdout, stderr) = execute_rv_command(
+                                let (stdout, stderr, exit_status) = execute_rv_command(
                                     &step.run,
                                     &thread_test_dir,
                                     &thread_config_path,
@@ -150,7 +151,7 @@ fn execute_workflow_threads(
                                 if !stderr.trim().is_empty() {
                                     println!("   ├─ Stderr: {}", stderr.trim());
                                 }
-                                Ok((stdout, stderr))
+                                Ok((stdout, stderr, Some(exit_status)))
                             })?
                         }
                         "r" => {
@@ -160,7 +161,7 @@ fn execute_workflow_threads(
                                 if step.restart {
                                     if let Some(manager) = r_manager.take() {
                                         // Capture output from previous session
-                                        let (prev_stdout, prev_stderr) =
+                                        let (prev_stdout, prev_stderr, _prev_exit_status) =
                                         manager.shutdown_and_capture_output().map_err(|e| {
                                             anyhow::anyhow!(
                                                 "Failed to shutdown R process during restart: {}",
@@ -312,8 +313,8 @@ fn execute_workflow_threads(
                                     },
                                 )?
                             };
-                            // Wrap R output in tuple with empty stderr for consistency
-                            (r_output, String::new())
+                            // Wrap R output in tuple with empty stderr and R exit status for consistency
+                            (r_output, String::new(), r_exit_status)
                         }
                         _ => {
                             return Err(anyhow::anyhow!(
@@ -324,12 +325,13 @@ fn execute_workflow_threads(
                     };
 
                     // Store step result
-                    let (stdout, stderr) = output;
+                    let (stdout, stderr, exit_status) = output;
                     let step_result = StepResult {
                         name: step.name.clone(),
                         step_index: step_idx,
                         stdout,
                         stderr,
+                        exit_status,
                     };
                     step_results.push(step_result);
 
@@ -342,13 +344,16 @@ fn execute_workflow_threads(
                 // Clean up R process if it exists and capture all output
                 if thread_name_clone == "r" {
                     if let Some(manager) = r_manager {
-                        let (final_stdout, final_stderr) =
+                        let (final_stdout, final_stderr, final_exit_status) =
                             manager.shutdown_and_capture_output().map_err(|e| {
                                 anyhow::anyhow!(
                                     "Failed to shutdown R process for thread cleanup: {}",
                                     e
                                 )
                             })?;
+
+                        // Store the R process exit status for StepResult creation
+                        r_exit_status = final_exit_status;
 
                         // Combine accumulated output with final output
                         accumulated_r_output.push_str(&final_stdout);
@@ -446,6 +451,29 @@ fn validate_and_report_results(
         for step_result in &thread_output.step_results {
             // Find the original step by index to get its assertion
             if let Some(original_step) = workflow.test.steps.get(step_result.step_index) {
+                // Check exit status first - fail if non-zero (unless configured otherwise in future)
+                if let Some(exit_status) = &step_result.exit_status {
+                    if !exit_status.success() {
+                        let combined_output = if step_result.stderr.is_empty() {
+                            step_result.stdout.clone()
+                        } else {
+                            format!(
+                                "{}\n--- STDERR ---\n{}",
+                                step_result.stdout, step_result.stderr
+                            )
+                        };
+                        assertion_failures.push((
+                            step_result.name.clone(),
+                            format!(
+                                "Step failed with non-zero exit code: {}",
+                                exit_status.code().unwrap_or(-1)
+                            ),
+                            combined_output,
+                        ));
+                        continue; // Skip other checks if exit code failed
+                    }
+                }
+
                 // Check traditional assertions
                 if let Some(assertion) = &original_step.assert {
                     if let Err(e) =
@@ -522,14 +550,24 @@ fn validate_and_report_results(
                 (false, false) => unreachable!(),
             };
             let total_chars = step_result.stdout.len() + step_result.stderr.len();
+            let exit_info = if let Some(exit_status) = &step_result.exit_status {
+                if exit_status.success() {
+                    "exit:0".to_string()
+                } else {
+                    format!("exit:{}", exit_status.code().unwrap_or(-1))
+                }
+            } else {
+                "exit:N/A".to_string()
+            };
             let char_info = if step_result.stderr.is_empty() {
-                format!("{} chars", total_chars)
+                format!("{} chars, {}", total_chars, exit_info)
             } else {
                 format!(
-                    "{} chars: {} stdout, {} stderr",
+                    "{} chars: {} stdout, {} stderr, {}",
                     total_chars,
                     step_result.stdout.len(),
-                    step_result.stderr.len()
+                    step_result.stderr.len(),
+                    exit_info
                 )
             };
             println!(
@@ -538,14 +576,24 @@ fn validate_and_report_results(
             );
         } else {
             let total_chars = step_result.stdout.len() + step_result.stderr.len();
+            let exit_info = if let Some(exit_status) = &step_result.exit_status {
+                if exit_status.success() {
+                    "exit:0".to_string()
+                } else {
+                    format!("exit:{}", exit_status.code().unwrap_or(-1))
+                }
+            } else {
+                "exit:N/A".to_string()
+            };
             let char_info = if step_result.stderr.is_empty() {
-                format!("{} chars", total_chars)
+                format!("{} chars, {}", total_chars, exit_info)
             } else {
                 format!(
-                    "{} chars: {} stdout, {} stderr",
+                    "{} chars: {} stdout, {} stderr, {}",
                     total_chars,
                     step_result.stdout.len(),
-                    step_result.stderr.len()
+                    step_result.stderr.len(),
+                    exit_info
                 )
             };
             println!(

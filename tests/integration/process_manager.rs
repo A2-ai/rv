@@ -223,7 +223,7 @@ impl RProcessManager {
         Ok(())
     }
 
-    pub fn shutdown_and_capture_output(mut self) -> Result<(String, Vec<u8>)> {
+    pub fn shutdown_and_capture_output(mut self) -> Result<(String, Vec<u8>, Option<std::process::ExitStatus>)> {
         debug_print("Shutting down R process and capturing output");
         let accumulated_output = String::new();
 
@@ -259,10 +259,10 @@ impl RProcessManager {
                 stderr.len()
             ));
 
-            Ok((String::from_utf8_lossy(&stdout).to_string(), stderr))
+            Ok((String::from_utf8_lossy(&stdout).to_string(), stderr, Some(final_output.status)))
         } else {
             debug_print("No R process to shutdown");
-            Ok((accumulated_output, Vec::new()))
+            Ok((accumulated_output, Vec::new(), None))
         }
     }
 }

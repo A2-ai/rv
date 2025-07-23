@@ -167,7 +167,7 @@ pub fn execute_rv_command(
     command: &str,
     test_dir: &Path,
     config_path: &Path,
-) -> Result<(String, String)> {
+) -> Result<(String, String, std::process::ExitStatus)> {
     let (cmd, args) = match command {
         "rv init" => ("init", vec![]),
         "rv sync" => ("sync", vec![]),
@@ -190,30 +190,17 @@ pub fn execute_rv_command(
         .output()
         .map_err(|e| anyhow::anyhow!("Failed to execute rv {}: {}", cmd, e))?;
 
-    // CRITICAL: Check exit status
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(anyhow::anyhow!(
-            "rv {} failed with exit code: {}\\nStdout: {}\\nStderr: {}",
-            command,
-            output.status.code().unwrap_or(-1),
-            stdout,
-            stderr
-        ));
-    }
-
-    // Handle config copying for init
-    if cmd == "init" && config_path.exists() {
+    // Handle config copying for init (only if command succeeded)
+    if cmd == "init" && output.status.success() && config_path.exists() {
         fs::copy(config_path, test_dir.join("rproject.toml"))
             .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
     }
 
-    // Return separate stdout and stderr (snapshots use stdout, assertions check both)
+    // Return stdout, stderr, and exit status (let caller decide if non-zero exit is an error)
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    Ok((stdout, stderr))
+    Ok((stdout, stderr, output.status))
 }
 
 pub fn load_r_script(script_name: &str) -> Result<String> {
