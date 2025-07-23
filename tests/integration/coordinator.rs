@@ -29,30 +29,21 @@ impl StepCoordinator {
         thread_name: &str,
         _timeout: Option<Duration>,
     ) -> Result<()> {
-        // Check if we should abort before waiting
-        if self.abort_flag.load(Ordering::Relaxed) {
-            return Err(anyhow::anyhow!(
-                "Thread {} aborting at step {} due to test failure",
-                thread_name, step_index
-            ));
-        }
-
         debug_print(&format!(
             "Thread {} hitting entry barrier for step {}",
             thread_name, step_index
         ));
         
-        // Only use barrier if abort hasn't been signaled
-        if !self.abort_flag.load(Ordering::Relaxed) {
-            self.barrier.wait();
-        }
+        // Always participate in barrier to avoid deadlock
+        self.barrier.wait();
         
-        // Check again after barrier in case abort was signaled during wait
+        // Check if we should skip work due to abort
         if self.abort_flag.load(Ordering::Relaxed) {
-            return Err(anyhow::anyhow!(
-                "Thread {} aborting at step {} due to test failure",
+            debug_print(&format!(
+                "Thread {} skipping step {} due to abort",
                 thread_name, step_index
             ));
+            return Ok(()); // Return OK but work will be skipped
         }
         
         debug_print(&format!(
@@ -69,10 +60,8 @@ impl StepCoordinator {
             thread_name, step_index
         ));
         
-        // Only use barrier if abort hasn't been signaled
-        if !self.abort_flag.load(Ordering::Relaxed) {
-            self.barrier.wait();
-        }
+        // Always participate in barrier to avoid deadlock
+        self.barrier.wait();
         
         debug_print(&format!(
             "Thread {} proceeding past step {}",
@@ -85,5 +74,9 @@ impl StepCoordinator {
     pub fn signal_abort(&self) {
         debug_print("Signaling abort to all threads");
         self.abort_flag.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_aborted(&self) -> bool {
+        self.abort_flag.load(Ordering::Relaxed)
     }
 }

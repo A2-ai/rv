@@ -109,6 +109,7 @@ fn execute_workflow_threads(
             let mut r_manager: Option<RProcessManager> = None;
             let mut accumulated_r_output = String::new();
             let mut r_exit_status: Option<std::process::ExitStatus> = None;
+            let mut thread_failure: Option<String> = None;
 
             // Execute thread logic and capture any errors
             let thread_result = (|| -> Result<()> {
@@ -136,7 +137,11 @@ fn execute_workflow_threads(
                         println!("   └─ Timeout: {}s", timeout);
                     }
 
-                    let output = match thread_name_clone.as_str() {
+                    let output = if thread_coordinator.is_aborted() {
+                        // Skip actual work if abort is signaled, just return empty output
+                        ("".to_string(), "".to_string(), None)
+                    } else {
+                        match thread_name_clone.as_str() {
                         "rv" => {
                             // Handle rv commands with original timeout mechanism
                             execute_with_timeout(&step.name, step.timeout, || {
@@ -322,6 +327,7 @@ fn execute_workflow_threads(
                                 thread_name_clone
                             ));
                         }
+                        }
                     };
 
                     // Store step result
@@ -334,9 +340,9 @@ fn execute_workflow_threads(
                         exit_status,
                     };
 
-                    // Check exit status immediately - fail fast if non-zero
+                    // Check exit status - signal abort but continue to avoid deadlock
                     if let Some(exit_status) = &step_result.exit_status {
-                        if !exit_status.success() {
+                        if !exit_status.success() && thread_failure.is_none() {
                             // Signal abort to all other threads
                             thread_coordinator.signal_abort();
                             
@@ -348,7 +354,9 @@ fn execute_workflow_threads(
                                     step_result.stdout, step_result.stderr
                                 )
                             };
-                            return Err(anyhow::anyhow!(
+                            
+                            // Store the failure but continue to avoid barrier deadlock
+                            thread_failure = Some(format!(
                                 "Step '{}' failed with non-zero exit code: {}\n\nOutput:\n{}",
                                 step_result.name,
                                 exit_status.code().unwrap_or(-1),
@@ -404,7 +412,12 @@ fn execute_workflow_threads(
                     }
                 }
 
-                Ok(())
+                // Return any stored failure
+                if let Some(failure_msg) = thread_failure {
+                    Err(anyhow::anyhow!(failure_msg))
+                } else {
+                    Ok(())
+                }
             })();
 
             // Always send results through channel, even if there were errors

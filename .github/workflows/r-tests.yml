@@ -3,7 +3,7 @@ name: R Integration Tests
 on:
   push:
     branches:
-      - "r-tests-code-reviewed" 
+      - "r-tests-" 
     paths-ignore:
       - "docs/**"
       - "README.md"
