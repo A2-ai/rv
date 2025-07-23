@@ -2,7 +2,9 @@ use crate::integration::process_manager::RProcessManager;
 use anyhow::Result;
 use assert_cmd::Command;
 use fs_err as fs;
+use std::io::Read;
 use std::path::Path;
+use std::process::{Command as StdCommand};
 use std::time::{Duration, Instant};
 
 const RV: &str = "rv";
@@ -167,7 +169,7 @@ pub fn execute_rv_command(
     command: &str,
     test_dir: &Path,
     config_path: &Path,
-) -> Result<(String, String, std::process::ExitStatus)> {
+) -> Result<(String, std::process::ExitStatus)> {
     let (cmd, args) = match command {
         "rv init" => ("init", vec![]),
         "rv sync" => ("sync", vec![]),
@@ -182,25 +184,49 @@ pub fn execute_rv_command(
         _ => return Err(anyhow::anyhow!("Unknown rv command: {}", command)),
     };
 
-    let output = Command::cargo_bin(RV)
+    // Get the rv binary path from assert_cmd
+    let rv_binary = Command::cargo_bin(RV)
         .map_err(|e| anyhow::anyhow!("Failed to find rv binary: {}", e))?
+        .get_program()
+        .to_owned();
+
+    debug_print(&format!("Spawning rv command: {} {}", cmd, args.join(" ")));
+    
+    // Use anonymous pipe to get truly interleaved output following the exact pattern
+    let (mut recv, send) = std::io::pipe()
+        .map_err(|e| anyhow::anyhow!("Failed to create pipe: {}", e))?;
+
+    // Both stdout and stderr will write to the same pipe, combining the two
+    let mut child = StdCommand::new(rv_binary)
         .arg(cmd)
         .args(args)
         .current_dir(test_dir)
-        .output()
-        .map_err(|e| anyhow::anyhow!("Failed to execute rv {}: {}", cmd, e))?;
+        .stdout(send.try_clone().map_err(|e| anyhow::anyhow!("Failed to clone pipe: {}", e))?)
+        .stderr(send)
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn rv {}: {}", cmd, e))?;
+
+    // Read all output from the combined pipe
+    let mut combined_output = Vec::new();
+    recv.read_to_end(&mut combined_output)
+        .map_err(|e| anyhow::anyhow!("Failed to read rv {} output: {}", cmd, e))?;
+
+    // It's important that we read from the pipe before the process exits, to avoid
+    // filling the OS buffers if the program emits too much output.
+    let exit_status = child.wait()
+        .map_err(|e| anyhow::anyhow!("Failed to wait for rv {} completion: {}", cmd, e))?;
+
+    let combined_str = String::from_utf8_lossy(&combined_output).to_string();
 
     // Handle config copying for init (only if command succeeded)
-    if cmd == "init" && output.status.success() && config_path.exists() {
+    if cmd == "init" && exit_status.success() && config_path.exists() {
         fs::copy(config_path, test_dir.join("rproject.toml"))
             .map_err(|e| anyhow::anyhow!("Failed to copy config file: {}", e))?;
     }
 
-    // Return stdout, stderr, and exit status (let caller decide if non-zero exit is an error)
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    Ok((stdout, stderr, output.status))
+    // Return truly interleaved output and exit status
+    // Since output is interleaved, stderr is already combined into the output
+    Ok((combined_str, exit_status))
 }
 
 pub fn load_r_script(script_name: &str) -> Result<String> {

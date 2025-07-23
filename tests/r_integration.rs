@@ -139,24 +139,21 @@ fn execute_workflow_threads(
 
                     let output = if thread_coordinator.is_aborted() {
                         // Skip actual work if abort is signaled, just return empty output
-                        ("".to_string(), "".to_string(), None)
+                        ("".to_string(), None)
                     } else {
                         match thread_name_clone.as_str() {
                         "rv" => {
                             // Handle rv commands with original timeout mechanism
                             execute_with_timeout(&step.name, step.timeout, || {
-                                let (stdout, stderr, exit_status) = execute_rv_command(
+                                let (output, exit_status) = execute_rv_command(
                                     &step.run,
                                     &thread_test_dir,
                                     &thread_config_path,
                                 )?;
-                                if !stdout.trim().is_empty() {
-                                    println!("   ├─ Output: {}", stdout.trim());
+                                if !output.trim().is_empty() {
+                                    println!("   ├─ Output: {}", output.trim());
                                 }
-                                if !stderr.trim().is_empty() {
-                                    println!("   ├─ Stderr: {}", stderr.trim());
-                                }
-                                Ok((stdout, stderr, Some(exit_status)))
+                                Ok((output, Some(exit_status)))
                             })?
                         }
                         "r" => {
@@ -318,8 +315,8 @@ fn execute_workflow_threads(
                                     },
                                 )?
                             };
-                            // Wrap R output in tuple with empty stderr and R exit status for consistency
-                            (r_output, String::new(), r_exit_status)
+                            // Wrap R output with R exit status for consistency
+                            (r_output, r_exit_status)
                         }
                         _ => {
                             return Err(anyhow::anyhow!(
@@ -331,12 +328,11 @@ fn execute_workflow_threads(
                     };
 
                     // Store step result
-                    let (stdout, stderr, exit_status) = output;
+                    let (output, exit_status) = output;
                     let step_result = StepResult {
                         name: step.name.clone(),
                         step_index: step_idx,
-                        stdout,
-                        stderr,
+                        output,
                         exit_status,
                     };
 
@@ -346,21 +342,12 @@ fn execute_workflow_threads(
                             // Signal abort to all other threads
                             thread_coordinator.signal_abort();
                             
-                            let combined_output = if step_result.stderr.is_empty() {
-                                step_result.stdout.clone()
-                            } else {
-                                format!(
-                                    "{}\n--- STDERR ---\n{}",
-                                    step_result.stdout, step_result.stderr
-                                )
-                            };
-                            
                             // Store the failure but continue to avoid barrier deadlock
                             thread_failure = Some(format!(
                                 "Step '{}' failed with non-zero exit code: {}\n\nOutput:\n{}",
                                 step_result.name,
                                 exit_status.code().unwrap_or(-1),
-                                combined_output
+                                step_result.output
                             ));
                         }
                     }
@@ -406,7 +393,7 @@ fn execute_workflow_threads(
                         // Update step results with actual outputs (assertions checked at end)
                         for step_result in &mut step_results {
                             if let Some(step_output) = parsed_outputs.get(&step_result.name) {
-                                step_result.stdout = step_output.clone();
+                                step_result.output = step_output.clone();
                             }
                         }
                     }
@@ -491,21 +478,13 @@ fn validate_and_report_results(
                 // Check exit status first - fail if non-zero (unless configured otherwise in future)
                 if let Some(exit_status) = &step_result.exit_status {
                     if !exit_status.success() {
-                        let combined_output = if step_result.stderr.is_empty() {
-                            step_result.stdout.clone()
-                        } else {
-                            format!(
-                                "{}\n--- STDERR ---\n{}",
-                                step_result.stdout, step_result.stderr
-                            )
-                        };
                         assertion_failures.push((
                             step_result.name.clone(),
                             format!(
                                 "Step failed with non-zero exit code: {}",
                                 exit_status.code().unwrap_or(-1)
                             ),
-                            combined_output,
+                            step_result.output.clone(),
                         ));
                         continue; // Skip other checks if exit code failed
                     }
@@ -513,30 +492,20 @@ fn validate_and_report_results(
 
                 // Check traditional assertions
                 if let Some(assertion) = &original_step.assert {
-                    if let Err(e) =
-                        check_assertion(assertion, &step_result.stdout, &step_result.stderr)
+                    if let Err(e) = check_assertion(assertion, &step_result.output, "")
                     {
-                        // Include both stdout and stderr in failure reporting
-                        let combined_output = if step_result.stderr.is_empty() {
-                            step_result.stdout.clone()
-                        } else {
-                            format!(
-                                "{}\n--- STDERR ---\n{}",
-                                step_result.stdout, step_result.stderr
-                            )
-                        };
                         assertion_failures.push((
                             step_result.name.clone(),
                             e.to_string(),
-                            combined_output,
+                            step_result.output.clone(),
                         ));
                     }
                 }
 
-                // Check insta snapshots (only use stdout for clean, predictable snapshots)
+                // Check insta snapshots (only use output for clean, predictable snapshots)
                 if let Some(snapshot_name) = &original_step.insta {
                     // Filter out timing information that varies between runs
-                    let filtered_output = filter_timing_from_output(&step_result.stdout);
+                    let filtered_output = filter_timing_from_output(&step_result.output);
 
                     // Use insta to assert the snapshot from main test file context
                     if let Err(_) = std::panic::catch_unwind(|| {
@@ -545,7 +514,7 @@ fn validate_and_report_results(
                         assertion_failures.push((
                             step_result.name.clone(),
                             format!("Snapshot mismatch for '{}'", snapshot_name),
-                            step_result.stdout.clone(),
+                            step_result.output.clone(),
                         ));
                     }
                 }
@@ -586,7 +555,7 @@ fn validate_and_report_results(
                 (false, true) => "INSTA",
                 (false, false) => unreachable!(),
             };
-            let total_chars = step_result.stdout.len() + step_result.stderr.len();
+            let total_chars = step_result.output.len();
             let exit_info = if let Some(exit_status) = &step_result.exit_status {
                 if exit_status.success() {
                     "exit:0".to_string()
@@ -596,23 +565,13 @@ fn validate_and_report_results(
             } else {
                 "exit:N/A".to_string()
             };
-            let char_info = if step_result.stderr.is_empty() {
-                format!("{} chars, {}", total_chars, exit_info)
-            } else {
-                format!(
-                    "{} chars: {} stdout, {} stderr, {}",
-                    total_chars,
-                    step_result.stdout.len(),
-                    step_result.stderr.len(),
-                    exit_info
-                )
-            };
+            let char_info = format!("{} chars, {}", total_chars, exit_info);
             println!(
                 "   • [{}] {} - {} {} ({})",
                 thread_label, step_result.name, status, test_type, char_info
             );
         } else {
-            let total_chars = step_result.stdout.len() + step_result.stderr.len();
+            let total_chars = step_result.output.len();
             let exit_info = if let Some(exit_status) = &step_result.exit_status {
                 if exit_status.success() {
                     "exit:0".to_string()
@@ -622,17 +581,7 @@ fn validate_and_report_results(
             } else {
                 "exit:N/A".to_string()
             };
-            let char_info = if step_result.stderr.is_empty() {
-                format!("{} chars, {}", total_chars, exit_info)
-            } else {
-                format!(
-                    "{} chars: {} stdout, {} stderr, {}",
-                    total_chars,
-                    step_result.stdout.len(),
-                    step_result.stderr.len(),
-                    exit_info
-                )
-            };
+            let char_info = format!("{} chars, {}", total_chars, exit_info);
             println!(
                 "   • [{}] {} - ⏭️ NO ASSERTION ({})",
                 thread_label, step_result.name, char_info
@@ -640,7 +589,7 @@ fn validate_and_report_results(
         }
     }
 
-    // In verbose mode, always show all captured stdout/stderr for debugging
+    // In verbose mode, always show all captured output for debugging
     if std::env::var("RV_TEST_VERBOSE").is_ok() {
         println!("\n🔍 All Captured Output (RV_TEST_VERBOSE detected):");
         for thread_output in &all_thread_outputs {
@@ -650,43 +599,26 @@ fn validate_and_report_results(
                     thread_output.thread_name.to_uppercase()
                 );
                 for step_result in &thread_output.step_results {
-                    let total_chars = step_result.stdout.len() + step_result.stderr.len();
+                    let total_chars = step_result.output.len();
                     println!(
                         "\n   Step '{}' ({} total chars):",
                         step_result.name, total_chars
                     );
 
-                    // Show stdout
-                    if !step_result.stdout.is_empty() {
-                        println!("   STDOUT ({} chars):", step_result.stdout.len());
-                        if step_result.stdout.len() > 1000 {
-                            // Truncate very long stdout
+                    // Show output
+                    if !step_result.output.is_empty() {
+                        println!("   OUTPUT ({} chars):", step_result.output.len());
+                        if step_result.output.len() > 1000 {
+                            // Truncate very long output
                             let truncated = format!(
                                 "{}...\n[TRUNCATED {} chars]...\n{}",
-                                &step_result.stdout[..400],
-                                step_result.stdout.len() - 800,
-                                &step_result.stdout[step_result.stdout.len() - 400..]
+                                &step_result.output[..400],
+                                step_result.output.len() - 800,
+                                &step_result.output[step_result.output.len() - 400..]
                             );
                             println!("   {}", truncated);
                         } else {
-                            println!("   {}", step_result.stdout);
-                        }
-                    }
-
-                    // Show stderr if present
-                    if !step_result.stderr.is_empty() {
-                        println!("   STDERR ({} chars):", step_result.stderr.len());
-                        if step_result.stderr.len() > 1000 {
-                            // Truncate very long stderr
-                            let truncated = format!(
-                                "{}...\n[TRUNCATED {} chars]...\n{}",
-                                &step_result.stderr[..400],
-                                step_result.stderr.len() - 800,
-                                &step_result.stderr[step_result.stderr.len() - 400..]
-                            );
-                            println!("   {}", truncated);
-                        } else {
-                            println!("   {}", step_result.stderr);
+                            println!("   {}", step_result.output);
                         }
                     }
                 }

@@ -69,8 +69,7 @@ pub enum StringOrList {
 pub struct StepResult {
     pub name: String,
     pub step_index: usize,
-    pub stdout: String,
-    pub stderr: String,
+    pub output: String,
     pub exit_status: Option<std::process::ExitStatus>,
 }
 
