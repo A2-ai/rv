@@ -117,7 +117,7 @@ test:
 
   - name: "Load Installed packages"
     run: |
-      .libPaths()
+      cat(.libPaths())
       library(dplyr)
       cat("dplyr version:", as.character(packageVersion("dplyr")), "\n")
       library(ggplot2)
