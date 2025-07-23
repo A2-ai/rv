@@ -589,40 +589,35 @@ fn validate_and_report_results(
         }
     }
 
-    // In verbose mode, always show all captured output for debugging
+    // In verbose mode, show detailed output in execution order
     if std::env::var("RV_TEST_VERBOSE").is_ok() {
-        println!("\n🔍 All Captured Output (RV_TEST_VERBOSE detected):");
+        println!("\n🔍 Detailed Step Output (RV_TEST_VERBOSE detected):");
+        
+        // Collect all steps with their thread info and sort by execution order
+        let mut all_steps_with_thread: Vec<(&StepResult, &str)> = Vec::new();
         for thread_output in &all_thread_outputs {
-            if !thread_output.step_results.is_empty() {
-                println!(
-                    "\n   === {} THREAD ===",
-                    thread_output.thread_name.to_uppercase()
-                );
-                for step_result in &thread_output.step_results {
-                    let total_chars = step_result.output.len();
-                    println!(
-                        "\n   Step '{}' ({} total chars):",
-                        step_result.name, total_chars
-                    );
-
-                    // Show output
-                    if !step_result.output.is_empty() {
-                        println!("   OUTPUT ({} chars):", step_result.output.len());
-                        if step_result.output.len() > 1000 {
-                            // Truncate very long output
-                            let truncated = format!(
-                                "{}...\n[TRUNCATED {} chars]...\n{}",
-                                &step_result.output[..400],
-                                step_result.output.len() - 800,
-                                &step_result.output[step_result.output.len() - 400..]
-                            );
-                            println!("   {}", truncated);
-                        } else {
-                            println!("   {}", step_result.output);
-                        }
-                    }
-                }
+            for step_result in &thread_output.step_results {
+                all_steps_with_thread.push((step_result, &thread_output.thread_name));
             }
+        }
+        
+        // Sort by step_index (execution order)
+        all_steps_with_thread.sort_by_key(|(step_result, _)| step_result.step_index);
+        
+        for (step_result, thread_name) in &all_steps_with_thread {
+            if !step_result.output.is_empty() {
+                println!("\n{}", "─".repeat(80));
+                println!("📋 [{}] {} ({} chars)", 
+                    thread_name.to_uppercase(), 
+                    step_result.name, 
+                    step_result.output.len()
+                );
+                println!("{}", "─".repeat(80));
+                println!("{}", step_result.output);
+            }
+        }
+        if !all_steps_with_thread.is_empty() {
+            println!("{}", "─".repeat(80));
         }
     }
 
