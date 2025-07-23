@@ -333,6 +333,27 @@ fn execute_workflow_threads(
                         stderr,
                         exit_status,
                     };
+
+                    // Check exit status immediately - fail fast if non-zero
+                    if let Some(exit_status) = &step_result.exit_status {
+                        if !exit_status.success() {
+                            let combined_output = if step_result.stderr.is_empty() {
+                                step_result.stdout.clone()
+                            } else {
+                                format!(
+                                    "{}\n--- STDERR ---\n{}",
+                                    step_result.stdout, step_result.stderr
+                                )
+                            };
+                            return Err(anyhow::anyhow!(
+                                "Step '{}' failed with non-zero exit code: {}\n\nOutput:\n{}",
+                                step_result.name,
+                                exit_status.code().unwrap_or(-1),
+                                combined_output
+                            ));
+                        }
+                    }
+
                     step_results.push(step_result);
 
                     // Notify completion to coordinator
