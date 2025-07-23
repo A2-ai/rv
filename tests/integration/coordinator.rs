@@ -42,8 +42,10 @@ impl StepCoordinator {
             thread_name, step_index
         ));
         
-        // Entry barrier - everyone ready for this step?
-        self.barrier.wait();
+        // Only use barrier if abort hasn't been signaled
+        if !self.abort_flag.load(Ordering::Relaxed) {
+            self.barrier.wait();
+        }
         
         // Check again after barrier in case abort was signaled during wait
         if self.abort_flag.load(Ordering::Relaxed) {
@@ -67,8 +69,10 @@ impl StepCoordinator {
             thread_name, step_index
         ));
         
-        // Exit barrier - executing thread done, everyone can proceed
-        self.barrier.wait();
+        // Only use barrier if abort hasn't been signaled
+        if !self.abort_flag.load(Ordering::Relaxed) {
+            self.barrier.wait();
+        }
         
         debug_print(&format!(
             "Thread {} proceeding past step {}",
