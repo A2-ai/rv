@@ -20,7 +20,7 @@ use crate::r_cmd::{InstallError, InstallErrorKind};
 use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
-use crate::utils::get_max_workers;
+use crate::utils::{get_max_workers, is_env_var_truthy};
 use crate::{
     BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
     SystemInfo,
@@ -30,11 +30,8 @@ fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
     if !cfg!(unix) {
         return HashSet::new();
     }
-    let val = std::env::var(NO_CHECK_OPEN_FILE_ENV_VAR_NAME)
-        .unwrap_or_default()
-        .to_lowercase();
 
-    if val == "true" || val == "1" {
+    if is_env_var_truthy(NO_CHECK_OPEN_FILE_ENV_VAR_NAME) {
         return HashSet::new();
     }
 

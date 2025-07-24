@@ -27,3 +27,9 @@ pub(crate) fn create_spinner(visible: bool, message: impl Into<Cow<'static, str>
         ProgressBar::hidden()
     }
 }
+
+pub(crate) fn is_env_var_truthy(name: &str) -> bool {
+    let val = std::env::var(name).unwrap_or_default().to_lowercase();
+
+    val == "true" || val == "1"
+}

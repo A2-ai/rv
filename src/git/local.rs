@@ -3,9 +3,10 @@ use std::process::Command;
 
 use fs_err as fs;
 
-use crate::consts::DESCRIPTION_FILENAME;
+use crate::consts::{DESCRIPTION_FILENAME, SUBMODULE_UPDATE_DISABLE_ENV_VAR_NAME};
 use crate::git::CommandExecutor;
 use crate::git::reference::{GitReference, Oid};
+use crate::utils::is_env_var_truthy;
 
 const HEAD_LINE_START: &str = "HEAD branch: ";
 
@@ -165,6 +166,8 @@ impl GitRepository {
                     format!("Failed to checkout `{}`", oid.as_str()),
                 )
             })?;
+
+        self.update_submodules()?;
         Ok(())
     }
 
@@ -188,6 +191,8 @@ impl GitRepository {
                     format!("Failed to checkout branch `{branch_name}`"),
                 )
             })?;
+
+        self.update_submodules()?;
         Ok(())
     }
 
@@ -315,6 +320,30 @@ impl GitRepository {
 
     pub fn ref_as_oid(&self, reference: &str) -> Option<Oid> {
         self.rev_parse(reference).ok()
+    }
+
+    fn update_submodules(&self) -> Result<(), std::io::Error> {
+        if is_env_var_truthy(SUBMODULE_UPDATE_DISABLE_ENV_VAR_NAME) {
+            log::debug!("Skipping update submodule as env var is truthy");
+            return Ok(());
+        }
+
+        self.executor
+            .execute(
+                Command::new("git")
+                    .arg("submodule")
+                    .arg("update")
+                    .arg("--init")
+                    .arg("--recursive")
+                    .current_dir(&self.path),
+            )
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to update submodules".to_string(),
+                )
+            })?;
+        Ok(())
     }
 }
 
