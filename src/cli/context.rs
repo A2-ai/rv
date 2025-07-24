@@ -1,7 +1,7 @@
 //! CLI context that gets instantiated for a few commands and passed around
 
 use crate::cli::utils::write_err;
-use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, RV_DIR_NAME, STAGING_DIR_NAME};
+use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::utils::create_spinner;
