@@ -145,6 +145,8 @@ impl GitRepository {
             }
         }
 
+        self.force_update_local_reference(reference)?;
+
         Ok(())
     }
 
@@ -185,14 +187,14 @@ impl GitRepository {
 
     pub fn checkout_branch(&self, branch_name: &str) -> Result<(), std::io::Error> {
         log::debug!(
-            "Doing git checkout -b {branch_name} in {}",
+            "Doing git checkout -B {branch_name} in {}",
             self.path.display()
         );
         self.executor
             .execute(
                 Command::new("git")
                     .arg("checkout")
-                    .arg("-b")
+                    .arg("-B")
                     .arg(branch_name)
                     .arg(format!("origin/{branch_name}"))
                     .current_dir(&self.path),
@@ -357,6 +359,58 @@ impl GitRepository {
             })?;
         Ok(())
     }
+
+    /// Force update local references to match remote after fetching
+    fn force_update_local_reference(&self, reference: &GitReference) -> Result<(), std::io::Error> {
+        match reference {
+            GitReference::Branch(branch) => {
+                // Check if we're currently on this branch
+                let current_branch = self.executor.execute(
+                    Command::new("git")
+                        .arg("branch")
+                        .arg("--show-current")
+                        .current_dir(&self.path),
+                );
+
+                let is_current_branch =
+                    current_branch.map(|b| b.trim() == *branch).unwrap_or(false);
+
+                if is_current_branch {
+                    // If we're on this branch, we need to reset it instead of force updating
+                    self.executor.execute(
+                        Command::new("git")
+                            .arg("reset")
+                            .arg("--hard")
+                            .arg(format!("origin/{}", branch))
+                            .current_dir(&self.path),
+                    )?;
+                } else {
+                    // Force update local branch to match remote
+                    self.executor.execute(
+                        Command::new("git")
+                            .arg("branch")
+                            .arg("-f")
+                            .arg(branch)
+                            .arg(format!("origin/{}", branch))
+                            .current_dir(&self.path),
+                    )?;
+                }
+            }
+            GitReference::Tag(tag) => {
+                // Force update local tag to match remote
+                self.executor.execute(
+                    Command::new("git")
+                        .arg("tag")
+                        .arg("-f")
+                        .arg(tag)
+                        .arg(format!("origin/tags/{}", tag))
+                        .current_dir(&self.path),
+                )?;
+            }
+            _ => {} // Commits don't need updating
+        }
+        Ok(())
+    }
 }
 
 fn fetch_with_cli(
@@ -392,4 +446,133 @@ fn fetch_with_cli(
             )
         })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::GitExecutor;
+    use std::process::Command;
+    use tempfile;
+
+    fn run_git(args: &[&str], dir: &Path) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn setup_test_repo() -> (tempfile::TempDir, String) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let remote_path = temp_dir.path().join("remote");
+        let work_path = temp_dir.path().join("work");
+
+        // Setup bare remote repo
+        std::fs::create_dir_all(&remote_path).unwrap();
+        run_git(&["init", "--bare"], &remote_path);
+
+        // Clone and setup working repo
+        std::fs::create_dir_all(&work_path).unwrap();
+        run_git(&["clone", remote_path.to_str().unwrap(), "."], &work_path);
+        run_git(&["config", "user.email", "test@example.com"], &work_path);
+        run_git(&["config", "user.name", "Test User"], &work_path);
+
+        // Create initial commit
+        std::fs::write(work_path.join("file.txt"), "initial content").unwrap();
+        run_git(&["add", "."], &work_path);
+        run_git(&["commit", "-m", "initial"], &work_path);
+
+        let branch_name = "main";
+        run_git(&["checkout", "-b", &branch_name], &work_path);
+        run_git(&["push", "origin", &branch_name], &work_path);
+
+        (temp_dir, branch_name.to_string())
+    }
+
+    #[test]
+    fn test_branch_update_after_checkout() {
+        let (temp_dir, branch_name) = setup_test_repo();
+        let remote_path = temp_dir.path().join("remote");
+        let cache_path = temp_dir.path().join("cache");
+        let work_path = temp_dir.path().join("work");
+
+        let repo =
+            GitRepository::init(&cache_path, remote_path.to_str().unwrap(), GitExecutor).unwrap();
+
+        // First fetch
+        repo.fetch(
+            remote_path.to_str().unwrap(),
+            &GitReference::Branch(&branch_name),
+        )
+        .unwrap();
+        let initial_oid = repo.ref_as_oid(&branch_name).unwrap();
+
+        // Update remote
+        std::fs::write(work_path.join("file.txt"), "updated content").unwrap();
+        run_git(&["add", "."], &work_path);
+        run_git(&["commit", "-m", "updated"], &work_path);
+        run_git(&["push", "origin", &branch_name], &work_path);
+
+        // Second fetch should get updated commit
+        repo.fetch(
+            remote_path.to_str().unwrap(),
+            &GitReference::Branch(&branch_name),
+        )
+        .unwrap();
+        let updated_oid = repo.ref_as_oid(&branch_name).unwrap();
+
+        assert_ne!(initial_oid.as_str(), updated_oid.as_str());
+
+        // Verify checkout gives us updated content
+        repo.checkout(&updated_oid).unwrap();
+        let content = std::fs::read_to_string(cache_path.join("file.txt")).unwrap();
+        assert_eq!(content, "updated content");
+    }
+
+    #[test]
+    fn test_tag_update_after_checkout() {
+        let (temp_dir, branch_name) = setup_test_repo();
+        let remote_path = temp_dir.path().join("remote");
+        let cache_path = temp_dir.path().join("cache");
+        let work_path = temp_dir.path().join("work");
+
+        // Create and push initial tag
+        run_git(&["tag", "v1.0"], &work_path);
+        run_git(&["push", "origin", "v1.0"], &work_path);
+
+        let repo =
+            GitRepository::init(&cache_path, remote_path.to_str().unwrap(), GitExecutor).unwrap();
+
+        // First fetch
+        repo.fetch(remote_path.to_str().unwrap(), &GitReference::Tag("v1.0"))
+            .unwrap();
+        let initial_oid = repo.ref_as_oid("v1.0").unwrap();
+
+        // Update remote and move tag
+        std::fs::write(work_path.join("file.txt"), "updated content").unwrap();
+        run_git(&["add", "."], &work_path);
+        run_git(&["commit", "-m", "updated"], &work_path);
+        run_git(&["tag", "-f", "v1.0"], &work_path);
+        run_git(&["push", "origin", &branch_name], &work_path);
+        run_git(&["push", "origin", "v1.0", "--force"], &work_path);
+
+        // Second fetch should get updated commit
+        repo.fetch(remote_path.to_str().unwrap(), &GitReference::Tag("v1.0"))
+            .unwrap();
+        let updated_oid = repo.ref_as_oid("v1.0").unwrap();
+
+        assert_ne!(initial_oid.as_str(), updated_oid.as_str());
+
+        // Verify checkout gives us updated content
+        repo.checkout(&updated_oid).unwrap();
+        let content = std::fs::read_to_string(cache_path.join("file.txt")).unwrap();
+        assert_eq!(content, "updated content");
+    }
 }
