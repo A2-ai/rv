@@ -803,8 +803,9 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Activate { no_r_environment } => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            activate(&context.project_dir, no_r_environment)?;
+            let config_file = cli.config_file.canonicalize()?;
+            let project_dir = config_file.parent().expect("parent to exist");
+            activate(project_dir, no_r_environment)?;
             if output_format.is_json() {
                 println!("{{}}");
             } else {
@@ -812,8 +813,9 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Deactivate => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            deactivate(&context.project_dir)?;
+            let config_file = cli.config_file.canonicalize()?;
+            let project_dir = config_file.parent().expect("parent to exist");
+            deactivate(project_dir)?;
             if output_format.is_json() {
                 println!("{{}}");
             } else {
