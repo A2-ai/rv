@@ -5,11 +5,11 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-toml = "0.8"
+toml = "0.9"
 serde_json = "1"
 url = { version = "2", features = ["serde"] }
 # To write the lockfile in the way we want + add/remove things from rproject.toml
-toml_edit = "0.22.22"
+toml_edit = "0.23"
 serde = { version = "1", features = ["derive"] }
 # There's a regex to grab the R version from a string and some to parse package files
 regex = "1"
@@ -40,7 +40,7 @@ sha2 = "0.10"
 crossbeam = "0.8.4"
 num_cpus = "1.16.0"
 # some of the progress bars happen in the library
-indicatif = "0.17.11"
+indicatif = "0.18"
 log = "0.4"
 which = "8"
 
