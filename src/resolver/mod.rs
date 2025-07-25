@@ -336,6 +336,8 @@ impl<'d> Resolver<'d> {
                     dep.as_git_source_with_sha(sha)
                 } else {
                     // If it's coming from a remote, only store the sha
+                    // since we only want tag/branch to compare with rproject.toml and a remote
+                    // is not going to show up there
                     Source::Git {
                         git: repo_url.clone(),
                         sha,
