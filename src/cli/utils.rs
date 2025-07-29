@@ -1,3 +1,15 @@
+#[derive(Debug, Clone, PartialEq)]
+pub enum OutputFormat {
+    Json,
+    Plain,
+}
+
+impl OutputFormat {
+    pub fn is_json(&self) -> bool {
+        matches!(self, OutputFormat::Json)
+    }
+}
+
 pub fn write_err(err: &(dyn std::error::Error + 'static)) -> String {
     let mut out = format!("{err}");
 

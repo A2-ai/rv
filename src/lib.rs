@@ -38,7 +38,7 @@ pub use configure::{
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload, HttpError};
 pub use library::Library;
-pub use lockfile::Lockfile;
+pub use lockfile::{Lockfile, Source};
 pub use package::{Version, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
