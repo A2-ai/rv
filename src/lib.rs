@@ -36,7 +36,7 @@ pub use configure::{
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
-pub use http::{Http, HttpDownload};
+pub use http::{Http, HttpDownload, HttpError};
 pub use library::Library;
 pub use lockfile::Lockfile;
 pub use package::{Version, VersionRequirement, is_binary_package};
