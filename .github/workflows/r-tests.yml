@@ -67,7 +67,7 @@ jobs:
         
     - name: Run tests (Unix)
       if: runner.os != 'Windows'
-      run: cargo test --features=cli --test r_integration -- --nocapture
+      run: cargo test --features=cli --test r_integration --release -- --nocapture
       env:
         RUST_BACKTRACE: 1
         RV_TEST_VERBOSE: 1 
@@ -75,7 +75,7 @@ jobs:
     - name: Run tests (Windows)
       if: runner.os == 'Windows'
       shell: cmd
-      run: cargo test --features=cli --test r_integration -- --nocapture
+      run: cargo test --features=cli --test r_integration --release -- --nocapture
       env:
         RUST_BACKTRACE: 1
         RV_TEST_VERBOSE: 1 
