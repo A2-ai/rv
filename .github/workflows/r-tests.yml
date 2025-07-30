@@ -32,8 +32,8 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-    - name: Build rv
-      run: cargo build --features=cli --release
+    - name: Build rv and test dependencies
+      run: cargo test --features=cli --test r_integration --release --no-run
 
     - name: Add rv to PATH (Unix)
       if: runner.os != 'Windows'
