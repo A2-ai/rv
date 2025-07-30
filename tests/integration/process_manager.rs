@@ -9,9 +9,30 @@ fn debug_print(msg: &str) {
     }
 }
 
+/// Manages the lifecycle of R subprocess for integration testing.
+/// 
+/// Handles starting, stopping, command execution, and output capture
+/// for R processes with proper timeout and error handling. Supports
+/// health checking and graceful shutdown with output collection.
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// let mut manager = RProcessManager::start_r_process(&test_dir)?;
+/// manager.send_command("library(dplyr)")?;
+/// let (stdout, stderr, exit_status) = manager.shutdown_and_capture_output()?;
+/// ```
+/// 
+/// # Environment Variables
+/// 
+/// - `R_EXECUTABLE`: Alternative R executable path
+/// - `RV_TEST_DEBUG`: Enable debug output when set
 pub struct RProcessManager {
+    /// The running R process, if active
     process: Option<std::process::Child>,
+    /// Standard input pipe to send commands to R
     stdin: Option<std::process::ChildStdin>,
+    /// Last time process health was checked
     last_health_check: Instant,
 }
 
@@ -19,11 +40,6 @@ impl RProcessManager {
     fn find_r_executable() -> Result<String> {
         debug_print("Starting R executable detection");
 
-        // Check for explicit configuration first
-        if let Ok(r_path) = std::env::var("RV_R_EXECUTABLE") {
-            debug_print(&format!("Using RV_R_EXECUTABLE: {}", r_path));
-            return Ok(r_path);
-        }
         if let Ok(r_path) = std::env::var("R_EXECUTABLE") {
             debug_print(&format!("Using R_EXECUTABLE: {}", r_path));
             return Ok(r_path);

@@ -11,7 +11,7 @@ test:
     run: |
       file.create('.Rprofile')
       writeLines(
-      "options('repos' = c('PPM' = 'https://packagemanager.posit.co/cran/latest'))", ".Rprofile")
+      "options('repos' = c('PPM' = 'https://packagemanager.posit.co/cran/2025-07-16'))", ".Rprofile")
     thread: r
 
   - name: "Initialize project using rv"

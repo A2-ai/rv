@@ -9,7 +9,7 @@ test:
  
   - name: "install renv"
     run: |
-        options("repos" = c("CRAN" = "https://packagemanager.posit.co/cran/latest"))
+        options("repos" = c("CRAN" = "https://packagemanager.posit.co/cran/2025-07-16"))
         install.packages("renv")
         library(renv)
         cat("RENV_VERSION:", as.character(packageVersion("renv")), "\n")
