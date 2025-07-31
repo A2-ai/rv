@@ -241,7 +241,8 @@ impl RCmd for RCommandLine {
         let src_backup_dir = tempfile::tempdir().map_err(|e| InstallError {
             source: InstallErrorKind::TempDir(e),
         })?;
-        LinkMode::Copy.link_files("tmp_build", &source_folder, src_backup_dir.path())
+        LinkMode::Copy
+            .link_files("tmp_build", &source_folder, src_backup_dir.path())
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
