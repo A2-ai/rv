@@ -68,16 +68,6 @@ impl LinkMode {
         from_env.unwrap_or_default()
     }
 
-    /// Try to symlink if possible and fallback to copy on Windows
-    /// Windows requires admin rights for symlink so it might not work oob
-    pub fn symlink_if_possible() -> Self {
-        if cfg!(target_os = "windows") {
-            Self::Copy
-        } else {
-            Self::Symlink
-        }
-    }
-
     pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::Copy => "copy",

@@ -30,17 +30,19 @@ struct CacheRepositoryInfo {
     url: String,
     hash: String,
     path: PathBuf,
+    binary_path: PathBuf,
 }
 
 impl fmt::Display for CacheRepositoryInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} ({} -> {}), path: {}",
+            "{} ({} -> {}), path: {}, binary path: {}",
             self.alias,
             self.url,
             self.hash,
-            self.path.display()
+            self.path.display(),
+            self.binary_path.display(),
         )
     }
 }
@@ -60,11 +62,19 @@ impl CacheInfo {
             .repositories()
             .iter()
             .map(|r| {
+                let binary_path = cache.get_repo_root_binary_dir(r.url());
+                let path = binary_path
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_path_buf();
                 let hash = hash_string(r.url());
                 CacheRepositoryInfo {
                     alias: r.alias.clone(),
                     url: r.url().to_string(),
-                    path: root.join(hash_string(r.url())),
+                    path,
+                    binary_path,
                     hash,
                 }
             })
