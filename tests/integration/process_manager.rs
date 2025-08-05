@@ -187,8 +187,11 @@ impl RProcessManager {
     pub fn debug_pause_after_command(&self) {
         if std::env::var("RV_TEST_DEBUG").is_ok() {
             debug_print("Pausing briefly to let R process command");
-            std::thread::sleep(Duration::from_millis(100));
         }
+        // Always pause briefly to allow R to process commands and flush output
+        // This is especially important on Windows where output buffering can cause
+        // commands to not be fully processed before the R process is terminated
+        std::thread::sleep(Duration::from_millis(100));
     }
 
     pub fn try_capture_output(&self) -> Result<(String, Vec<u8>)> {
