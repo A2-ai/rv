@@ -263,7 +263,7 @@ impl GitRepository {
 
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "Not found",
+            "DESCRIPTION file not found",
         ))
     }
 
