@@ -258,12 +258,17 @@ impl GitRepository {
             desc_path = desc_path.join(DESCRIPTION_FILENAME);
             if desc_path.exists() {
                 return std::fs::read_to_string(desc_path);
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "DESCRIPTION file not found",
+                ));
             }
         }
 
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "DESCRIPTION file not found",
+            "Not found",
         ))
     }
 
