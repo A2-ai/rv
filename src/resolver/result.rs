@@ -76,7 +76,16 @@ impl<'d> Resolution<'d> {
                 continue;
             }
             solver.add_package(&package.name, &package.version);
-            for dep in &package.dependencies {
+
+            let deps = package.dependencies.iter().chain({
+                if package.install_suggests {
+                    package.suggests.iter()
+                } else {
+                    [].iter()
+                }
+            });
+
+            for dep in deps {
                 if let Some(req) = dep.version_requirement() {
                     solver.add_requirement(dep.name(), req, &package.name);
                 }
