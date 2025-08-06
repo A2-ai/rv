@@ -133,7 +133,7 @@ impl DiskCache {
     }
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
-    fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
+    pub fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
         let encoded = hash_string(name);
         self.root
             .join(&encoded)
