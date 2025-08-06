@@ -1,0 +1,14 @@
+[project]
+name = "suggested_dep test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "test.suggests", install_suggestions = true },
+    "rv.git.pkgA",
+]
+---
+repos = [
+    { name = "test-repo2", binary = "test_repo2", force_source = false},
+    { name = "test-repo1", binary = "test_repo1", force_source = false},
+]
+---

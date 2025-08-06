@@ -1,0 +1,7 @@
+---
+source: src/resolver/mod.rs
+assertion_line: 946
+expression: out
+---
+test.suggests=1.0.0 (repository(url: http://test-repo2/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
+rv.git.pkgA=0.0.4 (repository(url: http://test-repo2/), type=binary, path='', from_lockfile=false, from_remote=false, env_vars=[])
