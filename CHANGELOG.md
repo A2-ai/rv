@@ -1,0 +1,83 @@
+## v0.12.0
+
+This release introduces package-specific configure arguments and improved git repository handling, along with several infrastructure improvements and bug fixes.
+
+### 🎉 New Features
+- **Package-specific configure arguments**: You can now specify custom configure arguments for R packages on a per-OS and per-architecture basis in your `rproject.toml` file. This allows you to customize package compilation flags for different platforms.
+- **Programmatic repository configuration**: Added ability to configure repositories programmatically via `rv configure repository` commands, allowing you to add, update, replace, remove, and clear repositories from the command line.
+
+### ⚡ Improvements
+- **Enhanced git repository handling**: rv now properly handles git submodules. This can be disabled with the `RV_SUBMODULE_UPDATE_DISABLE` environment variable.
+- **Improved activation script**: The R activation script now includes better error handling and checks for rv installation before attempting to activate a project.
+
+### 🐛 Bug Fixes
+- **Fixed library staging issues**: Resolved problems where the staging directory could interfere with library operations, particularly for custom library configurations.
+- **Fixed git checkout behavior**: Fixed issues with git branch checkout operations and reference updating after fetching.
+- **Fixed git reference resolution**: Improved handling of unknown git references, with better fallback logic for branches and tags that aren't immediately recognized.
+- **Fixed Cross-device library support**: Fixed issues where rv did not work properly with custom library paths on different filesystems (e.g., NFS mounts).
+
+## Version 0.11.0 - July 14, 2025
+
+This release introduces programmatic repository configuration commands, enhanced binary package detection, and improved installation logging capabilities.
+
+### 🎉 New Features
+- **Repository configuration CLI**: You can now configure repositories programmatically via `rv configure repository` commands. Add, update, replace, remove, and clear repositories directly from the command line with support for positioning (first, last, before, after) and JSON output.
+
+### ⚡ Improvements
+- **Enhanced binary package detection**: Improved detection of binary vs source packages by checking for compiled R files in specific subdirectories (R/ and data/) and validating DESCRIPTION files and Meta directories before installation attempts.
+- **Better glibc compatibility**: Enhanced installation script with more robust glibc version detection across different Linux distributions, with fallback to musl for compatibility on older systems.
+- **Improved installation logging**: Install logs are now saved during the build process rather than at the end, providing better debugging capabilities for failed installations.
+- **Enhanced force_source handling**: When `force_source` is enabled, rv now properly ignores cached binary packages that weren't built from source by rv itself, ensuring packages are compiled locally as requested.
+- **Better error handling**: Enhanced error messages for invalid packages with clearer path and error information.
+- **Improved R command detection**: Better handling of R.bat detection on Windows systems and more reliable R version finding across platforms.
+
+### 🐛 Bug Fixes
+- **Fixed library comparison logic**: Resolved issues where builtin packages weren't properly recognized as installed in project summaries.
+- **Fixed database loading**: Added fallback mechanism when loading cached package databases fails, ensuring rv can recover by re-fetching the data.
+
+## v0.10.0
+
+This release brings incremental installs for projects without lockfiles, enhanced build compatibility, and improved system dependency detection.
+
+### 🎉 New Features
+- **Incremental installs for projects without lockfiles**: Projects that don't use lockfiles now benefit from the same incremental installation behavior introduced in v0.9. When `use_lockfile` is not specified in `rproject.toml`, rv trusts the existing library contents and only installs packages that have changed, rather than reinstalling everything through the staging directory.
+- **Enhanced build compatibility**: Added musl libc support for both x86_64 and aarch64 architectures, enabling rv to run on older OS flavors than Ubuntu 22.04. Expanded the release matrix to provide pre-built binaries for more platforms.
+- **Smart PATH-based detection**: rv now checks for system dependencies in PATH for tools commonly installed outside package managers (pandoc, texlive, cargo, rustc, chromium, google-chrome).
+- **Customizable PATH checking**: New `RV_SYS_DEPS_CHECK_IN_PATH` environment variable allows specifying additional tools to check in PATH.
+
+### ⚡ Improvements
+- **Better package management**: More accurate detection of available system dependencies, reducing false "absent" reports.
+- **Improved lockfile handling**: Better integration between lockfile usage and library state management.
+- **More reliable installation**: More reliable package installation and dependency resolution.
+
+### 🐛 Bug Fixes
+- **Fixed SHA validation**: Fixed potential panic when SHA metadata is missing for git/URL-based packages. Non-repository packages now handle missing SHA metadata gracefully.
+- **Improved error handling**: Enhanced error handling in library metadata operations.
+
+## v0.9.0
+
+### 🎉 New Features
+- **Revolutionary performance**: Implemented incremental library builds that dramatically reduce sync times by only installing changed packages, with up to 80% faster sync operations for unchanged packages.
+- **Smart staging**: New staging directory approach prevents unnecessary copying and linking.
+- **Process safety**: Added better process detection to prevent removal of packages currently in use by R sessions.
+- **Native API support**: Complete rewrite of R-Universe integration using their native API instead of PACKAGES files, with single query efficiency using one API call instead of multiple queries per package.
+- **Improved git tracking**: Better handling of R-Universe packages with proper git SHA tracking and subdirectory support.
+- **Comprehensive build logs**: All package builds now generate detailed logs with stdout/stderr output.
+- **Log extraction**: New `--save-install-logs-in` flag for `rv sync` to save build logs to a specified directory.
+- **Environment variable support**: New `RV_NO_CHECK_OPEN_FILE` environment variable for controlling file checks.
+
+### ⚡ Improvements
+- **Better error diagnosis**: Build failures now provide more actionable error information.
+- **Cyclic dependency handling**: Completely resolved infinite loops when resolving cyclic dependencies.
+- **Version requirement tracking**: Fixed issues where version requirements weren't properly loaded from lockfiles.
+- **Smarter conflict resolution**: Improved SAT solver performance with better variable handling and timing information.
+- **Improved status reporting**: More informative system dependency status in project summaries.
+- **Better Ubuntu 20.04 support**: Fixed parsing issues with system requirements JSON.
+- **Tree command improvements**: Added `--r-version` flag to `rv tree` command for better flexibility.
+- **Dependencies-only support**: Better handling of `dependencies_only` packages in tree output.
+- **Reduced network calls**: Smarter caching and fewer redundant operations.
+
+### 🐛 Bug Fixes
+- **Fixed activate/deactivate**: Commands now correctly use project directory instead of current directory.
+- **Resolved tree filtering**: Fixed handling of ignored dependencies in dependency trees.
+- **Repository parsing**: Better error handling for malformed repository responses.
