@@ -1,6 +1,5 @@
 use taplo::formatter;
 
-
 pub fn format_document(document: &str) -> String {
     formatter::format(document, taplo::formatter::Options::default())
 }

@@ -2,8 +2,11 @@ mod activate;
 mod add;
 mod cache;
 mod cancellation;
+#[cfg(feature = "cli")]
+pub mod cli;
 mod config;
 mod configure;
+mod format;
 mod fs;
 mod git;
 mod http;
@@ -20,9 +23,6 @@ mod sync;
 mod system_info;
 pub mod system_req;
 mod utils;
-mod format;
-#[cfg(feature = "cli")]
-pub mod cli;
 
 pub mod consts;
 
@@ -35,6 +35,7 @@ pub use configure::{
     ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
+pub use format::format_document;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
@@ -48,4 +49,3 @@ pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
-pub use format::format_document;
