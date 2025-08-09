@@ -1,0 +1,14 @@
+---
+source: src/format.rs
+expression: format_document(&contents)
+---
+[project]
+name = "simple"
+r_version = "4.4"
+
+
+repositories = [
+  # here's a comment thats not indented
+  { alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/" },
+]
+dependencies = ["dplyr", "ggplot2"]

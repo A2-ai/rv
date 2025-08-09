@@ -2,8 +2,11 @@ mod activate;
 mod add;
 mod cache;
 mod cancellation;
+#[cfg(feature = "cli")]
+pub mod cli;
 mod config;
 mod configure;
+mod format;
 mod fs;
 mod git;
 mod http;
@@ -21,9 +24,6 @@ mod system_info;
 pub mod system_req;
 mod utils;
 
-#[cfg(feature = "cli")]
-pub mod cli;
-
 pub mod consts;
 
 pub use activate::{activate, deactivate};
@@ -35,6 +35,7 @@ pub use configure::{
     ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
+pub use format::format_document;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;

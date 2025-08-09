@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.12.1"
+version = "0.13.0"
 edition = "2024"
 license = "MIT"
 
@@ -52,6 +52,7 @@ env_logger = { version = "0.11", optional = true }
 jiff = { version = "0.2", optional = true }
 ctrlc = { version = "3", optional = true, features = ["termination"] }
 libc = "0.2.172"
+taplo = "0.14.0"
 
 
 [features]
