@@ -3,11 +3,11 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use crate::SystemInfo;
+use crate::{SystemInfo, VersionRequirement};
 use crate::consts::LOCKFILE_NAME;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
-use crate::package::{Version, deserialize_version};
+use crate::package::Version;
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
@@ -307,12 +307,65 @@ impl ConfigureArgsRule {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RVersion {
+    Strict(Version),
+    Constrained(VersionRequirement),
+    Wildcard,
+}
+
+impl RVersion {
+    pub(crate) fn is_satisfied(&self, version: &Version) -> bool {
+        match self {
+            RVersion::Constrained(req) => req.is_satisfied(version),
+            RVersion::Strict(v) => v.hazy_match(version),
+            RVersion::Wildcard => true
+        }
+    }
+
+    pub(crate) fn original(&self) -> &str {
+        match self {
+            RVersion::Constrained(req) => &req.version.original,
+            RVersion::Strict(v) => &v.original,
+            RVersion::Wildcard => "*",
+        }
+    }
+}
+
+impl TryFrom<String> for RVersion {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        let v = s.trim();
+        if v == "*" {
+            return Ok(RVersion::Wildcard);
+        }
+
+        let wrapped = format!("{v}");
+        if let Ok(req) = wrapped.parse::<VersionRequirement>() {
+            return Ok(RVersion::Constrained(req));
+        }
+
+        let v = v.parse::<Version>()?;
+        Ok(RVersion::Strict(v))
+    }
+}
+
+impl<'de> Deserialize<'de> for RVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>, 
+    {
+        let s: String = String::deserialize(deserializer)?;
+        RVersion::try_from(s).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
-    #[serde(deserialize_with = "deserialize_version")]
-    r_version: Version,
+    r_version: RVersion,
     #[serde(default)]
     description: String,
     license: Option<String>,
@@ -466,7 +519,7 @@ impl Config {
         &self.project.packages_env_vars
     }
 
-    pub fn r_version(&self) -> &Version {
+    pub fn r_version(&self) -> &RVersion {
         &self.project.r_version
     }
 

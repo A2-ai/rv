@@ -704,7 +704,7 @@ mod tests {
     use serde::Deserialize;
     use tempfile::TempDir;
 
-    use crate::config::Config;
+    use crate::config::{Config, RVersion};
     use crate::consts::{BASE_PACKAGES, DESCRIPTION_FILENAME};
     use crate::http::HttpError;
     use crate::package::{Package, parse_package_file};
@@ -773,7 +773,10 @@ mod tests {
         let content = std::fs::read_to_string(path).unwrap();
         let parts: Vec<_> = content.splitn(3, "---").collect();
         let config = Config::from_str(parts[0]).expect("valid config");
-        let r_version = config.r_version().clone();
+        let r_version = match config.r_version() {
+            RVersion::Strict(v) => v.clone(),
+            _ => unreachable!("Configs have strict R version specified")
+        };
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
