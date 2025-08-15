@@ -729,7 +729,6 @@ fn try_main() -> Result<()> {
                 println!("rv deactivated");
             }
         }
-        
 
         Command::Configure { subcommand } => {
             match subcommand {
