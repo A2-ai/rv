@@ -38,12 +38,6 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Formats the toml configuration file while preserving comments and spacing
-    Fmt {
-        // add a --check flag to check formatting without changing the file
-        #[clap(long)]
-        check: bool,
-    },
     /// Creates a new rv project
     Init {
         #[clap(value_parser, default_value = ".")]
@@ -64,17 +58,10 @@ pub enum Command {
         /// Force new init. This will replace content in your rproject.toml
         force: bool,
     },
-    /// Returns the path for the library for the current project/system in UNIX format, even
-    /// on Windows.
-    Library,
-    /// Dry run of what sync would do
-    Plan {
-        #[clap(short, long)]
-        upgrade: bool,
-        /// Specify a R version different from the one in the config.
-        /// The command will not error even if this R version is not found
-        #[clap(long)]
-        r_version: Option<Version>,
+    /// Migrate renv to rv
+    Migrate {
+        #[clap(subcommand)]
+        subcommand: MigrateSubcommand,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync {
@@ -92,6 +79,20 @@ pub enum Command {
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
     },
+    /// Upgrade packages to the latest versions available
+    Upgrade {
+        #[clap(long)]
+        dry_run: bool,
+    },
+    /// Dry run of what sync would do
+    Plan {
+        #[clap(short, long)]
+        upgrade: bool,
+        /// Specify a R version different from the one in the config.
+        /// The command will not error even if this R version is not found
+        #[clap(long)]
+        r_version: Option<Version>,
+    },
     /// Provide a summary about the project status
     Summary {
         /// Specify a R version different from the one in the config.
@@ -99,6 +100,38 @@ pub enum Command {
         #[clap(long)]
         r_version: Option<Version>,
     },
+    /// Configure project settings
+    Configure {
+        #[command(subcommand)]
+        subcommand: ConfigureSubcommand,
+    },
+    /// Formats the toml configuration file while preserving comments and spacing
+    Fmt {
+        // add a --check flag to check formatting without changing the file
+        #[clap(long)]
+        check: bool,
+    },
+    /// Shows the project packages in tree format
+    Tree {
+        #[clap(long)]
+        /// How deep are we going in the tree: 1 == only root deps, 2 == root deps + their direct dep etc
+        /// Defaults to showing everything
+        depth: Option<usize>,
+        #[clap(long)]
+        /// Whether to not display the system dependencies on each leaf.
+        /// This only does anything on supported platforms (eg some Linux), it's already
+        /// hidden otherwise
+        hide_system_deps: bool,
+        #[clap(long)]
+        /// Specify a R version different from the one in the config.
+        /// The command will not error even if this R version is not found
+        r_version: Option<Version>,
+    },
+    /// Returns the path for the library for the current project/system in UNIX format, even
+    /// on Windows.
+    Library,
+    /// Gives information about where the cache is for that project
+    Cache,
     /// Simple information about the project
     Info {
         #[clap(long)]
@@ -112,25 +145,6 @@ pub enum Command {
         #[clap(long)]
         repositories: bool,
     },
-    /// Gives information about where the cache is for that project
-    Cache,
-    /// Upgrade packages to the latest versions available
-    Upgrade {
-        #[clap(long)]
-        dry_run: bool,
-    },
-    /// Migrate renv to rv
-    Migrate {
-        #[clap(subcommand)]
-        subcommand: MigrateSubcommand,
-    },
-    /// Activate a previously initialized rv project
-    Activate {
-        #[clap(long)]
-        no_r_environment: bool,
-    },
-    /// Deactivate an rv project
-    Deactivate,
     /// List the system dependencies needed by the dependency tree.
     /// This is currently only supported on Ubuntu/Debian, it will return an empty result
     /// anywhere else.
@@ -149,27 +163,13 @@ pub enum Command {
         #[clap(long)]
         ignore: Vec<String>,
     },
-    /// Shows the project packages in tree format
-    Tree {
+    /// Activate a previously initialized rv project
+    Activate {
         #[clap(long)]
-        /// How deep are we going in the tree: 1 == only root deps, 2 == root deps + their direct dep etc
-        /// Defaults to showing everything
-        depth: Option<usize>,
-        #[clap(long)]
-        /// Whether to not display the system dependencies on each leaf.
-        /// This only does anything on supported platforms (eg some Linux), it's already
-        /// hidden otherwise
-        hide_system_deps: bool,
-        #[clap(long)]
-        /// Specify a R version different from the one in the config.
-        /// The command will not error even if this R version is not found
-        r_version: Option<Version>,
+        no_r_environment: bool,
     },
-    /// Configure project settings
-    Configure {
-        #[command(subcommand)]
-        subcommand: ConfigureSubcommand,
-    },
+    /// Deactivate an rv project
+    Deactivate,
 }
 
 #[derive(Debug, Subcommand)]
@@ -282,31 +282,6 @@ fn try_main() -> Result<()> {
         .init();
 
     match cli.command {
-        Command::Fmt { check } => {
-            let contents = read_to_string(&cli.config_file)?;
-            let formatted = rv::format_document(&contents);
-            if contents == formatted {
-                if output_format.is_json() {
-                    println!("{{\"reformat\": false}}");
-                } else {
-                    println!("Config file is already formatted");
-                }
-                return Ok(());
-            }
-            // if we've gotten here we weren't formatted, so if check we bail
-            // otherwise we rewrite the file
-            if check {
-                eprintln!("Config file is not formatted correctly");
-                ::std::process::exit(1);
-            } else {
-                write(&cli.config_file, formatted)?;
-                if output_format.is_json() {
-                    println!("{{\"reformat\": true}}");
-                } else {
-                    println!("Config file successfully formatted");
-                }
-            }
-        }
         Command::Init {
             project_directory,
             r_version,
@@ -365,39 +340,65 @@ fn try_main() -> Result<()> {
                 );
             }
         }
-        Command::Library => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            let path_str = context.library_path().to_string_lossy();
-            let path_out = if cfg!(windows) {
-                path_str.replace('\\', "/")
-            } else {
-                path_str.to_string()
-            };
+        Command::Migrate {
+            subcommand:
+                MigrateSubcommand::Renv {
+                    renv_file,
+                    strict_r_version,
+                    no_r_environment,
+                },
+        } => {
+            let unresolved = migrate_renv(&renv_file, &cli.config_file, strict_r_version)?;
+            // migrate renv will create the config file, so parent directory is confirmed to exist
+            let project_dir = &cli
+                .config_file
+                .canonicalize()?
+                .parent()
+                .unwrap()
+                .to_path_buf();
+            init_structure(project_dir)?;
+            activate(project_dir, no_r_environment)?;
+            let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
+                "source(\"renv/activate.R\")",
+                "# source(\"renv/activate.R\")",
+            );
+            write(project_dir.join(".Rprofile"), content)?;
 
-            if output_format.is_json() {
-                println!("{}", json!({"directory": path_out}));
+            if unresolved.is_empty() {
+                if output_format.is_json() {
+                    println!(
+                        "{}",
+                        json!({
+                            "success": true,
+                            "unresolved": [],
+                        })
+                    );
+                } else {
+                    println!(
+                        "{} was successfully migrated to {}",
+                        renv_file.display(),
+                        cli.config_file.display()
+                    );
+                }
+            } else if output_format.is_json() {
+                println!(
+                    "{}",
+                    json!({
+                        "success": false,
+                        "unresolved": unresolved.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    })
+                );
             } else {
-                println!("{path_out}");
+                println!(
+                    "{} was migrated to {} with {} unresolved packages: ",
+                    renv_file.display(),
+                    cli.config_file.display(),
+                    unresolved.len()
+                );
+                for u in &unresolved {
+                    eprintln!("    {u}");
+                }
             }
-        }
-        Command::Plan { upgrade, r_version } => {
-            let upgrade = if upgrade || r_version.is_some() {
-                ResolveMode::FullUpgrade
-            } else {
-                ResolveMode::Default
-            };
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
-
-            if !log_enabled {
-                context.show_progress_bar();
-            }
-            context.load_for_resolve_mode(upgrade)?;
-            SyncHelper {
-                dry_run: true,
-                output_format: Some(output_format),
-                ..Default::default()
-            }
-            .run(&context, upgrade)?;
         }
         Command::Sync {
             save_install_logs_in,
@@ -472,125 +473,24 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Info {
-            library,
-            r_version,
-            repositories,
-        } => {
-            // TODO: handle info, eg need to accumulate fields
-            let mut output = Vec::new();
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            if library {
-                let path_str = context.library_path().to_string_lossy();
-                let path_out = if cfg!(windows) {
-                    path_str.replace('\\', "/")
-                } else {
-                    path_str.to_string()
-                };
-                output.push(("library", path_out));
-            }
-            if r_version {
-                output.push(("r-version", context.r_version.original.to_owned()));
-            }
-            if repositories {
-                let repos = context
-                    .config
-                    .repositories()
-                    .iter()
-                    .map(|r| format!("({}, {})", r.alias, r.url()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                output.push(("repositories", repos));
-            }
-
-            if output_format.is_json() {
-                let output: HashMap<_, _> = output.into_iter().collect();
-                println!("{}", serde_json::to_string_pretty(&output)?);
+        Command::Plan { upgrade, r_version } => {
+            let upgrade = if upgrade || r_version.is_some() {
+                ResolveMode::FullUpgrade
             } else {
-                for (key, val) in output {
-                    println!("{key}: {val}");
-                }
-            }
-        }
-        Command::Cache => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            context.load_databases()?;
+                ResolveMode::Default
+            };
+            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let info = CacheInfo::new(
-                &context.config,
-                &context.cache,
-                resolve_dependencies(&context, &ResolveMode::Default, true).found,
-            );
-            if output_format.is_json() {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&info).expect("valid json")
-                );
-            } else {
-                println!("{info}");
+            context.load_for_resolve_mode(upgrade)?;
+            SyncHelper {
+                dry_run: true,
+                output_format: Some(output_format),
+                ..Default::default()
             }
-        }
-        Command::Migrate {
-            subcommand:
-                MigrateSubcommand::Renv {
-                    renv_file,
-                    strict_r_version,
-                    no_r_environment,
-                },
-        } => {
-            let unresolved = migrate_renv(&renv_file, &cli.config_file, strict_r_version)?;
-            // migrate renv will create the config file, so parent directory is confirmed to exist
-            let project_dir = &cli
-                .config_file
-                .canonicalize()?
-                .parent()
-                .unwrap()
-                .to_path_buf();
-            init_structure(project_dir)?;
-            activate(project_dir, no_r_environment)?;
-            let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
-                "source(\"renv/activate.R\")",
-                "# source(\"renv/activate.R\")",
-            );
-            write(project_dir.join(".Rprofile"), content)?;
-
-            if unresolved.is_empty() {
-                if output_format.is_json() {
-                    println!(
-                        "{}",
-                        json!({
-                            "success": true,
-                            "unresolved": [],
-                        })
-                    );
-                } else {
-                    println!(
-                        "{} was successfully migrated to {}",
-                        renv_file.display(),
-                        cli.config_file.display()
-                    );
-                }
-            } else if output_format.is_json() {
-                println!(
-                    "{}",
-                    json!({
-                        "success": false,
-                        "unresolved": unresolved.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                    })
-                );
-            } else {
-                println!(
-                    "{} was migrated to {} with {} unresolved packages: ",
-                    renv_file.display(),
-                    cli.config_file.display(),
-                    unresolved.len()
-                );
-                for u in &unresolved {
-                    eprintln!("    {u}");
-                }
-            }
+            .run(&context, upgrade)?;
         }
         Command::Summary { r_version } => {
             let mut context = CliContext::new(&cli.config_file, r_version.into())?;
@@ -634,24 +534,130 @@ fn try_main() -> Result<()> {
                 println!("{summary}");
             }
         }
-        Command::Activate { no_r_environment } => {
-            let config_file = cli.config_file.canonicalize()?;
-            let project_dir = config_file.parent().expect("parent to exist");
-            activate(project_dir, no_r_environment)?;
-            if output_format.is_json() {
-                println!("{{}}");
+        // configure left at bottom due to its size
+        Command::Fmt { check } => {
+            let contents = read_to_string(&cli.config_file)?;
+            let formatted = rv::format_document(&contents);
+            if contents == formatted {
+                if output_format.is_json() {
+                    println!("{{\"reformat\": false}}");
+                } else {
+                    println!("Config file is already formatted");
+                }
+                return Ok(());
+            }
+            // if we've gotten here we weren't formatted, so if check we bail
+            // otherwise we rewrite the file
+            if check {
+                eprintln!("Config file is not formatted correctly");
+                ::std::process::exit(1);
             } else {
-                println!("rv activated");
+                write(&cli.config_file, formatted)?;
+                if output_format.is_json() {
+                    println!("{{\"reformat\": true}}");
+                } else {
+                    println!("Config file successfully formatted");
+                }
             }
         }
-        Command::Deactivate => {
-            let config_file = cli.config_file.canonicalize()?;
-            let project_dir = config_file.parent().expect("parent to exist");
-            deactivate(project_dir)?;
+        Command::Tree {
+            depth,
+            hide_system_deps,
+            r_version,
+        } => {
+            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+            context.load_databases_if_needed()?;
+            if !hide_system_deps {
+                context.load_system_requirements()?;
+            }
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
+            let tree = tree(&context, &resolution.found, &resolution.failed);
+
             if output_format.is_json() {
-                println!("{{}}");
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&tree).expect("valid json")
+                );
             } else {
-                println!("rv deactivated");
+                tree.print(depth, !hide_system_deps);
+            }
+        }
+        Command::Library => {
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let path_str = context.library_path().to_string_lossy();
+            let path_out = if cfg!(windows) {
+                path_str.replace('\\', "/")
+            } else {
+                path_str.to_string()
+            };
+
+            if output_format.is_json() {
+                println!("{}", json!({"directory": path_out}));
+            } else {
+                println!("{path_out}");
+            }
+        }
+        Command::Cache => {
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            context.load_databases()?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+            let info = CacheInfo::new(
+                &context.config,
+                &context.cache,
+                resolve_dependencies(&context, &ResolveMode::Default, true).found,
+            );
+            if output_format.is_json() {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&info).expect("valid json")
+                );
+            } else {
+                println!("{info}");
+            }
+        }
+        Command::Info {
+            library,
+            r_version,
+            repositories,
+        } => {
+            // TODO: handle info, eg need to accumulate fields
+            let mut output = Vec::new();
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            if library {
+                let path_str = context.library_path().to_string_lossy();
+                let path_out = if cfg!(windows) {
+                    path_str.replace('\\', "/")
+                } else {
+                    path_str.to_string()
+                };
+                output.push(("library", path_out));
+            }
+            if r_version {
+                output.push(("r-version", context.r_version.original.to_owned()));
+            }
+            if repositories {
+                let repos = context
+                    .config
+                    .repositories()
+                    .iter()
+                    .map(|r| format!("({}, {})", r.alias, r.url()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                output.push(("repositories", repos));
+            }
+
+            if output_format.is_json() {
+                let output: HashMap<_, _> = output.into_iter().collect();
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                for (key, val) in output {
+                    println!("{key}: {val}");
+                }
             }
         }
         Command::Sysdeps {
@@ -703,32 +709,28 @@ fn try_main() -> Result<()> {
                 }
             }
         }
-
-        Command::Tree {
-            depth,
-            hide_system_deps,
-            r_version,
-        } => {
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
-            context.load_databases_if_needed()?;
-            if !hide_system_deps {
-                context.load_system_requirements()?;
-            }
-            if !log_enabled {
-                context.show_progress_bar();
-            }
-            let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
-            let tree = tree(&context, &resolution.found, &resolution.failed);
-
+        Command::Activate { no_r_environment } => {
+            let config_file = cli.config_file.canonicalize()?;
+            let project_dir = config_file.parent().expect("parent to exist");
+            activate(project_dir, no_r_environment)?;
             if output_format.is_json() {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&tree).expect("valid json")
-                );
+                println!("{{}}");
             } else {
-                tree.print(depth, !hide_system_deps);
+                println!("rv activated");
             }
         }
+        Command::Deactivate => {
+            let config_file = cli.config_file.canonicalize()?;
+            let project_dir = config_file.parent().expect("parent to exist");
+            deactivate(project_dir)?;
+            if output_format.is_json() {
+                println!("{{}}");
+            } else {
+                println!("rv deactivated");
+            }
+        }
+        
+
         Command::Configure { subcommand } => {
             match subcommand {
                 ConfigureSubcommand::Repository { operation } => {
