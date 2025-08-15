@@ -2,6 +2,7 @@
 
 use crate::cli::ResolveMode;
 use crate::cli::utils::write_err;
+use crate::config::RVersion;
 use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
@@ -65,23 +66,28 @@ impl CliContext {
 
         // This can only be set to false if the user passed a r_version to rv plan
         let mut r_version_found = true;
-        let (r_version, r_cmd) = match r_command_lookup {
+        let (r_cmd, r_version) = match r_command_lookup {
             RCommandLookup::Strict => {
-                let r_version = config.r_version().clone();
-                let r_cmd = find_r_version_command(&r_version)?;
-                (r_version, r_cmd)
+                find_r_version_command(&config.r_version())?
             }
             RCommandLookup::Soft(v) => {
-                let r_cmd = match find_r_version_command(&v) {
+                match find_r_version_command(&RVersion::Strict(v.clone())) {
                     Ok(r) => r,
                     Err(_) => {
                         r_version_found = false;
-                        RCommandLine::default()
+                        (RCommandLine::default(), v)
                     }
-                };
-                (v, r_cmd)
+                }
             }
-            RCommandLookup::Skip => (config.r_version().clone(), RCommandLine::default()),
+            RCommandLookup::Skip => {
+                // if R version is specified, we don't need to look up. 
+                // Otherwise, need to determine what the actual R version to be used is
+                if let RVersion::Strict(v) = config.r_version() {
+                    (RCommandLine::default(), v.clone())
+                } else {
+                    find_r_version_command(config.r_version())?
+                }
+            },
         };
 
         let cache = match DiskCache::new(&r_version, SystemInfo::from_os_info()) {
