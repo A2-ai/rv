@@ -311,6 +311,14 @@ pub enum DependencyOperation {
         #[clap(long, requires = "git")]
         directory: Option<String>,
     },
+    /// Remove existing dependencies
+    Remove {
+        /// names of the dependencies to remove
+        #[clap(value_parser, required = true)]
+        names: Vec<String>,
+    },
+    /// Clear all dependencies
+    Clear,
 }
 
 #[derive(Debug, Subcommand)]
@@ -987,7 +995,13 @@ fn try_main() -> Result<()> {
                             );
 
                             DependencyAction::Add { config_dep }
-                        }
+                        },
+                        DependencyOperation::Remove { names } => {
+                            DependencyAction::Remove { names }
+                        },
+                        DependencyOperation::Clear => {
+                            DependencyAction::Clear
+                        },
                     };
                     let res = execute_dependency_action(&cli.config_file, action)?;
                 }

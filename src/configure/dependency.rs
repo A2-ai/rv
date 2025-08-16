@@ -5,21 +5,25 @@ use toml_edit::{Array, DocumentMut, InlineTable, Value};
 
 use crate::{
     configure::{
-        format_array, get_mut_array, read_config_as_document, repository::find_repository_index, to_value_bool, to_value_string, ConfigureError, ConfigureErrorKind, ConfigureType
+        clear_array, format_array, get_mut_array, read_config_as_document, repository::find_repository_index, to_value_bool, to_value_string, ConfigureError, ConfigureErrorKind, ConfigureType
     }, ConfigDependency
 };
 
 pub enum DependencyAction {
     Add { config_dep: ConfigDependency },
+    Remove {names: Vec<String> },
+    Clear,
 }
 
 enum DependencyOperation {
     Add,
+    Remove, 
+    Clear,
 }
 
 pub struct ConfigureDependencyResponse {
     operation: DependencyOperation,
-    name: String,
+    names: Vec<String>,
 }
 
 pub fn execute_dependency_action<'a>(
@@ -40,7 +44,28 @@ pub fn execute_dependency_action<'a>(
             })?;
             ConfigureDependencyResponse {
                 operation: DependencyOperation::Add,
-                name: config_dep.name().to_string(),
+                names: vec![config_dep.name().to_string()],
+            }
+        }
+        DependencyAction::Remove { names } => {
+            remove_dependencies(&mut doc, &names).map_err(|e| ConfigureError {
+                path: config_file.into(),
+                source: Box::new(e),
+            })?;
+            ConfigureDependencyResponse {
+                operation: DependencyOperation::Remove,
+                names
+            }
+        }
+        DependencyAction::Clear => {
+            clear_array(&mut doc, ConfigureType::Dependency).map_err(|e| ConfigureError {
+                path: config_file.into(),
+                source: Box::new(e)
+            })?;
+
+            ConfigureDependencyResponse {
+                operation: DependencyOperation::Clear,
+                names: vec![]
             }
         }
     };
@@ -79,6 +104,24 @@ fn add_dependency(
     Ok(())
 }
 
+fn remove_dependencies(doc: &mut DocumentMut, deps_to_remove: &[String]) -> Result<(), ConfigureErrorKind> {
+    let deps = get_mut_array(doc, ConfigureType::Dependency)?;
+    let mut missing_pkgs = Vec::new();
+    for d in deps_to_remove {
+        if let Some(idx) = find_dependency_index(deps, &d) {
+            deps.remove(idx);
+        } else {
+            missing_pkgs.push(d.as_str());
+        }
+    }
+
+    if !missing_pkgs.is_empty() {
+        return Err(ConfigureErrorKind::PackagesNotFound(missing_pkgs.join(", ")));
+    }
+
+    Ok(())
+}
+
 fn find_dependency_index(deps: &Array, name: &str) -> Option<usize> {
     deps.iter().position(|dep| match dep {
         Value::InlineTable(tbl) => tbl
@@ -86,7 +129,7 @@ fn find_dependency_index(deps: &Array, name: &str) -> Option<usize> {
             .and_then(|v| v.as_str())
             .map(|n| n == name)
             .unwrap_or(false),
-        Value::String(s) => &s.to_string() == name,
+        Value::String(s) => &s.value().to_string() == name,
         _ => false,
     })
 }

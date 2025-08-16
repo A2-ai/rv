@@ -123,6 +123,8 @@ pub enum ConfigureErrorKind {
     DuplicatePackage(String),
     #[error("Alias not found: {0}")]
     AliasNotFound(String),
+    #[error("Package(s) not found: {0}")]
+    PackagesNotFound(String),
     #[error("IO error: {0}")]
     Io(std::io::Error),
     #[error("Config load error: {0}")]
