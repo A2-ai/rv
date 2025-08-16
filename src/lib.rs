@@ -32,8 +32,9 @@ pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
 pub use configure::{
-    ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
-    RepositoryPositioning, RepositoryUpdates, execute_repository_action,
+    ConfigureDependencyResponse, ConfigureRepositoryResponse, DependencyAction, RepositoryAction,
+    RepositoryMatcher, RepositoryOperation, RepositoryPositioning, RepositoryUpdates,
+    execute_dependency_action, execute_repository_action,
 };
 pub use format::format_document;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};

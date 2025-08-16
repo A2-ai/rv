@@ -1,22 +1,24 @@
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use url::Url;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
-use rv::RepositoryOperation as LibRepositoryOperation;
 use rv::cli::{
     CliContext, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
     init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{
-    CacheInfo, Config, ProjectSummary, RCmd, RCommandLine, RepositoryAction, RepositoryMatcher,
-    RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
-    execute_repository_action, read_and_verify_config, system_req,
+    CacheInfo, Config, DependencyAction, ProjectSummary, RCmd, RCommandLine, RepositoryAction,
+    RepositoryMatcher, RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages,
+    deactivate, execute_dependency_action, execute_repository_action, read_and_verify_config,
+    system_req,
 };
+use rv::{ConfigDependency, RepositoryOperation as LibRepositoryOperation};
 
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
@@ -178,6 +180,10 @@ pub enum ConfigureSubcommand {
         #[clap(subcommand)]
         operation: RepositoryOperation,
     },
+    Dependency {
+        #[clap(subcommand)]
+        operation: DependencyOperation,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -246,6 +252,65 @@ pub enum RepositoryOperation {
     },
     /// Clear all repositories
     Clear,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DependencyOperation {
+    /// Add a new dependency
+    #[command(
+        // Exactly one of these may be used to locate the dependency
+        group(
+            ArgGroup::new("source_locator")
+                .args(["repository", "url", "path", "git"])
+                .multiple(false)
+                .required(false)
+        ),
+        // If --git is used, require exactly one of tag/branch/commit
+        group(
+            ArgGroup::new("git_ref")
+                .args(["tag", "branch", "commit"])
+                .multiple(false)
+                .required(false)
+        )
+    )]
+    Add {
+        /// Package name
+        name: String,
+        /// Enable install_suggestions
+        #[clap(long)]
+        install_suggestions: bool,
+        /// Enable dependencies_only
+        #[clap(long)]
+        dependencies_only: bool,
+        /// Specify a repository alias
+        #[clap(long)]
+        repository: Option<String>,
+        /// Force building from source (optional boolean).
+        /// `--force-source` == `--force-source=true`
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        force_source: Option<bool>,
+        /// Specify a url
+        #[clap(long, conflicts_with = "force_source")]
+        url: Option<Url>,
+        /// Specify a local path
+        #[clap(long, conflicts_with = "force_source")]
+        path: Option<PathBuf>,
+        /// Specify a git repository. Requires one of tag, branch, commit
+        #[clap(long, conflicts_with = "force_source", requires = "git_ref")]
+        git: Option<String>,
+        /// Specify git tag reference
+        #[clap(long, requires = "git")]
+        tag: Option<String>,
+        /// Specify git branch reference
+        #[clap(long, requires = "git")]
+        branch: Option<String>,
+        /// Specify git commit reference. Full sha
+        #[clap(long, requires = "git")]
+        commit: Option<String>,
+        /// A sub-directory within the git repository
+        #[clap(long, requires = "git")]
+        directory: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -875,6 +940,56 @@ fn try_main() -> Result<()> {
                             }
                         }
                     }
+                }
+                ConfigureSubcommand::Dependency { operation } => {
+                    let action = match operation {
+                        DependencyOperation::Add {
+                            name,
+                            install_suggestions,
+                            dependencies_only,
+                            repository,
+                            force_source,
+                            url,
+                            path,
+                            git,
+                            tag,
+                            branch,
+                            commit,
+                            directory,
+                        } => {
+                            let url =
+                                if let Some(url) = url {
+                                    Some(url.try_into().map_err(|_| {
+                                        anyhow!("Url must start with http or https")
+                                    })?)
+                                } else {
+                                    None
+                                };
+
+                            let git = if let Some(git) = git {
+                                Some(git.as_str().try_into().map_err(|e| anyhow!("{e}"))?)
+                            } else {
+                                None
+                            };
+                            let config_dep = ConfigDependency::new_from_cli(
+                                name,
+                                install_suggestions,
+                                dependencies_only,
+                                repository,
+                                force_source,
+                                url,
+                                path,
+                                git,
+                                tag,
+                                branch,
+                                commit,
+                                directory,
+                            );
+
+                            DependencyAction::Add { config_dep }
+                        }
+                    };
+                    let res = execute_dependency_action(&cli.config_file, action)?;
                 }
             }
         }

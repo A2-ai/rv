@@ -11,7 +11,7 @@ use crate::package::{Version, deserialize_version};
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HttpUrl(Url);
 
 impl<'de> Deserialize<'de> for HttpUrl {
@@ -30,6 +30,20 @@ impl<'de> Deserialize<'de> for HttpUrl {
         }
 
         Err(serde::de::Error::custom("Invalid URL"))
+    }
+}
+
+impl TryFrom<Url> for HttpUrl {
+    type Error = ();
+    fn try_from(mut url: Url) -> Result<Self, Self::Error> {
+        match url.scheme() {
+            "http" | "https" => {
+                let path = url.path().trim_end_matches('/').to_string();
+                url.set_path(&path);
+                Ok(HttpUrl(url))
+            }
+            _ => Err(()),
+        }
     }
 }
 
@@ -73,7 +87,7 @@ impl Repository {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
@@ -104,8 +118,8 @@ pub enum ConfigDependency {
         name: String,
         #[serde(default)]
         install_suggestions: bool,
-        #[serde(default)]
-        force_source: Option<bool>,
+        // #[serde(default)]
+        // force_source: Option<bool>,
         #[serde(default)]
         dependencies_only: bool,
     },
@@ -209,6 +223,67 @@ impl ConfigDependency {
                 install_suggestions,
                 ..
             } => *install_suggestions,
+        }
+    }
+
+    #[cfg(feature = "cli")]
+    pub fn new_from_cli(
+        name: String,
+        install_suggestions: bool,
+        dependencies_only: bool,
+        repository: Option<String>,
+        force_source: Option<bool>,
+        url: Option<HttpUrl>,
+        path: Option<PathBuf>,
+        git: Option<GitUrl>,
+        tag: Option<String>,
+        branch: Option<String>,
+        commit: Option<String>,
+        directory: Option<String>,
+    ) -> Self {
+        match (url, path, git) {
+            (Some(url), None, None) => Self::Url {
+                url,
+                name,
+                install_suggestions,
+                dependencies_only,
+            },
+            (None, Some(path), None) => Self::Local {
+                path,
+                name,
+                install_suggestions,
+                dependencies_only,
+            },
+            (None, None, Some(git)) => Self::Git {
+                git,
+                commit,
+                tag,
+                branch,
+                directory,
+                name,
+                install_suggestions,
+                dependencies_only,
+            },
+            (None, None, None) => {
+                if repository.is_some()
+                    || force_source.is_some()
+                    || install_suggestions
+                    || dependencies_only
+                {
+                    Self::Detailed {
+                        name,
+                        repository,
+                        install_suggestions,
+                        force_source,
+                        dependencies_only,
+                    }
+                } else {
+                    Self::Simple(name)
+                }
+            }
+            _ => unreachable!(
+                "No more than url, path, and git can be specified. If less than must be Detailed or Simple dep"
+            ),
         }
     }
 }
