@@ -131,8 +131,8 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 	}
 
 	.libPaths(rv_lib, include.site = FALSE)
-	Sys.setenv("R_LIBS_USER" = .libPaths()[1])
-	Sys.setenv("R_LIBS_SITE" = .libPaths()[1])
+	Sys.setenv("R_LIBS_USER" = rv_lib)
+	Sys.setenv("R_LIBS_SITE" = rv_lib)
 
 	# Results
 	if (interactive()) {
@@ -148,11 +148,11 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 			"\n"
 		)
 		message(
-			ifelse(
-				r_match,
-				"rv libpaths active!\nlibrary paths: \n",
+			if (r_match) {
+				"rv libpaths active!\nlibrary paths: \n"
+			} else {
 				"rv libpaths are not active due to R version mismatch. Using temp directory: \n"
-			),
+			},
 			paste0("  ", .libPaths(), collapse = "\n")
 		)
 	}
