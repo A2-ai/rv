@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import subprocess
+import json
 
 INIT_FOLDER = "init"
 CONFIG_FILE = "rproject.toml"
@@ -103,6 +104,15 @@ def run_test():
         res = run_rv_cmd("upgrade", [])
         if "- rv.git.pkgA" not in res or "+ rv.git.pkgA (0.0.5" not in res or "from https://a2-ai.github.io/rv-test-repo/repo1)" not in res:
             print("Upgrade did not behave as expected")
+            
+        res = run_rv_cmd("cache", ["--json"])
+        cache_data = json.loads(res)
+        
+        for repo in cache_data.get("repositories", []):
+            if not repo["path"].endswith(repo["hash"]):
+                print(f"Path {repo['path']} does not end with hash {repo['hash']}")
+                exit(1)
+        
     finally:
         os.chdir(original_dir)
 

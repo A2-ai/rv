@@ -105,8 +105,6 @@ pub enum ConfigDependency {
         #[serde(default)]
         install_suggestions: bool,
         #[serde(default)]
-        force_source: Option<bool>,
-        #[serde(default)]
         dependencies_only: bool,
     },
     Detailed {

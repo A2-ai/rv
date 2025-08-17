@@ -63,13 +63,8 @@ impl CacheInfo {
             .iter()
             .map(|r| {
                 let binary_path = cache.get_repo_root_binary_dir(r.url());
-                let path = binary_path
-                    .parent()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .to_path_buf();
                 let hash = hash_string(r.url());
+                let path = root.join(&hash);
                 CacheRepositoryInfo {
                     alias: r.alias.clone(),
                     url: r.url().to_string(),
