@@ -1,3 +1,20 @@
+## v0.13.0 - August 15, 2025
+
+This release introduces a new formatting command for configuration files and improves dependency resolution for suggested packages.
+
+### 🎉 New Features
+- **Configuration file formatting**: You can now format your `rproject.toml` files with `rv fmt` to ensure consistent styling. Use `rv fmt --check` to verify formatting without making changes.
+
+### 🐛 Bug Fixes
+- **Fixed suggested package version requirements**: Resolved an issue where version requirements from suggested packages weren't properly considered during dependency resolution, which could lead to incorrect package versions being installed.
+- **Fixed git repository error messages**: Improved error reporting when DESCRIPTION files are missing in git repositories, providing clearer feedback about what went wrong.
+
+## v0.12.1 - August 6, 2025
+
+### ⚡ Improvements
+- **Enhanced cache information display**: The `rv cache` command now shows both source and binary paths for repositories, providing better visibility into cached package locations.
+- **More reliable package installation**: Package compilation now uses file copying instead of symlinking during the build process, improving compatibility across different filesystems and build tools.
+
 ## v0.12.0
 
 This release introduces package-specific configure arguments and improved git repository handling, along with several infrastructure improvements and bug fixes.
