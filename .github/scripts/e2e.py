@@ -68,7 +68,6 @@ def run_test():
     
     try: 
         run_rv_cmd("configure", ["repository", "add", "repo2", "--url", "https://a2-ai.github.io/rv-test-repo/repo2"])
-        run_r_script("source('.Rprofile')")
         check_r_profile(True)
         run_r_script(".rv$add('rv.git.pkgA', dry_run=TRUE)")
         summary = run_rv_cmd("summary", [])
@@ -100,7 +99,6 @@ def run_test():
                 exit(1)        
          
         edit_r_version(CONFIG_FILE, "4.3")
-        run_r_script("source('.Rprofile')")
         check_r_profile(False)
 
     finally:
