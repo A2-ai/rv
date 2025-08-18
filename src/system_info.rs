@@ -88,6 +88,7 @@ impl SystemInfo {
             Type::Redhat => OsType::Linux("redhat"),
             Type::RockyLinux => OsType::Linux("rocky"),
             Type::SUSE => OsType::Linux("suse"),
+            Type::Gentoo => OsType::Linux("gentoo"),
             Type::Macos => OsType::MacOs,
             _ => OsType::Other(info.os_type()),
         };
