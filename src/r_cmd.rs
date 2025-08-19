@@ -122,14 +122,15 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
         if let Some(arch) = info.architecture() {
             let rig_r_bin_path =
                 PathBuf::from(format!("R-{}.{}-{}", major_minor[0], major_minor[1], arch));
-            if let Ok(path_rig_r) = (RCommandLine {
+
+            let rig_r_cmd = RCommandLine {
                 r: Some(rig_r_bin_path),
-            })
-            .version()
-            {
+            };
+
+            if let Ok(path_rig_r) = rig_r_cmd.version() {
                 if r_version.hazy_match(&path_rig_r) {
                     log::debug!("R {r_version} found on the path via rig pattern");
-                    return Ok(RCommandLine { r: None });
+                    return Ok(rig_r_cmd);
                 }
                 found_r_vers.push(path_rig_r.original);
             }
