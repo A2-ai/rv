@@ -86,8 +86,7 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		sub(paste0("^", prefix, ":\\s*"), "", line)
 	}
 
-	rv_lib <- normalizePath(get_val("library"), mustWork = FALSE)
-	rv_r_ver <- get_val("r-version")
+	# Set repos option
 	repo_str <- get_val("repositories")
 
 	repo_parts <- strsplit(repo_str, "), ", fixed = TRUE)[[1]]
@@ -102,21 +101,41 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		repo_urls[i] <- trimws(parts[2])
 	}
 	names(repo_urls) <- repo_names
+	options(repos = repo_urls)
+
+	# Check R version and set library
+	rv_r_ver <- get_val("r-version")
+	sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
+	r_match <- grepl(paste0("^", rv_r_ver), sys_r)
+
+	rv_lib <- if (r_match) {
+		normalizePath(get_val("library"), mustWork = FALSE)
+	} else {
+		message(sprintf(
+			"WARNING: R version specified in config (%s) does not match session version (%s).
+rv library will not be activated until the issue is resolved. Entering safe mode...
+			",
+			rv_r_ver,
+			sys_r
+		))
+		file.path(tempdir(), "__rv_R_mismatch")
+	}
 
 	if (!dir.exists(rv_lib)) {
-		message("creating rv library: ", rv_lib)
+		if (r_match) {
+			message("creating rv library: ", rv_lib, "\n")
+		} else {
+			message("creating temporary library: ", rv_lib, "\n")
+		}
 		dir.create(rv_lib, recursive = TRUE)
 	}
 
 	.libPaths(rv_lib, include.site = FALSE)
-	options(repos = repo_urls)
+	Sys.setenv("R_LIBS_USER" = rv_lib)
+	Sys.setenv("R_LIBS_SITE" = rv_lib)
 
+	# Results
 	if (interactive()) {
-		message(
-			"rv libpaths active!\nlibrary paths: \n",
-			paste0("  ", .libPaths(), collapse = "\n"),
-			"\n"
-		)
 		message(
 			"rv repositories active!\nrepositories: \n",
 			paste0(
@@ -125,16 +144,17 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 				": ",
 				getOption("repos"),
 				collapse = "\n"
-			)
+			),
+			"\n"
 		)
-		sys_r <- sprintf("%s.%s", R.version$major, R.version$minor)
-		if (!grepl(paste0("^", rv_r_ver), sys_r)) {
-			message(sprintf(
-				"\nWARNING: R version specified in config (%s) does not match session version (%s)",
-				rv_r_ver,
-				sys_r
-			))
-		}
+		message(
+			if (r_match) {
+				"rv libpaths active!\nlibrary paths: \n"
+			} else {
+				"rv libpaths are not active due to R version mismatch. Using temp directory: \n"
+			},
+			paste0("  ", .libPaths(), collapse = "\n")
+		)
 	}
 })
 "#;
