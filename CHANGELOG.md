@@ -1,3 +1,19 @@
+## v0.13.1 - August 19, 2025
+
+This release improves the R activation script with better version compatibility handling and includes several minor enhancements to cache display and system support.
+
+### ⚡ Improvements
+- **Enhanced R activation script**: The activation script now includes better R version compatibility checking. 
+When the R version in your config doesn't match your current R session, rv enters a safe mode using a temporary 
+library instead of failing, providing clearer warning messages about the version mismatch.
+It also sets R_LIBS_SITE and R_LIBS_USER to improve propogation of
+library settings to separate processes to help with mirai compatibility https://github.com/r-lib/mirai/issues/390 
+- **Improved cache information display**: The `rv cache` command now shows more accurate source paths for repositories, providing better visibility into cached package locations.
+- **Expanded Linux distribution support**: Added support for Gentoo Linux in system detection.
+
+### 🐛 Bug Fixes
+- **Fixed URL dependency configuration**: Removed the non-functional `force_source` option from URL-based dependencies in configuration files, as this setting had no effect for URL packages.
+
 ## v0.13.0 - August 15, 2025
 
 This release introduces a new formatting command for configuration files and improves dependency resolution for suggested packages.
