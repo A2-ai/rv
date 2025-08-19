@@ -104,11 +104,13 @@ pub struct RCommandLine {
 }
 
 pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
+    // TODO: increase test coverage for this function
+
     let mut found_r_vers = Vec::new();
     // Give preference to the R version on the path
     if let Ok(path_r) = (RCommandLine { r: None }).version() {
         if r_version.hazy_match(&path_r) {
-            log::debug!("R {r_version} found on the path");
+            log::debug!("R found on the path: {path_r}");
             return Ok(RCommandLine { r: None });
         }
         found_r_vers.push(path_r.original);
@@ -129,7 +131,10 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
 
             if let Ok(path_rig_r) = rig_r_cmd.version() {
                 if r_version.hazy_match(&path_rig_r) {
-                    log::debug!("R {r_version} found on the path via rig pattern");
+                    log::debug!(
+                        "R found on the path via rig pattern: {}",
+                        rig_r_cmd.clone().r.unwrap().display()
+                    );
                     return Ok(rig_r_cmd);
                 }
                 found_r_vers.push(path_rig_r.original);
@@ -138,17 +143,18 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
     }
 
     // For windows, R installed/managed by rig is has the extension .bat
-    if cfg!(windows) {
-        if let Ok(rig_r) = (RCommandLine {
+    if cfg!(target_os = "windows") {
+        let rig_r_cmd = RCommandLine {
             r: Some(PathBuf::from("R.bat")),
-        })
-        .version()
-        {
+        };
+
+        if let Ok(rig_r) = rig_r_cmd.version() {
             if r_version.hazy_match(&rig_r) {
-                log::debug!("R {r_version} found on the path from `rig`");
-                return Ok(RCommandLine {
-                    r: Some(PathBuf::from("R.bat")),
-                });
+                log::debug!(
+                    "R found on the path from `rig`: {}",
+                    rig_r_cmd.clone().r.unwrap().display()
+                );
+                return Ok(rig_r_cmd);
             }
             found_r_vers.push(rig_r.original);
         }
@@ -167,14 +173,13 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
                 .map(|p| p.path().join("bin/R"))
                 .filter(|p| p.exists())
             {
-                if let Ok(ver) = (RCommandLine {
+                let r_cmd = RCommandLine {
                     r: Some(path.clone()),
-                })
-                .version()
-                {
+                };
+                if let Ok(ver) = r_cmd.version() {
                     if r_version.hazy_match(&ver) {
-                        log::debug!(" R {r_version} found at {}", path.display());
-                        return Ok(RCommandLine { r: Some(path) });
+                        log::debug!("R found in /opt/R: {}", r_cmd.clone().r.unwrap().display());
+                        return Ok(r_cmd);
                     }
                     found_r_vers.push(ver.original);
                 }
