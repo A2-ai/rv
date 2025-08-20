@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use std::{fs, thread};
 
+use crate::config::RVersion;
 use crate::fs::copy_folder;
 use crate::sync::{LinkError, LinkMode};
 use crate::{Cancellation, Version};
@@ -103,51 +104,56 @@ pub struct RCommandLine {
     pub r: Option<PathBuf>,
 }
 
-pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
+/// R executable on the path is first checked, then other places depends on OS:
+/// * Linux: In /opt/R, finds greatest matching version
+/// * MacOS: rig-formatted R on the path, only if the R version is stricly specified (R-<major>.<minor>-<arch>)
+///             This may not be the version that is default/selected by rig
+/// * Windows: rig-formatted R on the path (R.bat). This is the version that is default/selected by rig
+pub fn find_r_version_command(r_version: &RVersion) -> Result<(RCommandLine, Version), VersionError> {
     let mut found_r_vers = Vec::new();
     // Give preference to the R version on the path
-    if let Ok(path_r) = (RCommandLine { r: None }).version() {
-        if r_version.hazy_match(&path_r) {
-            log::debug!("R {r_version} found on the path");
-            return Ok(RCommandLine { r: None });
+    let rcli = RCommandLine { r: None };
+    if let Ok(path_r) = rcli.version() {
+        if r_version.is_satisfied(&path_r) {
+            log::debug!("R {path_r} found on the path");
+            return Ok((rcli, path_r));
         }
         found_r_vers.push(path_r.original);
     }
 
     // Include matching rig-formatted R on the path if it exists on macOS
     // e.g. R-<major>.<minor>-<arch>
-    if cfg!(target_os = "macos") {
-        let info = os_info::get();
-        let major_minor = r_version.major_minor();
-        if let Some(arch) = info.architecture() {
-            let rig_r_bin_path =
-                PathBuf::from(format!("R-{}.{}-{}", major_minor[0], major_minor[1], arch));
-            if let Ok(path_rig_r) = (RCommandLine {
-                r: Some(rig_r_bin_path),
-            })
-            .version()
-            {
-                if r_version.hazy_match(&path_rig_r) {
-                    log::debug!("R {r_version} found on the path via rig pattern");
-                    return Ok(RCommandLine { r: None });
+    if let RVersion::Strict(ver) = r_version {
+        if cfg!(target_os = "macos") {
+            let info = os_info::get();
+            let [major, minor] = ver.major_minor();
+            if let Some(arch) = info.architecture() {
+                let rcli = RCommandLine {
+                    r: Some(PathBuf::from(format!("R-{major}.{minor}-{arch}")))
+                };
+                if let Ok(path_rig_r) = rcli.version()
+                {
+                    if ver.hazy_match(&path_rig_r) {
+                        log::debug!("R {path_rig_r} found on the path via rig pattern");
+                        return Ok((rcli, path_rig_r));
+                    }
+                    found_r_vers.push(path_rig_r.original);
                 }
-                found_r_vers.push(path_rig_r.original);
             }
         }
     }
 
     // For windows, R installed/managed by rig is has the extension .bat
-    if cfg!(windows) {
-        if let Ok(rig_r) = (RCommandLine {
-            r: Some(PathBuf::from("R.bat")),
-        })
-        .version()
+    if cfg!(target_os = "windows") {
+        let rcli = RCommandLine {
+            r: Some(PathBuf::from("R.bat"))
+        };
+
+        if let Ok(rig_r) = rcli.version()
         {
-            if r_version.hazy_match(&rig_r) {
-                log::debug!("R {r_version} found on the path from `rig`");
-                return Ok(RCommandLine {
-                    r: Some(PathBuf::from("R.bat")),
-                });
+            if r_version.is_satisfied(&rig_r) {
+                log::debug!("R {rig_r} found on the path from `rig`");
+                return Ok((rcli, rig_r));
             }
             found_r_vers.push(rig_r.original);
         }
@@ -158,26 +164,28 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
         if opt_r.is_dir() {
             // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
             // returns an RCommandLine struct with the path to the executable if found
-            for path in fs::read_dir(opt_r)
+
+            let mut found_vers = fs::read_dir(opt_r)
                 .map_err(|e| VersionError {
-                    source: VersionErrorKind::Io(e),
+                    source: VersionErrorKind::Io(e)
                 })?
                 .filter_map(Result::ok)
                 .map(|p| p.path().join("bin/R"))
                 .filter(|p| p.exists())
-            {
-                if let Ok(ver) = (RCommandLine {
-                    r: Some(path.clone()),
-                })
-                .version()
-                {
-                    if r_version.hazy_match(&ver) {
-                        log::debug!(" R {r_version} found at {}", path.display());
-                        return Ok(RCommandLine { r: Some(path) });
-                    }
-                    found_r_vers.push(ver.original);
-                }
+                .map(|p| RCommandLine{r: Some(p)})
+                .filter_map(|rcli| rcli.version().map(|v| (rcli, v)).ok())
+                .collect::<Vec<(RCommandLine, Version)>>();
+
+            // sort by version to return the highest version that is satisfied by specified R version
+            found_vers.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+            if let Some((rcli, v)) = found_vers.iter().rev().find(|(_, ver)| r_version.is_satisfied(ver)) {
+                return Ok((rcli.clone(), v.clone()));
             }
+
+            found_vers
+                .iter()
+                .for_each(|(_, ver)| found_r_vers.push(ver.to_string()));
         }
     }
 
@@ -190,7 +198,7 @@ pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, Versi
         found_r_vers.dedup();
         Err(VersionError {
             source: VersionErrorKind::NotCompatible(
-                r_version.original.to_string(),
+                r_version.original().to_string(),
                 found_r_vers.join(", "),
             ),
         })
