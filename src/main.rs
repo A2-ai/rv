@@ -108,6 +108,7 @@ pub enum Command {
     /// Formats the toml configuration file while preserving comments and spacing
     Fmt {
         // add a --check flag to check formatting without changing the file
+        /// check the formatting without changing the file
         #[clap(long)]
         check: bool,
     },
