@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.13.1"
+version = "0.13.2"
 edition = "2024"
 license = "MIT"
 
@@ -32,7 +32,7 @@ filetime = "0.2.25"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"
-zip = "4"
+zip = { version = "4", default-features = false, features = ["deflate"] }
 # HTTP requests
 ureq = { version = "3", features = ["platform-verifier", "json"] }
 sha2 = "0.10"
