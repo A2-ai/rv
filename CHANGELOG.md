@@ -1,3 +1,15 @@
+## v0.13.2 - September 6, 2025
+
+This release includes minor improvements to command documentation and fixes issues with R version detection logging.
+
+### ⚡ Improvements
+- **Enhanced command documentation**: Added missing documentation for the `--check` flag in the `rv fmt` command, providing clearer guidance on formatting verification options.
+- **No xz homebrew dep on mac** - rv now requires no external dependencies (fixes #338)
+
+### 🐛 Bug Fixes
+- **Fixed R version detection logging**: Resolved inconsistent logging messages when detecting R installations across different platforms (macOS rig, Windows R.bat, and Linux /opt/R), ensuring all detection paths provide clear information about which R version was found and where.
+- **Fixed macOS rig R detection**: Corrected an issue where the wrong R command path was returned when detecting R versions installed via rig on macOS, ensuring the proper rig-formatted R binary path is used.
+
 ## v0.13.1 - August 19, 2025
 
 This release improves the R activation script with better version compatibility handling and includes several minor enhancements to cache display and system support.
