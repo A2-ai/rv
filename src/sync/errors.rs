@@ -26,7 +26,7 @@ pub enum SyncErrorKind {
     #[error("{0}")]
     SyncFailed(SyncErrors),
     #[error(
-        "Unable to sync - one or more packages ({0}) we want to remove is loaded in the session, please restart your R session and re-run the rv command."
+        "Unable to sync - one or more packages ({0}) we want to remove is in use, please restart or terminate the process and then re-run the rv command."
     )]
     PackagesLoadedError(String),
     #[error("Invalid package found at `{path}`: {error}")]
