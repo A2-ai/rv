@@ -76,6 +76,7 @@ jobs:
           ssh-private-key: ${{ secrets.INTERNAL_SSH_KEY }}
 
       - name: Add GitHub to known_hosts
+        shell: bash
         run: |
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
