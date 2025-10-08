@@ -28,7 +28,7 @@ pub enum SyncErrorKind {
     #[error(
         "Unable to sync - one or more packages ({0}) we want to remove is loaded in the session, please restart your R session and re-run the rv command."
     )]
-    NfsError(String),
+    PackagesLoadedError(String),
     #[error("Invalid package found at `{path}`: {error}")]
     InvalidPackage { path: PathBuf, error: String },
 }

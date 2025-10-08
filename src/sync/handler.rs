@@ -334,7 +334,7 @@ impl<'a> SyncHandler<'a> {
                     "{dir_name} in the library is loaded in a session but we want to remove it."
                 );
                 return Err(SyncError {
-                    source: SyncErrorKind::NfsError(
+                    source: SyncErrorKind::PackagesLoadedError(
                         packages_loaded
                             .iter()
                             .map(|x| x.as_str())
