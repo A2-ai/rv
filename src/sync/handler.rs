@@ -26,16 +26,16 @@ use crate::{
     SystemInfo,
 };
 
-fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
+fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String>> {
     if !cfg!(unix) {
-        return HashSet::new();
+        return HashMap::new();
     }
 
     if is_env_var_truthy(NO_CHECK_OPEN_FILE_ENV_VAR_NAME) {
-        return HashSet::new();
+        return HashMap::new();
     }
 
-    // lsof +D rv/ | awk 'NR>1 {print $NF}'
+    // lsof +D rv/ | awk 'NR>1 {print $2, $NF}' (to get PID and filename)
     let output = match std::process::Command::new("lsof")
         .arg("+D")
         .arg(path)
@@ -44,23 +44,33 @@ fn get_all_packages_in_use(path: &Path) -> HashSet<String> {
         Ok(output) => output,
         Err(e) => {
             log::error!("lsof error: {e}. The +D option might not be available");
-            return HashSet::new();
+            return HashMap::new();
         }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut out = HashSet::new();
+    let mut out: HashMap<(String, u32), HashSet<String>> = HashMap::new();
     for (i, line) in stdout.lines().enumerate() {
         // Skip header
         if i == 0 {
             continue;
         }
 
-        if let Some(filename) = line.split_whitespace().last() {
-            // that should be a .so file in libs subfolder so we need to find grandparent
-            let p = Path::new(filename);
-            let lib = p.parent().unwrap().parent().unwrap();
-            out.insert(lib.file_name().unwrap().to_str().unwrap().to_string());
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() >= 3 {
+            // Process name is the first field (index 0), PID is the second field (index 1), filename is the last field
+            if let (Ok(pid), Some(filename)) = (fields[1].parse::<u32>(), fields.last()) {
+                let process_name = fields[0].to_string();
+                // that should be a .so file in libs subfolder so we need to find grandparent
+                let p = Path::new(filename);
+                if let Some(parent) = p.parent().and_then(|p| p.parent()) {
+                    if let Some(package_name) = parent.file_name().and_then(|n| n.to_str()) {
+                        out.entry((process_name, pid))
+                            .or_insert_with(HashSet::new)
+                            .insert(package_name.to_string());
+                    }
+                }
+            }
         }
     }
 
@@ -325,21 +335,35 @@ impl<'a> SyncHandler<'a> {
         let packages_loaded = if deps_to_remove.len() > 0 {
             get_all_packages_in_use(&self.library.path)
         } else {
-            HashSet::new()
+            HashMap::new()
         };
 
         for (dir_name, notify) in &deps_to_remove {
-            if packages_loaded.contains(*dir_name) {
+            if packages_loaded
+                .values()
+                .any(|packages| packages.contains(*dir_name))
+            {
                 log::debug!(
                     "{dir_name} in the library is loaded in a session but we want to remove it."
                 );
                 return Err(SyncError {
-                    source: SyncErrorKind::NfsError(
+                    source: SyncErrorKind::PackagesLoadedError(
                         packages_loaded
                             .iter()
-                            .map(|x| x.as_str())
+                            .map(|((process_name, pid), packages)| {
+                                format!(
+                                    "{} ({}): {}",
+                                    process_name,
+                                    pid,
+                                    packages
+                                        .iter()
+                                        .map(|s| s.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
+                            })
                             .collect::<Vec<_>>()
-                            .join(", "),
+                            .join("\n"),
                     ),
                 });
             }
