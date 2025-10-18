@@ -146,11 +146,7 @@ impl SystemInfo {
                 "almalinux" => {
                     // AlmaLinux 8 -> centos, AlmaLinux 9 -> rockylinux
                     if let Some(major) = self.major_version() {
-                        if major < 9 {
-                            "centos"
-                        } else {
-                            "rockylinux"
-                        }
+                        if major < 9 { "centos" } else { "rockylinux" }
                     } else {
                         "rockylinux"
                     }
@@ -158,11 +154,7 @@ impl SystemInfo {
                 // CentOS 9 is unsupported, map to rockylinux
                 "centos" => {
                     if let Some(major) = self.major_version() {
-                        if major >= 9 {
-                            "rockylinux"
-                        } else {
-                            "centos"
-                        }
+                        if major >= 9 { "rockylinux" } else { "centos" }
                     } else {
                         "centos"
                     }
