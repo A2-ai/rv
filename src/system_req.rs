@@ -137,7 +137,7 @@ fn extract_rpm_package_name(rpm_output: &str) -> Option<&str> {
     let chars: Vec<char> = rpm_output.chars().collect();
 
     for i in 0..chars.len().saturating_sub(1) {
-        if chars[i] == '-' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+        if chars[i] == '-' && chars[i + 1].is_ascii_digit() {
             last_name_idx = i;
             break;
         }
@@ -210,14 +210,19 @@ pub fn check_installation_status(
 
         "centos" | "redhat" | "rockylinux" | "opensuse" | "sle" => {
             // Running rpm -q {..pkg_list} and parse stdout
-            let command = Command::new("rpm")
-                .arg("-q")
-                .args(sys_deps)
-                .output()
-                .expect("to be able to run rpm command");
+            let command = match Command::new("rpm").arg("-q").args(sys_deps).output() {
+                Ok(output) => output,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to run rpm command: {}. System dependencies detection skipped.",
+                        e
+                    );
+                    return out;
+                }
+            };
 
-            let stdout = String::from_utf8(command.stdout).unwrap();
-            let stderr = String::from_utf8(command.stderr).unwrap();
+            let stdout = String::from_utf8_lossy(&command.stdout);
+            let stderr = String::from_utf8_lossy(&command.stderr);
 
             // Parse stdout for installed packages
             // Format: "packagename-version-release.arch"

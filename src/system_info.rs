@@ -148,7 +148,11 @@ impl SystemInfo {
                     if let Some(major) = self.major_version() {
                         if major < 9 { "centos" } else { "rockylinux" }
                     } else {
-                        "rockylinux"
+                        log::warn!(
+                            "Failed to parse major version for AlmaLinux (version: {}); sysdeps may not work correctly",
+                            self.version
+                        );
+                        distrib
                     }
                 }
                 // CentOS 9 is unsupported, map to rockylinux
@@ -156,7 +160,11 @@ impl SystemInfo {
                     if let Some(major) = self.major_version() {
                         if major >= 9 { "rockylinux" } else { "centos" }
                     } else {
-                        "centos"
+                        log::warn!(
+                            "Failed to parse major version for CentOS (version: {}); sysdeps may not work correctly",
+                            self.version
+                        );
+                        distrib
                     }
                 }
                 // For Oracle Linux, use redhat
