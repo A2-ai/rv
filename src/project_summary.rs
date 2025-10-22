@@ -196,11 +196,11 @@ impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.linux_distro_name {
             LinuxBinaryDistroName::Determined(distro) => {
-                writeln!(f, "linux binary distrobution name: {distro}")?
+                writeln!(f, "linux binary distribution name: {distro}")?
             }
             LinuxBinaryDistroName::Undetermined { os_type, version } => writeln!(
                 f,
-                "linux binary distrobution name: not available for {} {}",
+                "linux binary distribution name: not available for {} {}",
                 os_type.family(),
                 version
             )?,
