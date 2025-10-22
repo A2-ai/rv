@@ -84,6 +84,7 @@ impl SystemInfo {
             Type::Debian => OsType::Linux("debian"),
             Type::Pop => OsType::Linux("pop"),
             Type::CentOS => OsType::Linux("centos"),
+            Type::AlmaLinux => OsType::Linux("almalinux"),
             Type::openSUSE => OsType::Linux("opensuse"),
             Type::Redhat => OsType::Linux("redhat"),
             Type::RockyLinux => OsType::Linux("rocky"),
@@ -113,26 +114,102 @@ impl SystemInfo {
         self.arch.as_deref()
     }
 
+    /// Extract major version number from Version enum
+    pub(crate) fn major_version(&self) -> Option<u64> {
+        match &self.version {
+            Version::Semantic(major, _, _) => Some(*major),
+            Version::Custom(v) => {
+                // Parse "8.10" -> 8, "9" -> 9, etc.
+                v.split('.').next().and_then(|s| s.parse::<u64>().ok())
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns the distribution name to use for Posit Package Manager API
+    /// Some distros need to be mapped to compatible API endpoints
+    ///
+    /// Distribution mapping strategy:
+    /// - AlmaLinux 8 -> API: centos8 (most compatible for EL8)
+    /// - AlmaLinux 9 -> API: rockylinux9 (centos9 unsupported)
+    /// - CentOS 8 -> API: centos8
+    /// - CentOS 9 -> API: rockylinux9 (centos9 returns error)
+    /// - RockyLinux 8/9 -> API: rockylinux
+    /// - RedHat 8/9 -> API: redhat (uses subscription-manager)
+    /// - Oracle Linux -> API: redhat (binary compatible)
+    ///
+    /// Note: All EL8-compatible distros can use centos8 API endpoint
+    ///       All EL9-compatible distros should use rockylinux9 or redhat9
+    pub fn api_distribution(&self) -> &'static str {
+        match self.os_type {
+            OsType::Linux(distrib) => match distrib {
+                "almalinux" => {
+                    // AlmaLinux 8 -> centos, AlmaLinux 9 -> rockylinux
+                    if let Some(major) = self.major_version() {
+                        if major < 9 { "centos" } else { "rockylinux" }
+                    } else {
+                        log::warn!(
+                            "Failed to parse major version for AlmaLinux (version: {}); sysdeps may not work correctly",
+                            self.version
+                        );
+                        distrib
+                    }
+                }
+                // CentOS 9 is unsupported, map to rockylinux
+                "centos" => {
+                    if let Some(major) = self.major_version() {
+                        if major >= 9 { "rockylinux" } else { "centos" }
+                    } else {
+                        log::warn!(
+                            "Failed to parse major version for CentOS (version: {}); sysdeps may not work correctly",
+                            self.version
+                        );
+                        distrib
+                    }
+                }
+                // For Oracle Linux, use redhat
+                "oracle" => "redhat",
+                // Everything else maps to itself
+                _ => distrib,
+            },
+            _ => unreachable!(
+                "Tried to get an API distribution on an OS other than Linux: {:?}",
+                self.os_type
+            ),
+        }
+    }
+
     /// Returns (distrib name, version)
     pub fn sysreq_data(&self) -> (&'static str, String) {
         match self.os_type {
-            OsType::Linux(distrib) => match distrib {
-                "suse" => ("sle", self.version.to_string()),
-                "ubuntu" => {
-                    let version = match self.version {
-                        Version::Semantic(year, month, _) => {
-                            format!("{year}.{}{month}", if month < 10 { "0" } else { "" })
-                        }
+            OsType::Linux(distrib) => {
+                let api_distrib = self.api_distribution();
+                match distrib {
+                    "suse" => ("sle", self.version.to_string()),
+                    "ubuntu" => {
+                        let version = match self.version {
+                            Version::Semantic(year, month, _) => {
+                                format!("{year}.{month:02}")
+                            }
+                            _ => unreachable!(),
+                        };
+                        (api_distrib, version)
+                    }
+                    "debian" => match self.version {
+                        Version::Semantic(major, _, _) => (api_distrib, major.to_string()),
                         _ => unreachable!(),
-                    };
-                    (distrib, version)
+                    },
+                    // RPM-based distributions (CentOS, AlmaLinux, RHEL, Rocky) use major version only
+                    "centos" | "almalinux" | "redhat" | "rocky" | "fedora" => {
+                        let version = self
+                            .major_version()
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| self.version.to_string());
+                        (api_distrib, version)
+                    }
+                    _ => (api_distrib, self.version.to_string()),
                 }
-                "debian" => match self.version {
-                    Version::Semantic(major, _, _) => (distrib, major.to_string()),
-                    _ => unreachable!(),
-                },
-                _ => (distrib, self.version.to_string()),
-            },
+            }
             _ => ("invalid", String::new()),
         }
     }

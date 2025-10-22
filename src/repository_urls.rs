@@ -9,19 +9,29 @@ use url::Url;
 fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
     match distro {
         "centos" => {
-            if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
-                if major >= 7 {
-                    return Some(format!("centos{major}"));
-                }
+            let major = sysinfo.major_version()?;
+            if major >= 7 {
+                return Some(format!("centos{major}"));
+            }
+            None
+        }
+        "almalinux" => {
+            // AlmaLinux is binary compatible with CentOS/RHEL
+            // AlmaLinux 8 -> centos8, AlmaLinux 9 -> rhel9
+            let major = sysinfo.major_version()?;
+            if major >= 9 {
+                return Some(format!("rhel{major}"));
+            }
+            if major >= 8 {
+                return Some(format!("centos{major}"));
             }
             None
         }
         "rocky" => {
             // rocky linux is distributed under rhel, starting support at v9
-            if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
-                if major >= 9 {
-                    return Some(format!("rhel{major}"));
-                }
+            let major = sysinfo.major_version()?;
+            if major >= 9 {
+                return Some(format!("rhel{major}"));
             }
             None
         }
@@ -36,13 +46,12 @@ fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
         }
         "redhat" => {
             // Redhat linux v7&8 are under centos. distribution changed as of v9
-            if let os_info::Version::Semantic(major, _, _) = sysinfo.version {
-                if major >= 9 {
-                    return Some(format!("rhel{major}"));
-                }
-                if major >= 7 {
-                    return Some(format!("centos{major}"));
-                }
+            let major = sysinfo.major_version()?;
+            if major >= 9 {
+                return Some(format!("rhel{major}"));
+            }
+            if major >= 7 {
+                return Some(format!("centos{major}"));
             }
             None
         }
@@ -365,6 +374,45 @@ mod tests {
         );
         let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 2], &sysinfo).unwrap();
         let ref_url = "https://packagemanager.posit.co/cran/__linux__/jammy/latest/src/contrib/test-file?r_version=4.2&arch=x86_64".to_string();
+        assert_eq!(source_url.as_str(), ref_url)
+    }
+
+    #[test]
+    fn test_almalinux8_binaries_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("almalinux"),
+            Some("x86_64".to_string()),
+            None,
+            "8.10",
+        );
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
+        let ref_url = "https://packagemanager.posit.co/cran/__linux__/centos8/latest/src/contrib/test-file?r_version=4.4&arch=x86_64".to_string();
+        assert_eq!(source_url.as_str(), ref_url)
+    }
+
+    #[test]
+    fn test_almalinux9_binaries_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("almalinux"),
+            Some("x86_64".to_string()),
+            None,
+            "9.3",
+        );
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
+        let ref_url = "https://packagemanager.posit.co/cran/__linux__/rhel9/latest/src/contrib/test-file?r_version=4.4&arch=x86_64".to_string();
+        assert_eq!(source_url.as_str(), ref_url)
+    }
+
+    #[test]
+    fn test_centos8_binaries_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("centos"),
+            Some("x86_64".to_string()),
+            None,
+            "8.5",
+        );
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
+        let ref_url = "https://packagemanager.posit.co/cran/__linux__/centos8/latest/src/contrib/test-file?r_version=4.4&arch=x86_64".to_string();
         assert_eq!(source_url.as_str(), ref_url)
     }
 
