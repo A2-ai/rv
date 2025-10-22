@@ -172,7 +172,10 @@ impl SystemInfo {
                 // Everything else maps to itself
                 _ => distrib,
             },
-            _ => "invalid",
+            _ => unreachable!(
+                "Tried to get an API distribution on an OS other than Linux: {:?}",
+                self.os_type
+            ),
         }
     }
 
@@ -186,7 +189,7 @@ impl SystemInfo {
                     "ubuntu" => {
                         let version = match self.version {
                             Version::Semantic(year, month, _) => {
-                                format!("{year}.{}{month}", if month < 10 { "0" } else { "" })
+                                format!("{year}.{month:02}")
                             }
                             _ => unreachable!(),
                         };

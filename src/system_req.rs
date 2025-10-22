@@ -132,27 +132,16 @@ pub fn get_system_requirements(system_info: &SystemInfo) -> HashMap<String, Vec<
 /// RPM package naming: name-version-release.arch
 /// We need to split on the first hyphen that's followed by a version number
 fn extract_rpm_package_name(rpm_output: &str) -> Option<&str> {
-    // Find the first hyphen followed by a digit (start of version)
-    let mut last_name_idx = 0;
-    let chars: Vec<char> = rpm_output.chars().collect();
+    let bytes = rpm_output.as_bytes();
 
-    for i in 0..chars.len().saturating_sub(1) {
-        if chars[i] == '-' && chars[i + 1].is_ascii_digit() {
-            last_name_idx = i;
-            break;
+    for i in 0..bytes.len() {
+        if i + 1 < bytes.len() && bytes[i] == b'-' && bytes[i + 1].is_ascii_digit() {
+            return Some(&rpm_output[..i]);
         }
     }
 
-    if last_name_idx > 0 {
-        Some(&rpm_output[..last_name_idx])
-    } else {
-        // Fallback: if no version found, might be just a package name
-        if !rpm_output.contains('-') {
-            Some(rpm_output)
-        } else {
-            None
-        }
-    }
+    // No version pattern found, return the whole string
+    Some(rpm_output)
 }
 
 pub fn check_installation_status(
@@ -188,22 +177,6 @@ pub fn check_installation_status(
             for line in stdout.lines() {
                 if let Some(status) = out.get_mut(line.trim()) {
                     *status = SysInstallationStatus::Present;
-                }
-            }
-
-            let mut to_check_in_path: Vec<_> = from_env.split(",").map(|x| x.trim()).collect();
-            to_check_in_path.extend_from_slice(KNOWN_THINGS_IN_PATH);
-
-            for (name, status) in out
-                .iter_mut()
-                .filter(|(_, v)| v == &&SysInstallationStatus::Unknown)
-            {
-                if to_check_in_path.contains(&name.as_str()) {
-                    if which(name).is_ok() {
-                        *status = SysInstallationStatus::Present;
-                    } else {
-                        *status = SysInstallationStatus::Absent;
-                    }
                 }
             }
         }
@@ -252,27 +225,26 @@ pub fn check_installation_status(
                     }
                 }
             }
-
-            // Check PATH for known tools (same as dpkg logic)
-            let mut to_check_in_path: Vec<_> = from_env.split(",").map(|x| x.trim()).collect();
-            to_check_in_path.extend_from_slice(KNOWN_THINGS_IN_PATH);
-
-            for (name, status) in out
-                .iter_mut()
-                .filter(|(_, v)| v == &&SysInstallationStatus::Unknown)
-            {
-                if to_check_in_path.contains(&name.as_str()) {
-                    if which(name).is_ok() {
-                        *status = SysInstallationStatus::Present;
-                    } else {
-                        *status = SysInstallationStatus::Absent;
-                    }
-                }
-            }
         }
 
         _ => (),
     };
+
+    let mut to_check_in_path: Vec<_> = from_env.split(",").map(|x| x.trim()).collect();
+    to_check_in_path.extend_from_slice(KNOWN_THINGS_IN_PATH);
+
+    for (name, status) in out
+        .iter_mut()
+        .filter(|(_, v)| v == &&SysInstallationStatus::Unknown)
+    {
+        if to_check_in_path.contains(&name.as_str()) {
+            if which(name).is_ok() {
+                *status = SysInstallationStatus::Present;
+            } else {
+                *status = SysInstallationStatus::Absent;
+            }
+        }
+    }
 
     for (_, status) in out
         .iter_mut()
@@ -298,96 +270,81 @@ mod test {
 
     #[test]
     fn test_extract_rpm_package_name() {
-        assert_eq!(
-            extract_rpm_package_name("bash-4.4.20-6.el8_10.x86_64"),
-            Some("bash")
-        );
-        assert_eq!(
-            extract_rpm_package_name("libcurl-devel-7.61.1-34.el8_10.8.x86_64"),
-            Some("libcurl-devel")
-        );
-        assert_eq!(
-            extract_rpm_package_name("abseil-cpp-devel-20210324.2-1.el8.x86_64"),
-            Some("abseil-cpp-devel")
-        );
-        assert_eq!(extract_rpm_package_name("bash"), Some("bash"));
-        assert_eq!(
-            extract_rpm_package_name("openssl-devel-1.1.1k-14.el8_6.x86_64"),
-            Some("openssl-devel")
-        );
+        let test_cases = vec![
+            ("bash-4.4.20-6.el8_10.x86_64", Some("bash")),
+            (
+                "libcurl-devel-7.61.1-34.el8_10.8.x86_64",
+                Some("libcurl-devel"),
+            ),
+            (
+                "abseil-cpp-devel-20210324.2-1.el8.x86_64",
+                Some("abseil-cpp-devel"),
+            ),
+            ("bash", Some("bash")),
+            (
+                "openssl-devel-1.1.1k-14.el8_6.x86_64",
+                Some("openssl-devel"),
+            ),
+        ];
+
+        for (input, expected) in test_cases {
+            assert_eq!(
+                extract_rpm_package_name(input),
+                expected,
+                "Failed for input: {}",
+                input
+            );
+        }
     }
 
     #[test]
-    fn test_alma8_is_supported() {
-        let system = SystemInfo::new(
-            OsType::Linux("almalinux"),
-            Some("x86_64".to_string()),
-            None,
-            "8.10",
-        );
-        assert!(is_supported(&system));
+    fn test_is_supported() {
+        let test_cases = vec![("almalinux", "8.10", true), ("almalinux", "9.0", true)];
+
+        for (os_name, version, expected) in test_cases {
+            let system = SystemInfo::new(
+                OsType::Linux(os_name),
+                Some("x86_64".to_string()),
+                None,
+                version,
+            );
+            assert_eq!(
+                is_supported(&system),
+                expected,
+                "Failed for {} {}",
+                os_name,
+                version
+            );
+        }
     }
 
     #[test]
-    fn test_alma9_is_supported() {
-        let system = SystemInfo::new(
-            OsType::Linux("almalinux"),
-            Some("x86_64".to_string()),
-            None,
-            "9.0",
-        );
-        assert!(is_supported(&system));
-    }
+    fn test_api_mapping() {
+        let test_cases = vec![
+            ("almalinux", "8.10", "centos", "8"),
+            ("almalinux", "9.0", "rockylinux", "9"),
+            ("centos", "9.0", "rockylinux", "9"),
+            ("centos", "8.5", "centos", "8"),
+        ];
 
-    #[test]
-    fn test_alma8_api_mapping() {
-        let system = SystemInfo::new(
-            OsType::Linux("almalinux"),
-            Some("x86_64".to_string()),
-            None,
-            "8.10",
-        );
-        let (distrib, version) = system.sysreq_data();
-        assert_eq!(distrib, "centos");
-        assert_eq!(version, "8"); // Major version only for RPM distros
-    }
-
-    #[test]
-    fn test_alma9_api_mapping() {
-        let system = SystemInfo::new(
-            OsType::Linux("almalinux"),
-            Some("x86_64".to_string()),
-            None,
-            "9.0",
-        );
-        let (distrib, version) = system.sysreq_data();
-        assert_eq!(distrib, "rockylinux");
-        assert_eq!(version, "9"); // Major version only for RPM distros
-    }
-
-    #[test]
-    fn test_centos9_api_mapping() {
-        let system = SystemInfo::new(
-            OsType::Linux("centos"),
-            Some("x86_64".to_string()),
-            None,
-            "9.0",
-        );
-        let (distrib, version) = system.sysreq_data();
-        assert_eq!(distrib, "rockylinux");
-        assert_eq!(version, "9"); // Major version only for RPM distros
-    }
-
-    #[test]
-    fn test_centos8_api_mapping() {
-        let system = SystemInfo::new(
-            OsType::Linux("centos"),
-            Some("x86_64".to_string()),
-            None,
-            "8.5",
-        );
-        let (distrib, version) = system.sysreq_data();
-        assert_eq!(distrib, "centos");
-        assert_eq!(version, "8"); // Major version only for RPM distros
+        for (os_name, version, expected_distrib, expected_version) in test_cases {
+            let system = SystemInfo::new(
+                OsType::Linux(os_name),
+                Some("x86_64".to_string()),
+                None,
+                version,
+            );
+            let (distrib, version) = system.sysreq_data();
+            assert_eq!(
+                distrib, expected_distrib,
+                "Failed distrib mapping for {} {}",
+                os_name, version
+            );
+            assert_eq!(
+                version, expected_version,
+                "Failed version mapping for {} {}",
+                os_name, version
+            );
+        }
     }
 }
