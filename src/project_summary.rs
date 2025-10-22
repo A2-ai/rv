@@ -145,7 +145,7 @@ struct RemoteInfo<'a> {
 enum LinuxBinaryDistroName {
     Determined(String),
     Undetermined {
-        os_type: OsType,
+        distro: String,
         version: os_info::Version,
     },
     NonLinux,
@@ -175,9 +175,9 @@ impl<'a> RemoteInfo<'a> {
 
         let linux_distro_name = if let OsType::Linux(distro) = system_info.os_type {
             match get_distro_name(system_info, distro) {
-                Some(distro) => LinuxBinaryDistroName::Determined(distro),
+                Some(bin_distro_name) => LinuxBinaryDistroName::Determined(bin_distro_name),
                 None => LinuxBinaryDistroName::Undetermined {
-                    os_type: system_info.os_type.clone(),
+                    distro: distro.to_string(),
                     version: system_info.version.clone(),
                 },
             }
@@ -195,14 +195,13 @@ impl<'a> RemoteInfo<'a> {
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.linux_distro_name {
-            LinuxBinaryDistroName::Determined(distro) => {
-                writeln!(f, "linux binary distribution name: {distro}")?
+            LinuxBinaryDistroName::Determined(bin_distro_name) => {
+                writeln!(f, "linux binary distribution name: {bin_distro_name}")?
             }
-            LinuxBinaryDistroName::Undetermined { os_type, version } => writeln!(
+            LinuxBinaryDistroName::Undetermined { distro, version } => writeln!(
                 f,
                 "linux binary distribution name: not available for {} {}",
-                os_type.family(),
-                version
+                distro, version
             )?,
             LinuxBinaryDistroName::NonLinux => (),
         }
