@@ -6,8 +6,6 @@ use std::{
 
 use serde::Serialize;
 
-use crate::system_req::{SysDep, SysInstallationStatus};
-use crate::utils::get_max_workers;
 use crate::{
     DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
     Version, VersionRequirement,
@@ -15,6 +13,11 @@ use crate::{
     lockfile::Source,
     package::{Operator, PackageType},
 };
+use crate::{
+    OsType,
+    system_req::{SysDep, SysInstallationStatus},
+};
+use crate::{repository_urls::get_distro_name, utils::get_max_workers};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectSummary<'a> {
@@ -53,7 +56,12 @@ impl<'a> ProjectSummary<'a> {
                 lockfile,
             ),
             cache_root: &cache.root,
-            remote_info: RemoteInfo::new(repositories, repo_dbs, &r_version.major_minor()),
+            remote_info: RemoteInfo::new(
+                repositories,
+                repo_dbs,
+                &r_version.major_minor(),
+                &cache.system_info,
+            ),
             max_workers: get_max_workers(),
         }
     }
@@ -63,8 +71,13 @@ impl fmt::Display for ProjectSummary<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "== System Information == \nOS: {}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}\n\n",
+            "== System Information == \nOS: {}{}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}\n\n",
             self.system_info.os_family(),
+            if let OsType::Linux(distro) = self.system_info.os_type {
+                format!(" {distro} {}", self.system_info.version)
+            } else {
+                String::new()
+            },
             if let Some(arch) = self.system_info.arch() {
                 format!(" ({arch})")
             } else {
@@ -124,7 +137,18 @@ struct RepoInfo<'a> {
 // TODO: Expand with git + url information
 #[derive(Debug, Clone, Serialize)]
 struct RemoteInfo<'a> {
+    linux_distro_name: LinuxBinaryDistroName,
     repositories: HashMap<String, RepoInfo<'a>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+enum LinuxBinaryDistroName {
+    Determined(String),
+    Undetermined {
+        os_type: OsType,
+        version: os_info::Version,
+    },
+    NonLinux,
 }
 
 impl<'a> RemoteInfo<'a> {
@@ -132,6 +156,7 @@ impl<'a> RemoteInfo<'a> {
         repos: &'a [Repository],
         repo_dbs: &'a [(RepositoryDatabase, bool)],
         r_version: &[u32; 2],
+        system_info: &SystemInfo,
     ) -> Self {
         let mut repositories = HashMap::new();
         for (repo_db, _) in repo_dbs {
@@ -148,12 +173,40 @@ impl<'a> RemoteInfo<'a> {
             );
         }
 
-        Self { repositories }
+        let linux_distro_name = if let OsType::Linux(distro) = system_info.os_type {
+            match get_distro_name(system_info, distro) {
+                Some(distro) => LinuxBinaryDistroName::Determined(distro),
+                None => LinuxBinaryDistroName::Undetermined {
+                    os_type: system_info.os_type.clone(),
+                    version: system_info.version.clone(),
+                },
+            }
+        } else {
+            LinuxBinaryDistroName::NonLinux
+        };
+
+        Self {
+            repositories,
+            linux_distro_name,
+        }
     }
 }
 
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.linux_distro_name {
+            LinuxBinaryDistroName::Determined(distro) => {
+                writeln!(f, "linux binary distrobution name: {distro}")?
+            }
+            LinuxBinaryDistroName::Undetermined { os_type, version } => writeln!(
+                f,
+                "linux binary distrobution name: not available for {} {}",
+                os_type.family(),
+                version
+            )?,
+            LinuxBinaryDistroName::NonLinux => (),
+        }
+
         let mut repos = self.repositories.iter().collect::<Vec<_>>();
         repos.sort_by_key(|(a, _)| *a);
         for (alias, repo) in repos {
