@@ -137,7 +137,7 @@ struct RepoInfo<'a> {
 // TODO: Expand with git + url information
 #[derive(Debug, Clone, Serialize)]
 struct RemoteInfo<'a> {
-    linux_distro_name: LinuxBinaryDistroName,
+    linux_distro_name: Option<LinuxBinaryDistroName>,
     repositories: HashMap<String, RepoInfo<'a>>,
 }
 
@@ -148,7 +148,6 @@ enum LinuxBinaryDistroName {
         distro: String,
         version: os_info::Version,
     },
-    NonLinux,
 }
 
 impl<'a> RemoteInfo<'a> {
@@ -175,14 +174,14 @@ impl<'a> RemoteInfo<'a> {
 
         let linux_distro_name = if let OsType::Linux(distro) = system_info.os_type {
             match get_distro_name(system_info, distro) {
-                Some(bin_distro_name) => LinuxBinaryDistroName::Determined(bin_distro_name),
-                None => LinuxBinaryDistroName::Undetermined {
+                Some(bin_distro_name) => Some(LinuxBinaryDistroName::Determined(bin_distro_name)),
+                None => Some(LinuxBinaryDistroName::Undetermined {
                     distro: distro.to_string(),
                     version: system_info.version.clone(),
-                },
+                }),
             }
         } else {
-            LinuxBinaryDistroName::NonLinux
+            None
         };
 
         Self {
@@ -194,16 +193,17 @@ impl<'a> RemoteInfo<'a> {
 
 impl fmt::Display for RemoteInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.linux_distro_name {
-            LinuxBinaryDistroName::Determined(bin_distro_name) => {
-                writeln!(f, "linux binary distribution name: {bin_distro_name}")?
+        if let Some(linux_distro_name) = &self.linux_distro_name {
+            match linux_distro_name {
+                LinuxBinaryDistroName::Determined(bin_distro_name) => {
+                    writeln!(f, "linux binary distribution name: {bin_distro_name}")?
+                }
+                LinuxBinaryDistroName::Undetermined { distro, version } => writeln!(
+                    f,
+                    "linux binary distribution name: not available for {} {}",
+                    distro, version
+                )?,
             }
-            LinuxBinaryDistroName::Undetermined { distro, version } => writeln!(
-                f,
-                "linux binary distribution name: not available for {} {}",
-                distro, version
-            )?,
-            LinuxBinaryDistroName::NonLinux => (),
         }
 
         let mut repos = self.repositories.iter().collect::<Vec<_>>();
