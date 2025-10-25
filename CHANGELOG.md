@@ -1,3 +1,13 @@
+## v0.14.0 - October 13, 2025
+
+This release improves error messaging when rv detects packages that cannot be removed because they are currently in use by running processes.
+
+### ⚡ Improvements
+- **Enhanced package in-use detection**: When rv needs to remove packages that are currently loaded by running processes,
+it now provides detailed information about which processes are using which packages, including process names and PIDs.
+This makes it easier to identify and close the relevant applications before retrying the operation.
+
+
 ## v0.13.2 - September 6, 2025
 
 This release includes minor improvements to command documentation and fixes issues with R version detection logging.
@@ -15,11 +25,11 @@ This release includes minor improvements to command documentation and fixes issu
 This release improves the R activation script with better version compatibility handling and includes several minor enhancements to cache display and system support.
 
 ### ⚡ Improvements
-- **Enhanced R activation script**: The activation script now includes better R version compatibility checking. 
-When the R version in your config doesn't match your current R session, rv enters a safe mode using a temporary 
+- **Enhanced R activation script**: The activation script now includes better R version compatibility checking.
+When the R version in your config doesn't match your current R session, rv enters a safe mode using a temporary
 library instead of failing, providing clearer warning messages about the version mismatch.
 It also sets R_LIBS_SITE and R_LIBS_USER to improve propogation of
-library settings to separate processes to help with mirai compatibility https://github.com/r-lib/mirai/issues/390 
+library settings to separate processes to help with mirai compatibility https://github.com/r-lib/mirai/issues/390
 - **Improved cache information display**: The `rv cache` command now shows more accurate source paths for repositories, providing better visibility into cached package locations.
 - **Expanded Linux distribution support**: Added support for Gentoo Linux in system detection.
 

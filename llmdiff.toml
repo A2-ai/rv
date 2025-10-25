@@ -1,3 +1,8 @@
+[settings]
+# CLI-level settings (defaults that can be overridden by CLI arguments)
+model = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+aws_profile = "ai"
+
 [global]
 # Global context used for all profiles
 context = ["README.md", "CLAUDE.md", "src/main.rs", "src/lib.rs"]
@@ -49,8 +54,8 @@ Use active voice
 
 Examples of What to Include:
 
-✅ ability to configure repositories programmatically via rv configure repository 
-✅ fixed issue where rv could not remove a library on an NFS file system 
+✅ ability to configure repositories programmatically via rv configure repository
+✅ fixed issue where rv could not remove a library on an NFS file system
 
 
 Examples of What to Exclude:
@@ -109,7 +114,7 @@ another example, of an improvment, not a bug fix: - **Fixed git repository error
 after creating a potential message CAREFULLY REVIEW the messaging to determine its type, particularly improvements or adjustments to make user experience better vs true bug fixes
 
 Review the git diffs and file changes, but translate technical changes into user benefits.
-If a diff shows performance optimizations, describe how the app is now faster. 
+If a diff shows performance optimizations, describe how the app is now faster.
 If it shows new API endpoints, describe what new actions users can perform.
 
 Err on the side of uncertainty, if you're unsure of what a feature does or how it impacts a user,
