@@ -1,3 +1,13 @@
+## v0.15.0 - October 25, 2025
+
+This release adds support for RPM-based Linux distributions (AlmaLinux, CentOS, Rocky Linux, RHEL) for system dependency detection and binary package installation.
+
+### 🎉 New Features
+- **AlmaLinux and RPM distribution support**: rv now fully supports AlmaLinux, CentOS, Rocky Linux, and RHEL for both system dependency detection and binary package installation. System dependencies are automatically detected using the `rpm` package manager, and binary packages are correctly resolved from Posit Package Manager for these distributions.
+
+### ⚡ Improvements
+- **Enhanced Linux distribution reporting**: The `rv summary` command now displays the Linux distribution name used for binary package resolution, making it easier to verify that rv is correctly detecting your system and using the appropriate package repositories.
+
 ## v0.14.0 - October 13, 2025
 
 This release improves error messaging when rv detects packages that cannot be removed because they are currently in use by running processes.
