@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Update Homebrew formula
         env:
-          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.TOKEN }}
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           brew tap A2-ai/homebrew-tap
           brew bump-formula-pr --no-browse --no-audit \
