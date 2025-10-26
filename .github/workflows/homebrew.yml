@@ -1,0 +1,20 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  update-homebrew:
+    runs-on: macos-latest
+    steps:
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          brew tap A2-ai/homebrew-tap
+          brew bump-formula-pr --no-browse --no-audit \
+            --tap=A2-ai/homebrew-tap \
+            --tag=${{ github.ref_name }} \
+            --revision=${{ github.sha }} \
+            rv
