@@ -1,0 +1,16 @@
+---
+source: src/add.rs
+expression: doc.to_string()
+---
+[project]
+name = "test-project"
+r_version = "4.4"
+
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org"},
+    { alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
+]
+
+dependencies = [
+    { name = "mypkg", git = "https://github.com/user/repo", tag = "v1.0.0" },
+]

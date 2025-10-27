@@ -1,9 +1,24 @@
 use std::path::Path;
 
 use std::fs;
-use toml_edit::{Array, DocumentMut, Formatted, Value};
+use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 
 use crate::{Config, config::ConfigLoadError};
+
+#[derive(Debug, Clone, Default)]
+pub struct AddOptions {
+    pub repository: Option<String>,
+    pub force_source: bool,
+    pub install_suggestions: bool,
+    pub dependencies_only: bool,
+    pub git: Option<String>,
+    pub commit: Option<String>,
+    pub tag: Option<String>,
+    pub branch: Option<String>,
+    pub directory: Option<String>,
+    pub path: Option<String>,
+    pub url: Option<String>,
+}
 
 pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
     let config_file = config_file.as_ref();
@@ -16,7 +31,11 @@ pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentM
     Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
 
-pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Result<(), AddError> {
+pub fn add_packages(
+    config_doc: &mut DocumentMut,
+    packages: Vec<String>,
+    options: AddOptions,
+) -> Result<(), AddError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
 
@@ -32,9 +51,10 @@ pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Resu
         .collect::<Vec<_>>();
 
     // Determine if the dep to add is in the config, if not add it
-    for d in packages {
-        if !config_dep_names.contains(&d) {
-            config_deps.push(Value::String(Formatted::new(d)));
+    for package_name in packages {
+        if !config_dep_names.contains(&package_name) {
+            let dep_value = create_dependency_value(&package_name, &options)?;
+            config_deps.push(dep_value);
             // Couldn't format value before pushing, so adding formatting after its added
             if let Some(last) = config_deps.iter_mut().last() {
                 last.decor_mut().set_prefix("\n    ");
@@ -47,6 +67,93 @@ pub fn add_packages(config_doc: &mut DocumentMut, packages: Vec<String>) -> Resu
     config_deps.set_trailing_comma(true);
 
     Ok(())
+}
+
+fn create_dependency_value(package_name: &str, options: &AddOptions) -> Result<Value, AddError> {
+    // Check if this is a simple string dependency (no options)
+    let is_simple = options.repository.is_none()
+        && !options.force_source
+        && !options.install_suggestions
+        && !options.dependencies_only
+        && options.git.is_none()
+        && options.path.is_none()
+        && options.url.is_none();
+
+    if is_simple {
+        // Simple string dependency
+        return Ok(Value::String(Formatted::new(package_name.to_string())));
+    }
+
+    // Create an inline table for detailed dependencies
+    let mut table = InlineTable::new();
+    table.insert("name", Value::from(package_name));
+
+    // Handle different dependency types
+    if let Some(ref git_url) = options.git {
+        // Git dependency
+        table.insert("git", Value::from(git_url.as_str()));
+
+        if let Some(ref commit) = options.commit {
+            table.insert("commit", Value::from(commit.as_str()));
+        } else if let Some(ref tag) = options.tag {
+            table.insert("tag", Value::from(tag.as_str()));
+        } else if let Some(ref branch) = options.branch {
+            table.insert("branch", Value::from(branch.as_str()));
+        }
+
+        if let Some(ref directory) = options.directory {
+            table.insert("directory", Value::from(directory.as_str()));
+        }
+
+        if options.install_suggestions {
+            table.insert("install_suggestions", Value::from(true));
+        }
+
+        if options.dependencies_only {
+            table.insert("dependencies_only", Value::from(true));
+        }
+    } else if let Some(ref path) = options.path {
+        // Local path dependency
+        table.insert("path", Value::from(path.as_str()));
+
+        if options.install_suggestions {
+            table.insert("install_suggestions", Value::from(true));
+        }
+
+        if options.dependencies_only {
+            table.insert("dependencies_only", Value::from(true));
+        }
+    } else if let Some(ref url) = options.url {
+        // URL dependency
+        table.insert("url", Value::from(url.as_str()));
+
+        if options.install_suggestions {
+            table.insert("install_suggestions", Value::from(true));
+        }
+
+        if options.dependencies_only {
+            table.insert("dependencies_only", Value::from(true));
+        }
+    } else {
+        // Detailed/repository dependency
+        if let Some(ref repository) = options.repository {
+            table.insert("repository", Value::from(repository.as_str()));
+        }
+
+        if options.force_source {
+            table.insert("force_source", Value::from(true));
+        }
+
+        if options.install_suggestions {
+            table.insert("install_suggestions", Value::from(true));
+        }
+
+        if options.dependencies_only {
+            table.insert("dependencies_only", Value::from(true));
+        }
+    }
+
+    Ok(Value::InlineTable(table))
 }
 
 fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
@@ -85,13 +192,231 @@ pub enum AddErrorKind {
 
 #[cfg(test)]
 mod tests {
+    use super::AddOptions;
     use crate::{add_packages, read_and_verify_config};
 
+    const BASELINE_CONFIG: &str = "src/tests/valid_config/baseline_for_add.toml";
+
+    // Simple tests - one feature at a time
+
     #[test]
-    fn add_remove() {
-        let config_file = "src/tests/valid_config/all_fields.toml";
-        let mut doc = read_and_verify_config(&config_file).unwrap();
-        add_packages(&mut doc, vec!["pkg1".to_string(), "pkg2".to_string()]).unwrap();
-        insta::assert_snapshot!("add_remove", doc.to_string());
+    fn add_simple_package() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(&mut doc, vec!["dplyr".to_string()], AddOptions::default()).unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_with_repository() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["dplyr".to_string()],
+            AddOptions {
+                repository: Some("ppm".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_with_force_source() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["dplyr".to_string()],
+            AddOptions {
+                force_source: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_with_install_suggestions() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["dplyr".to_string()],
+            AddOptions {
+                install_suggestions: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_with_dependencies_only() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["dplyr".to_string()],
+            AddOptions {
+                dependencies_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_git_with_commit() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                git: Some("https://github.com/user/repo".to_string()),
+                commit: Some("abc123def456".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_git_with_tag() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                git: Some("https://github.com/user/repo".to_string()),
+                tag: Some("v1.0.0".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_git_with_branch() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                git: Some("https://github.com/user/repo".to_string()),
+                branch: Some("main".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_git_with_directory() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                git: Some("https://github.com/user/repo".to_string()),
+                branch: Some("main".to_string()),
+                directory: Some("subdir".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_local_path() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                path: Some("../local/package".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_url() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["dplyr".to_string()],
+            AddOptions {
+                url: Some(
+                    "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz"
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    // Comprehensive tests - realistic combinations
+
+    #[test]
+    fn add_git_comprehensive() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                git: Some("https://github.com/user/repo".to_string()),
+                tag: Some("v1.0.0".to_string()),
+                directory: Some("subdir".to_string()),
+                install_suggestions: true,
+                dependencies_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_repository_comprehensive() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["dplyr".to_string()],
+            AddOptions {
+                repository: Some("ppm".to_string()),
+                force_source: true,
+                install_suggestions: true,
+                dependencies_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_local_comprehensive() {
+        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                path: Some("../local/package".to_string()),
+                install_suggestions: true,
+                dependencies_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
     }
 }

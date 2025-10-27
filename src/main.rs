@@ -68,16 +68,59 @@ pub enum Command {
         #[clap(long)]
         save_install_logs_in: Option<PathBuf>,
     },
-    /// Add simple packages to the project and sync
+    /// Add packages to the project and sync
     Add {
         #[clap(value_parser, required = true)]
         packages: Vec<String>,
         #[clap(long)]
-        /// Do not make any changes, only report what would happen if those packages were added         
+        /// Do not make any changes, only report what would happen if those packages were added
         dry_run: bool,
         #[clap(long)]
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
+
+        // Repository & Build Flags
+        #[clap(long, conflicts_with_all = ["git", "path", "url"])]
+        /// Pin package to a specific repository alias (must exist in config)
+        repository: Option<String>,
+        #[clap(long)]
+        /// Force building from source instead of using binaries
+        force_source: bool,
+
+        // Common Options
+        #[clap(long)]
+        /// Also install suggested packages
+        install_suggestions: bool,
+        #[clap(long)]
+        /// Install only the dependencies, not the package itself
+        dependencies_only: bool,
+
+        // Git Source Flags
+        #[clap(long, conflicts_with_all = ["repository", "path", "url"])]
+        /// Git repository URL (https or ssh)
+        git: Option<String>,
+        #[clap(long, requires = "git", conflicts_with_all = ["tag", "branch"])]
+        /// Git commit SHA
+        commit: Option<String>,
+        #[clap(long, requires = "git", conflicts_with_all = ["commit", "branch"])]
+        /// Git tag
+        tag: Option<String>,
+        #[clap(long, requires = "git", conflicts_with_all = ["commit", "tag"])]
+        /// Git branch
+        branch: Option<String>,
+        #[clap(long, requires = "git")]
+        /// Subdirectory within git repository
+        directory: Option<String>,
+
+        // Local Source Flag
+        #[clap(long, conflicts_with_all = ["repository", "git", "url"])]
+        /// Local filesystem path to package directory or archive
+        path: Option<String>,
+
+        // URL Source Flag
+        #[clap(long, conflicts_with_all = ["repository", "git", "path"])]
+        /// HTTP/HTTPS URL to package archive
+        url: Option<String>,
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
@@ -423,10 +466,83 @@ fn try_main() -> Result<()> {
             packages,
             dry_run,
             no_sync,
+            repository,
+            force_source,
+            install_suggestions,
+            dependencies_only,
+            git,
+            commit,
+            tag,
+            branch,
+            directory,
+            path,
+            url,
         } => {
-            // load config to verify structure is valid
+            // Validate that multiple packages only work with simple adds
+            let has_detailed_options = repository.is_some()
+                || force_source
+                || install_suggestions
+                || dependencies_only
+                || git.is_some()
+                || path.is_some()
+                || url.is_some();
+
+            if has_detailed_options && packages.len() > 1 {
+                return Err(anyhow::anyhow!(
+                    "Can only specify one package when using detailed options. Found {} packages.",
+                    packages.len()
+                ));
+            }
+
+            // Validate git requires exactly one of commit/tag/branch
+            if git.is_some() {
+                let ref_count = [commit.is_some(), tag.is_some(), branch.is_some()]
+                    .iter()
+                    .filter(|&&x| x)
+                    .count();
+                if ref_count != 1 {
+                    return Err(anyhow::anyhow!(
+                        "Git dependencies require exactly one of --commit, --tag, or --branch"
+                    ));
+                }
+            }
+
+            // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
-            add_packages(&mut doc, packages)?;
+            let config = Config::from_file(&cli.config_file)?;
+
+            // Validate repository alias exists if specified
+            if let Some(ref repo_alias) = repository {
+                let repo_exists = config.repositories().iter().any(|r| r.alias == *repo_alias);
+                if !repo_exists {
+                    return Err(anyhow::anyhow!(
+                        "Repository alias '{}' not found in config. Available repositories: {}",
+                        repo_alias,
+                        config
+                            .repositories()
+                            .iter()
+                            .map(|r| r.alias.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+            }
+
+            let add_options = rv::AddOptions {
+                repository,
+                force_source,
+                install_suggestions,
+                dependencies_only,
+                git,
+                commit,
+                tag,
+                branch,
+                directory,
+                path,
+                url,
+            };
+
+            add_packages(&mut doc, packages, add_options)?;
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
