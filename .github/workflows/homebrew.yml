@@ -13,7 +13,7 @@ jobs:
         with:
           app-id: ${{ vars.ORG_HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.ORG_HOMEBREW_TAP_APP_KEY }}
-          owner: a2-ai-tech-training
+          repositories: homebrew-tap
       - name: Update Homebrew formula
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ steps.app-token.outputs.token }}
