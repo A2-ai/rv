@@ -36,6 +36,10 @@ pub fn get_packages_timeout() -> u64 {
 
 /// Try to get where the rv cache dir should be
 pub fn get_user_cache_dir() -> Option<PathBuf> {
+    if let Some(p) = std::env::var(crate::consts::CACHE_DIR_ENV_VAR_NAME).ok() {
+        return Some(PathBuf::from(p));
+    }
+
     etcetera::base_strategy::choose_base_strategy()
         .ok()
         .map(|dirs| dirs.cache_dir().join("rv"))

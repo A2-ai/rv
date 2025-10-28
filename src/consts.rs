@@ -23,6 +23,7 @@ pub const SYS_REQ_URL_ENV_VAR_NAME: &str = "RV_SYS_REQ_URL";
 pub const NO_CHECK_OPEN_FILE_ENV_VAR_NAME: &str = "RV_NO_CHECK_OPEN_FILE";
 pub const SYS_DEPS_CHECK_IN_PATH_ENV_VAR_NAME: &str = "RV_SYS_DEPS_CHECK_IN_PATH";
 pub const SUBMODULE_UPDATE_DISABLE_ENV_VAR_NAME: &str = "RV_SUBMODULE_UPDATE_DISABLE";
+pub const CACHE_DIR_ENV_VAR_NAME: &str = "RV_CACHE_DIR";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R
