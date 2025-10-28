@@ -104,36 +104,12 @@ fn create_dependency_value(package_name: &str, options: &AddOptions) -> Result<V
         if let Some(ref directory) = options.directory {
             table.insert("directory", Value::from(directory.as_str()));
         }
-
-        if options.install_suggestions {
-            table.insert("install_suggestions", Value::from(true));
-        }
-
-        if options.dependencies_only {
-            table.insert("dependencies_only", Value::from(true));
-        }
     } else if let Some(ref path) = options.path {
         // Local path dependency
         table.insert("path", Value::from(path.as_str()));
-
-        if options.install_suggestions {
-            table.insert("install_suggestions", Value::from(true));
-        }
-
-        if options.dependencies_only {
-            table.insert("dependencies_only", Value::from(true));
-        }
     } else if let Some(ref url) = options.url {
         // URL dependency
         table.insert("url", Value::from(url.as_str()));
-
-        if options.install_suggestions {
-            table.insert("install_suggestions", Value::from(true));
-        }
-
-        if options.dependencies_only {
-            table.insert("dependencies_only", Value::from(true));
-        }
     } else {
         // Detailed/repository dependency
         if let Some(ref repository) = options.repository {
@@ -143,21 +119,26 @@ fn create_dependency_value(package_name: &str, options: &AddOptions) -> Result<V
         if options.force_source {
             table.insert("force_source", Value::from(true));
         }
-
-        if options.install_suggestions {
-            table.insert("install_suggestions", Value::from(true));
-        }
-
-        if options.dependencies_only {
-            table.insert("dependencies_only", Value::from(true));
-        }
     }
+
+    // Add common options that apply to all dependency types
+    add_common_options(&mut table, options);
 
     Ok(Value::InlineTable(table))
 }
 
+fn add_common_options(table: &mut InlineTable, options: &AddOptions) {
+    if options.install_suggestions {
+        table.insert("install_suggestions", Value::from(true));
+    }
+
+    if options.dependencies_only {
+        table.insert("dependencies_only", Value::from(true));
+    }
+}
+
 fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
-    // the dependnecies array is behind the project table
+    // the dependencies array is behind the project table
     let deps = doc
         .get_mut("project")
         .and_then(|item| item.as_table_mut())

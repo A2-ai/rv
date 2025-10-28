@@ -83,7 +83,7 @@ pub enum Command {
         #[clap(long, conflicts_with_all = ["git", "path", "url"])]
         /// Pin package to a specific repository alias (must exist in config)
         repository: Option<String>,
-        #[clap(long)]
+        #[clap(long, conflicts_with_all = ["git", "path", "url"])]
         /// Force building from source instead of using binaries
         force_source: bool,
 
