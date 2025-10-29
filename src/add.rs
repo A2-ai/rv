@@ -3,21 +3,63 @@ use std::path::Path;
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 
+#[cfg(feature = "cli")]
+use clap::Parser;
+
 use crate::{Config, config::ConfigLoadError};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "cli", derive(Parser))]
 pub struct AddOptions {
+    /// Pin package to a specific repository alias (must exist in config)
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["git", "path", "url"]))]
     pub repository: Option<String>,
+    /// Force building from source instead of using binaries
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["git", "path", "url"]))]
     pub force_source: bool,
+    /// Also install suggested packages
+    #[cfg_attr(feature = "cli", clap(long))]
     pub install_suggestions: bool,
+    /// Install only the dependencies, not the package itself
+    #[cfg_attr(feature = "cli", clap(long))]
     pub dependencies_only: bool,
+    /// Git repository URL (https or ssh)
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["repository", "path", "url"]))]
     pub git: Option<String>,
+    /// Git commit SHA
+    #[cfg_attr(feature = "cli", clap(long, requires = "git", conflicts_with_all = ["tag", "branch"]))]
     pub commit: Option<String>,
+    /// Git tag
+    #[cfg_attr(feature = "cli", clap(long, requires = "git", conflicts_with_all = ["commit", "branch"]))]
     pub tag: Option<String>,
+    /// Git branch
+    #[cfg_attr(feature = "cli", clap(long, requires = "git", conflicts_with_all = ["commit", "tag"]))]
     pub branch: Option<String>,
+    #[cfg_attr(feature = "cli", clap(long, requires = "git"))]
+    /// Subdirectory within git repository
     pub directory: Option<String>,
+    /// Local filesystem path to package directory or archive
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["repository", "git", "url"]))]
     pub path: Option<String>,
+    /// HTTP/HTTPS URL to package archive
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["repository", "git", "path"]))]
     pub url: Option<String>,
+}
+
+impl AddOptions {
+    pub fn has_details_options(&self) -> bool {
+        self.repository.is_some()
+            || self.force_source
+            || self.install_suggestions
+            || self.dependencies_only
+            || self.git.is_some()
+            || self.path.is_some()
+            || self.url.is_some()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self == &Default::default()
+    }
 }
 
 pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
@@ -70,16 +112,7 @@ pub fn add_packages(
 }
 
 fn create_dependency_value(package_name: &str, options: &AddOptions) -> Result<Value, AddError> {
-    // Check if this is a simple string dependency (no options)
-    let is_simple = options.repository.is_none()
-        && !options.force_source
-        && !options.install_suggestions
-        && !options.dependencies_only
-        && options.git.is_none()
-        && options.path.is_none()
-        && options.url.is_none();
-
-    if is_simple {
+    if options.is_empty() {
         // Simple string dependency
         return Ok(Value::String(Formatted::new(package_name.to_string())));
     }
