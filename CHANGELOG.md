@@ -1,3 +1,21 @@
+## v0.16.0 - November 30, 2025
+
+This release significantly expands the `rv add` command with comprehensive configuration options for installing packages from multiple sources and with fine-grained control over installation behavior. Additionally, custom cache directory configuration is now supported through an rv-specific environment variable `RV_CACHE_DIR`.
+
+### 🎉 New Features
+
+- `rv add` has been enhanced with CLI flags for all configuration options:
+  - **Git repositories**: `--git`, `--commit`, `--tag`, `--branch`, and `--directory` flags for specifying commits, tags, branches, or subdirectories within repositories
+  - **Local filesystem paths**: `--path` for local development or custom package locations
+  - **HTTP/HTTPS URLs**: `--url` for installing from package archives
+  - **Repository pinning**: `--repository <alias>` to pin packages to specific repository aliases configured in your `rproject.toml`, allowing packages come from the non-first matching repository.
+  - **Package installation behavior**:
+    - `--force-source`: Build packages from source instead of using pre-built binaries
+    - `--install-suggestions`: Automatically install suggested packages
+    - `--dependencies-only`: Install only a package's dependencies without the package itself
+
+- **Custom cache directory**: Set the `RV_CACHE_DIR` environment variable to override the default cache location, useful for custom storage configurations, limited disk space scenarios, or CI/CD environments.
+
 ## v0.15.0 - October 25, 2025
 
 This release adds support for RPM-based Linux distributions (AlmaLinux, CentOS, Rocky Linux, RHEL) for system dependency detection and binary package installation.
