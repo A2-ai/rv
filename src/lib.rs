@@ -27,7 +27,7 @@ mod utils;
 pub mod consts;
 
 pub use activate::{activate, deactivate};
-pub use add::{add_packages, read_and_verify_config};
+pub use add::{AddOptions, add_packages, read_and_verify_config};
 pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};

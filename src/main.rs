@@ -6,12 +6,12 @@ use anyhow::Result;
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
-use rv::RepositoryOperation as LibRepositoryOperation;
 use rv::cli::{
     CliContext, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
     init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
+use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
     CacheInfo, Config, ProjectSummary, RCmd, RCommandLine, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
@@ -68,16 +68,18 @@ pub enum Command {
         #[clap(long)]
         save_install_logs_in: Option<PathBuf>,
     },
-    /// Add simple packages to the project and sync
+    /// Add packages to the project and sync
     Add {
         #[clap(value_parser, required = true)]
         packages: Vec<String>,
         #[clap(long)]
-        /// Do not make any changes, only report what would happen if those packages were added         
+        /// Do not make any changes, only report what would happen if those packages were added
         dry_run: bool,
         #[clap(long)]
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
+        #[clap(flatten)]
+        add_options: AddOptions,
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
@@ -423,10 +425,55 @@ fn try_main() -> Result<()> {
             packages,
             dry_run,
             no_sync,
+            add_options,
         } => {
-            // load config to verify structure is valid
+            // Validate that multiple packages only work with simple adds
+            if add_options.has_details_options() && packages.len() > 1 {
+                return Err(anyhow::anyhow!(
+                    "Can only specify one package when using detailed options. Found {} packages.",
+                    packages.len()
+                ));
+            }
+
+            // Validate git requires exactly one of commit/tag/branch
+            if add_options.git.is_some() {
+                let ref_count = [
+                    add_options.commit.is_some(),
+                    add_options.tag.is_some(),
+                    add_options.branch.is_some(),
+                ]
+                .iter()
+                .filter(|&&x| x)
+                .count();
+                if ref_count != 1 {
+                    return Err(anyhow::anyhow!(
+                        "Git dependencies require exactly one of --commit, --tag, or --branch"
+                    ));
+                }
+            }
+
+            // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
-            add_packages(&mut doc, packages)?;
+            let config = Config::from_file(&cli.config_file)?;
+
+            // Validate repository alias exists if specified
+            if let Some(ref repo_alias) = add_options.repository {
+                let repo_exists = config.repositories().iter().any(|r| r.alias == *repo_alias);
+                if !repo_exists {
+                    return Err(anyhow::anyhow!(
+                        "Repository alias '{}' not found in config. Available repositories: {}",
+                        repo_alias,
+                        config
+                            .repositories()
+                            .iter()
+                            .map(|r| r.alias.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+            }
+
+            add_packages(&mut doc, packages, add_options)?;
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
