@@ -1,4 +1,11 @@
-## v0.16.0 - November 30, 2025
+## v0.16.1 - November 6, 2025
+
+This release fixes an issue with Red Hat Enterprise Linux detection that prevented rv from properly identifying the operating system and configuring system dependencies.
+
+### 🐛 Bug Fixes
+- **Fixed Red Hat Enterprise Linux detection**: Resolved an issue where rv could not properly detect Red Hat Enterprise Linux systems, which prevented correct system dependency detection and binary package installation on RHEL platforms.
+
+## v0.16.0 - October 30, 2025
 
 This release significantly expands the `rv add` command with comprehensive configuration options for installing packages from multiple sources and with fine-grained control over installation behavior. Additionally, custom cache directory configuration is now supported through an rv-specific environment variable `RV_CACHE_DIR`.
 
