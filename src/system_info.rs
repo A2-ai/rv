@@ -86,7 +86,7 @@ impl SystemInfo {
             Type::CentOS => OsType::Linux("centos"),
             Type::AlmaLinux => OsType::Linux("almalinux"),
             Type::openSUSE => OsType::Linux("opensuse"),
-            Type::Redhat => OsType::Linux("redhat"),
+            Type::Redhat | Type::RedHatEnterprise => OsType::Linux("redhat"),
             Type::RockyLinux => OsType::Linux("rocky"),
             Type::SUSE => OsType::Linux("suse"),
             Type::Gentoo => OsType::Linux("gentoo"),
