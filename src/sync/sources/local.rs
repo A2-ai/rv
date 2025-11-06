@@ -54,6 +54,7 @@ pub(crate) fn install_package(
         log::debug!("Building the local package in {}", actual_path.display());
         let output = r_cmd.install(
             &actual_path,
+            Option::<&Path>::None,
             library_dirs,
             library_dirs.first().unwrap(),
             cancellation,

@@ -37,6 +37,7 @@ pub(crate) fn install_package(
         );
         let output = r_cmd.install(
             &download_path,
+            Option::<&Path>::None,
             library_dirs,
             &pkg_paths.binary,
             cancellation,

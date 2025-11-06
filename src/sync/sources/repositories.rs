@@ -31,6 +31,7 @@ pub(crate) fn install_package(
         log::debug!("Compiling package from {}", source_path.display());
         match r_cmd.install(
             &source_path,
+            Option::<&Path>::None,
             library_dirs,
             &pkg_paths.binary,
             cancellation.clone(),

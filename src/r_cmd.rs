@@ -34,6 +34,7 @@ pub trait RCmd: Send + Sync {
     fn install(
         &self,
         folder: impl AsRef<Path>,
+        sub_folder: Option<impl AsRef<Path>>,
         libraries: &[impl AsRef<Path>],
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
@@ -229,6 +230,7 @@ impl RCmd for RCommandLine {
     fn install(
         &self,
         source_folder: impl AsRef<Path>,
+        sub_folder: Option<impl AsRef<Path>>,
         libraries: &[impl AsRef<Path>],
         destination: impl AsRef<Path>,
         cancellation: Arc<Cancellation>,
@@ -244,14 +246,25 @@ impl RCmd for RCommandLine {
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
         // We symlink if possible except on Windows
-        let src_backup_dir = tempfile::tempdir().map_err(|e| InstallError {
+        let src_backup_dir_temp = tempfile::tempdir().map_err(|e| InstallError {
             source: InstallErrorKind::TempDir(e),
         })?;
+
+        let mut src_backup_dir = src_backup_dir_temp.path().to_owned();
+
         LinkMode::Copy
-            .link_files("tmp_build", &source_folder, src_backup_dir.path())
+            .link_files("tmp_build", &source_folder, &src_backup_dir)
             .map_err(|e| InstallError {
                 source: InstallErrorKind::LinkError(e),
             })?;
+
+        // Some R package structures, especially those that make use of
+        // bootstrap.R like tree-sitter-r require the parent directories
+        // to exist during build. We need to copy the whole repo
+        // and install from the subdirectory directly
+        if let Some(sub_dir) = sub_folder {
+            src_backup_dir.push(sub_dir);
+        }
 
         let canonicalized_libraries = libraries
             .iter()
@@ -306,7 +319,7 @@ impl RCmd for RCommandLine {
             }
         }
         command
-            .arg(src_backup_dir.path())
+            .arg(&src_backup_dir)
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library_paths)
             .env("R_LIBS_USER", &library_paths)
