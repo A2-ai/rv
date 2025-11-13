@@ -7,8 +7,8 @@ use fs_err::{read_to_string, write};
 use serde_json::json;
 
 use rv::cli::{
-    CliContext, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
-    init_structure, migrate_renv, resolve_dependencies, tree,
+    CliContext, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories,
+    format_repository_for_parsing, init, init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
@@ -693,7 +693,7 @@ fn try_main() -> Result<()> {
                     .config
                     .repositories()
                     .iter()
-                    .map(|r| format!("({}, {})", r.alias, r.url()))
+                    .map(|r| format_repository_for_parsing(r, &context.cache.system_info))
                     .collect::<Vec<_>>()
                     .join(", ");
                 output.push(("repositories", repos));
