@@ -35,7 +35,7 @@ pub(crate) fn install_package(
             git_exec.clone(),
         )?;
         // If we have a directory, don't forget to set it before building it
-        let source_path = match &pkg.source {
+        let (source_path, sub_dir) = match &pkg.source {
             Source::Git {
                 directory: Some(dir),
                 ..
@@ -43,12 +43,13 @@ pub(crate) fn install_package(
             | Source::RUniverse {
                 directory: Some(dir),
                 ..
-            } => pkg_paths.source.join(dir),
-            _ => pkg_paths.source,
+            } => (pkg_paths.source, Some(dir)),
+            _ => (pkg_paths.source, None),
         };
 
         let output = r_cmd.install(
             &source_path,
+            sub_dir.as_deref(),
             library_dirs,
             &pkg_paths.binary,
             cancellation,
