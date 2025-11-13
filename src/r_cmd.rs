@@ -296,6 +296,7 @@ impl RCmd for RInstall {
                 };
 
                 if to_bootstrap {
+                    log::debug!("Bootstrapping {}...", destination.display());
                     let output = Command::new(self.effective_r_command())
                         .arg("-f")
                         .arg("bootstrap.R")

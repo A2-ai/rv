@@ -3,9 +3,8 @@ name = "git monorepo"
 r_version = "4.4"
 
 repositories = [
-    {alias = "CRAN", url = "https://cloud.r-project.org/"},
 ]
 
 dependencies = [
-    { name = "treesitter.r", git = "https://github.com/r-lib/tree-sitter-r", commit = "0e6ef7741712c09dc3ee6e81c42e919820cc65ef", directory = "bindings/r" },
+    { name = "pkg", git = "https://github.com/a2-ai/git.monorepo.pkg", branch = "main", directory = "R/pkg" },
 ]
