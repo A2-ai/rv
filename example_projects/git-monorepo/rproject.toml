@@ -1,0 +1,11 @@
+[project]
+name = "git monorepo"
+r_version = "4.4"
+
+repositories = [
+    {alias = "CRAN", url = "https://cloud.r-project.org/"},
+]
+
+dependencies = [
+    { name = "sedonadb", git = "https://github.com/apache/sedona-db", commit = "49cecb0b07ffd7f2c72cf494795addf5883bd7bc", directory = "r/sedonadb" },
+]
