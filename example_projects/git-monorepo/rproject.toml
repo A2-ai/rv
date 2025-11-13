@@ -7,5 +7,5 @@ repositories = [
 ]
 
 dependencies = [
-    { name = "sedonadb", git = "https://github.com/apache/sedona-db", commit = "49cecb0b07ffd7f2c72cf494795addf5883bd7bc", directory = "r/sedonadb" },
+    { name = "treesitter.r", git = "https://github.com/r-lib/tree-sitter-r", commit = "0e6ef7741712c09dc3ee6e81c42e919820cc65ef", directory = "bindings/r" },
 ]
