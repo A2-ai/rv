@@ -67,6 +67,9 @@ pub enum Command {
     Sync {
         #[clap(long)]
         save_install_logs_in: Option<PathBuf>,
+        #[clap(long)]
+        /// Behave as if no library is present
+        ignore_library: bool,
     },
     /// Add packages to the project and sync
     Add {
@@ -80,11 +83,17 @@ pub enum Command {
         no_sync: bool,
         #[clap(flatten)]
         add_options: AddOptions,
+        #[clap(long)]
+        /// Behave as if no library is present
+        ignore_library: bool,
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
         dry_run: bool,
+        #[clap(long)]
+        /// Behave as if no library is present
+        ignore_library: bool,
     },
     /// Dry run of what sync would do
     Plan {
@@ -94,6 +103,9 @@ pub enum Command {
         /// The command will not error even if this R version is not found
         #[clap(long)]
         r_version: Option<Version>,
+        #[clap(long)]
+        /// Behave as if no library is present
+        ignore_library: bool,
     },
     /// Provide a summary about the project status
     Summary {
@@ -101,6 +113,9 @@ pub enum Command {
         /// The command will not error even if this R version is not found
         #[clap(long)]
         r_version: Option<Version>,
+        #[clap(long)]
+        /// Behave as if no library is present
+        ignore_library: bool,
     },
     /// Configure project settings
     Configure {
@@ -405,8 +420,10 @@ fn try_main() -> Result<()> {
         }
         Command::Sync {
             save_install_logs_in,
+            ignore_library,
         } => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+            let mut context =
+                CliContext::new(&cli.config_file, RCommandLookup::Strict, ignore_library)?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -426,6 +443,7 @@ fn try_main() -> Result<()> {
             dry_run,
             no_sync,
             add_options,
+            ignore_library,
         } => {
             // Validate that multiple packages only work with simple adds
             if add_options.has_details_options() && packages.len() > 1 {
@@ -488,7 +506,8 @@ fn try_main() -> Result<()> {
                 }
                 return Ok(());
             }
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+            let mut context =
+                CliContext::new(&cli.config_file, RCommandLookup::Strict, ignore_library)?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -506,8 +525,12 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Upgrade { dry_run } => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+        Command::Upgrade {
+            dry_run,
+            ignore_library,
+        } => {
+            let mut context =
+                CliContext::new(&cli.config_file, RCommandLookup::Strict, ignore_library)?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -521,13 +544,17 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Plan { upgrade, r_version } => {
+        Command::Plan {
+            upgrade,
+            r_version,
+            ignore_library,
+        } => {
             let upgrade = if upgrade || r_version.is_some() {
                 ResolveMode::FullUpgrade
             } else {
                 ResolveMode::Default
             };
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+            let mut context = CliContext::new(&cli.config_file, r_version.into(), ignore_library)?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -540,12 +567,18 @@ fn try_main() -> Result<()> {
             }
             .run(&context, upgrade)?;
         }
-        Command::Summary { r_version } => {
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+        Command::Summary {
+            r_version,
+            ignore_library,
+        } => {
+            let mut context = CliContext::new(&cli.config_file, r_version.into(), ignore_library)?;
             context.load_databases()?;
             context.load_system_requirements()?;
             if !log_enabled {
                 context.show_progress_bar();
+            }
+            if ignore_library {
+                context.library.packages = HashMap::new();
             }
             let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
             let project_sys_deps: HashSet<_> = resolved
@@ -613,7 +646,7 @@ fn try_main() -> Result<()> {
             hide_system_deps,
             r_version,
         } => {
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+            let mut context = CliContext::new(&cli.config_file, r_version.into(), false)?;
             context.load_databases_if_needed()?;
             if !hide_system_deps {
                 context.load_system_requirements()?;
@@ -634,7 +667,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Library => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip, false)?;
             let path_str = context.library_path().to_string_lossy();
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
@@ -649,7 +682,7 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Cache => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip, false)?;
             context.load_databases()?;
             if !log_enabled {
                 context.show_progress_bar();
@@ -675,7 +708,7 @@ fn try_main() -> Result<()> {
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip, false)?;
             if library {
                 let path_str = context.library_path().to_string_lossy();
                 let path_out = if cfg!(windows) {
@@ -712,7 +745,7 @@ fn try_main() -> Result<()> {
             only_absent,
             ignore,
         } => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip, false)?;
             if !log_enabled {
                 context.show_progress_bar();
             }
