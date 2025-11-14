@@ -82,6 +82,9 @@ impl SyncHelper {
                     handler.show_progress_bar();
                 }
                 handler.set_uses_lockfile(context.config.use_lockfile());
+                if context.ignore_library {
+                    handler.set_ignore_library();
+                }
                 handler.handle(&resolution.found, &context.r_cmd)
             }
         ) {

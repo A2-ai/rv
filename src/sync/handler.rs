@@ -93,6 +93,7 @@ pub struct SyncHandler<'a> {
     show_progress_bar: bool,
     max_workers: usize,
     uses_lockfile: bool,
+    ignore_library: bool,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -119,6 +120,7 @@ impl<'a> SyncHandler<'a> {
             show_progress_bar: false,
             uses_lockfile: false,
             max_workers: get_max_workers(),
+            ignore_library: false,
         }
     }
 
@@ -137,6 +139,10 @@ impl<'a> SyncHandler<'a> {
 
     pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
         self.uses_lockfile = uses_lockfile;
+    }
+
+    pub fn set_ignore_library(&mut self) {
+        self.ignore_library = true;
     }
 
     /// Resolve configure_args for a package based on current system info
@@ -239,6 +245,12 @@ impl<'a> SyncHandler<'a> {
         let deps_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name.as_ref(), d)).collect();
 
         for name in self.library.packages.keys() {
+            // every package in the library should be removed without notification when ignoring the library
+            if self.ignore_library {
+                deps_to_remove.insert((name.as_str(), false));
+                continue;
+            }
+
             if let Some(dep) = deps_by_name.get(name.as_str()) {
                 // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
                 // Additionally, any package in the library that is ignored, needs to be removed
@@ -371,7 +383,7 @@ impl<'a> SyncHandler<'a> {
             // Only actually remove the deps if we are not going to do any other changes.
             if !needs_sync {
                 let p = self.library.path().join(dir_name);
-                if !self.dry_run && *notify {
+                if !self.dry_run {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
                 }
@@ -641,7 +653,7 @@ impl<'a> SyncHandler<'a> {
             // mv new packages to the library and delete the ones that need to be removed
             for (name, notify) in deps_to_remove {
                 let p = self.library.path().join(name);
-                if !self.dry_run && notify {
+                if !self.dry_run {
                     log::debug!("Removing {name} from library");
                     fs::remove_dir_all(&p)?;
                 }
