@@ -34,7 +34,6 @@ pub(crate) struct QueueItem<'d> {
     force_source: Option<bool>,
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
-    local_path: Option<PathBuf>,
     // Only for top level dependencies. Checks whether the config dependency is matching
     // what we have in the lockfile, we have one.
     matching_in_lockfile: Option<bool>,
@@ -138,13 +137,20 @@ impl<'d> Resolver<'d> {
 
     fn local_lookup(
         &self,
+        local_path: &Path,
+        directory: Option<String>,
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        let local_path = item.local_path.as_ref().unwrap();
-        let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
+        let local_path = local_path.to_owned();
+
+        let mut canon_path = match fs::canonicalize(self.project_dir.join(&local_path)) {
             Ok(canon_path) => canon_path,
             Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
         };
+
+        if let Some(sub_dir) = &directory {
+            canon_path = canon_path.join(sub_dir);
+        }
 
         let (package, sha) = if canon_path.is_file() {
             // We have a file, it should be a tarball.
@@ -176,7 +182,8 @@ impl<'d> Resolver<'d> {
         let (resolved_dep, deps) = ResolvedDependency::from_local_package(
             &package,
             Source::Local {
-                path: local_path.clone(),
+                path: local_path.to_owned(),
+                directory,
                 sha,
             },
             item.install_suggestions,
@@ -385,7 +392,7 @@ impl<'d> Resolver<'d> {
             )
             .into());
         }
-        let is_binary = is_binary_package(&install_path, &package.name)?;
+        let is_binary = is_binary_package(&install_path, Option::<&Path>::None, &package.name)?;
         let (resolved_dep, deps) = ResolvedDependency::from_url_package(
             &package,
             if is_binary {
@@ -462,7 +469,6 @@ impl<'d> Resolver<'d> {
                 force_source: d.force_source(),
                 parent: None,
                 remote: None,
-                local_path: d.local_path(),
                 matching_in_lockfile: self.lockfile.and_then(|l| {
                     l.get_package(d.name(), Some(d))
                         .map(|p| p.is_matching(d, &self.repo_urls))
@@ -481,25 +487,6 @@ impl<'d> Resolver<'d> {
                 if ver_reqs.contains(&item.version_requirement) {
                     continue;
                 }
-            }
-
-            // If we have a local path, we don't need to check anything at all, just the actual path
-            if item.local_path.is_some() {
-                match self.local_lookup(&item) {
-                    Ok((resolved_dep, items)) => {
-                        processed
-                            .entry(resolved_dep.name.to_string())
-                            .or_insert_with(HashSet::new)
-                            .insert(item.version_requirement.clone());
-                        result.add_found(resolved_dep);
-                        queue.extend(items);
-                        continue;
-                    }
-                    Err(e) => result
-                        .failed
-                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}"))),
-                }
-                continue;
             }
 
             // First let's check if it's a builtin package if the R version is matching if the package
@@ -585,6 +572,24 @@ impl<'d> Resolver<'d> {
                             }
                         }
                     }
+                    PackageRemote::Local { path, directory } => {
+                        // If we have a local path, we don't need to check anything at all, just the actual path
+                        match self.local_lookup(path.as_ref(), directory.clone(), &item) {
+                            Ok((resolved_dep, items)) => {
+                                processed
+                                    .entry(resolved_dep.name.to_string())
+                                    .or_insert_with(HashSet::new)
+                                    .insert(item.version_requirement.clone());
+                                result.add_found(resolved_dep);
+                                queue.extend(items);
+                                continue;
+                            }
+                            Err(e) => result.failed.push(
+                                UnresolvedDependency::from_item(&item).with_error(format!("{e}")),
+                            ),
+                        }
+                        continue;
+                    }
                     _ => {
                         result.failed.push(
                             UnresolvedDependency::from_item(&item)
@@ -636,7 +641,19 @@ impl<'d> Resolver<'d> {
                         }
                     }
                 }
-                Some(ConfigDependency::Local { .. }) => unreachable!("handled beforehand"),
+                Some(ConfigDependency::Local {
+                    path, directory, ..
+                }) => match self.local_lookup(path, directory.clone(), &item) {
+                    Ok((resolved_dep, items)) => {
+                        result.add_found(resolved_dep);
+                        queue.extend(items);
+                    }
+                    Err(e) => {
+                        result.failed.push(
+                            UnresolvedDependency::from_item(&item).with_error(format!("{e}")),
+                        );
+                    }
+                },
                 Some(ConfigDependency::Git {
                     git,
                     tag,

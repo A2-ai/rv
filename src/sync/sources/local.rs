@@ -19,8 +19,12 @@ pub(crate) fn install_package(
     configure_args: &[String],
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
-    let (local_path, sha) = match &pkg.source {
-        Source::Local { path, sha } => (path, sha.clone()),
+    let (local_path, sha, sub_dir) = match &pkg.source {
+        Source::Local {
+            path,
+            sha,
+            directory,
+        } => (path, sha.clone(), directory),
         _ => unreachable!(),
     };
 
@@ -35,11 +39,13 @@ pub(crate) fn install_package(
         canon_path.clone()
     };
 
-    if is_binary_package(&actual_path, pkg.name.as_ref()).map_err(|err| SyncError {
-        source: crate::sync::errors::SyncErrorKind::InvalidPackage {
-            path: actual_path.to_path_buf(),
-            error: err.to_string(),
-        },
+    if is_binary_package(&actual_path, sub_dir.as_ref(), pkg.name.as_ref()).map_err(|err| {
+        SyncError {
+            source: crate::sync::errors::SyncErrorKind::InvalidPackage {
+                path: actual_path.to_path_buf(),
+                error: err.to_string(),
+            },
+        }
     })? {
         log::debug!(
             "Local package in {} is a binary package, copying files to library.",
@@ -54,7 +60,7 @@ pub(crate) fn install_package(
         log::debug!("Building the local package in {}", actual_path.display());
         let output = r_cmd.install(
             &actual_path,
-            Option::<&Path>::None,
+            sub_dir.as_ref(),
             library_dirs,
             library_dirs.first().unwrap(),
             cancellation,

@@ -157,9 +157,13 @@ impl Package {
 /// Error only occurs if the DESCRIPTION file cannot be parsed
 pub fn is_binary_package(
     path: impl AsRef<Path>,
+    sub_dir: Option<impl AsRef<Path>>,
     name: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let path = path.as_ref();
+    let mut path = path.as_ref().to_owned();
+    if let Some(sub_dir) = sub_dir {
+        path = path.join(sub_dir);
+    }
 
     // If the package does not have a parse-able DESCRIPTION file, the entire package is not valid and we should not try to install it
     let pkg = parse_description_file_in_folder(&path)?;

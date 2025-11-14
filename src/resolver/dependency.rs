@@ -305,7 +305,6 @@ pub struct UnresolvedDependency<'d> {
     // The first parent we encountered requiring that package
     pub(crate) parent: Option<Cow<'d, str>>,
     pub(crate) remote: Option<PackageRemote>,
-    pub(crate) local_path: Option<PathBuf>,
     pub(crate) url: Option<String>,
 }
 
@@ -317,7 +316,6 @@ impl<'d> UnresolvedDependency<'d> {
             version_requirement: item.version_requirement.clone(),
             parent: item.parent.clone(),
             remote: None,
-            local_path: item.local_path.clone(),
             url: None,
         }
     }

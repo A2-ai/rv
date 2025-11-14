@@ -3,4 +3,4 @@ source: src/package/remotes.rs
 description: "local::/pkgs/testthat"
 expression: "format!(\"{name:?} => {remote:?}\")"
 ---
-None => Local("/pkgs/testthat")
+None => Local { path: "/pkgs/testthat", directory: None }

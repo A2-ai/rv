@@ -98,6 +98,8 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        directory: Option<String>,
     },
     Url {
         url: HttpUrl,
