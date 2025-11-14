@@ -50,6 +50,7 @@ pub enum Source {
         path: PathBuf,
         /// Only for tarballs
         sha: Option<String>,
+        directory: Option<String>,
     },
     Builtin {
         builtin: bool,
@@ -87,10 +88,17 @@ impl Source {
             Self::Repository { repository } => {
                 table.insert("repository", Value::from(repository.as_str()));
             }
-            Self::Local { path, sha } => {
+            Self::Local {
+                path,
+                sha,
+                directory,
+            } => {
                 table.insert("path", Value::from(path.display().to_string()));
                 if let Some(s) = sha {
                     table.insert("sha", Value::from(s));
+                }
+                if let Some(d) = directory {
+                    table.insert("directory", Value::from(d));
                 }
             }
             Self::RUniverse {
@@ -228,11 +236,23 @@ impl fmt::Debug for Source {
             Self::Repository { repository } => {
                 write!(f, "repository(url: {repository})")
             }
-            Self::Local { path, sha } => {
-                if let Some(sha) = sha {
-                    write!(f, "local(path: {}, sha: {sha})", path.display())
+            Self::Local {
+                path,
+                sha,
+                directory,
+            } => {
+                if let Some(sha_val) = sha {
+                    write!(
+                        f,
+                        "local(path: {}, sha: {sha_val}, directory: {directory:?})",
+                        path.display()
+                    )
                 } else {
-                    write!(f, "local(path: {})", path.display())
+                    write!(
+                        f,
+                        "local(path: {}, directory: {directory:?})",
+                        path.display()
+                    )
                 }
             }
             Self::Url { url, sha } => {

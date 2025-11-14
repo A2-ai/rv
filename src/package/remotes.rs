@@ -38,7 +38,10 @@ pub enum PackageRemote {
     Url(String),
     // TODO: put more stuff here once we handle bioc in rproject.toml
     Bioc(String),
-    Local(String),
+    Local {
+        path: String,
+        directory: Option<String>,
+    },
     Other(String),
 }
 
@@ -141,7 +144,13 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
         // Who knows what it could be the package name if you have a URL
         RemoteType::Url => (String::new(), PackageRemote::Url(content.to_string())),
         RemoteType::Bioc => (String::new(), PackageRemote::Bioc(content.to_string())),
-        RemoteType::Local => (String::new(), PackageRemote::Local(content.to_string())),
+        RemoteType::Local => (
+            String::new(),
+            PackageRemote::Local {
+                path: content.to_string(),
+                directory: None,
+            },
+        ),
     };
 
     if package_name.is_empty() {
