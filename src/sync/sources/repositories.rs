@@ -151,7 +151,12 @@ pub(crate) fn install_package(
         _ => {}
     }
     // And then we always link the binary folder into the staging library
-    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dirs.first().unwrap())?;
+    LinkMode::link_files(
+        None,
+        &pkg.name,
+        &pkg_paths.binary,
+        library_dirs.first().unwrap(),
+    )?;
 
     Ok(())
 }

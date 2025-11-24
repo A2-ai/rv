@@ -9,7 +9,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::fs::copy_folder;
+use crate::fs::{copy_folder, is_nfs};
 
 const LINK_ENV_NAME: &str = "RV_LINK_MODE";
 
@@ -51,23 +51,6 @@ impl Default for LinkMode {
 }
 
 impl LinkMode {
-    pub fn new() -> Self {
-        // First try to find out if the mode is set in the env
-        let from_env = if let Ok(val) = env::var(LINK_ENV_NAME) {
-            match val.to_lowercase().as_str() {
-                "copy" => Some(Self::Copy),
-                "clone" => Some(Self::Clone),
-                "hardlink" => Some(Self::Hardlink),
-                "symlink" => Some(Self::Symlink),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-        from_env.unwrap_or_default()
-    }
-
     pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::Copy => "copy",
@@ -78,28 +61,63 @@ impl LinkMode {
     }
 
     pub fn link_files(
-        &self,
+        selected_mode: Option<Self>,
         package_name: &str,
         source: impl AsRef<Path>,
         destination: impl AsRef<Path>,
     ) -> Result<(), LinkError> {
-        // If it's already exists for some reasons (eg failed halfway before), delete it first
+        // If it's already exists for some reason (eg failed halfway before), delete it first
         let pkg_in_lib = destination.as_ref().join(package_name);
         if pkg_in_lib.is_dir() {
             fs::remove_dir_all(&pkg_in_lib)?;
         }
 
-        let res = match self {
+        let mode = if let Some(m) = selected_mode {
+            m
+        } else {
+            let from_env = if let Ok(val) = env::var(LINK_ENV_NAME) {
+                match val.to_lowercase().as_str() {
+                    "copy" => Some(Self::Copy),
+                    "clone" => Some(Self::Clone),
+                    "hardlink" => Some(Self::Hardlink),
+                    "symlink" => Some(Self::Symlink),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            if let Some(m) = from_env {
+                m
+            } else {
+                if is_nfs(destination.as_ref()).unwrap_or_default() {
+                    LinkMode::Symlink
+                } else {
+                    LinkMode::default()
+                }
+            }
+        };
+
+        log::debug!(
+            "Trying to link package from {:?} to {:?} using {}.",
+            source.as_ref(),
+            destination.as_ref(),
+            mode.name()
+        );
+
+        let res = match mode {
             LinkMode::Copy => {
                 copy_folder(source.as_ref(), destination.as_ref()).map_err(Into::into)
             }
             LinkMode::Clone => clone_package(source.as_ref(), destination.as_ref()),
             LinkMode::Hardlink => hardlink_package(source.as_ref(), destination.as_ref()),
-            LinkMode::Symlink => symlink_package(source.as_ref(), destination.as_ref()),
+            LinkMode::Symlink => {
+                create_symlink(source.as_ref(), destination.as_ref()).map_err(|e| LinkError::Io(e))
+            }
         };
 
         if let Err(e) = res {
-            if *self == LinkMode::Copy {
+            if mode == LinkMode::Copy {
                 return Err(e);
             }
             // Cleanup a bit in case it failed halfway through
@@ -108,7 +126,7 @@ impl LinkMode {
             }
             log::warn!(
                 "Failed to {} files: {e}. Falling back to copying files.",
-                self.name()
+                mode.name()
             );
             copy_folder(source.as_ref(), destination.as_ref())?;
         }
@@ -158,43 +176,6 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
         }
 
         fs::hard_link(path, out_path)?;
-    }
-
-    Ok(())
-}
-
-fn symlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
-    log::debug!(
-        "Linking package from {} to {} using symlinks",
-        source.display(),
-        library.display()
-    );
-    for entry in WalkDir::new(source) {
-        let entry = entry?;
-        let path = entry.path();
-
-        let relative = path.strip_prefix(source).expect("walkdir starts with root");
-        let out_path = library.join(relative);
-
-        if entry.file_type().is_dir() {
-            fs::create_dir_all(&out_path)?;
-            continue;
-        }
-
-        // if symlink not created we want to log which specific entry was problematic before
-        // bubbling up the error
-        match create_symlink(path, &out_path) {
-            Ok(_) => continue,
-            Err(e) => {
-                log::error!(
-                    "Failed to create symlink from {} to {}, error: {}",
-                    path.display(),
-                    out_path.display(),
-                    e
-                );
-                return Err(LinkError::Io(e));
-            }
-        }
     }
 
     Ok(())

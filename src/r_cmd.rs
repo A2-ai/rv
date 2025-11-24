@@ -252,11 +252,15 @@ impl RCmd for RCommandLine {
 
         let mut src_backup_dir = src_backup_dir_temp.path().to_owned();
 
-        LinkMode::Copy
-            .link_files("tmp_build", &source_folder, &src_backup_dir)
-            .map_err(|e| InstallError {
-                source: InstallErrorKind::LinkError(e),
-            })?;
+        LinkMode::link_files(
+            Some(LinkMode::Copy),
+            "tmp_build",
+            &source_folder,
+            &src_backup_dir,
+        )
+        .map_err(|e| InstallError {
+            source: InstallErrorKind::LinkError(e),
+        })?;
 
         // Some R package structures, especially those that make use of
         // bootstrap.R like tree-sitter-r require the parent directories

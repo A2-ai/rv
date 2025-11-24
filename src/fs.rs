@@ -162,3 +162,42 @@ pub(crate) fn untar_archive<R: Read>(
 
     Ok((dir, hash))
 }
+
+/// Check if two paths are on the same filesystem/device
+pub(crate) fn same_filesystem(path1: &Path, path2: &Path) -> Result<bool, std::io::Error> {
+    let canon1 = path1.canonicalize()?;
+    let canon2 = path2.canonicalize()?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let meta1 = fs::metadata(&canon1)?;
+        let meta2 = fs::metadata(&canon2)?;
+
+        // Compare device IDs - same device means same filesystem
+        Ok(meta1.dev() == meta2.dev())
+    }
+
+    #[cfg(windows)]
+    {
+        // Simple approach: compare root paths (drive letters)
+        let root1 = canon1.ancestors().last().unwrap_or(&canon1);
+        let root2 = canon2.ancestors().last().unwrap_or(&canon2);
+        Ok(root1 == root2)
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn is_nfs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
+    use nix::sys::statfs::{NFS_SUPER_MAGIC, statfs};
+    let st =
+        statfs(path.as_ref()).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    Ok(st.filesystem_type() == NFS_SUPER_MAGIC)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn is_nfs(_path: &Path) -> io::Result<bool> {
+    Ok(false)
+}
