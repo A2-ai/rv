@@ -112,7 +112,7 @@ impl LinkMode {
             LinkMode::Clone => clone_package(source.as_ref(), destination.as_ref()),
             LinkMode::Hardlink => hardlink_package(source.as_ref(), destination.as_ref()),
             LinkMode::Symlink => {
-                create_symlink(source.as_ref(), destination.as_ref()).map_err(|e| LinkError::Io(e))
+                create_symlink(source.as_ref(), &pkg_in_lib).map_err(|e| LinkError::Io(e))
             }
         };
 
