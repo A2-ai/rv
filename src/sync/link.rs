@@ -73,9 +73,11 @@ impl LinkMode {
         }
 
         let mode = if let Some(m) = selected_mode {
+            log::debug!("Link mode {m:?} forced");
             m
         } else {
             let from_env = if let Ok(val) = env::var(LINK_ENV_NAME) {
+                log::debug!("Got a value for RV_LINK_MODE: '{val}'");
                 match val.to_lowercase().as_str() {
                     "copy" => Some(Self::Copy),
                     "clone" => Some(Self::Clone),
@@ -88,6 +90,7 @@ impl LinkMode {
             };
 
             if let Some(m) = from_env {
+                log::debug!("Using link mode from environment variable: {m:?}");
                 m
             } else {
                 if is_nfs(destination.as_ref()).unwrap_or_default() {
