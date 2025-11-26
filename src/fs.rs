@@ -9,6 +9,9 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 use walkdir::WalkDir;
 
+#[cfg(feature = "cli")]
+use rayon::prelude::*;
+
 /// Copy the whole content of a folder to another folder
 pub(crate) fn copy_folder(
     from: impl AsRef<Path>,
@@ -26,11 +29,62 @@ pub(crate) fn copy_folder(
 
         if entry.file_type().is_dir() {
             fs::create_dir_all(&out_path)?;
-            continue;
+        } else {
+            fs::copy(path, out_path)?;
         }
-
-        fs::copy(path, out_path)?;
     }
+
+    Ok(())
+}
+
+/// Copy the whole content of a folder to another folder using parallel processing
+/// This is optimized for NFS scenarios where parallel I/O can improve performance
+/// Thread count can be configured via the RV_COPY_THREADS environment variable
+#[cfg(feature = "cli")]
+fn copy_folder_parallel(
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+    default_num_threads: usize,
+) -> Result<(), std::io::Error> {
+    use crate::consts::COPY_THREADS_ENV_VAR_NAME;
+
+    let num_threads = std::env::var(COPY_THREADS_ENV_VAR_NAME)
+        .ok()
+        .and_then(|x| x.parse::<usize>().ok())
+        .unwrap_or(default_num_threads);
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let from = from.as_ref();
+    let to = to.as_ref();
+
+    // Collect all entries and copy them in parallel
+    let entries: Result<Vec<_>, _> = WalkDir::new(from)
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>();
+    let entries = entries?;
+
+    pool.install(|| {
+        entries.par_iter().try_for_each(|entry| {
+            let path = entry.path();
+            let relative = path.strip_prefix(from).expect("walkdir starts with root");
+            let out_path = to.join(relative);
+
+            if entry.file_type().is_dir() {
+                fs::create_dir_all(&out_path)?;
+            } else {
+                // Ensure parent directory exists before copying file
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(path, out_path)?;
+            }
+            Ok::<(), std::io::Error>(())
+        })
+    })?;
 
     Ok(())
 }
@@ -137,9 +191,72 @@ pub(crate) fn untar_archive<R: Read>(
         }
         // tar.gz, .tgz
         [0x1F, 0x8B, ..] => {
-            let tar = GzDecoder::new(buffer.as_slice());
-            let mut archive = Archive::new(tar);
-            archive.unpack(dest)?;
+            // If we are on NFS on Linux and using the CLI, we will untar in /dev/shm and
+            // then copy the package in parallel to the destination if there are more than `n` files.
+            // For smaller packages, we keep doing a serial copy.
+            // In all other cases we do a normal untar in destination
+            let use_nfs_optimization =
+                cfg!(feature = "cli") && Path::new("/dev/shm").exists() && is_nfs(dest)?;
+            let mut done = false;
+
+            if use_nfs_optimization {
+                log::debug!("Using NFS optimization for untarring archive");
+
+                match tempfile::tempdir_in("/dev/shm") {
+                    Ok(temp_dir) => {
+                        let tar = GzDecoder::new(buffer.as_slice());
+                        let mut archive = Archive::new(tar);
+                        if let Ok(_) = archive.unpack(temp_dir.path()) {
+                            // Count files to determine if we should use parallel copy
+                            let file_count = WalkDir::new(temp_dir.path())
+                                .into_iter()
+                                .filter_map(|e| e.ok())
+                                .filter(|e| e.file_type().is_file())
+                                .count();
+
+                            // Magic number only used once, looks good though
+                            if file_count < 50 {
+                                log::debug!("Too few files ({file_count}), using sequential copy",);
+                                copy_folder(temp_dir.path(), dest)?;
+                            } else {
+                                #[cfg(feature = "cli")]
+                                {
+                                    let default_num_threads = if file_count < 1000 {
+                                        4
+                                    } else if file_count < 5000 {
+                                        8
+                                    } else {
+                                        // This might only be BH?
+                                        16
+                                    };
+                                    log::debug!(
+                                        "{file_count} files found, using parallel copy with a default of {default_num_threads} threads",
+                                    );
+                                    copy_folder_parallel(
+                                        temp_dir.path(),
+                                        dest,
+                                        default_num_threads,
+                                    )?;
+                                }
+                            }
+
+                            done = true;
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to create temp dir in /dev/shm, falling back to direct extraction: {err}"
+                        );
+                    }
+                }
+            }
+
+            if !done {
+                // Direct extraction as fallback
+                let tar = GzDecoder::new(buffer.as_slice());
+                let mut archive = Archive::new(tar);
+                archive.unpack(dest)?;
+            }
         }
         _ => {
             return Err(std::io::Error::new(
@@ -173,6 +290,6 @@ pub(crate) fn is_nfs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn is_nfs(_path: &Path) -> std::io::Result<bool> {
+pub(crate) fn is_nfs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
     Ok(false)
 }
