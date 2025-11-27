@@ -173,6 +173,6 @@ pub(crate) fn is_nfs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn is_nfs(_path: &Path) -> io::Result<bool> {
+pub fn is_nfs(_path: &Path) -> std::io::Result<bool> {
     Ok(false)
 }

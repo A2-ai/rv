@@ -98,21 +98,39 @@ impl LinkMode {
             }
         };
 
-        log::debug!(
-            "Trying to link package from {:?} to {:?} using {}.",
-            source.as_ref(),
-            destination.as_ref(),
-            mode.name()
-        );
-
         let res = match mode {
             LinkMode::Copy => {
+                log::debug!(
+                    "Copying package from {:?} to {:?}.",
+                    source.as_ref(),
+                    destination.as_ref(),
+                );
                 copy_folder(source.as_ref(), destination.as_ref()).map_err(Into::into)
             }
-            LinkMode::Clone => clone_package(source.as_ref(), destination.as_ref()),
-            LinkMode::Hardlink => hardlink_package(source.as_ref(), destination.as_ref()),
+            LinkMode::Clone => {
+                log::debug!(
+                    "Cloning package from {:?} to {:?}.",
+                    source.as_ref(),
+                    destination.as_ref(),
+                );
+                clone_package(source.as_ref(), destination.as_ref())
+            }
+            LinkMode::Hardlink => {
+                log::debug!(
+                    "Hardlinking package from {:?} to {:?}.",
+                    source.as_ref(),
+                    destination.as_ref(),
+                );
+                hardlink_package(source.as_ref(), destination.as_ref())
+            }
             LinkMode::Symlink => {
-                create_symlink(source.as_ref(), &pkg_in_lib).map_err(|e| LinkError::Io(e))
+                let actual_source = source.as_ref().join(package_name);
+                log::debug!(
+                    "Symlinking package from {:?} to {:?}.",
+                    source.as_ref(),
+                    destination.as_ref(),
+                );
+                create_symlink(actual_source, &pkg_in_lib).map_err(|e| LinkError::Io(e))
             }
         };
 
