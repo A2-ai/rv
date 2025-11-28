@@ -28,7 +28,12 @@ pub(crate) fn install_package(
             download_path.display()
         );
         if !pkg_paths.binary.is_dir() {
-            LinkMode::Copy.link_files(&pkg.name, &pkg_paths.source, &pkg_paths.binary)?;
+            LinkMode::link_files(
+                Some(LinkMode::Copy),
+                &pkg.name,
+                &pkg_paths.source,
+                &pkg_paths.binary,
+            )?;
         }
     } else {
         log::debug!(
@@ -57,7 +62,12 @@ pub(crate) fn install_package(
     metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
 
     // And then we always link the binary folder into the staging library
-    LinkMode::new().link_files(&pkg.name, &pkg_paths.binary, library_dirs.first().unwrap())?;
+    LinkMode::link_files(
+        None,
+        &pkg.name,
+        &pkg_paths.binary,
+        library_dirs.first().unwrap(),
+    )?;
 
     Ok(())
 }

@@ -160,6 +160,8 @@ impl HttpDownload for Http {
         let mut writer = Vec::new();
         self.download(url, &mut writer, vec![])?;
 
+        let start = Instant::now();
+
         let (destination, dir, sha) = if use_sha_in_path {
             // If we want to use the sha in path, we need to untar first so we get the sha rather
             // than reading the file twice
@@ -186,9 +188,10 @@ impl HttpDownload for Http {
         };
 
         log::debug!(
-            "Successfully extracted archive to {} (in sub folder: {:?})",
+            "Successfully extracted archive to {} (in sub folder: {:?}) in {}ms",
             destination.display(),
-            dir
+            dir,
+            Instant::now().duration_since(start).as_millis()
         );
 
         Ok((dir, sha))

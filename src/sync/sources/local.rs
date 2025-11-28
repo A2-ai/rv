@@ -45,7 +45,8 @@ pub(crate) fn install_package(
             "Local package in {} is a binary package, copying files to library.",
             actual_path.display()
         );
-        LinkMode::Copy.link_files(
+        LinkMode::link_files(
+            Some(LinkMode::Copy),
             pkg.name.as_ref(),
             &actual_path,
             library_dirs.first().unwrap().join(pkg.name.as_ref()),

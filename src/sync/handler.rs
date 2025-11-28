@@ -159,7 +159,8 @@ impl<'a> SyncHandler<'a> {
         }
 
         log::debug!("Copying package {} from current library", &dep.name);
-        LinkMode::Copy.link_files(
+        LinkMode::link_files(
+            Some(LinkMode::Copy),
             &dep.name,
             self.library.path().join(dep.name.as_ref()),
             self.staging_path.join(dep.name.as_ref()),
