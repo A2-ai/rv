@@ -6,15 +6,17 @@ use sha2::{Digest, Sha256};
 use crate::SystemInfo;
 
 /// Builds the path for binary in the cache and the library based on system info and R version
-/// {R_Version}/{arch}/{codename}/
+/// {R_Version}/{arch}/{library_identifier}/
+/// The library_identifier is the codename for Ubuntu/Debian or a generated identifier
+/// for RHEL-family distros (e.g., centos8, rhel9)
 pub fn get_current_system_path(system_info: &SystemInfo, r_version: [u32; 2]) -> PathBuf {
     let mut path = PathBuf::new().join(format!("{}.{}", r_version[0], r_version[1]));
 
     if let Some(arch) = system_info.arch() {
         path = path.join(arch);
     }
-    if let Some(codename) = system_info.codename() {
-        path = path.join(codename);
+    if let Some(identifier) = system_info.library_identifier() {
+        path = path.join(identifier);
     }
 
     path
