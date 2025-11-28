@@ -112,7 +112,7 @@ impl SystemInfo {
 
     /// Returns an identifier for the library path that accounts for binary compatibility.
     /// For distros with codenames (Ubuntu, Debian), returns the codename.
-    /// For RHEL-family distros, generates an identifier based on distro and major version.
+    /// For RHEL-family distros, generates an identifier based on major version.
     pub fn library_identifier(&self) -> Option<String> {
         // First check if we have a codename (Ubuntu, Debian, etc.)
         if let Some(codename) = self.codename() {
@@ -122,59 +122,16 @@ impl SystemInfo {
         // For Linux distros without codenames, generate based on distro + major version
         if let OsType::Linux(distro) = self.os_type {
             match distro {
-                "almalinux" => {
+                // All RHEL-compatible distros use the same identifier for binary compatibility
+                "almalinux" | "centos" | "rocky" | "redhat" => {
                     let major = self.major_version()?;
-                    // Use same logic as PPM binary URLs for compatibility
-                    if major >= 9 {
-                        Some(format!("rhel{major}"))
-                    } else if major >= 8 {
-                        Some(format!("centos{major}"))
-                    } else {
-                        None
-                    }
-                }
-                "centos" => {
-                    let major = self.major_version()?;
-                    if major >= 9 {
-                        Some(format!("rhel{major}"))
-                    } else if major >= 7 {
-                        Some(format!("centos{major}"))
-                    } else {
-                        None
-                    }
-                }
-                "rocky" => {
-                    let major = self.major_version()?;
-                    if major >= 9 {
-                        Some(format!("rhel{major}"))
-                    } else if major >= 8 {
-                        // Rocky 8 should use centos8 for binary compatibility
-                        Some(format!("centos{major}"))
-                    } else {
-                        None
-                    }
-                }
-                "redhat" => {
-                    let major = self.major_version()?;
-                    if major >= 9 {
-                        Some(format!("rhel{major}"))
-                    } else if major >= 7 {
-                        Some(format!("centos{major}"))
-                    } else {
-                        None
-                    }
+                    Some(format!("redhat{major}"))
                 }
                 "fedora" => {
                     let major = self.major_version()?;
                     Some(format!("fedora{major}"))
                 }
-                "opensuse" | "suse" => {
-                    if let Version::Semantic(major, minor, _) = self.version {
-                        Some(format!("opensuse{major}{minor}"))
-                    } else {
-                        None
-                    }
-                }
+                "opensuse" | "suse" => Some("opensuse".to_string()),
                 // For unknown distros, try to use distro + major version
                 _ => {
                     if let Some(major) = self.major_version() {
@@ -299,135 +256,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_library_identifier_ubuntu_noble() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("ubuntu"),
-            Some("x86_64".to_string()),
-            Some("noble".to_string()),
-            "24.04",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("noble".to_string()));
-    }
+    fn test_library_identifier() {
+        let cases: Vec<(OsType, Option<&str>, &str, Option<&str>)> = vec![
+            // (os_type, codename, version, expected)
+            // Ubuntu/Debian use codename
+            (
+                OsType::Linux("ubuntu"),
+                Some("noble"),
+                "24.04",
+                Some("noble"),
+            ),
+            (
+                OsType::Linux("ubuntu"),
+                Some("jammy"),
+                "22.04",
+                Some("jammy"),
+            ),
+            // RHEL-family all use redhat{major}
+            (OsType::Linux("almalinux"), None, "8.10", Some("redhat8")),
+            (OsType::Linux("almalinux"), None, "9.3", Some("redhat9")),
+            (OsType::Linux("centos"), None, "8.5", Some("redhat8")),
+            (OsType::Linux("centos"), None, "7.9", Some("redhat7")),
+            (OsType::Linux("rocky"), None, "9.3", Some("redhat9")),
+            (OsType::Linux("rocky"), None, "8.9", Some("redhat8")),
+            (OsType::Linux("redhat"), None, "9.2", Some("redhat9")),
+            (OsType::Linux("redhat"), None, "8.8", Some("redhat8")),
+            // Fedora uses fedora{major}
+            (OsType::Linux("fedora"), None, "39", Some("fedora39")),
+            // openSUSE uses just "opensuse"
+            (OsType::Linux("opensuse"), None, "15.5", Some("opensuse")),
+            (OsType::Linux("suse"), None, "15.4", Some("opensuse")),
+            // Non-Linux returns None
+            (OsType::Windows, None, "10", None),
+            (OsType::MacOs, None, "14.0", None),
+        ];
 
-    #[test]
-    fn test_library_identifier_ubuntu_jammy() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("ubuntu"),
-            Some("x86_64".to_string()),
-            Some("jammy".to_string()),
-            "22.04",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("jammy".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_almalinux_8() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("almalinux"),
-            Some("x86_64".to_string()),
-            None,
-            "8.10",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("centos8".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_almalinux_9() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("almalinux"),
-            Some("x86_64".to_string()),
-            None,
-            "9.3",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("rhel9".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_centos_8() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("centos"),
-            Some("x86_64".to_string()),
-            None,
-            "8.5",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("centos8".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_centos_7() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("centos"),
-            Some("x86_64".to_string()),
-            None,
-            "7.9",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("centos7".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_rocky_9() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("rocky"),
-            Some("x86_64".to_string()),
-            None,
-            "9.3",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("rhel9".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_rocky_8() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("rocky"),
-            Some("x86_64".to_string()),
-            None,
-            "8.9",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("centos8".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_rhel_9() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("redhat"),
-            Some("x86_64".to_string()),
-            None,
-            "9.2",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("rhel9".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_rhel_8() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("redhat"),
-            Some("x86_64".to_string()),
-            None,
-            "8.8",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("centos8".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_fedora() {
-        let sysinfo = SystemInfo::new(
-            OsType::Linux("fedora"),
-            Some("x86_64".to_string()),
-            None,
-            "39",
-        );
-        assert_eq!(sysinfo.library_identifier(), Some("fedora39".to_string()));
-    }
-
-    #[test]
-    fn test_library_identifier_windows() {
-        let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "10");
-        assert_eq!(sysinfo.library_identifier(), None);
-    }
-
-    #[test]
-    fn test_library_identifier_macos() {
-        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arm64".to_string()), None, "14.0");
-        assert_eq!(sysinfo.library_identifier(), None);
+        for (os_type, codename, version, expected) in cases {
+            let sysinfo = SystemInfo::new(
+                os_type,
+                Some("x86_64".to_string()),
+                codename.map(|s| s.to_string()),
+                version,
+            );
+            assert_eq!(
+                sysinfo.library_identifier(),
+                expected.map(|s| s.to_string()),
+                "Failed for {:?} with version {}",
+                os_type,
+                version
+            );
+        }
     }
 }
