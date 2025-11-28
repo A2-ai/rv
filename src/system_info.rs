@@ -110,6 +110,42 @@ impl SystemInfo {
         self.codename.as_deref()
     }
 
+    /// Returns an identifier for the library path that accounts for binary compatibility.
+    /// For distros with codenames (Ubuntu, Debian), returns the codename.
+    /// For RHEL-family distros, generates an identifier based on major version.
+    pub fn library_identifier(&self) -> Option<String> {
+        // First check if we have a codename (Ubuntu, Debian, etc.)
+        if let Some(codename) = self.codename() {
+            return Some(codename.to_string());
+        }
+
+        // For Linux distros without codenames, generate based on distro + major version
+        if let OsType::Linux(distro) = self.os_type {
+            match distro {
+                // All RHEL-compatible distros use the same identifier for binary compatibility
+                "almalinux" | "centos" | "rocky" | "redhat" => {
+                    let major = self.major_version()?;
+                    Some(format!("redhat{major}"))
+                }
+                "fedora" => {
+                    let major = self.major_version()?;
+                    Some(format!("fedora{major}"))
+                }
+                "opensuse" | "suse" => Some("opensuse".to_string()),
+                // For unknown distros, try to use distro + major version
+                _ => {
+                    if let Some(major) = self.major_version() {
+                        Some(format!("{distro}{major}"))
+                    } else {
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn arch(&self) -> Option<&str> {
         self.arch.as_deref()
     }
@@ -211,6 +247,64 @@ impl SystemInfo {
                 }
             }
             _ => ("invalid", String::new()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_library_identifier() {
+        let cases: Vec<(OsType, Option<&str>, &str, Option<&str>)> = vec![
+            // (os_type, codename, version, expected)
+            // Ubuntu/Debian use codename
+            (
+                OsType::Linux("ubuntu"),
+                Some("noble"),
+                "24.04",
+                Some("noble"),
+            ),
+            (
+                OsType::Linux("ubuntu"),
+                Some("jammy"),
+                "22.04",
+                Some("jammy"),
+            ),
+            // RHEL-family all use redhat{major}
+            (OsType::Linux("almalinux"), None, "8.10", Some("redhat8")),
+            (OsType::Linux("almalinux"), None, "9.3", Some("redhat9")),
+            (OsType::Linux("centos"), None, "8.5", Some("redhat8")),
+            (OsType::Linux("centos"), None, "7.9", Some("redhat7")),
+            (OsType::Linux("rocky"), None, "9.3", Some("redhat9")),
+            (OsType::Linux("rocky"), None, "8.9", Some("redhat8")),
+            (OsType::Linux("redhat"), None, "9.2", Some("redhat9")),
+            (OsType::Linux("redhat"), None, "8.8", Some("redhat8")),
+            // Fedora uses fedora{major}
+            (OsType::Linux("fedora"), None, "39", Some("fedora39")),
+            // openSUSE uses just "opensuse"
+            (OsType::Linux("opensuse"), None, "15.5", Some("opensuse")),
+            (OsType::Linux("suse"), None, "15.4", Some("opensuse")),
+            // Non-Linux returns None
+            (OsType::Windows, None, "10", None),
+            (OsType::MacOs, None, "14.0", None),
+        ];
+
+        for (os_type, codename, version, expected) in cases {
+            let sysinfo = SystemInfo::new(
+                os_type,
+                Some("x86_64".to_string()),
+                codename.map(|s| s.to_string()),
+                version,
+            );
+            assert_eq!(
+                sysinfo.library_identifier(),
+                expected.map(|s| s.to_string()),
+                "Failed for {:?} with version {}",
+                os_type,
+                version
+            );
         }
     }
 }
