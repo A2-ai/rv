@@ -133,13 +133,7 @@ impl SystemInfo {
                 }
                 "opensuse" | "suse" => Some("opensuse".to_string()),
                 // For unknown distros, try to use distro + major version
-                _ => {
-                    if let Some(major) = self.major_version() {
-                        Some(format!("{distro}{major}"))
-                    } else {
-                        None
-                    }
-                }
+                _ => self.major_version().map(|major| format!("{distro}{major}")),
             }
         } else {
             None

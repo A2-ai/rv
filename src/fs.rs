@@ -56,7 +56,7 @@ fn copy_folder_parallel(
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     let from = from.as_ref();
     let to = to.as_ref();
@@ -206,7 +206,7 @@ pub(crate) fn untar_archive<R: Read>(
                     Ok(temp_dir) => {
                         let tar = GzDecoder::new(buffer.as_slice());
                         let mut archive = Archive::new(tar);
-                        if let Ok(_) = archive.unpack(temp_dir.path()) {
+                        if archive.unpack(temp_dir.path()).is_ok() {
                             // Count files to determine if we should use parallel copy
                             let file_count = WalkDir::new(temp_dir.path())
                                 .into_iter()
@@ -259,10 +259,7 @@ pub(crate) fn untar_archive<R: Read>(
             }
         }
         _ => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "not tar.gz or a .zip archive",
-            ));
+            return Err(std::io::Error::other("not tar.gz or a .zip archive"));
         }
     }
 
@@ -283,8 +280,7 @@ pub(crate) fn untar_archive<R: Read>(
 #[cfg(target_os = "linux")]
 pub(crate) fn is_nfs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
     use nix::sys::statfs::{NFS_SUPER_MAGIC, statfs};
-    let st =
-        statfs(path.as_ref()).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let st = statfs(path.as_ref()).map_err(std::io::Error::other)?;
 
     Ok(st.filesystem_type() == NFS_SUPER_MAGIC)
 }

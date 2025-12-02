@@ -31,6 +31,7 @@ fn find_r_version(output: &str) -> Option<Version> {
 
 pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
+    #[allow(clippy::too_many_arguments)]
     fn install(
         &self,
         folder: impl AsRef<Path>,
@@ -339,7 +340,6 @@ impl RCmd for RCommandLine {
             source_folder.as_ref().display(),
             command
                 .get_envs()
-                .into_iter()
                 .map(|(k, v)| format!(
                     "{}={}",
                     k.to_string_lossy(),
@@ -387,9 +387,9 @@ impl RCmd for RCommandLine {
                     );
                 }
             }
-            return Err(InstallError {
+            Err(InstallError {
                 source: InstallErrorKind::InstallationFailed(output),
-            });
+            })
         };
 
         // Poll for completion or cancellation

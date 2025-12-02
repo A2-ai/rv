@@ -22,10 +22,7 @@ impl CommandExecutor for GitExecutor {
         if res.status.success() {
             Ok(String::from_utf8_lossy(&res.stdout).trim().to_string())
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                String::from_utf8_lossy(&res.stderr),
-            ))
+            Err(std::io::Error::other(String::from_utf8_lossy(&res.stderr)))
         }
     }
 }

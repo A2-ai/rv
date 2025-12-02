@@ -3,17 +3,12 @@ use crate::{Resolution, Resolver};
 
 use crate::{GitExecutor, Http};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ResolveMode {
+    #[default]
     Default,
     FullUpgrade,
     // TODO: PartialUpgrade -- allow user to specify packages to upgrade
-}
-
-impl Default for ResolveMode {
-    fn default() -> Self {
-        ResolveMode::Default
-    }
 }
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed

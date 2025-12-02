@@ -747,7 +747,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             // Sort by name for consistent output
-            sys_deps_names.sort_by(|a, b| a.cmp(&b));
+            sys_deps_names.sort();
 
             if output_format.is_json() {
                 println!("{}", json!(sys_deps_names));
