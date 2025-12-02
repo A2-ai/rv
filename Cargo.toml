@@ -54,6 +54,8 @@ ctrlc = { version = "3", optional = true, features = ["termination"] }
 libc = "0.2.172"
 taplo = "0.14.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.30", default-features = false, features = ["fs"] }
 
 [features]
 cli = [

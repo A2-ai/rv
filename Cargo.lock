@@ -1819,6 +1819,7 @@ dependencies = [
  "libc",
  "log",
  "mockito",
+ "nix",
  "num_cpus",
  "os_info",
  "predicates",
