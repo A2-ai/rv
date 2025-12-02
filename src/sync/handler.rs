@@ -4,11 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crossbeam::{channel, thread};
-#[cfg(feature = "cli")]
-use fs_err as fs;
-use indicatif::{ProgressBar, ProgressStyle};
-
 use crate::config::ConfigureArgsRule;
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
@@ -24,6 +19,12 @@ use crate::{
     BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
     SystemInfo,
 };
+use crossbeam::{channel, thread};
+#[cfg(feature = "cli")]
+use fs_err as fs;
+use indicatif::{ProgressBar, ProgressStyle};
+#[cfg(not(feature = "cli"))]
+use std::fs;
 
 fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String>> {
     if !cfg!(unix) {
