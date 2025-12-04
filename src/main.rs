@@ -18,6 +18,7 @@ use rv::{
     execute_repository_action, read_and_verify_config, system_req,
 };
 
+/// rv, the R package manager
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
