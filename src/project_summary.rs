@@ -31,6 +31,7 @@ pub struct ProjectSummary<'a> {
 }
 
 impl<'a> ProjectSummary<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         library: &'a Library,
         resolved_deps: &'a [ResolvedDependency],

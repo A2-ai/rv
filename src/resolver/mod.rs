@@ -191,10 +191,10 @@ impl<'d> Resolver<'d> {
         cache: &'d DiskCache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         // If the dependency is not matching, do not even look at the lockfile
-        if let Some(matching) = item.matching_in_lockfile {
-            if !matching {
-                return None;
-            }
+        if let Some(matching) = item.matching_in_lockfile
+            && !matching
+        {
+            return None;
         }
 
         if let Some(package) = self
@@ -207,10 +207,10 @@ impl<'d> Resolver<'d> {
                 return None;
             }
 
-            if let Some(req) = &item.version_requirement {
-                if !req.is_satisfied(&Version::from_str(&package.version).unwrap()) {
-                    return None;
-                }
+            if let Some(req) = &item.version_requirement
+                && !req.is_satisfied(&Version::from_str(&package.version).unwrap())
+            {
+                return None;
             }
 
             let installation_status =
@@ -225,7 +225,7 @@ impl<'d> Resolver<'d> {
                 .map(|p| {
                     let mut q =
                         QueueItem::name_and_parent_only(Cow::Borrowed(p.name()), item.name.clone());
-                    q.version_requirement = p.version_requirement().map(|x| Cow::Borrowed(x));
+                    q.version_requirement = p.version_requirement().map(Cow::Borrowed);
                     q
                 })
                 .collect();
@@ -244,10 +244,10 @@ impl<'d> Resolver<'d> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
         for (repo, repo_source_only) in self.repositories {
-            if let Some(r) = repository {
-                if repo.url != r {
-                    continue;
-                }
+            if let Some(r) = repository
+                && repo.url != r
+            {
+                continue;
             }
             let force_source = if let Some(source) = item.force_source {
                 source
@@ -489,7 +489,7 @@ impl<'d> Resolver<'d> {
                     Ok((resolved_dep, items)) => {
                         processed
                             .entry(resolved_dep.name.to_string())
-                            .or_insert_with(HashSet::new)
+                            .or_default()
                             .insert(item.version_requirement.clone());
                         result.add_found(resolved_dep);
                         queue.extend(items);
@@ -504,23 +504,23 @@ impl<'d> Resolver<'d> {
 
             // First let's check if it's a builtin package if the R version is matching if the package
             // is not listed from a specific repo
-            if !item.has_required_repo() {
-                if let Some((resolved_dep, items)) = self.builtin_lookup(&item) {
-                    processed
-                        .entry(resolved_dep.name.to_string())
-                        .or_insert_with(HashSet::new)
-                        .insert(item.version_requirement.clone());
-                    result.add_found(resolved_dep);
-                    queue.extend(items);
-                    continue;
-                }
+            if !item.has_required_repo()
+                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
+            {
+                processed
+                    .entry(resolved_dep.name.to_string())
+                    .or_default()
+                    .insert(item.version_requirement.clone());
+                result.add_found(resolved_dep);
+                queue.extend(items);
+                continue;
             }
 
             // Look at lockfile
             if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed
                     .entry(resolved_dep.name.to_string())
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(item.version_requirement.clone());
                 result.add_found(resolved_dep);
                 queue.extend(items);
@@ -531,7 +531,7 @@ impl<'d> Resolver<'d> {
             // something, we will consider it processed
             processed
                 .entry(item.name.to_string())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(item.version_requirement.clone());
 
             // But first, we check if the item has a remote and use that instead
@@ -733,7 +733,7 @@ mod tests {
             if url.as_str().contains("r-universe.dev/api") {
                 let path = format!(
                     "src/tests/r_universe/{}.api",
-                    url.as_str().split('/').last().unwrap_or("")
+                    url.as_str().split('/').next_back().unwrap_or("")
                 );
                 let content = fs::read_to_string(path).unwrap();
 
@@ -805,12 +805,8 @@ mod tests {
 
     fn setup_cache(r_version: &Version) -> (TempDir, DiskCache) {
         let cache_dir = tempfile::tempdir().unwrap();
-        let cache = DiskCache::new_in_dir(
-            r_version,
-            SystemInfo::from_os_info(),
-            cache_dir.path().to_path_buf(),
-        )
-        .unwrap();
+        let cache =
+            DiskCache::new_in_dir(r_version, SystemInfo::from_os_info(), cache_dir.path()).unwrap();
 
         // Add the DESCRIPTION file for git deps
         let remotes = vec![
@@ -824,7 +820,7 @@ mod tests {
             let cache_path = cache.get_git_clone_path(url);
             fs::create_dir_all(&cache_path).unwrap();
             fs::copy(
-                &format!("src/tests/descriptions/{dep}.DESCRIPTION"),
+                format!("src/tests/descriptions/{dep}.DESCRIPTION"),
                 cache_path.join(DESCRIPTION_FILENAME),
             )
             .unwrap();
@@ -832,7 +828,7 @@ mod tests {
 
         // And a custom one for url deps
         let url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz";
-        let url_path = cache.get_url_download_path(&Url::parse(&url).unwrap());
+        let url_path = cache.get_url_download_path(&Url::parse(url).unwrap());
         fs::create_dir_all(&url_path).unwrap();
         fs::copy(
             "src/tests/descriptions/dplyr.DESCRIPTION",
@@ -859,7 +855,6 @@ mod tests {
         let paths = std::fs::read_dir("src/tests/resolution/").unwrap();
         let dbs: HashMap<_, _> = std::fs::read_dir("src/tests/package_files/")
             .unwrap()
-            .into_iter()
             .map(|x| {
                 let x = x.unwrap();
                 let content = std::fs::read_to_string(x.path()).unwrap();
@@ -880,13 +875,18 @@ mod tests {
             // let r_cmd = RCommandLine { r: None };
             // let builtin_packages = cache.get_builtin_packages_versions(r_cmd.clone()).unwrap();
             let mut builtin_packages = HashMap::new();
-            let mut survival = Package::default();
-            survival.name = "survival".to_string();
-            survival.version = Version::from_str("2.1.1").unwrap();
+            let survival = Package {
+                name: "survival".to_string(),
+                version: Version::from_str("2.1.1").unwrap(),
+                ..Default::default()
+            };
+
             builtin_packages.insert("survival".to_string(), survival);
-            let mut mass = Package::default();
-            mass.name = "MASS".to_string();
-            mass.version = Version::from_str("7.3-60").unwrap();
+            let mass = Package {
+                name: "MASS".to_string(),
+                version: Version::from_str("7.3-60").unwrap(),
+                ..Default::default()
+            };
             builtin_packages.insert("MASS".to_string(), mass);
 
             let resolver = Resolver::new(
@@ -900,7 +900,7 @@ mod tests {
             );
 
             let resolution = resolver.resolve(
-                &config.dependencies(),
+                config.dependencies(),
                 config.prefer_repositories_for(),
                 &cache,
                 &FakeGit {},
@@ -916,14 +916,14 @@ mod tests {
                 .filter(|x| !BASE_PACKAGES.contains(&x.name.as_ref()))
             {
                 out.push_str(&format!("{d:?}"));
-                out.push_str("\n");
+                out.push('\n');
             }
 
             if !resolution.failed.is_empty() {
                 out.push_str("--- unresolved --- \n");
                 for d in resolution.failed {
                     out.push_str(&d.to_string());
-                    out.push_str("\n");
+                    out.push('\n');
                 }
             }
 
@@ -939,7 +939,7 @@ mod tests {
                             .collect::<Vec<_>>()
                             .join(", "),
                     );
-                    out.push_str("\n");
+                    out.push('\n');
                 }
             }
             // Output has been compared with pkgr for the same PACKAGE file

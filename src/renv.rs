@@ -112,7 +112,7 @@ impl RenvLock {
     pub fn resolve(
         &self,
         repository_database: &[(RepositoryDatabase, bool)],
-    ) -> (Vec<ResolvedRenv>, Vec<UnresolvedRenv>) {
+    ) -> (Vec<ResolvedRenv<'_>>, Vec<UnresolvedRenv>) {
         let mut resolved = Vec::new();
         let mut unresolved = Vec::new();
         for package_info in self.packages.values() {
@@ -228,8 +228,8 @@ fn resolve_repository<'a>(
         .repository
         .as_ref()
         .and_then(|repo_name| repo_pairs.iter().find(|(r, _, _)| &r.name == repo_name));
-    if let Some((repo, repo_db, force_source)) = pref_repo_pair {
-        if repo_db
+    if let Some((repo, repo_db, force_source)) = pref_repo_pair
+        && repo_db
             .find_package(
                 &pkg_info.package,
                 Some(&version_requirement),
@@ -237,10 +237,9 @@ fn resolve_repository<'a>(
                 **force_source,
             )
             .is_some()
-        {
-            return Ok(Source::Repository(repo));
-        };
-    }
+    {
+        return Ok(Source::Repository(repo));
+    };
 
     // if a repository is not found in its specified repository, look in the rest of the repositories
     // sacrificing one additional iteration step of re-looking up in preferred repository for less complexity
@@ -288,7 +287,7 @@ fn resolve_repository<'a>(
 //       "withr",
 //       "yaml"
 //     ],
-fn resolve_github(pkg_info: &PackageInfo) -> Result<Source, Box<dyn Error>> {
+fn resolve_github(pkg_info: &PackageInfo) -> Result<Source<'_>, Box<dyn Error>> {
     let host = pkg_info
         .remote_host
         .as_ref()
@@ -324,7 +323,7 @@ fn resolve_github(pkg_info: &PackageInfo) -> Result<Source, Box<dyn Error>> {
 //       "RemoteUrl": "~/projects/rv.git.pkgA_0.0.0.9000.tar.gz",
 //       "Hash": "39e317a9ec5437bd5ce021ad56da04b6"
 //     }
-fn resolve_local(pkg_info: &PackageInfo) -> Result<Source, Box<dyn Error>> {
+fn resolve_local(pkg_info: &PackageInfo) -> Result<Source<'_>, Box<dyn Error>> {
     let path = pkg_info.remote_url.as_ref().ok_or("RemoteUrl not found")?;
     Ok(Source::Local(PathBuf::from(path)))
 }

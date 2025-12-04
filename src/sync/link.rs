@@ -92,12 +92,10 @@ impl LinkMode {
             if let Some(m) = from_env {
                 log::debug!("Using link mode from environment variable: {m:?}");
                 m
+            } else if is_nfs(destination.as_ref()).unwrap_or_default() {
+                LinkMode::Symlink
             } else {
-                if is_nfs(destination.as_ref()).unwrap_or_default() {
-                    LinkMode::Symlink
-                } else {
-                    LinkMode::default()
-                }
+                LinkMode::default()
             }
         };
 
@@ -133,7 +131,7 @@ impl LinkMode {
                     source.as_ref(),
                     destination.as_ref(),
                 );
-                create_symlink(actual_source, &pkg_in_lib).map_err(|e| LinkError::Io(e))
+                create_symlink(actual_source, &pkg_in_lib).map_err(LinkError::Io)
             }
         };
 

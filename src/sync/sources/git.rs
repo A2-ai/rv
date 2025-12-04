@@ -49,7 +49,7 @@ pub(crate) fn install_package(
 
         let output = r_cmd.install(
             &source_path,
-            sub_dir.as_deref(),
+            sub_dir,
             library_dirs,
             &pkg_paths.binary,
             cancellation,
