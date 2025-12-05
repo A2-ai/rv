@@ -54,6 +54,7 @@ impl SyncHelper {
         context: &'a CliContext,
         resolve_mode: ResolveMode,
     ) -> Result<Resolution<'a>> {
+        let sync_start = std::time::Instant::now();
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
         let resolution = resolve_dependencies(context, &resolve_mode, self.exit_on_failure);
@@ -144,6 +145,10 @@ impl SyncHelper {
                         for c in changes {
                             println!("{}", c.print(!self.dry_run, !sysdeps_status.is_empty()));
                         }
+                    }
+
+                    if !self.dry_run && !format.is_json() {
+                        println!("sync completed in {} ms", sync_start.elapsed().as_millis());
                     }
                 }
 

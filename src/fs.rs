@@ -196,7 +196,7 @@ pub(crate) fn untar_archive<R: Read>(
             // For smaller packages, we keep doing a serial copy.
             // In all other cases we do a normal untar in destination
             let use_nfs_optimization =
-                cfg!(feature = "cli") && Path::new("/dev/shm").exists() && is_nfs(dest)?;
+                cfg!(feature = "cli") && Path::new("/dev/shm").exists() && is_network_fs(dest)?;
             let mut done = false;
 
             if use_nfs_optimization {
@@ -277,15 +277,25 @@ pub(crate) fn untar_archive<R: Read>(
     Ok((dir, hash))
 }
 
+/// Lustre filesystem magic number from Linux kernel headers
+/// Defined in fs/lustre/include/uapi/linux/lustre/lustre_user.h
+/// FSx Lustre (AWS) uses this filesystem type
 #[cfg(target_os = "linux")]
-pub(crate) fn is_nfs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
+const LUSTRE_SUPER_MAGIC: nix::sys::statfs::FsType =
+    nix::sys::statfs::FsType(0x0BD00BD0 as libc::__fsword_t);
+
+/// Checks if the given path is on a network filesystem (NFS or Lustre)
+/// This is used to adjust the link strategy and enable NFS-optimized copying
+#[cfg(target_os = "linux")]
+pub fn is_network_fs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
     use nix::sys::statfs::{NFS_SUPER_MAGIC, statfs};
     let st = statfs(path.as_ref()).map_err(std::io::Error::other)?;
 
-    Ok(st.filesystem_type() == NFS_SUPER_MAGIC)
+    let fs_type = st.filesystem_type();
+    Ok(fs_type == NFS_SUPER_MAGIC || fs_type == LUSTRE_SUPER_MAGIC)
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn is_nfs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
+pub fn is_network_fs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
     Ok(false)
 }
