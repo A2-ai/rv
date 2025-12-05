@@ -299,4 +299,3 @@ pub fn is_network_fs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
 pub fn is_network_fs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
     Ok(false)
 }
-
