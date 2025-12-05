@@ -37,10 +37,11 @@ pub(crate) fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<Stri
         }
         "opensuse" | "suse" => {
             // both suse OsType's are distributed under opensuse
-            if let os_info::Version::Semantic(major, minor, _) = sysinfo.version {
-                if (major >= 15) && (minor >= 5) {
-                    return Some(format!("opensuse{major}{minor}"));
-                }
+            if let os_info::Version::Semantic(major, minor, _) = sysinfo.version
+                && (major >= 15)
+                && (minor >= 5)
+            {
+                return Some(format!("opensuse{major}{minor}"));
             }
             None
         }
@@ -199,7 +200,7 @@ fn get_linux_url(
     };
 
     let path_segs = url.path_segments()?.collect::<Vec<_>>();
-    if path_segs.iter().any(|s| *s == "__linux__") {
+    if path_segs.contains(&"__linux__") {
         let segments = ["src", "contrib"].iter().chain(file_path);
         new_url.path_segments_mut().ok()?.extend(segments);
         insert_query_strings(&mut new_url);

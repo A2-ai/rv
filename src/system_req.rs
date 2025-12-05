@@ -203,10 +203,10 @@ pub fn check_installation_status(
                 let line = line.trim();
                 if !line.is_empty() {
                     // Extract package name (everything before first hyphen followed by a digit)
-                    if let Some(pkg_name) = extract_rpm_package_name(line) {
-                        if let Some(status) = out.get_mut(pkg_name) {
-                            *status = SysInstallationStatus::Present;
-                        }
+                    if let Some(pkg_name) = extract_rpm_package_name(line)
+                        && let Some(status) = out.get_mut(pkg_name)
+                    {
+                        *status = SysInstallationStatus::Present;
                     }
                 }
             }
@@ -215,14 +215,12 @@ pub fn check_installation_status(
             // This helps us mark things as definitively Absent vs Unknown
             for line in stderr.lines() {
                 // Format: "package NAME is not installed"
-                if line.contains("is not installed") {
-                    if let Some(pkg_name) = line.split_whitespace().nth(1) {
-                        if let Some(status) = out.get_mut(pkg_name) {
-                            if status == &SysInstallationStatus::Unknown {
-                                *status = SysInstallationStatus::Absent;
-                            }
-                        }
-                    }
+                if line.contains("is not installed")
+                    && let Some(pkg_name) = line.split_whitespace().nth(1)
+                    && let Some(status) = out.get_mut(pkg_name)
+                    && status == &SysInstallationStatus::Unknown
+                {
+                    *status = SysInstallationStatus::Absent;
                 }
             }
         }

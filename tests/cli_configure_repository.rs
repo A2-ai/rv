@@ -26,7 +26,7 @@ fn test_configure_repository_add() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "add",
@@ -53,7 +53,7 @@ fn test_configure_repository_add_with_positioning() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "add",
@@ -84,7 +84,7 @@ fn test_configure_repository_replace() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "replace",
@@ -114,7 +114,7 @@ fn test_configure_repository_replace_with_new_alias() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "replace",
@@ -146,7 +146,7 @@ fn test_configure_repository_update_alias() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "update",
@@ -176,7 +176,7 @@ fn test_configure_repository_update_url() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "update",
@@ -206,7 +206,7 @@ fn test_configure_repository_update_force_source() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "update",
@@ -235,7 +235,7 @@ fn test_configure_repository_update_by_url() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "update",
@@ -266,7 +266,7 @@ fn test_configure_repository_remove() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "remove",
@@ -291,7 +291,7 @@ fn test_configure_repository_clear() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "clear",
@@ -315,7 +315,7 @@ fn test_configure_repository_json_output() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--json",
         "configure",
         "repository",
@@ -346,7 +346,7 @@ fn test_configure_repository_error_missing_alias() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "update",
@@ -371,7 +371,7 @@ fn test_configure_repository_error_nonexistent_alias() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "update",
@@ -401,7 +401,7 @@ fn test_configure_repository_conflict_flags() {
     let (_temp_dir, config_path) = create_test_config();
 
     let mut cmd = Command::cargo_bin("rv").unwrap();
-    cmd.args(&[
+    cmd.args([
         "configure",
         "repository",
         "add",

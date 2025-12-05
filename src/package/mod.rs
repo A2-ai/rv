@@ -20,7 +20,6 @@ pub use version::{Operator, Version, VersionRequirement, deserialize_version};
 
 pub(crate) use remotes::parse_remote;
 
-///
 const COMPILED_R_SUBDIRS: [&str; 2] = ["R", "data"];
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode, Serialize)]
@@ -121,7 +120,10 @@ impl Package {
         }
     }
 
-    pub fn dependencies_to_install(&self, install_suggestions: bool) -> InstallationDependencies {
+    pub fn dependencies_to_install(
+        &self,
+        install_suggestions: bool,
+    ) -> InstallationDependencies<'_> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -162,7 +164,7 @@ pub fn is_binary_package(
     let path = path.as_ref();
 
     // If the package does not have a parse-able DESCRIPTION file, the entire package is not valid and we should not try to install it
-    let pkg = parse_description_file_in_folder(&path)?;
+    let pkg = parse_description_file_in_folder(path)?;
 
     // The only way for a package to contain <package name>.rdx in either the R or data subdirectories is if it has been built
     // While most packages DO contain either R code or data, that is not required, therefore we check more robustly

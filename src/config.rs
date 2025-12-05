@@ -20,13 +20,13 @@ impl<'de> Deserialize<'de> for HttpUrl {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        if s.starts_with("http://") || s.starts_with("https://") {
-            if let Ok(mut url) = Url::parse(&s) {
-                // Remove trailing slashes from the path
-                let path = url.path().trim_end_matches('/').to_string();
-                url.set_path(&path);
-                return Ok(Self(url));
-            }
+        if (s.starts_with("http://") || s.starts_with("https://"))
+            && let Ok(mut url) = Url::parse(&s)
+        {
+            // Remove trailing slashes from the path
+            let path = url.path().trim_end_matches('/').to_string();
+            url.set_path(&path);
+            return Ok(Self(url));
         }
 
         Err(serde::de::Error::custom("Invalid URL"))
@@ -220,14 +220,14 @@ pub enum OsTarget {
 }
 
 impl OsTarget {
-    fn matches(&self, system_info: &crate::system_info::SystemInfo) -> bool {
+    fn matches(&self, system_info: &SystemInfo) -> bool {
         use crate::system_info::OsType;
-        match (&system_info.os_type, self) {
-            (OsType::Linux(_), OsTarget::Linux) => true,
-            (OsType::MacOs, OsTarget::Macos) => true,
-            (OsType::Windows, OsTarget::Windows) => true,
-            _ => false,
-        }
+        matches!(
+            (&system_info.os_type, self),
+            (OsType::Linux(_), OsTarget::Linux)
+                | (OsType::MacOs, OsTarget::Macos)
+                | (OsType::Windows, OsTarget::Windows)
+        )
     }
 }
 
@@ -245,13 +245,13 @@ pub enum ArchTarget {
 impl ArchTarget {
     fn matches(&self, system_info: &SystemInfo) -> bool {
         let current_arch = system_info.arch().unwrap_or("unknown");
-        match (current_arch, self) {
-            ("x86_64" | "amd64", ArchTarget::X86_64) => true,
-            ("aarch64" | "arm64", ArchTarget::Arm64) => true,
-            ("x86" | "i386" | "i686", ArchTarget::X86) => true,
-            ("arm" | "armv7", ArchTarget::Arm) => true,
-            _ => false,
-        }
+        matches!(
+            (current_arch, self),
+            ("x86_64" | "amd64", ArchTarget::X86_64)
+                | ("aarch64" | "arm64", ArchTarget::Arm64)
+                | ("x86" | "i386" | "i686", ArchTarget::X86)
+                | ("arm" | "armv7", ArchTarget::Arm)
+        )
     }
 }
 

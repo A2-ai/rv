@@ -86,10 +86,10 @@ impl TreeNode<'_> {
         max_depth: Option<usize>,
         show_sys_deps: bool,
     ) {
-        if let Some(d) = max_depth {
-            if current_depth > d {
-                return;
-            }
+        if let Some(d) = max_depth
+            && current_depth > d
+        {
+            return;
         }
 
         println!(

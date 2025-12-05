@@ -147,7 +147,7 @@ impl<'d> ResolvedDependency<'d> {
         source: Source,
         install_suggests: bool,
         installation_status: InstallationStatus,
-    ) -> (Self, InstallationDependencies) {
+    ) -> (Self, InstallationDependencies<'_>) {
         let deps = package.dependencies_to_install(install_suggests);
 
         let res = Self {
@@ -181,7 +181,7 @@ impl<'d> ResolvedDependency<'d> {
         source: Source,
         install_suggests: bool,
         local_resolved_path: PathBuf,
-    ) -> (Self, InstallationDependencies) {
+    ) -> (Self, InstallationDependencies<'_>) {
         let deps = package.dependencies_to_install(install_suggests);
         let res = Self {
             dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
@@ -215,7 +215,7 @@ impl<'d> ResolvedDependency<'d> {
         kind: PackageType,
         source: Source,
         install_suggests: bool,
-    ) -> (Self, InstallationDependencies) {
+    ) -> (Self, InstallationDependencies<'_>) {
         let deps = package.dependencies_to_install(install_suggests);
         let res = Self {
             dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),

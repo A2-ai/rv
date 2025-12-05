@@ -80,10 +80,10 @@ impl GitRemote {
         if let Some(o) = repo.ref_as_oid(reference.reference()) {
             repo.checkout(&o)?;
         } else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to find reference {:?}", reference),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Failed to find reference {:?}",
+                reference
+            )));
         }
 
         Ok(())

@@ -88,10 +88,10 @@ impl RepositoryDatabase {
                         continue;
                     }
 
-                    if let Some(req) = version_requirement {
-                        if !req.is_satisfied(&p.version) {
-                            continue;
-                        }
+                    if let Some(req) = version_requirement
+                        && !req.is_satisfied(&p.version)
+                    {
+                        continue;
                     }
 
                     match (max_r_version, p.r_requirement.as_ref()) {
@@ -114,12 +114,11 @@ impl RepositoryDatabase {
             })
         };
 
-        if !force_source {
-            if let Some(db) = self.binary_packages.get(&r_version.major_minor()) {
-                if let Some(package) = find_package(db) {
-                    return Some((package, PackageType::Binary));
-                }
-            }
+        if !force_source
+            && let Some(db) = self.binary_packages.get(&r_version.major_minor())
+            && let Some(package) = find_package(db)
+        {
+            return Some((package, PackageType::Binary));
         }
 
         find_package(&self.source_packages).map(|p| (p, PackageType::Source))
@@ -311,7 +310,7 @@ mod test {
         for (name, runiverse_pkg_vec) in runiverse_pkgs {
             let repo_pkg_vec = repo_pkgs
                 .get(name)
-                .expect(&format!("Package {name} not found in repo_db"));
+                .unwrap_or_else(|| panic!("Package {name} not found in repo_db"));
             assert_eq!(runiverse_pkg_vec.len(), repo_pkg_vec.len());
 
             for (runiverse_pkg, repo_pkg) in runiverse_pkg_vec.iter().zip(repo_pkg_vec.iter()) {

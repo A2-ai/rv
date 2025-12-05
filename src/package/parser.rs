@@ -211,7 +211,7 @@ License: Apache License (>= 2)
 MD5sum: 4499ab1d94ad9e3f54d86dc12e704e3f
 NeedsCompilation: no
     "#;
-        let packages = parse_package_file(&content);
+        let packages = parse_package_file(content);
         assert_eq!(packages.len(), 1);
     }
 
