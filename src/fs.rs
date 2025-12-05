@@ -196,7 +196,7 @@ pub(crate) fn untar_archive<R: Read>(
             // For smaller packages, we keep doing a serial copy.
             // In all other cases we do a normal untar in destination
             let use_nfs_optimization =
-                cfg!(feature = "cli") && Path::new("/dev/shm").exists() && is_nfs(dest)?;
+                cfg!(feature = "cli") && Path::new("/dev/shm").exists() && is_network_fs(dest)?;
             let mut done = false;
 
             if use_nfs_optimization {
@@ -304,5 +304,3 @@ pub fn is_network_fs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
     Ok(false)
 }
 
-// Keep the old name as an alias for internal use
-pub(crate) use is_network_fs as is_nfs;

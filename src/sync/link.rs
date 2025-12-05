@@ -9,7 +9,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::fs::{copy_folder, is_nfs};
+use crate::fs::{copy_folder, is_network_fs};
 
 const LINK_ENV_NAME: &str = "RV_LINK_MODE";
 
@@ -75,7 +75,7 @@ impl LinkMode {
         }
 
         // Check if destination is on a network filesystem
-        if is_nfs(destination.as_ref()).unwrap_or_default() {
+        if is_network_fs(destination.as_ref()).unwrap_or_default() {
             Self::Symlink
         } else {
             Self::default()
