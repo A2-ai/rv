@@ -4,12 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crossbeam::{channel, thread};
-#[cfg(feature = "cli")]
-use ctrlc;
-use fs_err as fs;
-use indicatif::{ProgressBar, ProgressStyle};
-
 use crate::config::ConfigureArgsRule;
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
@@ -25,6 +19,12 @@ use crate::{
     BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
     SystemInfo,
 };
+use crossbeam::{channel, thread};
+#[cfg(feature = "cli")]
+use fs_err as fs;
+use indicatif::{ProgressBar, ProgressStyle};
+#[cfg(not(feature = "cli"))]
+use std::fs;
 
 fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String>> {
     if !cfg!(unix) {
@@ -63,12 +63,12 @@ fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String
                 let process_name = fields[0].to_string();
                 // that should be a .so file in libs subfolder so we need to find grandparent
                 let p = Path::new(filename);
-                if let Some(parent) = p.parent().and_then(|p| p.parent()) {
-                    if let Some(package_name) = parent.file_name().and_then(|n| n.to_str()) {
-                        out.entry((process_name, pid))
-                            .or_insert_with(HashSet::new)
-                            .insert(package_name.to_string());
-                    }
+                if let Some(parent) = p.parent().and_then(|p| p.parent())
+                    && let Some(package_name) = parent.file_name().and_then(|n| n.to_str())
+                {
+                    out.entry((process_name, pid))
+                        .or_default()
+                        .insert(package_name.to_string());
                 }
             }
         }
@@ -96,6 +96,7 @@ pub struct SyncHandler<'a> {
 }
 
 impl<'a> SyncHandler<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project_dir: &'a Path,
         library: &'a Library,
@@ -246,12 +247,8 @@ impl<'a> SyncHandler<'a> {
                 if self.library.contains_package(dep) && !dep.ignored {
                     match &dep.source {
                         Source::Repository { .. } => {
-                            if !self.uses_lockfile {
+                            if !self.uses_lockfile || dep.from_lockfile {
                                 deps_seen.insert(name.as_str());
-                            } else {
-                                if dep.from_lockfile {
-                                    deps_seen.insert(name.as_str());
-                                }
                             }
                         }
                         Source::Git { .. } | Source::RUniverse { .. } | Source::Url { .. } => {
@@ -273,10 +270,10 @@ impl<'a> SyncHandler<'a> {
         let mut out = Vec::from(RECOMMENDED_PACKAGES);
         out.extend(BASE_PACKAGES.as_slice());
         for name in out {
-            if let Some(dep) = deps_by_name.get(name) {
-                if dep.source.is_builtin() {
-                    deps_seen.insert(name);
-                }
+            if let Some(dep) = deps_by_name.get(name)
+                && dep.source.is_builtin()
+            {
+                deps_seen.insert(name);
             }
         }
 
@@ -333,7 +330,7 @@ impl<'a> SyncHandler<'a> {
         let num_deps_to_install = plan.num_to_install();
         let (deps_seen, deps_to_copy, deps_to_remove) = self.compare_with_local_library(deps);
         let needs_sync = deps_seen.len() != num_deps_to_install;
-        let packages_loaded = if deps_to_remove.len() > 0 {
+        let packages_loaded = if !deps_to_remove.is_empty() {
             get_all_packages_in_use(&self.library.path)
         } else {
             HashMap::new()
@@ -392,7 +389,7 @@ impl<'a> SyncHandler<'a> {
         fs::create_dir_all(&self.staging_path)?;
 
         if let Some(log_folder) = &self.save_install_logs_in {
-            fs::create_dir_all(&log_folder)?;
+            fs::create_dir_all(log_folder)?;
         }
 
         // Then we mark the deps seen so they won't be installed into the staging dir
@@ -400,7 +397,7 @@ impl<'a> SyncHandler<'a> {
             // builtin packages will not be in the library
             let in_lib = self.library.path().join(d);
             if in_lib.is_dir() {
-                plan.mark_installed(*d);
+                plan.mark_installed(d);
             }
         }
         let num_deps_to_install = plan.num_to_install();
@@ -541,17 +538,16 @@ impl<'a> SyncHandler<'a> {
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);
                                 drop(plan);
-                                if let Some(log_folder) = &save_install_logs_in_clone {
-                                    if !sync_change.is_builtin() {
-                                        let log_path = sync_change.log_path(&self.cache);
-                                        if log_path.exists() {
-                                            fs::copy(
-                                                log_path,
-                                                log_folder
-                                                    .join(&format!("{}.log", sync_change.name)),
-                                            )
-                                            .expect("no error");
-                                        }
+                                if let Some(log_folder) = &save_install_logs_in_clone
+                                    && !sync_change.is_builtin()
+                                {
+                                    let log_path = sync_change.log_path(self.cache);
+                                    if log_path.exists() {
+                                        fs::copy(
+                                            log_path,
+                                            log_folder.join(format!("{}.log", sync_change.name)),
+                                        )
+                                        .expect("no error");
                                     }
                                 }
                                 if done_sender.send(sync_change).is_err() {
@@ -565,14 +561,13 @@ impl<'a> SyncHandler<'a> {
                                     source: InstallErrorKind::InstallationFailed(msg),
                                     ..
                                 }) = &e.source
+                                    && let Some(log_folder) = &save_install_logs_in_clone
                                 {
-                                    if let Some(log_folder) = &save_install_logs_in_clone {
-                                        fs::write(
-                                            log_folder.join(&format!("{}.log", dep.name)),
-                                            msg.as_bytes(),
-                                        )
-                                        .expect("to write files");
-                                    }
+                                    fs::write(
+                                        log_folder.join(format!("{}.log", dep.name)),
+                                        msg.as_bytes(),
+                                    )
+                                    .expect("to write files");
                                 }
 
                                 errors_clone.lock().unwrap().push((dep, e));

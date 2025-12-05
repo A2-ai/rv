@@ -133,7 +133,7 @@ impl LinkMode {
                     source.as_ref(),
                     destination.as_ref(),
                 );
-                create_symlink(actual_source, &pkg_in_lib).map_err(|e| LinkError::Io(e))
+                create_symlink(actual_source, &pkg_in_lib).map_err(LinkError::Io)
             }
         };
 

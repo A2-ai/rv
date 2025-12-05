@@ -108,12 +108,11 @@ impl<'d> DependencySolver<'d> {
             // Find all versions of the required package that satisfy the requirement
             if let Some(pkgs) = self.packages.get(req.package) {
                 for required_pkg in pkgs {
-                    if req.requirement.is_satisfied(required_pkg.version) {
-                        if let Some(&required_var) =
+                    if req.requirement.is_satisfied(required_pkg.version)
+                        && let Some(&required_var) =
                             pkg_version_to_var.get(&(required_pkg.name, required_pkg.version))
-                        {
-                            satisfying_required_vars.push(required_var);
-                        }
+                    {
+                        satisfying_required_vars.push(required_var);
                     }
                 }
             }
@@ -460,10 +459,10 @@ impl<'d> DependencySolver<'d> {
         // Collect all empty clauses (requirements that can't be satisfied)
         let mut unsatisfiable_reqs = Vec::new();
         for (i, clause) in clauses.iter().enumerate() {
-            if clause.is_empty() {
-                if let Some(req_index) = clauses_to_req.get(&i) {
-                    unsatisfiable_reqs.push(self.requirements[*req_index].clone());
-                }
+            if clause.is_empty()
+                && let Some(req_index) = clauses_to_req.get(&i)
+            {
+                unsatisfiable_reqs.push(self.requirements[*req_index].clone());
             }
         }
 
@@ -530,7 +529,7 @@ mod tests {
         }
 
         for (name, req, required_by) in requirements {
-            resolver.add_requirement(name, &req, required_by);
+            resolver.add_requirement(name, req, required_by);
         }
 
         resolver

@@ -57,7 +57,7 @@ impl SyncHelper {
         let sync_start = std::time::Instant::now();
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
-        let resolution = resolve_dependencies(&context, &resolve_mode, self.exit_on_failure);
+        let resolution = resolve_dependencies(context, &resolve_mode, self.exit_on_failure);
 
         match timeit!(
             if self.dry_run {
@@ -71,7 +71,7 @@ impl SyncHelper {
                     &context.library,
                     &context.cache,
                     &context.system_dependencies,
-                    &context.config.configure_args(),
+                    context.config.configure_args(),
                     &context.cache.system_info,
                     self.save_install_logs_in.clone(),
                     context.staging_path(),
@@ -123,11 +123,11 @@ impl SyncHelper {
                 }
 
                 if let Some(log_folder) = &self.save_install_logs_in {
-                    fs::create_dir_all(&log_folder)?;
+                    fs::create_dir_all(log_folder)?;
                     for change in changes.iter().filter(|x| x.installed) {
                         let log_path = change.log_path(&context.cache);
                         if log_path.exists() {
-                            fs::copy(log_path, log_folder.join(&format!("{}.log", change.name)))?;
+                            fs::copy(log_path, log_folder.join(format!("{}.log", change.name)))?;
                         }
                     }
                 }

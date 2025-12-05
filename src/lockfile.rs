@@ -377,10 +377,10 @@ impl LockedPackage {
             return false;
         }
 
-        if let Source::Repository { ref repository } = self.source {
-            if !repo_urls.contains(repository.as_str()) {
-                return false;
-            }
+        if let Source::Repository { ref repository } = self.source
+            && !repo_urls.contains(repository.as_str())
+        {
+            return false;
         }
 
         true

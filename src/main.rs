@@ -18,6 +18,7 @@ use rv::{
     execute_repository_action, read_and_verify_config, system_req,
 };
 
+/// rv, the R package manager
 #[derive(Parser)]
 #[clap(version, author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
@@ -747,7 +748,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             // Sort by name for consistent output
-            sys_deps_names.sort_by(|a, b| a.cmp(&b));
+            sys_deps_names.sort();
 
             if output_format.is_json() {
                 println!("{}", json!(sys_deps_names));

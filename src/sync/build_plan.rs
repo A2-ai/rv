@@ -91,7 +91,7 @@ impl<'a> BuildPlan<'a> {
     }
 
     /// get a package to install, an enum {Package, Wait, Done}
-    pub fn get(&mut self) -> BuildStep {
+    pub fn get(&mut self) -> BuildStep<'_> {
         if self.is_done() {
             return BuildStep::Done;
         }
@@ -170,9 +170,9 @@ mod tests {
         plan.installing.insert("J");
         // Now it should be E or F twice
         let step = plan.get();
-        assert!(vec![BuildStep::Install(&deps[2]), BuildStep::Install(&deps[3])].contains(&step));
+        assert!([BuildStep::Install(&deps[2]), BuildStep::Install(&deps[3])].contains(&step));
         let step = plan.get();
-        assert!(vec![BuildStep::Install(&deps[2]), BuildStep::Install(&deps[3])].contains(&step));
+        assert!([BuildStep::Install(&deps[2]), BuildStep::Install(&deps[3])].contains(&step));
         assert_eq!(plan.installing, HashSet::from_iter(["J", "E", "F"]));
         // Now we should be stuck with Waiting since all other packages depend on those 3
         assert_eq!(plan.get(), BuildStep::Wait);

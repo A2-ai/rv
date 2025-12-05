@@ -328,7 +328,7 @@ fn update_repository(
     }
 
     // Create the updated repository
-    let parsed_url = Url::parse(&new_url).map_err(|e| ConfigureErrorKind::InvalidUrl(e))?;
+    let parsed_url = Url::parse(&new_url).map_err(ConfigureErrorKind::InvalidUrl)?;
     let new_repo = create_repository_value(&new_alias, &parsed_url, new_force_source);
     repos.replace(index, new_repo);
 
@@ -862,16 +862,6 @@ dependencies = [
 
         // This should work (updating to the same alias)
         execute_repository_action(&config_path, action).unwrap();
-
-        // Now try with a different existing alias - this should fail
-        let action = RepositoryAction::Update {
-            matcher: RepositoryMatcher::ByAlias("posit".to_string()),
-            updates: RepositoryUpdates {
-                alias: Some("posit".to_string()), // Wait, we need another repo first
-                url: None,
-                force_source: None,
-            },
-        };
 
         // First, let's add another repository so we can test duplicate error
         let add_action = RepositoryAction::Add {

@@ -75,25 +75,21 @@ impl GitRepository {
         // Before fetching, checks whether the oid exists locally
         // We only do that for commits since tag/branches could have changed remotely
         // so finding a reference locally is not meaningful
-        if let GitReference::Commit(c) = reference {
-            if let Some(oid) = self.ref_as_oid(c) {
-                if self
-                    .executor
-                    .execute(
-                        Command::new("git")
-                            .arg("cat-file")
-                            .arg("-e")
-                            .arg(oid.as_str())
-                            .current_dir(&self.path),
-                    )
-                    .is_ok()
-                {
-                    log::debug!(
-                        "No need to fetch {url}, reference {reference:?} is already found locally"
-                    );
-                    return Ok(());
-                }
-            }
+        if let GitReference::Commit(c) = reference
+            && let Some(oid) = self.ref_as_oid(c)
+            && self
+                .executor
+                .execute(
+                    Command::new("git")
+                        .arg("cat-file")
+                        .arg("-e")
+                        .arg(oid.as_str())
+                        .current_dir(&self.path),
+                )
+                .is_ok()
+        {
+            log::debug!("No need to fetch {url}, reference {reference:?} is already found locally");
+            return Ok(());
         }
 
         log::debug!("Fetching {url} with reference {reference:?}");
@@ -174,12 +170,7 @@ impl GitRepository {
                     .arg(oid.as_str())
                     .current_dir(&self.path),
             )
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to checkout `{}`", oid.as_str()),
-                )
-            })?;
+            .map_err(|_| std::io::Error::other(format!("Failed to checkout `{}`", oid.as_str())))?;
 
         self.update_submodules()?;
         Ok(())
@@ -200,10 +191,7 @@ impl GitRepository {
                     .current_dir(&self.path),
             )
             .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to checkout branch `{branch_name}`"),
-                )
+                std::io::Error::other(format!("Failed to checkout branch `{branch_name}`"))
             })?;
 
         self.update_submodules()?;
@@ -228,10 +216,9 @@ impl GitRepository {
         }
 
         if branch_name.is_empty() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("No HEAD branch found, output of CLI was:\n{output}\n"),
-            ));
+            return Err(std::io::Error::other(format!(
+                "No HEAD branch found, output of CLI was:\n{output}\n"
+            )));
         }
 
         self.checkout_branch(&branch_name)
@@ -328,12 +315,7 @@ impl GitRepository {
                     .arg(reference)
                     .current_dir(&self.path),
             )
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Reference {} not found", &reference),
-                )
-            })?;
+            .map_err(|_| std::io::Error::other(format!("Reference {} not found", &reference)))?;
         Ok(Oid::new(output))
     }
 
@@ -356,12 +338,7 @@ impl GitRepository {
                     .arg("--recursive")
                     .current_dir(&self.path),
             )
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Failed to update submodules".to_string(),
-                )
-            })?;
+            .map_err(|_| std::io::Error::other("Failed to update submodules".to_string()))?;
         Ok(())
     }
 
@@ -458,7 +435,6 @@ mod tests {
     use super::*;
     use crate::git::GitExecutor;
     use std::process::Command;
-    use tempfile;
 
     fn run_git(args: &[&str], dir: &Path) {
         let output = Command::new("git")
@@ -495,8 +471,8 @@ mod tests {
         run_git(&["commit", "-m", "initial"], &work_path);
 
         let branch_name = "main";
-        run_git(&["checkout", "-b", &branch_name], &work_path);
-        run_git(&["push", "origin", &branch_name], &work_path);
+        run_git(&["checkout", "-b", branch_name], &work_path);
+        run_git(&["push", "origin", branch_name], &work_path);
 
         (temp_dir, branch_name.to_string())
     }

@@ -141,7 +141,7 @@ impl SyncChange {
                 cache.get_build_log_path(
                     s,
                     Some(&self.name),
-                    Some(&self.version.clone().unwrap().as_str()),
+                    Some(self.version.clone().unwrap().as_str()),
                 )
             } else {
                 cache.get_build_log_path(s, None, None)
