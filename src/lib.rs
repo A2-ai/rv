@@ -36,6 +36,7 @@ pub use configure::{
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
 pub use format::format_document;
+pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
@@ -47,5 +48,5 @@ pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
-pub use sync::{BuildPlan, BuildStep, SyncChange, SyncHandler};
+pub use sync::{BuildPlan, BuildStep, LinkMode, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};

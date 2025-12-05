@@ -6,6 +6,8 @@ use std::{
 
 use serde::Serialize;
 
+use crate::fs::is_network_fs;
+use crate::sync::LinkMode;
 use crate::{
     DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
     Version, VersionRequirement,
@@ -25,6 +27,8 @@ pub struct ProjectSummary<'a> {
     system_info: &'a SystemInfo,
     dependency_info: DependencyInfo<'a>,
     cache_root: &'a PathBuf,
+    network_fs: bool,
+    link_mode: &'static str,
     remote_info: RemoteInfo<'a>,
     sys_deps: Vec<SysDep>,
     max_workers: usize,
@@ -42,6 +46,10 @@ impl<'a> ProjectSummary<'a> {
         lockfile: Option<&'a Lockfile>,
         sys_deps: Vec<SysDep>,
     ) -> Self {
+        let lib_path = library.path();
+        let network_fs = is_network_fs(lib_path).unwrap_or(false);
+        let link_mode = LinkMode::effective_mode(lib_path).name();
+
         Self {
             r_version,
             sys_deps,
@@ -56,6 +64,8 @@ impl<'a> ProjectSummary<'a> {
                 lockfile,
             ),
             cache_root: &cache.root,
+            network_fs,
+            link_mode,
             remote_info: RemoteInfo::new(
                 repositories,
                 repo_dbs,
@@ -71,7 +81,7 @@ impl fmt::Display for ProjectSummary<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "== System Information == \nOS: {}{}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}\n\n",
+            "== System Information == \nOS: {}{}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}\nNetwork Filesystem: {}\nLink Mode: {}\n\n",
             self.system_info.os_family(),
             if let OsType::Linux(distro) = self.system_info.os_type {
                 format!(" {distro} {}", self.system_info.version)
@@ -87,6 +97,8 @@ impl fmt::Display for ProjectSummary<'_> {
             self.max_workers,
             num_cpus::get(),
             self.cache_root.as_path().to_string_lossy(),
+            self.network_fs,
+            self.link_mode,
         )?;
 
         write!(f, "== Dependencies == \n{}\n", self.dependency_info)?;

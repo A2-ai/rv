@@ -51,12 +51,34 @@ impl Default for LinkMode {
 }
 
 impl LinkMode {
-    pub(crate) fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::Copy => "copy",
             Self::Clone => "clone",
             Self::Symlink => "symlink",
             Self::Hardlink => "hardlink",
+        }
+    }
+
+    /// Determine what link mode will be used for a given destination path.
+    /// This takes into account environment variables and network filesystem detection.
+    pub fn effective_mode(destination: impl AsRef<Path>) -> Self {
+        // Check environment variable first
+        if let Ok(val) = env::var(LINK_ENV_NAME) {
+            match val.to_lowercase().as_str() {
+                "copy" => return Self::Copy,
+                "clone" => return Self::Clone,
+                "hardlink" => return Self::Hardlink,
+                "symlink" => return Self::Symlink,
+                _ => {}
+            }
+        }
+
+        // Check if destination is on a network filesystem
+        if is_nfs(destination.as_ref()).unwrap_or_default() {
+            Self::Symlink
+        } else {
+            Self::default()
         }
     }
 
@@ -76,29 +98,7 @@ impl LinkMode {
             log::debug!("Link mode {m:?} forced");
             m
         } else {
-            let from_env = if let Ok(val) = env::var(LINK_ENV_NAME) {
-                log::debug!("Got a value for RV_LINK_MODE: '{val}'");
-                match val.to_lowercase().as_str() {
-                    "copy" => Some(Self::Copy),
-                    "clone" => Some(Self::Clone),
-                    "hardlink" => Some(Self::Hardlink),
-                    "symlink" => Some(Self::Symlink),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-
-            if let Some(m) = from_env {
-                log::debug!("Using link mode from environment variable: {m:?}");
-                m
-            } else {
-                if is_nfs(destination.as_ref()).unwrap_or_default() {
-                    LinkMode::Symlink
-                } else {
-                    LinkMode::default()
-                }
-            }
+            Self::effective_mode(destination.as_ref())
         };
 
         let res = match mode {
