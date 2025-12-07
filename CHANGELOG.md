@@ -1,3 +1,22 @@
+## v0.17.0 - December 8, 2025
+
+This release significantly improves performance on network filesystems, enhances support for RHEL-family Linux distributions, and includes numerous quality-of-life improvements
+for package management and reporting. A sync of the tidyverse + BH went from ~ 45
+seconds to 0.5 seconds on NFS with updates from this release.
+
+### 🎉 New Features
+- **Network filesystem optimization**: Added intelligent detection and optimization for network filesystems (NFS, AWS FSx Lustre). On NFS mounts, rv now automatically uses symlinks for package linking instead of hardlinks, and employs parallel copying when extracting packages to dramatically improve performance.
+- **Customizable parallel copying**: New `RV_COPY_THREADS` environment variable allows control over the number of threads used for parallel file operations when working with network filesystems.
+
+### ⚡ Improvements
+- **Better sync performance reporting**: The `rv sync` command now displays total sync time, making it easier to track performance improvements and identify bottlenecks.
+- **Enhanced network filesystem detection**: The `rv summary` command now reports whether your library is on a network filesystem and which link mode is being used, helping you understand performance characteristics of your setup.
+- **Improved system dependency detection**: Enhanced detection and mapping of system dependencies across different Linux distributions, particularly for RHEL-family systems.
+- **Better git repository management**: Improved handling of git branch and tag updates, ensuring local references stay synchronized with remote repositories even when branches are force-pushed or tags are moved.
+
+### 🐛 Bug Fixes
+- **Fixed library path consistency**: Resolved an issue where RHEL-family distributions (AlmaLinux, CentOS, Rocky Linux) used library paths without distribution identifiers, which could cause binary incompatibility issues when sharing projects across different Linux distributions.
+
 ## v0.16.1 - November 6, 2025
 
 This release fixes an issue with Red Hat Enterprise Linux detection that prevented rv from properly identifying the operating system and configuring system dependencies.
