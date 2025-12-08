@@ -174,16 +174,16 @@ elif [ "$os" = "linux" ]; then
     if [ -n "$glibc_version" ]; then
         echo "Detected glibc version: $glibc_version"
         log_verbose "glibc version found: $glibc_version"
-        log_verbose "Comparing against threshold 2.35"
+        log_verbose "Comparing against threshold 2.28"
         
-        if version_compare "$glibc_version" "2.35"; then
+        if version_compare "$glibc_version" "2.28"; then
             os_pattern="unknown-linux-gnu"
-            echo "glibc >= 2.35, using gnu target"
-            log_verbose "DECISION: glibc $glibc_version >= 2.35, selected gnu target"
+            echo "glibc >= 2.28, using gnu target"
+            log_verbose "DECISION: glibc $glibc_version >= 2.28, selected gnu target"
         else
             os_pattern="unknown-linux-musl"
-            echo "glibc < 2.35, using musl target for compatibility"
-            log_verbose "DECISION: glibc $glibc_version < 2.35, selected musl target"
+            echo "glibc < 2.28, using musl target for compatibility"
+            log_verbose "DECISION: glibc $glibc_version < 2.28, selected musl target"
         fi
     else
         echo "Could not determine glibc version, defaulting to musl target for compatibility"
