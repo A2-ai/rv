@@ -280,7 +280,11 @@ pub(crate) fn untar_archive<R: Read>(
 /// Lustre filesystem magic number from Linux kernel headers
 /// Defined in fs/lustre/include/uapi/linux/lustre/lustre_user.h
 /// FSx Lustre (AWS) uses this filesystem type
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "musl"))]
+const LUSTRE_SUPER_MAGIC: nix::sys::statfs::FsType =
+    nix::sys::statfs::FsType(0x0BD00BD0 as libc::c_ulong);
+
+#[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const LUSTRE_SUPER_MAGIC: nix::sys::statfs::FsType =
     nix::sys::statfs::FsType(0x0BD00BD0 as libc::__fsword_t);
 
