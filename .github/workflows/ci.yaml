@@ -17,11 +17,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        build: [linux, macos, windows]
+        build: [linux, linux-musl, macos, windows]
         include:
           - build: linux
             os: ubuntu-22.04
             rust: stable
+          - build: linux-musl
+            os: ubuntu-22.04
+            rust: stable
+            target: x86_64-unknown-linux-musl
           - build: macos
             os: macOS-latest
             rust: stable
@@ -35,18 +39,32 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y musl-tools musl-dev
+          rustup target add x86_64-unknown-linux-musl
+
       - name: Build System Info
         run: rustc --version
 
       - name: check formatting
+        if: matrix.target != 'x86_64-unknown-linux-musl'
         run: cargo fmt --check
 
       - name: check with all features enabled
+        if: matrix.target != 'x86_64-unknown-linux-musl'
         run: |
           cargo check
           cargo check --all-features
 
+      - name: check with all features enabled (musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: cargo check --all-features --target x86_64-unknown-linux-musl
+
       - name: run tests
+        if: matrix.target != 'x86_64-unknown-linux-musl'
         run: cargo test --all-features
 
   integration:
