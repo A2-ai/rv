@@ -24,7 +24,6 @@ jobs:
     strategy:
       matrix:
         target:
-          - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-gnu
           - x86_64-pc-windows-msvc
           - x86_64-apple-darwin
@@ -35,8 +34,6 @@ jobs:
         include:
           - os: windows-2022
             target: x86_64-pc-windows-msvc
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
           - os: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
           - os: macos-13
@@ -106,8 +103,60 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  Release-Build-AlmaLinux:
+    runs-on: ubuntu-22.04
+    container:
+      image: almalinux:8
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Install build dependencies
+        run: dnf install -y gcc gcc-c++ make git curl tar gzip
+
+      - name: Install Python (for version check)
+        run: dnf install -y python3
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: Cargo build
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --features=cli --release --target x86_64-unknown-linux-gnu
+
+      - name: Check that rv version matches the tag
+        run: |
+          . "$HOME/.cargo/env"
+          python3 .github/scripts/tag_check.py "${{ github.ref_name }}"
+
+      - name: Archive
+        run: |
+          cp -av target/x86_64-unknown-linux-gnu/release/rv .
+          tar -czf ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz rv
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v1
+        continue-on-error: true
+        with:
+          subject-path: ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+          path: ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
   Release:
-    needs: [Release-Build]
+    needs: [Release-Build, Release-Build-AlmaLinux]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
