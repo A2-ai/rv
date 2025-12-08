@@ -1,14 +1,13 @@
-import re
 import sys
 import subprocess
-
 
 
 def verify_tag(git_tag):
     result = subprocess.run(
         ["cargo", "run", "--features=cli", "--release", "--", "--version"],
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
         check=True,
     )
 
