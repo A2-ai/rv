@@ -9,8 +9,8 @@ use serde::Serialize;
 use crate::fs::is_network_fs;
 use crate::sync::LinkMode;
 use crate::{
-    DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
-    Version, VersionRequirement,
+    Context, DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency,
+    SystemInfo, Version, VersionRequirement,
     cache::InstallationStatus,
     lockfile::Source,
     package::{Operator, PackageType},
@@ -35,43 +35,36 @@ pub struct ProjectSummary<'a> {
 }
 
 impl<'a> ProjectSummary<'a> {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        library: &'a Library,
+        context: &'a Context,
         resolved_deps: &'a [ResolvedDependency],
-        repositories: &'a [Repository],
-        repo_dbs: &'a [(RepositoryDatabase, bool)],
-        // R version from config to allow for patch specificity in which cache does not allow
-        r_version: &'a Version,
-        cache: &'a DiskCache,
-        lockfile: Option<&'a Lockfile>,
         sys_deps: Vec<SysDep>,
     ) -> Self {
-        let lib_path = library.path();
+        let lib_path = context.library.path();
         let network_fs = is_network_fs(lib_path).unwrap_or(false);
         let link_mode = LinkMode::effective_mode(lib_path).name();
 
         Self {
-            r_version,
+            r_version: &context.r_version,
             sys_deps,
-            system_info: &cache.system_info,
+            system_info: &context.cache.system_info,
             dependency_info: DependencyInfo::new(
-                library,
+                &context.library,
                 resolved_deps,
-                repositories,
-                repo_dbs,
-                r_version,
-                cache,
-                lockfile,
+                context.config.repositories(),
+                &context.databases,
+                &context.r_version,
+                &context.cache,
+                context.lockfile.as_ref(),
             ),
-            cache_root: &cache.root,
+            cache_root: &context.cache.root,
             network_fs,
             link_mode,
             remote_info: RemoteInfo::new(
-                repositories,
-                repo_dbs,
-                &r_version.major_minor(),
-                &cache.system_info,
+                context.config.repositories(),
+                &context.databases,
+                &context.r_version.major_minor(),
+                &context.cache.system_info,
             ),
             max_workers: get_max_workers(),
         }

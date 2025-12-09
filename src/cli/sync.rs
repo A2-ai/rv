@@ -66,16 +66,7 @@ impl SyncHelper {
                 "Synced dependencies"
             },
             {
-                let mut handler = SyncHandler::new(
-                    &context.project_dir,
-                    &context.library,
-                    &context.cache,
-                    &context.system_dependencies,
-                    context.config.configure_args(),
-                    &context.cache.system_info,
-                    self.save_install_logs_in.clone(),
-                    context.staging_path(),
-                );
+                let mut handler = SyncHandler::new(context, self.save_install_logs_in.clone());
                 if self.dry_run {
                     handler.dry_run();
                 }

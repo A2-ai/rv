@@ -578,16 +578,7 @@ fn try_main() -> Result<()> {
             .map(|(name, status)| SysDep { name, status })
             .collect();
 
-            let summary = ProjectSummary::new(
-                &context.library,
-                &resolved,
-                context.config.repositories(),
-                &context.databases,
-                &context.r_version,
-                &context.cache,
-                context.lockfile.as_ref(),
-                sys_deps,
-            );
+            let summary = ProjectSummary::new(&context, &resolved, sys_deps);
             if output_format.is_json() {
                 println!(
                     "{}",
