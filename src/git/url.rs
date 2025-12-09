@@ -7,7 +7,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
-#[derive(Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Hash)]
 #[serde(untagged)]
 pub enum GitUrl {
     Http(Url),

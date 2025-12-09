@@ -11,7 +11,7 @@ use crate::package::{Version, VersionRequirement, parse_remote};
 
 #[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
 pub struct RepositoryDatabase {
-    pub(crate) url: String,
+    pub url: String,
     pub(crate) source_packages: HashMap<String, Vec<Package>>,
     // Binary will have a single package for each package, no multiple
     // depending on the R version but we keep the Vec so the resolver code can work
@@ -67,7 +67,7 @@ impl RepositoryDatabase {
     }
 
     // We always prefer binary unless `force_source` is set to true
-    pub(crate) fn find_package<'a>(
+    pub fn find_package<'a>(
         &'a self,
         name: &str,
         version_requirement: Option<&VersionRequirement>,

@@ -14,7 +14,8 @@ mod version;
 use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
-pub use parser::parse_package_file;
+pub use parser::{parse_dependencies, parse_package_file};
+
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version};
 
@@ -49,14 +50,14 @@ pub enum Dependency {
 }
 
 impl Dependency {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             Dependency::Simple(s) => s,
             Dependency::Pinned { name, .. } => name,
         }
     }
 
-    pub(crate) fn version_requirement(&self) -> Option<&VersionRequirement> {
+    pub fn version_requirement(&self) -> Option<&VersionRequirement> {
         match self {
             Dependency::Simple(_) => None,
             Dependency::Pinned { requirement, .. } => Some(requirement),
@@ -78,21 +79,21 @@ impl Dependency {
 
 #[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
 pub struct Package {
-    pub(crate) name: String,
-    pub(crate) version: Version,
-    pub(crate) r_requirement: Option<VersionRequirement>,
-    pub(crate) depends: Vec<Dependency>,
-    pub(crate) imports: Vec<Dependency>,
-    pub(crate) suggests: Vec<Dependency>,
-    pub(crate) enhances: Vec<Dependency>,
-    pub(crate) linking_to: Vec<Dependency>,
-    pub(crate) license: String,
-    pub(crate) md5_sum: String,
-    pub(crate) path: Option<String>,
-    pub(crate) recommended: bool,
-    pub(crate) needs_compilation: bool,
+    pub name: String,
+    pub version: Version,
+    pub r_requirement: Option<VersionRequirement>,
+    pub depends: Vec<Dependency>,
+    pub imports: Vec<Dependency>,
+    pub suggests: Vec<Dependency>,
+    pub enhances: Vec<Dependency>,
+    pub linking_to: Vec<Dependency>,
+    pub license: String,
+    pub md5_sum: String,
+    pub path: Option<String>,
+    pub recommended: bool,
+    pub needs_compilation: bool,
     // {remote_string => (pkg name, remote)}
-    pub(crate) remotes: HashMap<String, (Option<String>, PackageRemote)>,
+    pub remotes: HashMap<String, (Option<String>, PackageRemote)>,
     // The below fields are populated when packages are built from Git by tools like R-Universe
     // Used to install packages from R-Universe and sets us up to start editing the DESCRIPTION
     // file upon installations for compatibility with `sessioninfo`

@@ -6,7 +6,7 @@ use crate::{OsType, ResolvedDependency, SystemInfo};
 use url::Url;
 
 /// This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
-pub(crate) fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
+pub fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<String> {
     match distro {
         "centos" => {
             let major = sysinfo.major_version()?;

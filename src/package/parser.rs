@@ -12,7 +12,7 @@ static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
 static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
-fn parse_dependencies(content: &str) -> Vec<Dependency> {
+pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
 
     for dep in content.split(",") {

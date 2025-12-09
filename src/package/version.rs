@@ -148,8 +148,8 @@ where
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub struct VersionRequirement {
-    pub(crate) version: Version,
-    op: Operator,
+    pub version: Version,
+    pub op: Operator,
 }
 
 impl VersionRequirement {

@@ -28,7 +28,7 @@ pub mod consts;
 
 pub use activate::{activate, deactivate};
 pub use add::{AddOptions, add_packages, read_and_verify_config};
-pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
+pub use cache::{CacheInfo, DiskCache, PackagePaths, InstallationStatus, utils::hash_string};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
 pub use configure::{
@@ -38,15 +38,27 @@ pub use configure::{
 pub use format::format_document;
 pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
-pub use http::{Http, HttpDownload};
+pub use http::{Http, HttpDownload, HttpError};
 pub use library::Library;
 pub use lockfile::{Lockfile, Source};
-pub use package::{Version, VersionRequirement, is_binary_package};
+pub use package::{Version, Package, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
-pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
+// pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
+pub use r_cmd::{
+    find_r_version_command, InstallError,
+    InstallErrorKind, RCmd, RCommandLine, VersionError, VersionErrorKind,
+};
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use sync::{BuildPlan, BuildStep, LinkMode, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
+
+#[doc(hidden)]
+pub mod internal {
+    pub use crate::lockfile::Source;
+    pub use crate::package::{parse_dependencies, parse_description_file, parse_package_file, Dependency, Operator,};
+    pub use crate::repository_urls::get_distro_name;
+    pub use crate::sync::{LinkMode, SyncChange};
+}
