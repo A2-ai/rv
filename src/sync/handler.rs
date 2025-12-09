@@ -83,6 +83,7 @@ pub struct SyncHandler<'a> {
     show_progress_bar: bool,
     max_workers: usize,
     uses_lockfile: bool,
+    save_source_tarball: bool,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -93,6 +94,7 @@ impl<'a> SyncHandler<'a> {
             dry_run: false,
             show_progress_bar: false,
             uses_lockfile: false,
+            save_source_tarball: false,
             max_workers: get_max_workers(),
         }
     }
@@ -112,6 +114,10 @@ impl<'a> SyncHandler<'a> {
 
     pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
         self.uses_lockfile = uses_lockfile;
+    }
+
+    pub fn save_source_tarball(&mut self) {
+        self.save_source_tarball = true;
     }
 
     /// Resolve configure_args for a package based on current system info
@@ -167,6 +173,7 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 &configure_args,
                 cancellation,
+                self.save_source_tarball,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,

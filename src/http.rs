@@ -75,6 +75,16 @@ pub fn download<W: Write>(
     }
 }
 
+/// Downloads a file from URL and saves it to the given path
+pub fn download_to_file(url: &Url, path: &Path) -> Result<(), HttpError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+    }
+    let mut file = fs::File::create(path).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+    download(url, &mut file, vec![])?;
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to download file from `{url}`")]
 #[non_exhaustive]

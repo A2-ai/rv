@@ -22,6 +22,8 @@ use crate::{RCmd, SystemInfo, Version};
 pub struct PackagePaths {
     pub binary: PathBuf,
     pub source: PathBuf,
+    /// Source tarball is only saved if the `SyncHandler::save_source_tarball` is set to true
+    pub source_tarball: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -193,11 +195,18 @@ impl DiskCache {
         p.join(BUILD_LOG_FILENAME)
     }
 
-    /// Gets the folder where a source tarball would be located
+    /// Gets the folder where extracted source would be located
     /// The folder may or may not exist depending on whether it's in the cache
     fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
         let encoded = hash_string(repo_url);
         self.root.join(encoded).join("src").join(name).join(version)
+    }
+
+    /// Gets the path where a source tarball should be saved
+    pub fn get_tarball_path(&self, name: &str, version: &str) -> PathBuf {
+        self.root
+            .join("source_tarballs")
+            .join(format!("{name}_{version}.tar.gz"))
     }
 
     /// We will download them in a separate path, we don't know if we have source or binary
@@ -244,27 +253,27 @@ impl DiskCache {
             Source::Git { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git.url()),
                 binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
+                source_tarball: None,
             },
             Source::RUniverse { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git.url()),
                 binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
+                source_tarball: None,
             },
             Source::Url { url, sha } => PackagePaths {
                 source: self.get_url_download_path(url).join(&sha[..10]),
                 binary: self.get_repo_root_binary_dir(url.as_str()).join(&sha[..10]),
+                source_tarball: None,
             },
-            Source::Repository { repository } => PackagePaths {
-                source: self.get_source_package_path(
-                    repository.as_str(),
-                    pkg_name.unwrap(),
-                    version.unwrap(),
-                ),
-                binary: self.get_binary_package_path(
-                    repository.as_str(),
-                    pkg_name.unwrap(),
-                    version.unwrap(),
-                ),
-            },
+            Source::Repository { repository } => {
+                let name = pkg_name.unwrap();
+                let ver = version.unwrap();
+                PackagePaths {
+                    source: self.get_source_package_path(repository.as_str(), name, ver),
+                    binary: self.get_binary_package_path(repository.as_str(), name, ver),
+                    source_tarball: Some(self.get_tarball_path(name, ver)),
+                }
+            }
             Source::Local { .. } => unreachable!("Not used for local paths"),
             Source::Builtin { .. } => unreachable!("Not used for builtin packages"),
         }
