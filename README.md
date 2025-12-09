@@ -4,7 +4,14 @@
 
 ## Documentation Site
 
-Documentation site (WIP) with examples, cookbooks, and more detailed instructions available at: [https://a2-ai.github.io/rv-docs/](https://a2-ai.github.io/rv-docs/)
+Documentation site with examples, cookbooks, and more detailed instructions available at: [https://a2-ai.github.io/rv-docs/](https://a2-ai.github.io/rv-docs/)
+
+## quick start/install
+
+```
+curl -sSL https://raw.githubusercontent.com/A2-ai/rv/refs/heads/main/scripts/install.sh | bash
+rv --version
+```
 
 ## How it works
 
