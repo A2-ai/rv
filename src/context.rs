@@ -78,6 +78,14 @@ impl Context {
         config_file: &Path,
         r_command_lookup: RCommandLookup,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        Self::new_with_cache_dir(config_file, r_command_lookup, None)
+    }
+
+    pub fn new_with_cache_dir(
+        config_file: &Path,
+        r_command_lookup: RCommandLookup,
+        cache_dir: Option<&Path>,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let config = Config::from_file(config_file)?;
 
         // This can only be set to false if the user passed a r_version to rv plan
@@ -101,7 +109,11 @@ impl Context {
             RCommandLookup::Skip => (config.r_version().clone(), RCommandLine::default()),
         };
 
-        let cache = DiskCache::new(&r_version, SystemInfo::from_os_info())?;
+        let cache = if let Some(dir) = cache_dir {
+            DiskCache::new_in_dir(&r_version, SystemInfo::from_os_info(), dir)?
+        } else {
+            DiskCache::new(&r_version, SystemInfo::from_os_info())?
+        };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
         let lockfile_path = project_dir.join(config.lockfile_name());

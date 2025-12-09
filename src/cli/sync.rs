@@ -57,7 +57,7 @@ impl SyncHelper {
         let sync_start = std::time::Instant::now();
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
-        let resolution = resolve_dependencies(context, &resolve_mode, self.exit_on_failure);
+        let resolution = resolve_dependencies(context, resolve_mode, self.exit_on_failure);
 
         match timeit!(
             if self.dry_run {

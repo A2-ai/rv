@@ -87,7 +87,7 @@ impl fmt::Display for InstallationStatus {
 #[derive(Debug, Clone)]
 pub struct DiskCache {
     /// The cache root directory.
-    /// In practice it will be the OS own cache specific directory + `rv`
+    /// In practice, it will be the OS own cache specific directory + `rv`
     pub root: PathBuf,
     /// R version stored as [major, minor]
     pub r_version: [u32; 2],

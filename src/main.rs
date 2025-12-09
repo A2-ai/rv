@@ -562,7 +562,7 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let resolved = resolve_dependencies(&context, &ResolveMode::Default, true).found;
+            let resolved = resolve_dependencies(&context, ResolveMode::Default, true).found;
             let project_sys_deps: HashSet<_> = resolved
                 .iter()
                 .flat_map(|x| context.system_dependencies.get(x.name.as_ref()))
@@ -639,7 +639,7 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let resolution = resolve_dependencies(&context, &ResolveMode::Default, false);
+            let resolution = resolve_dependencies(&context, ResolveMode::Default, false);
             let tree = tree(&context, &resolution.found, &resolution.failed);
 
             if output_format.is_json() {
@@ -677,7 +677,7 @@ fn try_main() -> Result<()> {
             let info = CacheInfo::new(
                 &context.config,
                 &context.cache,
-                resolve_dependencies(&context, &ResolveMode::Default, true).found,
+                resolve_dependencies(&context, ResolveMode::Default, true).found,
             );
             if output_format.is_json() {
                 println!(
@@ -743,7 +743,7 @@ fn try_main() -> Result<()> {
                 .map_err(|e| anyhow!("{e}"))?;
             context.load_system_requirements();
 
-            let resolved = resolve_dependencies(&context, &ResolveMode::Default, false).found;
+            let resolved = resolve_dependencies(&context, ResolveMode::Default, false).found;
             let project_sys_deps: HashSet<_> = resolved
                 .iter()
                 .flat_map(|x| context.system_dependencies.get(x.name.as_ref()))
