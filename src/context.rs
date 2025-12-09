@@ -14,8 +14,9 @@ use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::utils::create_spinner;
 use crate::{
-    Config, DiskCache, Library, RCommandLine, Repository, RepositoryDatabase, SystemInfo, Version,
-    find_r_version_command, get_package_file_urls, http, system_req,
+    Config, DiskCache, GitExecutor, Http, Library, RCommandLine, Repository, RepositoryDatabase,
+    Resolution, Resolver, SystemInfo, Version, find_r_version_command, get_package_file_urls, http,
+    system_req,
 };
 
 /// Method on how to find the R Version on the system
@@ -216,6 +217,50 @@ impl Context {
 
     pub fn staging_path(&self) -> PathBuf {
         self.library.path.join(STAGING_DIR_NAME)
+    }
+
+    pub fn resolve(&self, resolve_mode: ResolveMode) -> Resolution<'_> {
+        let lockfile = match resolve_mode {
+            ResolveMode::Default => &self.lockfile,
+            ResolveMode::FullUpgrade => &None,
+        };
+
+        let mut resolver = Resolver::new(
+            &self.project_dir,
+            &self.databases,
+            self.config.repositories().iter().map(|x| x.url()).collect(),
+            &self.r_version,
+            &self.builtin_packages,
+            lockfile.as_ref(),
+            self.config.packages_env_vars(),
+        );
+
+        if self.show_progress_bar {
+            resolver.show_progress_bar();
+        }
+
+        let mut resolution = resolver.resolve(
+            self.config.dependencies(),
+            self.config.prefer_repositories_for(),
+            &self.cache,
+            &GitExecutor {},
+            &Http {},
+        );
+
+        // If upgrade mode and there is a lockfile, adjust from_lockfile flags
+        // to indicate which resolved deps match what was in the lockfile
+        if resolve_mode == ResolveMode::FullUpgrade && self.lockfile.is_some() {
+            resolution.found = resolution
+                .found
+                .into_iter()
+                .map(|mut dep| {
+                    dep.from_lockfile = self.lockfile.as_ref().unwrap().contains_resolved_dep(&dep);
+                    dep
+                })
+                .collect::<Vec<_>>();
+        }
+
+        resolution
     }
 }
 
