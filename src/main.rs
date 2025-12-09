@@ -6,8 +6,9 @@ use anyhow::Result;
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
+use anyhow::anyhow;
 use rv::cli::{
-    CliContext, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
     init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::system_req::{SysDep, SysInstallationStatus};
@@ -407,13 +408,16 @@ fn try_main() -> Result<()> {
         Command::Sync {
             save_install_logs_in,
         } => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
             }
             let resolve_mode = ResolveMode::Default;
-            context.load_for_resolve_mode(resolve_mode)?;
+            context
+                .load_for_resolve_mode(resolve_mode)
+                .map_err(|e| anyhow!("{e}"))?;
             SyncHelper {
                 dry_run: false,
                 output_format: Some(output_format),
@@ -489,7 +493,8 @@ fn try_main() -> Result<()> {
                 }
                 return Ok(());
             }
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -499,7 +504,9 @@ fn try_main() -> Result<()> {
                 context.config = doc.to_string().parse::<Config>()?;
             }
             let resolve_mode = ResolveMode::Default;
-            context.load_for_resolve_mode(resolve_mode)?;
+            context
+                .load_for_resolve_mode(resolve_mode)
+                .map_err(|e| anyhow!("{e}"))?;
             SyncHelper {
                 dry_run,
                 output_format: Some(output_format),
@@ -508,13 +515,16 @@ fn try_main() -> Result<()> {
             .run(&context, resolve_mode)?;
         }
         Command::Upgrade { dry_run } => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Strict)?;
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
             }
             let resolve_mode = ResolveMode::FullUpgrade;
-            context.load_for_resolve_mode(resolve_mode)?;
+            context
+                .load_for_resolve_mode(resolve_mode)
+                .map_err(|e| anyhow!("{e}"))?;
             SyncHelper {
                 dry_run,
                 output_format: Some(output_format),
@@ -528,12 +538,15 @@ fn try_main() -> Result<()> {
             } else {
                 ResolveMode::Default
             };
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
+            let mut context =
+                Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context.load_for_resolve_mode(upgrade)?;
+            context
+                .load_for_resolve_mode(upgrade)
+                .map_err(|e| anyhow!("{e}"))?;
             SyncHelper {
                 dry_run: true,
                 output_format: Some(output_format),
@@ -542,9 +555,10 @@ fn try_main() -> Result<()> {
             .run(&context, upgrade)?;
         }
         Command::Summary { r_version } => {
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
-            context.load_databases()?;
-            context.load_system_requirements()?;
+            let mut context =
+                Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
+            context.load_system_requirements();
             if !log_enabled {
                 context.show_progress_bar();
             }
@@ -614,10 +628,13 @@ fn try_main() -> Result<()> {
             hide_system_deps,
             r_version,
         } => {
-            let mut context = CliContext::new(&cli.config_file, r_version.into())?;
-            context.load_databases_if_needed()?;
+            let mut context =
+                Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
+            context
+                .load_databases_if_needed()
+                .map_err(|e| anyhow!("{e}"))?;
             if !hide_system_deps {
-                context.load_system_requirements()?;
+                context.load_system_requirements();
             }
             if !log_enabled {
                 context.show_progress_bar();
@@ -635,7 +652,8 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Library => {
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let context =
+                Context::new(&cli.config_file, RCommandLookup::Skip).map_err(|e| anyhow!("{e}"))?;
             let path_str = context.library_path().to_string_lossy();
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
@@ -650,8 +668,9 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Cache => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
-            context.load_databases()?;
+            let mut context =
+                Context::new(&cli.config_file, RCommandLookup::Skip).map_err(|e| anyhow!("{e}"))?;
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
             if !log_enabled {
                 context.show_progress_bar();
             }
@@ -676,7 +695,8 @@ fn try_main() -> Result<()> {
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
-            let context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let context =
+                Context::new(&cli.config_file, RCommandLookup::Skip).map_err(|e| anyhow!("{e}"))?;
             if library {
                 let path_str = context.library_path().to_string_lossy();
                 let path_out = if cfg!(windows) {
@@ -713,12 +733,15 @@ fn try_main() -> Result<()> {
             only_absent,
             ignore,
         } => {
-            let mut context = CliContext::new(&cli.config_file, RCommandLookup::Skip)?;
+            let mut context =
+                Context::new(&cli.config_file, RCommandLookup::Skip).map_err(|e| anyhow!("{e}"))?;
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context.load_databases_if_needed()?;
-            context.load_system_requirements()?;
+            context
+                .load_databases_if_needed()
+                .map_err(|e| anyhow!("{e}"))?;
+            context.load_system_requirements();
 
             let resolved = resolve_dependencies(&context, &ResolveMode::Default, false).found;
             let project_sys_deps: HashSet<_> = resolved

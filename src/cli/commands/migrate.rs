@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 
 use crate::{
     DiskCache, RenvLock, Repository, SystemInfo,
-    cli::context::load_databases,
+    context::load_databases,
     renv::{ResolvedRenv, UnresolvedRenv},
 };
 
@@ -44,7 +44,8 @@ pub fn migrate_renv(
         Ok(c) => c,
         Err(e) => return Err(anyhow!(e)),
     };
-    let databases = load_databases(&renv_lock.config_repositories(), &cache)?;
+    let databases =
+        load_databases(&renv_lock.config_repositories(), &cache).map_err(|e| anyhow!("{e}"))?;
 
     // resolve the renv.lock file to determine the true source of packages
     let (resolved, unresolved) = renv_lock.resolve(&databases);

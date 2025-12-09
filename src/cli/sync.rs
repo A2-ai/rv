@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err::{self as fs};
 use serde::Serialize;
 
-use crate::cli::{CliContext, OutputFormat, ResolveMode, resolve_dependencies};
+use crate::cli::{Context, OutputFormat, ResolveMode, resolve_dependencies};
 use crate::{Lockfile, Resolution, SyncChange, SyncHandler, system_req, timeit};
 
 #[derive(Debug, Default, Serialize)]
@@ -51,7 +51,7 @@ impl Default for SyncHelper {
 impl SyncHelper {
     pub fn run<'a>(
         &self,
-        context: &'a CliContext,
+        context: &'a Context,
         resolve_mode: ResolveMode,
     ) -> Result<Resolution<'a>> {
         let sync_start = std::time::Instant::now();

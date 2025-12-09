@@ -1,20 +1,10 @@
-use crate::cli::CliContext;
-use crate::{Resolution, Resolver};
-
+use crate::{Context, Resolution, ResolveMode, Resolver};
 use crate::{GitExecutor, Http};
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum ResolveMode {
-    #[default]
-    Default,
-    FullUpgrade,
-    // TODO: PartialUpgrade -- allow user to specify packages to upgrade
-}
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
 /// to stderr and the cli will exit.
 pub fn resolve_dependencies<'a>(
-    context: &'a CliContext,
+    context: &'a Context,
     resolve_mode: &ResolveMode,
     exit_on_failure: bool,
 ) -> Resolution<'a> {
