@@ -57,10 +57,15 @@ pub struct CliContext {
     // on mac/windows/arch etc
     pub system_dependencies: HashMap<String, Vec<String>>,
     pub show_progress_bar: bool,
+    pub ignore_library: bool,
 }
 
 impl CliContext {
-    pub fn new(config_file: &PathBuf, r_command_lookup: RCommandLookup) -> Result<Self> {
+    pub fn new(
+        config_file: &PathBuf,
+        r_command_lookup: RCommandLookup,
+        ignore_library: bool,
+    ) -> Result<Self> {
         let config = Config::from_file(config_file)?;
 
         // This can only be set to false if the user passed a r_version to rv plan
@@ -138,6 +143,7 @@ impl CliContext {
             show_progress_bar: false,
             builtin_packages,
             system_dependencies: HashMap::new(),
+            ignore_library,
         })
     }
 
