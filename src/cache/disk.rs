@@ -202,10 +202,14 @@ impl DiskCache {
         self.root.join(encoded).join("src").join(name).join(version)
     }
 
+    /// Gets where the source tarballs are saved when this option is enabled
+    pub fn get_source_tarball_folder(&self) -> PathBuf {
+        self.root.join("source_tarballs")
+    }
+
     /// Gets the path where a source tarball should be saved
     pub fn get_tarball_path(&self, name: &str, version: &str) -> PathBuf {
-        self.root
-            .join("source_tarballs")
+        self.get_source_tarball_folder()
             .join(format!("{name}_{version}.tar.gz"))
     }
 

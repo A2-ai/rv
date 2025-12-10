@@ -11,7 +11,7 @@ use crate::package::{Version, deserialize_version};
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HttpUrl(Url);
 
 impl<'de> Deserialize<'de> for HttpUrl {
@@ -41,7 +41,7 @@ impl Deref for HttpUrl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Author {
     name: String,
@@ -50,7 +50,7 @@ struct Author {
     maintainer: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repository {
     pub alias: String,
@@ -73,7 +73,7 @@ impl Repository {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
@@ -305,7 +305,7 @@ impl ConfigureArgsRule {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
@@ -354,7 +354,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub(crate) library: Option<PathBuf>,
@@ -474,6 +474,10 @@ impl Config {
 
     pub fn library(&self) -> Option<&PathBuf> {
         self.library.as_ref()
+    }
+
+    pub fn set_library(&mut self, library: PathBuf) {
+        self.library = Some(library);
     }
 
     pub fn lockfile_name(&self) -> &str {
