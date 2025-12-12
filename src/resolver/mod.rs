@@ -374,7 +374,7 @@ impl<'d> Resolver<'d> {
         http_downloader: &'d impl HttpDownload,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let out_path = cache.get_url_download_path(url);
-        let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true)?;
+        let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
 
         let install_path = dir.unwrap_or_else(|| out_path.clone());
         let package = parse_description_file_in_folder(&install_path)?;
@@ -748,6 +748,7 @@ mod tests {
             _: &Url,
             _: impl AsRef<Path>,
             _: bool,
+            _: Option<&Path>,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
             Ok((None, "SOME_SHA".to_string()))
         }

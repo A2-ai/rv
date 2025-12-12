@@ -6,6 +6,7 @@ mod cancellation;
 pub mod cli;
 mod config;
 mod configure;
+mod context;
 mod format;
 mod fs;
 mod git;
@@ -35,6 +36,7 @@ pub use configure::{
     ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
+pub use context::{Context, RCommandLookup, ResolveMode};
 pub use format::format_document;
 pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};

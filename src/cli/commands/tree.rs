@@ -1,4 +1,4 @@
-use crate::cli::CliContext;
+use crate::Context;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{ResolvedDependency, UnresolvedDependency, Version};
@@ -126,7 +126,7 @@ fn recursive_finder<'d>(
     deps: Vec<&'d str>,
     deps_by_name: &HashMap<&'d str, &'d ResolvedDependency>,
     unresolved_deps_by_name: &HashMap<&'d str, &'d UnresolvedDependency>,
-    context: &'d CliContext,
+    context: &'d Context,
 ) -> TreeNode<'d> {
     if let Some(resolved) = deps_by_name.get(name) {
         let sys_deps = context.system_dependencies.get(name);
@@ -204,7 +204,7 @@ impl Tree<'_> {
 }
 
 pub fn tree<'a>(
-    context: &'a CliContext,
+    context: &'a Context,
     resolved_deps: &'a [ResolvedDependency],
     unresolved_deps: &'a [UnresolvedDependency],
 ) -> Tree<'a> {
