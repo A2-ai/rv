@@ -23,7 +23,6 @@ pub(crate) fn install_package(
     r_cmd: &impl RCmd,
     configure_args: &[String],
     cancellation: Arc<Cancellation>,
-    save_tarball: bool,
 ) -> Result<(), SyncError> {
     let pkg_paths =
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
@@ -84,29 +83,15 @@ pub(crate) fn install_package(
                 .expect("Dependency has source Repository");
             let http = Http {};
 
-            // Determine if we should save the tarball (only if requested and not already present)
-            let tarball_path = if save_tarball {
-                pkg_paths
-                    .source_tarball
-                    .as_ref()
-                    .filter(|p| !p.exists())
-                    .map(|p| p.as_path())
-            } else {
-                None
-            };
-
             let download_and_install_source_or_archive = || -> Result<(), SyncError> {
                 log::debug!(
                     "Downloading package {} ({}) as source tarball",
                     pkg.name,
                     pkg.version.original
                 );
-                if let Err(e) = http.download_and_untar(
-                    &tarball_url.source,
-                    &pkg_paths.source,
-                    false,
-                    tarball_path,
-                ) {
+                if let Err(e) =
+                    http.download_and_untar(&tarball_url.source, &pkg_paths.source, false, None)
+                {
                     log::warn!(
                         "Failed to download/untar source package from {}: {e:?}, falling back to {}",
                         tarball_url.source,
@@ -117,12 +102,7 @@ pub(crate) fn install_package(
                         pkg.name,
                         pkg.version.original
                     );
-                    http.download_and_untar(
-                        &tarball_url.archive,
-                        &pkg_paths.source,
-                        false,
-                        tarball_path,
-                    )?;
+                    http.download_and_untar(&tarball_url.archive, &pkg_paths.source, false, None)?;
                 }
                 compile_package()?;
                 Ok(())
@@ -165,29 +145,6 @@ pub(crate) fn install_package(
                             fs::rename(&pkg_paths.binary, &pkg_paths.source)?;
                         }
                         compile_package()?;
-                    } else if let Some(tarball_path) = tarball_path {
-                        // Binary installed successfully, download source tarball if requested
-                        log::debug!(
-                            "Downloading source tarball for {} ({})",
-                            pkg.name,
-                            pkg.version.original
-                        );
-                        if let Err(e) =
-                            crate::http::download_to_file(&tarball_url.source, tarball_path)
-                        {
-                            log::warn!(
-                                "Failed to download source tarball from {}: {e:?}, trying archive",
-                                tarball_url.source
-                            );
-                            if let Err(e) =
-                                crate::http::download_to_file(&tarball_url.archive, tarball_path)
-                            {
-                                log::warn!(
-                                    "Failed to download source tarball for {}: {e:?}",
-                                    pkg.name
-                                );
-                            }
-                        }
                     }
                 }
             }

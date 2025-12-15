@@ -14,7 +14,10 @@ use crate::sync::changes::SyncChange;
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
-use crate::{BuildPlan, BuildStep, Cancellation, Context, GitExecutor, RCmd, ResolvedDependency};
+use crate::{
+    BuildPlan, BuildStep, Cancellation, Context, GitExecutor, RCmd, ResolvedDependency,
+    get_tarball_urls,
+};
 use crossbeam::{channel, thread};
 #[cfg(feature = "cli")]
 use fs_err as fs;
@@ -83,7 +86,6 @@ pub struct SyncHandler<'a> {
     show_progress_bar: bool,
     max_workers: usize,
     uses_lockfile: bool,
-    save_source_tarball: bool,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -94,7 +96,6 @@ impl<'a> SyncHandler<'a> {
             dry_run: false,
             show_progress_bar: false,
             uses_lockfile: false,
-            save_source_tarball: false,
             max_workers: get_max_workers(),
         }
     }
@@ -116,8 +117,42 @@ impl<'a> SyncHandler<'a> {
         self.uses_lockfile = uses_lockfile;
     }
 
-    pub fn save_source_tarball(&mut self) {
-        self.save_source_tarball = true;
+    /// Download source tarballs for all Repository dependencies without installing.
+    /// Useful for archival/backup purposes.
+    /// Returns paths to downloaded tarballs.
+    pub fn download_tarballs(
+        &self,
+        deps: &[ResolvedDependency],
+    ) -> Result<Vec<PathBuf>, SyncError> {
+        let mut downloaded = Vec::new();
+
+        for dep in deps {
+            if let Source::Repository { .. } = &dep.source {
+                let tarball_url = get_tarball_urls(
+                    dep,
+                    &self.context.cache.r_version,
+                    &self.context.cache.system_info,
+                )
+                .unwrap();
+
+                let tarball_path = self
+                    .context
+                    .cache
+                    .get_tarball_path(&dep.name, &dep.version.original);
+
+                if let Err(e) = crate::http::download_to_file(&tarball_url.source, &tarball_path) {
+                    log::warn!(
+                        "Failed to download source tarball from {}: {e:?}, trying archive",
+                        tarball_url.source
+                    );
+                    crate::http::download_to_file(&tarball_url.archive, &tarball_path)?;
+                }
+
+                downloaded.push(tarball_path);
+            }
+        }
+
+        Ok(downloaded)
     }
 
     /// Resolve configure_args for a package based on current system info
@@ -173,7 +208,6 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 &configure_args,
                 cancellation,
-                self.save_source_tarball,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,

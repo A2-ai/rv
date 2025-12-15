@@ -22,8 +22,6 @@ use crate::{RCmd, SystemInfo, Version};
 pub struct PackagePaths {
     pub binary: PathBuf,
     pub source: PathBuf,
-    /// Source tarball is only saved if the `SyncHandler::save_source_tarball` is set to true
-    pub source_tarball: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -257,17 +255,14 @@ impl DiskCache {
             Source::Git { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git.url()),
                 binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
-                source_tarball: None,
             },
             Source::RUniverse { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git.url()),
                 binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
-                source_tarball: None,
             },
             Source::Url { url, sha } => PackagePaths {
                 source: self.get_url_download_path(url).join(&sha[..10]),
                 binary: self.get_repo_root_binary_dir(url.as_str()).join(&sha[..10]),
-                source_tarball: None,
             },
             Source::Repository { repository } => {
                 let name = pkg_name.unwrap();
@@ -275,7 +270,6 @@ impl DiskCache {
                 PackagePaths {
                     source: self.get_source_package_path(repository.as_str(), name, ver),
                     binary: self.get_binary_package_path(repository.as_str(), name, ver),
-                    source_tarball: Some(self.get_tarball_path(name, ver)),
                 }
             }
             Source::Local { .. } => unreachable!("Not used for local paths"),
