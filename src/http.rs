@@ -75,6 +75,16 @@ pub fn download<W: Write>(
     }
 }
 
+/// Downloads a file from URL and saves it to the given path
+pub fn download_to_file(url: &Url, path: &Path) -> Result<(), HttpError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+    }
+    let mut file = fs::File::create(path).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+    download(url, &mut file, vec![])?;
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to download file from `{url}`")]
 #[non_exhaustive]
@@ -121,11 +131,13 @@ pub trait HttpDownload {
 
     /// Downloads what it meant to be a tarball and extract it at the given destination
     /// Returns the path where the files are if it's nested in a folder and the SHA256 hash of the tarball
+    /// If `save_tarball_to` is Some, the raw tarball bytes will be written to that path
     fn download_and_untar(
         &self,
         url: &Url,
         destination: impl AsRef<Path>,
         use_sha_in_path: bool,
+        save_tarball_to: Option<&Path>,
     ) -> Result<(Option<PathBuf>, String), HttpError>;
 }
 
@@ -154,11 +166,20 @@ impl HttpDownload for Http {
         url: &Url,
         destination: impl AsRef<Path>,
         use_sha_in_path: bool,
+        save_tarball_to: Option<&Path>,
     ) -> Result<(Option<PathBuf>, String), HttpError> {
         let destination = destination.as_ref().to_path_buf();
 
         let mut writer = Vec::new();
         self.download(url, &mut writer, vec![])?;
+
+        // Save tarball to disk if requested
+        if let Some(tarball_path) = save_tarball_to {
+            if let Some(parent) = tarball_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+            }
+            fs::write(tarball_path, &writer).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+        }
 
         let start = Instant::now();
 

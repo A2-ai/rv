@@ -5,7 +5,7 @@ use anyhow::Result;
 use fs_err::{self as fs};
 use serde::Serialize;
 
-use crate::cli::{CliContext, OutputFormat, ResolveMode, resolve_dependencies};
+use crate::cli::{Context, OutputFormat, ResolveMode, resolve_dependencies};
 use crate::{Lockfile, Resolution, SyncChange, SyncHandler, system_req, timeit};
 
 #[derive(Debug, Default, Serialize)]
@@ -51,13 +51,13 @@ impl Default for SyncHelper {
 impl SyncHelper {
     pub fn run<'a>(
         &self,
-        context: &'a CliContext,
+        context: &'a Context,
         resolve_mode: ResolveMode,
     ) -> Result<Resolution<'a>> {
         let sync_start = std::time::Instant::now();
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
-        let resolution = resolve_dependencies(context, &resolve_mode, self.exit_on_failure);
+        let resolution = resolve_dependencies(context, resolve_mode, self.exit_on_failure);
 
         match timeit!(
             if self.dry_run {
@@ -66,16 +66,7 @@ impl SyncHelper {
                 "Synced dependencies"
             },
             {
-                let mut handler = SyncHandler::new(
-                    &context.project_dir,
-                    &context.library,
-                    &context.cache,
-                    &context.system_dependencies,
-                    context.config.configure_args(),
-                    &context.cache.system_info,
-                    self.save_install_logs_in.clone(),
-                    context.staging_path(),
-                );
+                let mut handler = SyncHandler::new(context, self.save_install_logs_in.clone());
                 if self.dry_run {
                     handler.dry_run();
                 }

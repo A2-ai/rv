@@ -90,7 +90,7 @@ pub(crate) fn install_package(
                     pkg.version.original
                 );
                 if let Err(e) =
-                    http.download_and_untar(&tarball_url.source, &pkg_paths.source, false)
+                    http.download_and_untar(&tarball_url.source, &pkg_paths.source, false, None)
                 {
                     log::warn!(
                         "Failed to download/untar source package from {}: {e:?}, falling back to {}",
@@ -102,7 +102,7 @@ pub(crate) fn install_package(
                         pkg.name,
                         pkg.version.original
                     );
-                    http.download_and_untar(&tarball_url.archive, &pkg_paths.source, false)?;
+                    http.download_and_untar(&tarball_url.archive, &pkg_paths.source, false, None)?;
                 }
                 compile_package()?;
                 Ok(())
@@ -116,6 +116,7 @@ pub(crate) fn install_package(
                     &tarball_url.binary.clone().unwrap(),
                     &pkg_paths.binary,
                     false,
+                    None,
                 ) {
                     log::warn!(
                         "Failed to download/untar binary package from {}: {e:?}, falling back to {}",

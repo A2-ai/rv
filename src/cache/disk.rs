@@ -87,7 +87,7 @@ impl fmt::Display for InstallationStatus {
 #[derive(Debug, Clone)]
 pub struct DiskCache {
     /// The cache root directory.
-    /// In practice it will be the OS own cache specific directory + `rv`
+    /// In practice, it will be the OS own cache specific directory + `rv`
     pub root: PathBuf,
     /// R version stored as [major, minor]
     pub r_version: [u32; 2],
@@ -193,11 +193,22 @@ impl DiskCache {
         p.join(BUILD_LOG_FILENAME)
     }
 
-    /// Gets the folder where a source tarball would be located
+    /// Gets the folder where extracted source would be located
     /// The folder may or may not exist depending on whether it's in the cache
     fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {
         let encoded = hash_string(repo_url);
         self.root.join(encoded).join("src").join(name).join(version)
+    }
+
+    /// Gets where the source tarballs are saved when this option is enabled
+    pub fn get_source_tarball_folder(&self) -> PathBuf {
+        self.root.join("source_tarballs")
+    }
+
+    /// Gets the path where a source tarball should be saved
+    pub fn get_tarball_path(&self, name: &str, version: &str) -> PathBuf {
+        self.get_source_tarball_folder()
+            .join(format!("{name}_{version}.tar.gz"))
     }
 
     /// We will download them in a separate path, we don't know if we have source or binary
@@ -253,18 +264,14 @@ impl DiskCache {
                 source: self.get_url_download_path(url).join(&sha[..10]),
                 binary: self.get_repo_root_binary_dir(url.as_str()).join(&sha[..10]),
             },
-            Source::Repository { repository } => PackagePaths {
-                source: self.get_source_package_path(
-                    repository.as_str(),
-                    pkg_name.unwrap(),
-                    version.unwrap(),
-                ),
-                binary: self.get_binary_package_path(
-                    repository.as_str(),
-                    pkg_name.unwrap(),
-                    version.unwrap(),
-                ),
-            },
+            Source::Repository { repository } => {
+                let name = pkg_name.unwrap();
+                let ver = version.unwrap();
+                PackagePaths {
+                    source: self.get_source_package_path(repository.as_str(), name, ver),
+                    binary: self.get_binary_package_path(repository.as_str(), name, ver),
+                }
+            }
             Source::Local { .. } => unreachable!("Not used for local paths"),
             Source::Builtin { .. } => unreachable!("Not used for builtin packages"),
         }

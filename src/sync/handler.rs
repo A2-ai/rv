@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::config::ConfigureArgsRule;
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
 use crate::lockfile::Source;
 use crate::package::PackageType;
@@ -16,8 +15,8 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
 use crate::{
-    BuildPlan, BuildStep, Cancellation, DiskCache, GitExecutor, Library, RCmd, ResolvedDependency,
-    SystemInfo,
+    BuildPlan, BuildStep, Cancellation, Context, GitExecutor, RCmd, ResolvedDependency,
+    get_tarball_urls,
 };
 use crossbeam::{channel, thread};
 #[cfg(feature = "cli")]
@@ -81,13 +80,7 @@ fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String
 
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
-    project_dir: &'a Path,
-    library: &'a Library,
-    cache: &'a DiskCache,
-    system_dependencies: &'a HashMap<String, Vec<String>>,
-    configure_args: &'a HashMap<String, Vec<ConfigureArgsRule>>,
-    system_info: &'a SystemInfo,
-    staging_path: PathBuf,
+    context: &'a Context,
     save_install_logs_in: Option<PathBuf>,
     dry_run: bool,
     show_progress_bar: bool,
@@ -96,26 +89,10 @@ pub struct SyncHandler<'a> {
 }
 
 impl<'a> SyncHandler<'a> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        project_dir: &'a Path,
-        library: &'a Library,
-        cache: &'a DiskCache,
-        system_dependencies: &'a HashMap<String, Vec<String>>,
-        configure_args: &'a HashMap<String, Vec<ConfigureArgsRule>>,
-        system_info: &'a SystemInfo,
-        save_install_logs_in: Option<PathBuf>,
-        staging_path: impl AsRef<Path>,
-    ) -> Self {
+    pub fn new(context: &'a Context, save_install_logs_in: Option<PathBuf>) -> Self {
         Self {
-            project_dir,
-            library,
-            cache,
-            system_dependencies,
-            configure_args,
-            system_info,
+            context,
             save_install_logs_in,
-            staging_path: staging_path.as_ref().to_path_buf(),
             dry_run: false,
             show_progress_bar: false,
             uses_lockfile: false,
@@ -140,12 +117,51 @@ impl<'a> SyncHandler<'a> {
         self.uses_lockfile = uses_lockfile;
     }
 
+    /// Download source tarballs for all Repository dependencies without installing.
+    /// Useful for archival/backup purposes.
+    /// Returns paths to downloaded tarballs.
+    pub fn download_tarballs(
+        &self,
+        deps: &[ResolvedDependency],
+    ) -> Result<Vec<PathBuf>, SyncError> {
+        let mut downloaded = Vec::new();
+
+        for dep in deps {
+            if let Source::Repository { .. } = &dep.source {
+                // safe unwrap, we know it's a repo dep
+                let tarball_url = get_tarball_urls(
+                    dep,
+                    &self.context.cache.r_version,
+                    &self.context.cache.system_info,
+                )
+                .unwrap();
+
+                let tarball_path = self
+                    .context
+                    .cache
+                    .get_tarball_path(&dep.name, &dep.version.original);
+
+                if let Err(e) = crate::http::download_to_file(&tarball_url.source, &tarball_path) {
+                    log::warn!(
+                        "Failed to download source tarball from {}: {e:?}, trying archive",
+                        tarball_url.source
+                    );
+                    crate::http::download_to_file(&tarball_url.archive, &tarball_path)?;
+                }
+
+                downloaded.push(tarball_path);
+            }
+        }
+
+        Ok(downloaded)
+    }
+
     /// Resolve configure_args for a package based on current system info
     fn get_configure_args(&self, package_name: &str) -> Vec<String> {
-        if let Some(rules) = self.configure_args.get(package_name) {
+        if let Some(rules) = self.context.config.configure_args().get(package_name) {
             // Find first matching rule
             for rule in rules {
-                if let Some(args) = rule.matches(self.system_info) {
+                if let Some(args) = rule.matches(&self.context.cache.system_info) {
                     return args.to_vec();
                 }
             }
@@ -163,8 +179,8 @@ impl<'a> SyncHandler<'a> {
         LinkMode::link_files(
             Some(LinkMode::Copy),
             &dep.name,
-            self.library.path().join(dep.name.as_ref()),
-            self.staging_path.join(dep.name.as_ref()),
+            self.context.library.path().join(dep.name.as_ref()),
+            self.context.staging_path().join(dep.name.as_ref()),
         )?;
 
         Ok(())
@@ -181,14 +197,15 @@ impl<'a> SyncHandler<'a> {
         }
         // we want the staging to take precedence over the library, but still have
         // the library in the paths for lookup
-        let library_dirs = vec![&self.staging_path, self.library.path()];
+        let staging_path = self.context.staging_path();
+        let library_dirs = vec![&staging_path, self.context.library.path()];
         let configure_args = self.get_configure_args(&dep.name);
 
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
                 dep,
                 &library_dirs,
-                self.cache,
+                &self.context.cache,
                 r_cmd,
                 &configure_args,
                 cancellation,
@@ -196,7 +213,7 @@ impl<'a> SyncHandler<'a> {
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,
                 &library_dirs,
-                self.cache,
+                &self.context.cache,
                 r_cmd,
                 &GitExecutor {},
                 &configure_args,
@@ -204,9 +221,9 @@ impl<'a> SyncHandler<'a> {
             ),
             Source::Local { .. } => sources::local::install_package(
                 dep,
-                self.project_dir,
+                &self.context.project_dir,
                 &library_dirs,
-                self.cache,
+                &self.context.cache,
                 r_cmd,
                 &configure_args,
                 cancellation,
@@ -214,7 +231,7 @@ impl<'a> SyncHandler<'a> {
             Source::Url { .. } => sources::url::install_package(
                 dep,
                 &library_dirs,
-                self.cache,
+                &self.context.cache,
                 r_cmd,
                 &configure_args,
                 cancellation,
@@ -240,11 +257,11 @@ impl<'a> SyncHandler<'a> {
 
         let deps_by_name: HashMap<_, _> = deps.iter().map(|d| (d.name.as_ref(), d)).collect();
 
-        for name in self.library.packages.keys() {
+        for name in self.context.library.packages.keys() {
             if let Some(dep) = deps_by_name.get(name.as_str()) {
                 // If the library contains the dep, we also want it to be resolved from the lockfile, otherwise we cannot trust its source
                 // Additionally, any package in the library that is ignored, needs to be removed
-                if self.library.contains_package(dep) && !dep.ignored {
+                if self.context.library.contains_package(dep) && !dep.ignored {
                     match &dep.source {
                         Source::Repository { .. } => {
                             if !self.uses_lockfile || dep.from_lockfile {
@@ -278,7 +295,7 @@ impl<'a> SyncHandler<'a> {
         }
 
         // Lastly, remove any package that we can't really access
-        for name in &self.library.broken {
+        for name in &self.context.library.broken {
             log::warn!("Package {name} in library is broken");
             deps_to_remove.insert((name.as_str(), false));
         }
@@ -294,10 +311,11 @@ impl<'a> SyncHandler<'a> {
         // Clean up at all times, even with a dry run
         let cancellation = Arc::new(Cancellation::default());
 
+        let staging_path = self.context.staging_path();
         #[cfg(feature = "cli")]
         {
             let cancellation_clone = Arc::clone(&cancellation);
-            let staging_path = self.staging_path.clone();
+            let staging_path = staging_path.clone();
             ctrlc::set_handler(move || {
                 cancellation_clone.cancel();
                 if cancellation_clone.is_soft_cancellation() {
@@ -319,10 +337,10 @@ impl<'a> SyncHandler<'a> {
             return Ok(Vec::new());
         }
 
-        if self.staging_path.is_dir() {
-            fs::remove_dir_all(&self.staging_path)?;
+        if staging_path.is_dir() {
+            fs::remove_dir_all(&staging_path)?;
         }
-        fs::create_dir_all(self.library.path())?;
+        fs::create_dir_all(self.context.library.path())?;
 
         let mut sync_changes = Vec::new();
 
@@ -331,7 +349,7 @@ impl<'a> SyncHandler<'a> {
         let (deps_seen, deps_to_copy, deps_to_remove) = self.compare_with_local_library(deps);
         let needs_sync = deps_seen.len() != num_deps_to_install;
         let packages_loaded = if !deps_to_remove.is_empty() {
-            get_all_packages_in_use(&self.library.path)
+            get_all_packages_in_use(self.context.library.path())
         } else {
             HashMap::new()
         };
@@ -368,7 +386,7 @@ impl<'a> SyncHandler<'a> {
 
             // Only actually remove the deps if we are not going to do any other changes.
             if !needs_sync {
-                let p = self.library.path().join(dir_name);
+                let p = self.context.library.path().join(dir_name);
                 if !self.dry_run && *notify {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
@@ -386,7 +404,7 @@ impl<'a> SyncHandler<'a> {
         }
 
         // Create staging only if we need to build stuff
-        fs::create_dir_all(&self.staging_path)?;
+        fs::create_dir_all(&staging_path)?;
 
         if let Some(log_folder) = &self.save_install_logs_in {
             fs::create_dir_all(log_folder)?;
@@ -395,7 +413,7 @@ impl<'a> SyncHandler<'a> {
         // Then we mark the deps seen so they won't be installed into the staging dir
         for d in &deps_seen {
             // builtin packages will not be in the library
-            let in_lib = self.library.path().join(d);
+            let in_lib = self.context.library.path().join(d);
             if in_lib.is_dir() {
                 plan.mark_installed(d);
             }
@@ -530,7 +548,8 @@ impl<'a> SyncHandler<'a> {
                                     dep.source.clone(),
                                     dep.kind,
                                     start.elapsed(),
-                                    self.system_dependencies
+                                    self.context
+                                        .system_dependencies
                                         .get(dep.name.as_ref())
                                         .cloned()
                                         .unwrap_or_default(),
@@ -541,7 +560,7 @@ impl<'a> SyncHandler<'a> {
                                 if let Some(log_folder) = &save_install_logs_in_clone
                                     && !sync_change.is_builtin()
                                 {
-                                    let log_path = sync_change.log_path(self.cache);
+                                    let log_path = sync_change.log_path(&self.context.cache);
                                     if log_path.exists() {
                                         fs::copy(
                                             log_path,
@@ -630,13 +649,13 @@ impl<'a> SyncHandler<'a> {
         }
 
         if self.dry_run {
-            fs::remove_dir_all(&self.staging_path)?;
+            fs::remove_dir_all(&staging_path)?;
         } else {
             // If we are there, it means we are successful.
 
             // mv new packages to the library and delete the ones that need to be removed
             for (name, notify) in deps_to_remove {
-                let p = self.library.path().join(name);
+                let p = self.context.library.path().join(name);
                 if !self.dry_run && notify {
                     log::debug!("Removing {name} from library");
                     fs::remove_dir_all(&p)?;
@@ -647,12 +666,12 @@ impl<'a> SyncHandler<'a> {
                 }
             }
 
-            for entry in fs::read_dir(&self.staging_path)? {
+            for entry in fs::read_dir(&staging_path)? {
                 let entry = entry?;
                 let path = entry.path();
                 let name = path.file_name().unwrap().to_str().unwrap().to_string();
                 if !deps_seen.contains(name.as_str()) {
-                    let out = self.library.path().join(&name);
+                    let out = self.context.library.path().join(&name);
                     if out.is_dir() {
                         fs::remove_dir_all(&out)?;
                     }
@@ -661,7 +680,7 @@ impl<'a> SyncHandler<'a> {
             }
 
             // Then delete staging
-            fs::remove_dir_all(&self.staging_path)?;
+            fs::remove_dir_all(&staging_path)?;
         }
 
         // Sort all changes by a-z and fall back on installed status for things with the same name
