@@ -128,6 +128,7 @@ impl<'a> SyncHandler<'a> {
 
         for dep in deps {
             if let Source::Repository { .. } = &dep.source {
+                // safe unwrap, we know it's a repo dep
                 let tarball_url = get_tarball_urls(
                     dep,
                     &self.context.cache.r_version,
