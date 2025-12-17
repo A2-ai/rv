@@ -126,8 +126,27 @@ impl<'a> SyncHandler<'a> {
     ) -> Result<Vec<PathBuf>, SyncError> {
         let mut downloaded = Vec::new();
 
-        for dep in deps {
+        let repo_deps: Vec<_> = deps
+            .iter()
+            .filter(|d| matches!(&d.source, Source::Repository { .. }))
+            .collect();
+
+        let pb = if self.show_progress_bar {
+            let pb = ProgressBar::new(repo_deps.len() as u64);
+            pb.set_style(
+                ProgressStyle::with_template("[{elapsed_precise}] {bar:60} {pos:>7}/{len:7} {msg}")
+                    .unwrap(),
+            );
+            pb.enable_steady_tick(Duration::from_secs(1));
+            pb
+        } else {
+            ProgressBar::hidden()
+        };
+
+        for dep in repo_deps {
             if let Source::Repository { .. } = &dep.source {
+                pb.set_message(format!("Downloading {}", dep.name));
+
                 // safe unwrap, we know it's a repo dep
                 let tarball_url = get_tarball_urls(
                     dep,
@@ -150,8 +169,11 @@ impl<'a> SyncHandler<'a> {
                 }
 
                 downloaded.push(tarball_path);
+                pb.inc(1);
             }
         }
+
+        pb.finish_and_clear();
 
         Ok(downloaded)
     }
