@@ -20,7 +20,7 @@ mod repository;
 mod repository_urls;
 mod resolver;
 mod sync;
-mod system_info;
+pub mod system_info;
 pub mod system_req;
 mod utils;
 

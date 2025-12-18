@@ -145,7 +145,7 @@ impl SystemInfo {
     }
 
     /// Extract major version number from Version enum
-    pub(crate) fn major_version(&self) -> Option<u64> {
+    pub fn major_version(&self) -> Option<u64> {
         match &self.version {
             Version::Semantic(major, _, _) => Some(*major),
             Version::Custom(v) => {
