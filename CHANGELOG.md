@@ -1,3 +1,7 @@
+## v0.17.1 - December 17, 2025
+
+Internal refactoring to provide additional capabilities to those embedding rv in other programs.
+
 ## v0.17.0 - December 8, 2025
 
 This release significantly improves performance on network filesystems, enhances support for RHEL-family Linux distributions, and includes numerous quality-of-life improvements

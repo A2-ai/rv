@@ -124,12 +124,14 @@ impl<'a> SyncHandler<'a> {
         &self,
         deps: &[ResolvedDependency],
     ) -> Result<Vec<PathBuf>, SyncError> {
-        let mut downloaded = Vec::new();
-
         let repo_deps: Vec<_> = deps
             .iter()
             .filter(|d| matches!(&d.source, Source::Repository { .. }))
             .collect();
+
+        if repo_deps.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let pb = if self.show_progress_bar {
             let pb = ProgressBar::new(repo_deps.len() as u64);
@@ -138,44 +140,104 @@ impl<'a> SyncHandler<'a> {
                     .unwrap(),
             );
             pb.enable_steady_tick(Duration::from_secs(1));
-            pb
+            Arc::new(pb)
         } else {
-            ProgressBar::hidden()
+            Arc::new(ProgressBar::hidden())
         };
 
-        for dep in repo_deps {
-            if let Source::Repository { .. } = &dep.source {
-                pb.set_message(format!("Downloading {}", dep.name));
+        let (work_sender, work_receiver) = channel::unbounded();
+        let (done_sender, done_receiver) =
+            channel::unbounded::<Result<(String, PathBuf), (String, crate::http::HttpError)>>();
 
-                // safe unwrap, we know it's a repo dep
-                let tarball_url = get_tarball_urls(
-                    dep,
-                    &self.context.cache.r_version,
-                    &self.context.cache.system_info,
-                )
-                .unwrap();
-
-                let tarball_path = self
-                    .context
-                    .cache
-                    .get_tarball_path(&dep.name, &dep.version.original);
-
-                if let Err(e) = crate::http::download_to_file(&tarball_url.source, &tarball_path) {
-                    log::warn!(
-                        "Failed to download source tarball from {}: {e:?}, trying archive",
-                        tarball_url.source
-                    );
-                    crate::http::download_to_file(&tarball_url.archive, &tarball_path)?;
-                }
-
-                downloaded.push(tarball_path);
-                pb.inc(1);
-            }
+        // Queue all work
+        for dep in &repo_deps {
+            work_sender.send(*dep).unwrap();
         }
+        drop(work_sender);
+
+        let downloaded = Arc::new(Mutex::new(Vec::new()));
+        let errors: Arc<Mutex<Vec<(String, crate::http::HttpError)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let downloading = Arc::new(Mutex::new(HashSet::new()));
+
+        thread::scope(|s| {
+            // Spawn max_workers threads
+            for _ in 0..self.max_workers {
+                let work_receiver = work_receiver.clone();
+                let done_sender = done_sender.clone();
+                let pb = Arc::clone(&pb);
+                let downloading = Arc::clone(&downloading);
+
+                s.spawn(move |_| {
+                    while let Ok(dep) = work_receiver.recv() {
+                        let name = dep.name.to_string();
+                        downloading.lock().unwrap().insert(name.clone());
+                        pb.set_message(format!("Downloading {:?}", downloading.lock().unwrap()));
+
+                        // safe unwrap, we know it's a repo dep
+                        let tarball_url = get_tarball_urls(
+                            dep,
+                            &self.context.cache.r_version,
+                            &self.context.cache.system_info,
+                        )
+                        .unwrap();
+
+                        let tarball_path = self
+                            .context
+                            .cache
+                            .get_tarball_path(&dep.name, &dep.version.original);
+
+                        let result =
+                            crate::http::download_to_file(&tarball_url.source, &tarball_path)
+                                .or_else(|_| {
+                                    crate::http::download_to_file(
+                                        &tarball_url.archive,
+                                        &tarball_path,
+                                    )
+                                });
+
+                        // Send result with name for tracking
+                        match result {
+                            Ok(_) => done_sender.send(Ok((name, tarball_path))).unwrap(),
+                            Err(e) => done_sender.send(Err((name, e))).unwrap(),
+                        }
+                    }
+                });
+            }
+            drop(done_sender);
+
+            // Collect results - continue on errors
+            for result in done_receiver {
+                match result {
+                    Ok((name, path)) => {
+                        downloading.lock().unwrap().remove(&name);
+                        pb.inc(1);
+                        pb.set_message(format!("Downloading {:?}", downloading.lock().unwrap()));
+                        downloaded.lock().unwrap().push(path);
+                    }
+                    Err((name, e)) => {
+                        downloading.lock().unwrap().remove(&name);
+                        pb.inc(1);
+                        pb.set_message(format!("Downloading {:?}", downloading.lock().unwrap()));
+                        log::warn!("Failed to download {name}: {e}");
+                        errors.lock().unwrap().push((name, e));
+                    }
+                }
+            }
+        })
+        .expect("threads to not panic");
 
         pb.finish_and_clear();
 
-        Ok(downloaded)
+        let errors = Arc::try_unwrap(errors).unwrap().into_inner().unwrap();
+        if !errors.is_empty() {
+            // Log all errors but still return successful downloads
+            for (name, e) in &errors {
+                log::error!("Failed to download {name}: {e}");
+            }
+        }
+
+        Ok(Arc::try_unwrap(downloaded).unwrap().into_inner().unwrap())
     }
 
     /// Resolve configure_args for a package based on current system info
