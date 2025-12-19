@@ -70,6 +70,10 @@ jobs:
           fi
           rustup target add ${{ matrix.target }}
 
+      - name: Install Rust crosscompile target (macOS Intel)
+        if: ${{ matrix.target == 'x86_64-apple-darwin' }}
+        run: rustup target add x86_64-apple-darwin
+
       - name: Cargo build
         run: cargo build --features=cli --release --target ${{ matrix.target }}
 
