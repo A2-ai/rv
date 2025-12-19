@@ -1,4 +1,4 @@
-## v0.17.1 - December 17, 2025
+## v0.17.1 - December 19, 2025
 
 Internal refactoring to provide additional capabilities to those embedding rv in other programs.
 Change internal serialization framework.
