@@ -28,13 +28,7 @@ impl RepositoryDatabase {
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
         let bytes = std::fs::read(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?;
-        match rmp_serde::from_slice(&bytes) {
-            Ok(v) => Ok(v),
-            Err(e) => panic!(
-                "Failed to deserialize RepositoryDatabase from {}: {e}",
-                path.as_ref().display()
-            ),
-        }
+        rmp_serde::from_slice(&bytes).map_err(RepositoryDatabaseError::from_deserialize)
     }
 
     pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
@@ -266,12 +260,19 @@ impl RepositoryDatabaseError {
             source: RepositoryDatabaseErrorKind::Io(err),
         }
     }
+
+    fn from_deserialize(err: rmp_serde::decode::Error) -> Self {
+        Self {
+            source: RepositoryDatabaseErrorKind::Deserialize(err),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub enum RepositoryDatabaseErrorKind {
     Io(#[from] std::io::Error),
+    Deserialize(#[from] rmp_serde::decode::Error),
 }
 
 #[cfg(test)]

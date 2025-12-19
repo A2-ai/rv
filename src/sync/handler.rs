@@ -151,7 +151,9 @@ impl<'a> SyncHandler<'a> {
 
         // Queue all work
         for dep in &repo_deps {
-            work_sender.send(*dep).unwrap();
+            work_sender
+                .send(*dep)
+                .expect("failed to enqueue download work item: work_receiver dropped unexpectedly");
         }
         drop(work_sender);
 
@@ -204,8 +206,12 @@ impl<'a> SyncHandler<'a> {
 
                         // Send result with name for tracking
                         match result {
-                            Ok(_) => done_sender.send(Ok((name, tarball_path))).unwrap(),
-                            Err(e) => done_sender.send(Err((name, e))).unwrap(),
+                            Ok(_) => done_sender.send(Ok((name, tarball_path))).expect(
+                                "done_receiver dropped while sending successful download result",
+                            ),
+                            Err(e) => done_sender.send(Err((name, e))).expect(
+                                "done_receiver dropped while sending failed download result",
+                            ),
                         }
                     }
                 });
