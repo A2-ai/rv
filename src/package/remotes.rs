@@ -1,5 +1,5 @@
 use crate::git::url::GitUrl;
-use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Clone)]
 enum RemoteType {
@@ -24,7 +24,7 @@ impl RemoteType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum PackageRemote {
     Git {
         url: GitUrl,

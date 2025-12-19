@@ -1,11 +1,10 @@
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hash;
 use std::str::FromStr;
 
-#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
 pub enum Operator {
     Equal,
     Greater,
@@ -43,7 +42,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone, Encode, Decode, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
@@ -51,12 +50,17 @@ pub struct Version {
     pub original: String,
 }
 
-impl Serialize for Version {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.original)
+impl From<Version> for String {
+    fn from(v: Version) -> String {
+        v.original
+    }
+}
+
+impl TryFrom<String> for Version {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 
@@ -145,11 +149,16 @@ where
 /// A package can require specific version for some versions.
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==
-#[derive(Debug, Hash, Eq, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct VersionRequirement {
     pub(crate) version: Version,
     op: Operator,
+}
+
+impl From<VersionRequirement> for String {
+    fn from(req: VersionRequirement) -> String {
+        req.to_string()
+    }
 }
 
 impl VersionRequirement {
@@ -187,21 +196,27 @@ impl FromStr for VersionRequirement {
                 // after the op like "(>=   1.2.0)"
                 // so if we hit more whitespace after setting the op we can just continue
                 if op.is_none() {
-                    op = Some(Operator::from_str(&current).expect("TODO"));
+                    op = Some(
+                        Operator::from_str(&current)
+                            .map_err(|_| format!("invalid operator '{}' in '{}'", current, s))?,
+                    );
                     current = String::new();
                 }
                 continue;
             }
             if c == ')' {
-                version = Some(Version::from_str(&current).expect("TODO"));
+                version = Some(
+                    Version::from_str(&current)
+                        .map_err(|e| format!("invalid version '{}' in '{}': {}", current, s, e))?,
+                );
                 continue;
             }
             current.push(c);
         }
 
         Ok(Self {
-            version: version.unwrap(),
-            op: op.unwrap(),
+            version: version.ok_or_else(|| format!("missing version in '{}'", s))?,
+            op: op.ok_or_else(|| format!("missing operator in '{}'", s))?,
         })
     }
 }

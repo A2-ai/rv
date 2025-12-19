@@ -142,7 +142,7 @@ impl DiskCache {
 
     /// A database contains both source and binary PACKAGE data
     /// Therefore the path to the db file is dependent on the system info and R version
-    /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/packages.bin`
+    /// In practice it looks like: `CACHE_DIR/rv/{os}/{distrib?}/{arch?}/r_maj.r_min/{PACKAGE_DB_FILENAME}`
     fn get_package_db_path(&self, repo_url: &str) -> PathBuf {
         let base_path = self.get_repo_root_binary_dir(repo_url);
         base_path.join(crate::consts::PACKAGE_DB_FILENAME)
@@ -319,7 +319,7 @@ impl DiskCache {
         r_cmd: &impl RCmd,
     ) -> std::io::Result<HashMap<String, Package>> {
         let version = r_cmd.version().expect("to work");
-        let filename = format!("builtin-{}.bin", version.original);
+        let filename = format!("builtin-{}.mp", version.original);
         let path = self.root.join(&filename);
         if let Some(builtin) = BuiltinPackages::load(&path) {
             Ok(builtin.packages)
