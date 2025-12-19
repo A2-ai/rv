@@ -15,7 +15,13 @@ impl BuiltinPackages {
     /// If we fail to read it, consider we don't have it, no need to error
     pub fn load(path: impl AsRef<Path>) -> Option<Self> {
         let bytes = std::fs::read(path.as_ref()).ok()?;
-        postcard::from_bytes(&bytes).ok()
+        match postcard::from_bytes(&bytes) {
+            Ok(v) => Some(v),
+            Err(e) => panic!(
+                "Failed to deserialize BuiltinPackages from {}: {e}",
+                path.as_ref().display()
+            ),
+        }
     }
 
     pub fn persist(&self, path: impl AsRef<Path>) -> std::io::Result<()> {

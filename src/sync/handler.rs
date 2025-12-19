@@ -214,20 +214,20 @@ impl<'a> SyncHandler<'a> {
 
             // Collect results - continue on errors
             for result in done_receiver {
-                let mut d = downloading.lock().unwrap();
-                match result {
+                let name = match result {
                     Ok((name, path)) => {
-                        d.remove(&name);
-                        pb.inc(1);
-                        pb.set_message(format!("Downloading {d:?}"));
                         downloaded.lock().unwrap().push(path);
+                        name
                     }
                     Err((name, e)) => {
-                        pb.inc(1);
-                        pb.set_message(format!("Downloading {d:?}"));
-                        errors.lock().unwrap().push((name, e));
+                        errors.lock().unwrap().push((name.clone(), e));
+                        name
                     }
-                }
+                };
+                let mut d = downloading.lock().unwrap();
+                d.remove(&name);
+                pb.inc(1);
+                pb.set_message(format!("Downloading {d:?}"));
             }
         })
         .expect("threads to not panic");

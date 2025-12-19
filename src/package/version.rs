@@ -192,21 +192,27 @@ impl FromStr for VersionRequirement {
                 // after the op like "(>=   1.2.0)"
                 // so if we hit more whitespace after setting the op we can just continue
                 if op.is_none() {
-                    op = Some(Operator::from_str(&current).expect("TODO"));
+                    op = Some(
+                        Operator::from_str(&current)
+                            .map_err(|_| format!("invalid operator '{}' in '{}'", current, s))?,
+                    );
                     current = String::new();
                 }
                 continue;
             }
             if c == ')' {
-                version = Some(Version::from_str(&current).expect("TODO"));
+                version = Some(
+                    Version::from_str(&current)
+                        .map_err(|e| format!("invalid version '{}' in '{}': {}", current, s, e))?,
+                );
                 continue;
             }
             current.push(c);
         }
 
         Ok(Self {
-            version: version.unwrap(),
-            op: op.unwrap(),
+            version: version.ok_or_else(|| format!("missing version in '{}'", s))?,
+            op: op.ok_or_else(|| format!("missing operator in '{}'", s))?,
         })
     }
 }

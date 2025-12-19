@@ -28,7 +28,13 @@ impl RepositoryDatabase {
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
         let bytes = std::fs::read(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?;
-        postcard::from_bytes(&bytes).map_err(RepositoryDatabaseError::from_postcard)
+        match postcard::from_bytes(&bytes) {
+            Ok(v) => Ok(v),
+            Err(e) => panic!(
+                "Failed to deserialize RepositoryDatabase from {}: {e}",
+                path.as_ref().display()
+            ),
+        }
     }
 
     pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
