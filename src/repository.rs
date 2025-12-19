@@ -1,7 +1,5 @@
-use bincode::{Decode, Encode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 use crate::consts::RECOMMENDED_PACKAGES;
@@ -9,7 +7,7 @@ use crate::git::url::GitUrl;
 use crate::package::{Dependency, Package, PackageType, deserialize_version, parse_package_file};
 use crate::package::{Version, VersionRequirement, parse_remote};
 
-#[derive(Debug, Default, PartialEq, Clone, Decode, Encode)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RepositoryDatabase {
     pub(crate) url: String,
     pub(crate) source_packages: HashMap<String, Vec<Package>>,
@@ -29,25 +27,16 @@ impl RepositoryDatabase {
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
-        let reader = BufReader::new(
-            std::fs::File::open(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
-        );
-
-        bincode::decode_from_reader(reader, bincode::config::standard())
-            .map_err(RepositoryDatabaseError::from_bincode)
+        let bytes = std::fs::read(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?;
+        postcard::from_bytes(&bytes).map_err(RepositoryDatabaseError::from_postcard)
     }
 
     pub fn persist(&self, path: impl AsRef<Path>) -> Result<(), RepositoryDatabaseError> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent).map_err(RepositoryDatabaseError::from_io)?;
         }
-        let mut writer = BufWriter::new(
-            std::fs::File::create(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?,
-        );
-        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
-            .expect("valid data");
-
-        Ok(())
+        let bytes = postcard::to_stdvec(self).expect("valid data");
+        std::fs::write(path.as_ref(), bytes).map_err(RepositoryDatabaseError::from_io)
     }
 
     pub fn parse_source(&mut self, content: &str) {
@@ -272,9 +261,9 @@ impl RepositoryDatabaseError {
         }
     }
 
-    fn from_bincode(err: bincode::error::DecodeError) -> Self {
+    fn from_postcard(err: postcard::Error) -> Self {
         Self {
-            source: RepositoryDatabaseErrorKind::Bincode(err),
+            source: RepositoryDatabaseErrorKind::Postcard(err),
         }
     }
 }
@@ -283,7 +272,7 @@ impl RepositoryDatabaseError {
 #[error(transparent)]
 pub enum RepositoryDatabaseErrorKind {
     Io(#[from] std::io::Error),
-    Bincode(#[from] bincode::error::DecodeError),
+    Postcard(#[from] postcard::Error),
 }
 
 #[cfg(test)]

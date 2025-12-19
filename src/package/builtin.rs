@@ -1,13 +1,12 @@
 use crate::RCmd;
 use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
 use crate::package::{Package, parse_description_file_in_folder};
-use bincode::{Decode, Encode};
 use fs_err as fs;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-#[derive(Debug, Clone, Default, Encode, Decode)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BuiltinPackages {
     pub(crate) packages: HashMap<String, Package>,
 }
@@ -15,20 +14,16 @@ pub struct BuiltinPackages {
 impl BuiltinPackages {
     /// If we fail to read it, consider we don't have it, no need to error
     pub fn load(path: impl AsRef<Path>) -> Option<Self> {
-        let reader = BufReader::new(std::fs::File::open(path.as_ref()).ok()?);
-
-        bincode::decode_from_reader(reader, bincode::config::standard()).ok()
+        let bytes = std::fs::read(path.as_ref()).ok()?;
+        postcard::from_bytes(&bytes).ok()
     }
 
     pub fn persist(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut writer = BufWriter::new(std::fs::File::create(path.as_ref())?);
-        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
-            .expect("valid data");
-
-        Ok(())
+        let bytes = postcard::to_stdvec(self).expect("valid data");
+        std::fs::write(path.as_ref(), bytes)
     }
 }
 

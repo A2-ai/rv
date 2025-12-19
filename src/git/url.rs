@@ -1,9 +1,5 @@
 use std::fmt;
 
-use bincode::de::Decoder;
-use bincode::enc::Encoder;
-use bincode::error::{DecodeError, EncodeError};
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
@@ -48,50 +44,6 @@ impl<'de> Deserialize<'de> for GitUrl {
         match Self::try_from(s.as_str()) {
             Ok(url) => Ok(url),
             Err(e) => Err(serde::de::Error::custom(e)),
-        }
-    }
-}
-
-impl Encode for GitUrl {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        match self {
-            Self::Http(_) => {
-                0u8.encode(encoder)?;
-                self.url().encode(encoder)
-            }
-            Self::Ssh(_) => {
-                1u8.encode(encoder)?;
-                self.url().encode(encoder)
-            }
-        }
-    }
-}
-
-impl<Context> Decode<Context> for GitUrl {
-    fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let variant = u8::decode(decoder)?;
-        let url = String::decode(decoder)?;
-
-        match variant {
-            0 => Ok(Self::Http(Url::parse(&url).expect("valid URL"))),
-            1 => Ok(Self::Ssh(url)),
-            _ => unreachable!("invalid variant 0x{:02x}", variant),
-        }
-    }
-}
-
-// A bit sad we need to duplicate it
-impl<'de, Context> bincode::BorrowDecode<'de, Context> for GitUrl {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = Context>>(
-        decoder: &mut D,
-    ) -> Result<Self, DecodeError> {
-        let variant = u8::decode(decoder)?;
-        let url = String::decode(decoder)?;
-
-        match variant {
-            0 => Ok(Self::Http(Url::parse(&url).expect("valid URL"))),
-            1 => Ok(Self::Ssh(url)),
-            _ => unreachable!("invalid variant 0x{:02x}", variant),
         }
     }
 }

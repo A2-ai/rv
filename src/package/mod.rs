@@ -1,4 +1,3 @@
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -22,7 +21,7 @@ pub(crate) use remotes::parse_remote;
 
 const COMPILED_R_SUBDIRS: [&str; 2] = ["R", "data"];
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Encode, Decode, Serialize)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageType {
     Source,
@@ -38,7 +37,7 @@ impl fmt::Display for PackageType {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Dependency {
     Simple(String),
@@ -76,7 +75,7 @@ impl Dependency {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Encode, Decode)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Package {
     pub(crate) name: String,
     pub(crate) version: Version,

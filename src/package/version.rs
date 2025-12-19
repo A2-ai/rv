@@ -1,11 +1,10 @@
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hash;
 use std::str::FromStr;
 
-#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
 pub enum Operator {
     Equal,
     Greater,
@@ -43,7 +42,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone, Encode, Decode, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
@@ -145,11 +144,17 @@ where
 /// A package can require specific version for some versions.
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==
-#[derive(Debug, Hash, Eq, PartialEq, Clone, Encode, Decode, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct VersionRequirement {
     pub(crate) version: Version,
     op: Operator,
+}
+
+impl From<VersionRequirement> for String {
+    fn from(req: VersionRequirement) -> String {
+        req.to_string()
+    }
 }
 
 impl VersionRequirement {
