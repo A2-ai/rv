@@ -15,7 +15,7 @@ impl BuiltinPackages {
     /// If we fail to read it, consider we don't have it, no need to error
     pub fn load(path: impl AsRef<Path>) -> Option<Self> {
         let bytes = std::fs::read(path.as_ref()).ok()?;
-        match postcard::from_bytes(&bytes) {
+        match rmp_serde::from_slice(&bytes) {
             Ok(v) => Some(v),
             Err(e) => panic!(
                 "Failed to deserialize BuiltinPackages from {}: {e}",
@@ -28,7 +28,7 @@ impl BuiltinPackages {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let bytes = postcard::to_stdvec(self).expect("valid data");
+        let bytes = rmp_serde::to_vec(self).expect("valid data");
         std::fs::write(path.as_ref(), bytes)
     }
 }

@@ -19,8 +19,8 @@ etcetera = "0.11.0"
 cachedir = "0.3"
 # To get the OS name, version etc
 os_info = "3.9.1"
-# We use postcard to serialize package databases to disk
-postcard = { version = "1", features = ["alloc", "use-std"] }
+# We use rmp-serde (MessagePack) to serialize package databases to disk
+rmp-serde = "1"
 # Error handling
 thiserror = "2"
 fs-err = "3"

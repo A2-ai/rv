@@ -11,7 +11,7 @@ use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
 use crate::git::url::GitUrl;
-use crate::package::Dependency;
+use crate::package::{Dependency, VersionRequirement};
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
 const CURRENT_LOCKFILE_VERSION: i64 = 2;
@@ -312,6 +312,35 @@ fn format_array(deps: &[Dependency]) -> Array {
     deps
 }
 
+/// Custom deserializer for dependencies from TOML lockfile format.
+/// Handles both "simple_string" and { name = "pkg", requirement = "(>= 1.0)" } formats.
+fn deserialize_dependencies<'de, D>(deserializer: D) -> Result<Vec<Dependency>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TomlDependency {
+        Simple(String),
+        Pinned { name: String, requirement: String },
+    }
+
+    let deps: Vec<TomlDependency> = Vec::deserialize(deserializer)?;
+    deps.into_iter()
+        .map(|d| match d {
+            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
+            TomlDependency::Pinned { name, requirement } => {
+                let req: VersionRequirement =
+                    requirement.parse().map_err(serde::de::Error::custom)?;
+                Ok(Dependency::Pinned {
+                    name,
+                    requirement: req,
+                })
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LockedPackage {
     pub name: String,
@@ -319,9 +348,10 @@ pub struct LockedPackage {
     pub source: Source,
     pub path: Option<String>,
     pub force_source: bool,
+    #[serde(deserialize_with = "deserialize_dependencies")]
     pub dependencies: Vec<Dependency>,
     /// Only filled if the package had install_suggests=True in the config file
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_dependencies")]
     pub suggests: Vec<Dependency>,
 }
 

@@ -16,7 +16,7 @@ pub const BUILT_FROM_SOURCE_FILENAME: &str = ".__rv_source";
 /// https://github.com/r-lib/pkgcache?tab=readme-ov-file#package-environment-variables
 pub const PACKAGE_TIMEOUT: u64 = 60 * 60;
 pub const PACKAGE_TIMEOUT_ENV_VAR_NAME: &str = "PKGCACHE_TIMEOUT";
-pub const PACKAGE_DB_FILENAME: &str = "packages.postcard";
+pub const PACKAGE_DB_FILENAME: &str = "packages.mp";
 
 pub const NUM_CPUS_ENV_VAR_NAME: &str = "RV_NUM_CPUS";
 pub const SYS_REQ_URL_ENV_VAR_NAME: &str = "RV_SYS_REQ_URL";

@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hash;
@@ -42,7 +42,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Version {
     // TODO: pack versions in a u64 for faster comparison if needed
     // I don't think a package has more than 10 values in their version
@@ -50,12 +50,17 @@ pub struct Version {
     pub original: String,
 }
 
-impl Serialize for Version {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.original)
+impl From<Version> for String {
+    fn from(v: Version) -> String {
+        v.original
+    }
+}
+
+impl TryFrom<String> for Version {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 
@@ -145,7 +150,6 @@ where
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
 pub struct VersionRequirement {
     pub(crate) version: Version,
     op: Operator,

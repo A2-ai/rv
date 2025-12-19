@@ -38,7 +38,6 @@ impl fmt::Display for PackageType {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
 pub enum Dependency {
     Simple(String),
     Pinned {

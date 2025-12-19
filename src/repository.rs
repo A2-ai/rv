@@ -28,7 +28,7 @@ impl RepositoryDatabase {
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, RepositoryDatabaseError> {
         let bytes = std::fs::read(path.as_ref()).map_err(RepositoryDatabaseError::from_io)?;
-        match postcard::from_bytes(&bytes) {
+        match rmp_serde::from_slice(&bytes) {
             Ok(v) => Ok(v),
             Err(e) => panic!(
                 "Failed to deserialize RepositoryDatabase from {}: {e}",
@@ -41,7 +41,7 @@ impl RepositoryDatabase {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent).map_err(RepositoryDatabaseError::from_io)?;
         }
-        let bytes = postcard::to_stdvec(self).expect("valid data");
+        let bytes = rmp_serde::to_vec(self).expect("valid data");
         std::fs::write(path.as_ref(), bytes).map_err(RepositoryDatabaseError::from_io)
     }
 
@@ -266,19 +266,12 @@ impl RepositoryDatabaseError {
             source: RepositoryDatabaseErrorKind::Io(err),
         }
     }
-
-    fn from_postcard(err: postcard::Error) -> Self {
-        Self {
-            source: RepositoryDatabaseErrorKind::Postcard(err),
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub enum RepositoryDatabaseErrorKind {
     Io(#[from] std::io::Error),
-    Postcard(#[from] postcard::Error),
 }
 
 #[cfg(test)]

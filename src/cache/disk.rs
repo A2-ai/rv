@@ -319,7 +319,7 @@ impl DiskCache {
         r_cmd: &impl RCmd,
     ) -> std::io::Result<HashMap<String, Package>> {
         let version = r_cmd.version().expect("to work");
-        let filename = format!("builtin-{}.postcard", version.original);
+        let filename = format!("builtin-{}.mp", version.original);
         let path = self.root.join(&filename);
         if let Some(builtin) = BuiltinPackages::load(&path) {
             Ok(builtin.packages)
