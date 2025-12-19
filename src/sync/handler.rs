@@ -171,8 +171,11 @@ impl<'a> SyncHandler<'a> {
                 s.spawn(move |_| {
                     while let Ok(dep) = work_receiver.recv() {
                         let name = dep.name.to_string();
-                        downloading.lock().unwrap().insert(name.clone());
-                        pb.set_message(format!("Downloading {:?}", downloading.lock().unwrap()));
+                        {
+                            let mut d = downloading.lock().unwrap();
+                            d.insert(name.clone());
+                            pb.set_message(format!("Downloading {d:?}"));
+                        }
 
                         // safe unwrap, we know it's a repo dep
                         let tarball_url = get_tarball_urls(
@@ -187,14 +190,17 @@ impl<'a> SyncHandler<'a> {
                             .cache
                             .get_tarball_path(&dep.name, &dep.version.original);
 
-                        let result =
-                            crate::http::download_to_file(&tarball_url.source, &tarball_path)
-                                .or_else(|_| {
-                                    crate::http::download_to_file(
-                                        &tarball_url.archive,
-                                        &tarball_path,
-                                    )
-                                });
+                        let result = crate::http::download_to_file(
+                            &tarball_url.source,
+                            &tarball_path,
+                        )
+                        .or_else(|e| {
+                            log::warn!(
+                                "Failed to download source tarball from {}: {e:?}, trying archive",
+                                tarball_url.source
+                            );
+                            crate::http::download_to_file(&tarball_url.archive, &tarball_path)
+                        });
 
                         // Send result with name for tracking
                         match result {
@@ -208,18 +214,17 @@ impl<'a> SyncHandler<'a> {
 
             // Collect results - continue on errors
             for result in done_receiver {
+                let mut d = downloading.lock().unwrap();
                 match result {
                     Ok((name, path)) => {
-                        downloading.lock().unwrap().remove(&name);
+                        d.remove(&name);
                         pb.inc(1);
-                        pb.set_message(format!("Downloading {:?}", downloading.lock().unwrap()));
+                        pb.set_message(format!("Downloading {d:?}"));
                         downloaded.lock().unwrap().push(path);
                     }
                     Err((name, e)) => {
-                        downloading.lock().unwrap().remove(&name);
                         pb.inc(1);
-                        pb.set_message(format!("Downloading {:?}", downloading.lock().unwrap()));
-                        log::warn!("Failed to download {name}: {e}");
+                        pb.set_message(format!("Downloading {d:?}"));
                         errors.lock().unwrap().push((name, e));
                     }
                 }
