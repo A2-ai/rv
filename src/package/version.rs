@@ -146,6 +146,13 @@ where
     }
 }
 
+pub fn serialize_version<S>(version: &Version, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&version.original)
+}
+
 /// A package can require specific version for some versions.
 /// Most of the time it's using >= but there are also some
 /// >, <, <= here and there and a couple of ==

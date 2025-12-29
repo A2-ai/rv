@@ -15,7 +15,7 @@ pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
 pub use parser::parse_package_file;
 pub use remotes::PackageRemote;
-pub use version::{Operator, Version, VersionRequirement, deserialize_version};
+pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
 
 pub(crate) use remotes::parse_remote;
 
