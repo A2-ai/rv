@@ -7,7 +7,7 @@ use crate::SystemInfo;
 use crate::consts::LOCKFILE_NAME;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
-use crate::package::{Version, deserialize_version};
+use crate::package::{Version, deserialize_version, serialize_version};
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;
 
@@ -309,7 +309,10 @@ impl ConfigureArgsRule {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
     name: String,
-    #[serde(deserialize_with = "deserialize_version")]
+    #[serde(
+        deserialize_with = "deserialize_version",
+        serialize_with = "serialize_version"
+    )]
     r_version: Version,
     #[serde(default)]
     description: String,
@@ -555,5 +558,22 @@ mod tests {
             println!("{res:#?}");
             assert!(res.is_err());
         }
+    }
+
+    #[test]
+    fn config_r_version_round_trips_as_string() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = []
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let serialized = toml::to_string(&config).unwrap();
+        let deserialized: Config = toml::from_str(&serialized).unwrap();
+        assert_eq!(
+            config.r_version().original,
+            deserialized.r_version().original
+        );
     }
 }
