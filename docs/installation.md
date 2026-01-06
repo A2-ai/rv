@@ -6,7 +6,7 @@
 
 ```
 brew tap a2-ai/homebrew-tap
-brew install rv
+brew install a2-ai/tap/rv
 ```
 
 ## For Unix-like systems (Linux, macOS)
