@@ -533,7 +533,7 @@ pub enum InstallErrorKind {
     Command(std::io::Error),
     #[error(transparent)]
     Utf8(#[from] std::str::Utf8Error),
-    #[error("Installation failed: {0}")]
+    #[error("{0}")]
     InstallationFailed(String),
     #[error("Installation cancelled by user")]
     Cancelled,
