@@ -98,7 +98,7 @@ impl Context {
             None => match r_command_lookup {
                 RCommandLookup::Strict => {
                     return Err(format!(
-                        "Could not find a R version matching {}",
+                        "Could not find an R version matching {}",
                         r_version.original
                     )
                     .into());

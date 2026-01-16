@@ -73,7 +73,7 @@ fn read_version_from_header(header_path: &Path) -> Option<(Version, bool)> {
     Some((version, is_devel))
 }
 
-/// Get R from PATH - use RCommandLine::version() first, fallback to header for devel
+/// Get R from PATH - try R --version first, fallback to header for devel
 pub fn get_r_from_path() -> Option<RInstall> {
     #[cfg(windows)]
     let bin_path = if which::which("R.bat").is_ok() {
@@ -110,7 +110,7 @@ pub fn get_r_from_path() -> Option<RInstall> {
     }
 }
 
-/// Get rig/homebrew installed R versions by looking at where they are installed them and looking up
+/// Get rig/homebrew installed R versions by looking at where they are installed and looking up
 /// the header
 fn scan_known_r_locations() -> Vec<RInstall> {
     let mut installs = Vec::new();
@@ -265,7 +265,7 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
         version.original,
         r_installs
             .into_iter()
-            .map(|x| format!("{x}"))
+            .map(|x| x.to_string())
             .collect::<Vec<_>>()
             .join(", ")
     );
