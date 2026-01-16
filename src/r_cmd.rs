@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::{fs, thread};
 
 use crate::fs::copy_folder;
+use crate::r_finder::RInstall;
 use crate::sync::{LinkError, LinkMode};
 use crate::{Cancellation, Version};
 use regex::Regex;
@@ -16,18 +17,21 @@ use regex::Regex;
 static R_VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+)\.(\d+)\.(\d+)").unwrap());
 
+fn is_r_devel(output: &str) -> bool {
+    output.contains("R Under development")
+}
+
+fn find_r_version(output: &str) -> Option<Version> {
+    R_VERSION_RE
+        .find(output)
+        .and_then(|m| Version::from_str(m.as_str()).ok())
+}
+
 /// Since we create process group for our tasks, they won't be shutdown when we exit rv
 /// so we do need to keep some references to them around so we can kill them manually.
 /// We use the pid since we can't clone the handle.
 pub static ACTIVE_R_PROCESS_IDS: LazyLock<Arc<Mutex<HashSet<u32>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(HashSet::new())));
-
-fn find_r_version(output: &str) -> Option<Version> {
-    R_VERSION_RE
-        .captures(output)
-        .and_then(|c| c.get(0))
-        .and_then(|m| Version::from_str(m.as_str()).ok())
-}
 
 pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
@@ -45,15 +49,15 @@ pub trait RCmd: Send + Sync {
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
 
-    fn version(&self) -> Result<Version, VersionError>;
+    fn version(&self) -> Result<Option<Version>, VersionError>;
 }
 
 /// By default, doing ctrl+c on rv will kill it as well as all its child process.
 /// To allow graceful shutdown, we create a process group in Unix and the equivalent on Windows
 /// so we can control _how_ they get killed, and allow for a soft cancellation (eg we let
 /// ongoing tasks finish but stop enqueuing/processing new ones.
-fn spawn_isolated_r_command(r_cmd: &RCommandLine) -> Command {
-    let mut command = Command::new(r_cmd.effective_r_command());
+fn spawn_isolated_r_command(r_cmd: &RInstall) -> Command {
+    let mut command = Command::new(&r_cmd.bin_path);
 
     #[cfg(unix)]
     {
@@ -99,135 +103,7 @@ pub fn kill_all_r_processes() {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct RCommandLine {
-    /// specifies the path to the R executable on the system. None indicates using "R" on the $PATH
-    pub r: Option<PathBuf>,
-}
-
-pub fn find_r_version_command(r_version: &Version) -> Result<RCommandLine, VersionError> {
-    // TODO: increase test coverage for this function
-
-    let mut found_r_vers = Vec::new();
-    // Give preference to the R version on the path
-    if let Ok(path_r) = (RCommandLine { r: None }).version() {
-        if r_version.hazy_match(&path_r) {
-            log::debug!("R found on the path: {path_r}");
-            return Ok(RCommandLine { r: None });
-        }
-        found_r_vers.push(path_r.original);
-    }
-
-    // Include matching rig-formatted R on the path if it exists on macOS
-    // e.g. R-<major>.<minor>-<arch>
-    if cfg!(target_os = "macos") {
-        let info = os_info::get();
-        let major_minor = r_version.major_minor();
-        if let Some(arch) = info.architecture() {
-            let rig_r_bin_path =
-                PathBuf::from(format!("R-{}.{}-{}", major_minor[0], major_minor[1], arch));
-
-            let rig_r_cmd = RCommandLine {
-                r: Some(rig_r_bin_path),
-            };
-
-            if let Ok(path_rig_r) = rig_r_cmd.version() {
-                if r_version.hazy_match(&path_rig_r) {
-                    log::debug!(
-                        "R found on the path via rig pattern: {}",
-                        rig_r_cmd.clone().r.unwrap().display()
-                    );
-                    return Ok(rig_r_cmd);
-                }
-                found_r_vers.push(path_rig_r.original);
-            }
-        }
-    }
-
-    // For windows, R installed/managed by rig is has the extension .bat
-    if cfg!(target_os = "windows") {
-        let rig_r_cmd = RCommandLine {
-            r: Some(PathBuf::from("R.bat")),
-        };
-
-        if let Ok(rig_r) = rig_r_cmd.version() {
-            if r_version.hazy_match(&rig_r) {
-                log::debug!(
-                    "R found on the path from `rig`: {}",
-                    rig_r_cmd.clone().r.unwrap().display()
-                );
-                return Ok(rig_r_cmd);
-            }
-            found_r_vers.push(rig_r.original);
-        }
-    }
-
-    if cfg!(target_os = "linux") {
-        let opt_r = PathBuf::from("/opt/R");
-        if opt_r.is_dir() {
-            // look through subdirectories of '/opt/R' for R binaries and check if the binary is the correct version
-            // returns an RCommandLine struct with the path to the executable if found
-            for path in fs::read_dir(opt_r)
-                .map_err(|e| VersionError {
-                    source: VersionErrorKind::Io(e),
-                })?
-                .filter_map(Result::ok)
-                .map(|p| p.path().join("bin/R"))
-                .filter(|p| p.exists())
-            {
-                let r_cmd = RCommandLine {
-                    r: Some(path.clone()),
-                };
-                if let Ok(ver) = r_cmd.version() {
-                    if r_version.hazy_match(&ver) {
-                        log::debug!("R found in /opt/R: {}", r_cmd.clone().r.unwrap().display());
-                        return Ok(r_cmd);
-                    }
-                    found_r_vers.push(ver.original);
-                }
-            }
-        }
-    }
-
-    if found_r_vers.is_empty() {
-        Err(VersionError {
-            source: VersionErrorKind::NoR,
-        })
-    } else {
-        found_r_vers.sort();
-        found_r_vers.dedup();
-        Err(VersionError {
-            source: VersionErrorKind::NotCompatible(
-                r_version.original.to_string(),
-                found_r_vers.join(", "),
-            ),
-        })
-    }
-}
-
-impl RCommandLine {
-    fn effective_r_command(&self) -> PathBuf {
-        if let Some(ref r_path) = self.r {
-            return r_path.clone();
-        }
-
-        #[cfg(windows)]
-        {
-            // On Windows, check if R.bat exists in PATH, otherwise default to R
-            if which::which("R.bat").is_ok() {
-                PathBuf::from("R.bat")
-            } else {
-                PathBuf::from("R")
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            PathBuf::from("R")
-        }
-    }
-}
-
-impl RCmd for RCommandLine {
+impl RCmd for RInstall {
     fn install(
         &self,
         source_folder: impl AsRef<Path>,
@@ -446,7 +322,7 @@ impl RCmd for RCommandLine {
     }
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError> {
-        let output = Command::new(self.effective_r_command())
+        let output = Command::new(&self.bin_path)
             .arg("RHOME")
             .output()
             .map_err(|e| LibraryError {
@@ -473,8 +349,8 @@ impl RCmd for RCommandLine {
         }
     }
 
-    fn version(&self) -> Result<Version, VersionError> {
-        let output = Command::new(self.effective_r_command())
+    fn version(&self) -> Result<Option<Version>, VersionError> {
+        let output = Command::new(&self.bin_path)
             .arg("--version")
             .output()
             .map_err(|e| VersionError {
@@ -490,13 +366,14 @@ impl RCmd for RCommandLine {
         .map_err(|e| VersionError {
             source: VersionErrorKind::Utf8(e),
         })?;
-        if let Some(v) = find_r_version(stdout) {
-            Ok(v)
-        } else {
-            Err(VersionError {
-                source: VersionErrorKind::NotFound,
-            })
+
+        if is_r_devel(stdout) {
+            return Ok(None);
         }
+        // If we don't find either a devel or a version number, assume we didn't find R
+        find_r_version(stdout).map(Some).ok_or(VersionError {
+            source: VersionErrorKind::NotFound,
+        })
     }
 }
 
@@ -577,9 +454,10 @@ pub enum LibraryErrorKind {
     NotFound,
 }
 
-#[allow(unused_imports, unused_variables)]
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use super::find_r_version;
+    use crate::Version;
 
     #[test]
     fn can_read_r_version() {
@@ -597,6 +475,21 @@ https://www.gnu.org/licenses/."#;
             find_r_version(r_response).unwrap(),
             "4.4.1".parse::<Version>().unwrap()
         )
+    }
+
+    #[test]
+    fn can_handle_devel() {
+        let r_response = r#"/
+R Under development (unstable) (2025-10-22 r88969) -- "Unsuffered Consequences"
+Copyright (C) 2025 The R Foundation for Statistical Computing
+Platform: aarch64-apple-darwin20
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under the terms of the
+GNU General Public License versions 2 or 3.
+For more information about these matters see
+https://www.gnu.org/licenses/."#;
+        assert!(find_r_version(r_response).is_none());
     }
 
     #[test]
