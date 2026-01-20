@@ -6,11 +6,12 @@ use std::{
 
 use serde::Serialize;
 
+use crate::cache::Cache;
 use crate::fs::is_network_fs;
 use crate::sync::LinkMode;
 use crate::{
-    Context, DiskCache, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency,
-    SystemInfo, Version, VersionRequirement,
+    Context, Library, Lockfile, Repository, RepositoryDatabase, ResolvedDependency, SystemInfo,
+    Version, VersionRequirement,
     cache::InstallationStatus,
     lockfile::Source,
     package::{Operator, PackageType},
@@ -26,7 +27,8 @@ pub struct ProjectSummary<'a> {
     r_version: &'a Version,
     system_info: &'a SystemInfo,
     dependency_info: DependencyInfo<'a>,
-    cache_root: &'a PathBuf,
+    global_cache_root: Option<PathBuf>,
+    local_cache_root: PathBuf,
     network_fs: bool,
     link_mode: &'static str,
     remote_info: RemoteInfo<'a>,
@@ -47,7 +49,7 @@ impl<'a> ProjectSummary<'a> {
         Self {
             r_version: &context.r_version,
             sys_deps,
-            system_info: &context.cache.system_info,
+            system_info: &context.cache.system_info(),
             dependency_info: DependencyInfo::new(
                 &context.library,
                 resolved_deps,
@@ -57,14 +59,15 @@ impl<'a> ProjectSummary<'a> {
                 &context.cache,
                 context.lockfile.as_ref(),
             ),
-            cache_root: &context.cache.root,
+            local_cache_root: context.cache.local_root(),
+            global_cache_root: context.cache.global_root(),
             network_fs,
             link_mode,
             remote_info: RemoteInfo::new(
                 context.config.repositories(),
                 &context.databases,
                 &context.r_version.major_minor(),
-                &context.cache.system_info,
+                &context.cache.system_info(),
             ),
             max_workers: get_max_workers(),
         }
@@ -75,7 +78,7 @@ impl fmt::Display for ProjectSummary<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "== System Information == \nOS: {}{}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}\nNetwork Filesystem: {}\nLink Mode: {}\n\n",
+            "== System Information == \nOS: {}{}{}\nR Version: {}\n\nNum Workers for Sync: {} ({} cpus available)\nCache Location: {}{}\nNetwork Filesystem: {}\nLink Mode: {}\n\n",
             self.system_info.os_family(),
             if let OsType::Linux(distro) = self.system_info.os_type {
                 format!(" {distro} {}", self.system_info.version)
@@ -90,7 +93,17 @@ impl fmt::Display for ProjectSummary<'_> {
             self.r_version,
             self.max_workers,
             num_cpus::get(),
-            self.cache_root.as_path().to_string_lossy(),
+            self.local_cache_root.to_string_lossy(),
+            if let Some(g) = self.global_cache_root.as_ref() {
+                format!(
+                    "\nGlobal Cache Location: {}",
+                    g.canonicalize()
+                        .unwrap_or_else(|_| g.clone())
+                        .to_string_lossy()
+                )
+            } else {
+                String::new()
+            },
             self.network_fs,
             self.link_mode,
         )?;
@@ -240,7 +253,7 @@ impl<'a> DependencyInfo<'a> {
         repositories: &'a [Repository],
         repo_dbs: &[(RepositoryDatabase, bool)],
         r_version: &Version,
-        cache: &'a DiskCache,
+        cache: &'a Cache,
         lockfile: Option<&'a Lockfile>,
     ) -> Self {
         let mut non_locked = HashSet::new();
@@ -398,8 +411,10 @@ impl fmt::Display for DependencyInfo<'_> {
 enum DependencyStatus {
     // If the package is in the library
     Installed,
-    // If the package has a binary in the cache
-    InCache,
+    // If the package has a binary in the global cache
+    InGlobalCache,
+    // If the package has a binary in the local cache
+    InLocalCache,
     // If a src package has a src in the cache (but not a binary)
     ToCompile,
     // If a package is not in the cache
@@ -421,7 +436,7 @@ impl<'a> DependencySummary<'a> {
         library: &Library,
         repo_dbs: &[(RepositoryDatabase, bool)],
         r_version: &Version,
-        cache: &DiskCache,
+        cache: &Cache,
     ) -> Self {
         // determine if the dependency can come as a binary
         let is_binary = is_binary_package(resolved_dep, repo_dbs, r_version);
@@ -436,19 +451,40 @@ impl<'a> DependencySummary<'a> {
         };
 
         // If the package is resolved as builtin, then we consider it installed
-        let status = match cache.get_installation_status(
+        let cache_status = cache.get_installation_status(
             &resolved_dep.name,
             &resolved_dep.version.original,
             &resolved_dep.source,
-        ) {
-            // If the package has a binary in the cache, we can use it independent of if the package is binary or not
-            InstallationStatus::Both(_) | InstallationStatus::Binary(_) => {
-                DependencyStatus::InCache
+        );
+
+        let binary_in_global = cache_status
+            .global
+            .map(|x| x.binary_available())
+            .unwrap_or_default();
+        let source_in_global = cache_status
+            .global
+            .map(|x| x.source_available())
+            .unwrap_or_default();
+
+        let status = if binary_in_global {
+            DependencyStatus::InGlobalCache
+        } else {
+            match cache_status.local {
+                // If the package has a binary in the cache, we can use it independent of if the package is binary or not
+                InstallationStatus::Both(_) | InstallationStatus::Binary(_) => {
+                    DependencyStatus::InLocalCache
+                }
+                // If the dependency is not a binary and we have the source in the cache, we can compile it
+                InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
+                // If the dependency is absent or only source when we want a binary, we report it as missing
+                _ => {
+                    if source_in_global {
+                        DependencyStatus::ToCompile
+                    } else {
+                        DependencyStatus::Missing
+                    }
+                }
             }
-            // If the dependency is not a binary and we have the source in the cache, we can compile it
-            InstallationStatus::Source if !is_binary => DependencyStatus::ToCompile,
-            // If the dependency is absent or only source when we want a binary, we report it as missing
-            _ => DependencyStatus::Missing,
         };
 
         Self {
@@ -509,7 +545,9 @@ impl Counts {
             // Other fields are updated agnostic to if the dep is from binary or not
             counts.to_install += 1;
             match dep.status {
-                DependencyStatus::InCache | DependencyStatus::ToCompile => counts.in_cache += 1,
+                DependencyStatus::InLocalCache
+                | DependencyStatus::InGlobalCache
+                | DependencyStatus::ToCompile => counts.in_cache += 1,
                 DependencyStatus::Missing => counts.to_download += 1,
                 _ => (),
             }

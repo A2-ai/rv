@@ -1,6 +1,6 @@
 [project]
 name = "private-git-dep"
-r_version = "4.4"
+r_version = "4.5"
 repositories = [
     {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
 ]

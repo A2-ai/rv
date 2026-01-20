@@ -2,7 +2,7 @@
 # Note: do not update the lockfile from this project since we're testing whether an upgrade
 # (eg with the new- repos) will pick up all the news dependencies
 name = "package-upgrade"
-r_version = "4.4"
+r_version = "4.5"
 
 repositories = [
     { alias = "gh-pkg-mirror", url = "https://a2-ai.github.io/gh-pkg-mirror/2024-02-22" },

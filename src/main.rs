@@ -571,7 +571,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             let sys_deps: Vec<_> = system_req::check_installation_status(
-                &context.cache.system_info,
+                &context.cache.system_info(),
                 &project_sys_deps,
             )
             .into_iter()
@@ -665,18 +665,25 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let info = CacheInfo::new(
-                &context.config,
-                &context.cache,
-                resolve_dependencies(&context, ResolveMode::Default, true).found,
-            );
+            let found = resolve_dependencies(&context, ResolveMode::Default, true).found;
+            let local_info = CacheInfo::new(&context.config, context.cache.local(), found.clone());
+            let global_info = context
+                .cache
+                .global()
+                .map(|x| CacheInfo::new(&context.config, x, found));
             if output_format.is_json() {
+                let info = json!({"local_info": local_info, "global_info": global_info});
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&info).expect("valid json")
                 );
             } else {
-                println!("{info}");
+                println!("Local:\n");
+                println!("{local_info}");
+                if let Some(g) = global_info {
+                    println!("\nGlobal:\n");
+                    println!("{g}");
+                }
             }
         }
         Command::Info {
@@ -743,7 +750,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             let sys_deps_status = system_req::check_installation_status(
-                &context.cache.system_info,
+                &context.cache.system_info(),
                 &project_sys_deps,
             );
 
