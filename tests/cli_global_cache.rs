@@ -100,6 +100,7 @@ fn test_cache_with_global_set() {
 
     let output = cmd.output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("{stdout:?} {:?}", String::from_utf8_lossy(&output.stderr));
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert!(json.get("local_info").is_some());

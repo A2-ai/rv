@@ -565,7 +565,7 @@ mod tests {
         let toml_str = r#"
 [project]
 name = "test"
-r_version = "4.5"
+r_version = "4.4"
 repositories = []
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();

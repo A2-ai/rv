@@ -2,7 +2,7 @@
 name = "git-submodule"
 r_version = "4.5"
 repositories = [
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/"}
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2025-05-12/"}
 ]
 dependencies = [
     { name = "cubature", git = "https://github.com/Keats/cubature/", commit ="ebee65e29061e423d2591d4538240e1fc6934ecb", install_suggestions = true},

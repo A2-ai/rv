@@ -2,11 +2,11 @@
 name = "simple"
 r_version = "4.5"
 repositories = [
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/", force_source = true}
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2025-05-12/"}
 ]
 dependencies = [
-    "data.table",
+    {name = "Rcpp", force_source = true},
 ]
 
-[project.packages_env_vars."data.table"]
-OPENMP_CFLAGS = ''
+[project.packages_env_vars.Rcpp]
+PKG_CXXFLAGS = '-v'

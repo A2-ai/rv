@@ -3,7 +3,7 @@ name = "simple"
 r_version = "4.5"
 description = "A simple project to test force_source functionality and compilation dependencies."
 repositories = [
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/", force_source = true}
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2025-05-12/", force_source = true}
 ]
 dependencies = [
     "cachem",
