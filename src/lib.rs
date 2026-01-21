@@ -43,7 +43,7 @@ pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::{Lockfile, Source};
-pub use package::{Dependency, Operator, Version, VersionRequirement, is_binary_package};
+pub use package::{Dependency, Operator, Package, Version, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
 pub use renv::RenvLock;
@@ -55,5 +55,5 @@ pub use system_info::{OsType, SystemInfo};
 
 #[doc(hidden)]
 pub mod internal {
-    pub use crate::package::parse_dependencies;
+    pub use crate::package::{parse_dependencies, parse_package_file};
 }

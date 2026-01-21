@@ -158,8 +158,8 @@ where
 /// >, <, <= here and there and a couple of ==
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct VersionRequirement {
-    pub(crate) version: Version,
-    op: Operator,
+    pub version: Version,
+    pub op: Operator,
 }
 
 impl From<VersionRequirement> for String {
