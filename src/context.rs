@@ -138,7 +138,7 @@ impl Context {
         let mut library = if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
         } else {
-            Library::new(&project_dir, &cache.system_info(), r_version.major_minor())
+            Library::new(&project_dir, cache.system_info(), r_version.major_minor())
         };
         fs::create_dir_all(&library.path)?;
         library.find_content();
@@ -197,7 +197,7 @@ impl Context {
 
     /// Load system requirements from posit API (only supported on some Linux distros)
     pub fn load_system_requirements(&mut self) {
-        if !system_req::is_supported(&self.cache.system_info()) {
+        if !system_req::is_supported(self.cache.system_info()) {
             return;
         }
         let pb = create_spinner(self.show_progress_bar, "Loading system requirements...");

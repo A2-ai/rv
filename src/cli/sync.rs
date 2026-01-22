@@ -105,7 +105,7 @@ impl SyncHelper {
                     .flat_map(|x| x.sys_deps.iter().map(|x| x.name.as_str()))
                     .collect();
                 let sysdeps_status = system_req::check_installation_status(
-                    &context.cache.system_info(),
+                    context.cache.system_info(),
                     &all_sys_deps,
                 );
 

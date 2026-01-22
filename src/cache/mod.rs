@@ -11,7 +11,7 @@ pub use info::CacheInfo;
 pub use status::{CacheStatus, InstallationStatus};
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct Cache {
@@ -92,14 +92,6 @@ impl Cache {
         } else {
             Ok(builtin)
         }
-    }
-
-    pub fn local_root(&self) -> PathBuf {
-        self.local.root.clone()
-    }
-
-    pub fn global_root(&self) -> Option<PathBuf> {
-        self.global.as_ref().map(|x| x.root.clone())
     }
 
     pub fn local(&self) -> &DiskCache {

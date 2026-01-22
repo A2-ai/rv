@@ -182,8 +182,8 @@ impl<'a> SyncHandler<'a> {
                         // safe unwrap, we know it's a repo dep
                         let tarball_url = get_tarball_urls(
                             dep,
-                            &self.context.cache.r_version(),
-                            &self.context.cache.system_info(),
+                            self.context.cache.r_version(),
+                            self.context.cache.system_info(),
                         )
                         .unwrap();
 
@@ -257,7 +257,7 @@ impl<'a> SyncHandler<'a> {
         if let Some(rules) = self.context.config.configure_args().get(package_name) {
             // Find first matching rule
             for rule in rules {
-                if let Some(args) = rule.matches(&self.context.cache.system_info()) {
+                if let Some(args) = rule.matches(self.context.cache.system_info()) {
                     return args.to_vec();
                 }
             }

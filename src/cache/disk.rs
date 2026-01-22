@@ -271,14 +271,12 @@ impl DiskCache {
         let path = self.root.join(&filename);
         if let Some(builtin) = BuiltinPackages::load(&path) {
             Ok(builtin.packages)
+        } else if self.readonly {
+            Ok(HashMap::new())
         } else {
-            if self.readonly {
-                Ok(HashMap::new())
-            } else {
-                let builtin = get_builtin_versions_from_library(r_cmd)?;
-                builtin.persist(&path)?;
-                Ok(builtin.packages)
-            }
+            let builtin = get_builtin_versions_from_library(r_cmd)?;
+            builtin.persist(&path)?;
+            Ok(builtin.packages)
         }
     }
 
@@ -290,15 +288,13 @@ impl DiskCache {
         if path.exists() {
             let content = fs::read_to_string(&path).expect("to work");
             serde_json::from_str(&content).unwrap()
+        } else if self.readonly {
+            HashMap::new()
         } else {
-            if self.readonly {
-                HashMap::new()
-            } else {
-                let sysreq = get_system_requirements(&self.system_info);
-                let content = serde_json::to_string(&sysreq).unwrap();
-                fs::write(&path, content).expect("to work");
-                sysreq
-            }
+            let sysreq = get_system_requirements(&self.system_info);
+            let content = serde_json::to_string(&sysreq).unwrap();
+            fs::write(&path, content).expect("to work");
+            sysreq
         }
     }
 }

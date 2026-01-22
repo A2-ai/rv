@@ -571,7 +571,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             let sys_deps: Vec<_> = system_req::check_installation_status(
-                &context.cache.system_info(),
+                context.cache.system_info(),
                 &project_sys_deps,
             )
             .into_iter()
@@ -750,7 +750,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             let sys_deps_status = system_req::check_installation_status(
-                &context.cache.system_info(),
+                context.cache.system_info(),
                 &project_sys_deps,
             );
 

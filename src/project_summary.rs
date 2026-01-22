@@ -49,7 +49,7 @@ impl<'a> ProjectSummary<'a> {
         Self {
             r_version: &context.r_version,
             sys_deps,
-            system_info: &context.cache.system_info(),
+            system_info: context.cache.system_info(),
             dependency_info: DependencyInfo::new(
                 &context.library,
                 resolved_deps,
@@ -59,15 +59,15 @@ impl<'a> ProjectSummary<'a> {
                 &context.cache,
                 context.lockfile.as_ref(),
             ),
-            local_cache_root: context.cache.local_root(),
-            global_cache_root: context.cache.global_root(),
+            local_cache_root: context.cache.local().root.clone(),
+            global_cache_root: context.cache.global().map(|x| x.root.clone()),
             network_fs,
             link_mode,
             remote_info: RemoteInfo::new(
                 context.config.repositories(),
                 &context.databases,
                 &context.r_version.major_minor(),
-                &context.cache.system_info(),
+                context.cache.system_info(),
             ),
             max_workers: get_max_workers(),
         }
