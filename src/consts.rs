@@ -119,48 +119,57 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		if (!dir.exists(sandbox))
 			dir.create(sandbox, recursive = TRUE, showWarnings = FALSE)
 
-		# Collect base + recommended packages from system library
-		ip <- tryCatch(
-			installed.packages(lib.loc = syslib, priority = c("base", "recommended")),
-			error = function(e) NULL
-		)
-		pkgs <- if (is.null(ip)) character() else rownames(ip)
+		# Collect base + recommended packages from system library WITHOUT utils
+		pkg_dirs <- list.dirs(syslib, full.names = FALSE, recursive = FALSE)
 
+		is_base_or_recommended <- function(pkg) {
+			dcf <- file.path(syslib, pkg, "DESCRIPTION")
+			if (!file.exists(dcf)) return(FALSE)
+			x <- tryCatch(readLines(dcf, warn = FALSE), error = function(e) character())
+			pr <- x[grepl("^Priority\\s*:", x)]
+			if (!length(pr)) return(FALSE)
+			val <- trimws(sub("^Priority\\s*:\\s*", "", pr[1]))
+			val %in% c("base", "recommended")
+		}
+
+		pkgs <- pkg_dirs[vapply(pkg_dirs, is_base_or_recommended, logical(1))]
+
+		# Populate sandbox
 		for (pkg in pkgs) {
 			from <- file.path(syslib, pkg)
 			to   <- file.path(sandbox, pkg)
 
 			if (!dir.exists(from) || file.exists(to))
-				next
+			next
 
-			# Prefer symlink (fast). Fallback to copy if symlink not possible.
-			ok <- tryCatch(file.symlink(from, to), error = function(e) FALSE)
+			ok_link <- tryCatch(file.symlink(from, to), error = function(e) FALSE)
 
-			if (!isTRUE(ok)) {
-				# robust directory copy
-				dir.create(to, recursive = TRUE, showWarnings = FALSE)
-				items <- list.files(from, full.names = TRUE, all.files = TRUE, no.. = TRUE)
-				if (length(items)) {
-					tryCatch(
-						file.copy(items, to, recursive = TRUE, copy.mode = TRUE),
-						error = function(e) NULL
-					)
-				}
+			if (!isTRUE(ok_link)) {
+			# Copy whole package dir into sandbox root
+			tryCatch(
+				file.copy(from, sandbox, recursive = TRUE, copy.mode = TRUE),
+				error = function(e) NULL
+			)
 			}
 		}
 
+		# Safety: only repoint if core packages are present
+		required <- c("utils", "stats", "graphics", "grDevices", "datasets", "methods", "compiler")
+		if (!all(dir.exists(file.path(sandbox, required)))) {
+			return(invisible(FALSE))
+		}
+
 		# Repoint locked `.Library` binding to sandbox
-		ok <- tryCatch({
+		ok_set <- tryCatch({
 			if (bindingIsLocked(".Library", baseenv()))
-				unlockBinding(".Library", baseenv())
+			unlockBinding(".Library", baseenv())
 			assign(".Library", sandbox, envir = baseenv())
 			lockBinding(".Library", baseenv())
 			TRUE
 		}, error = function(e) FALSE)
 
-		invisible(isTRUE(ok))
+		invisible(isTRUE(ok_set))
 	}
-
 	# Set repos option
 	repo_str <- get_val("repositories")
 
@@ -205,9 +214,11 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 		dir.create(rv_lib, recursive = TRUE)
 	}
 
-	# IMPORTANT: sandbox BEFORE .libPaths() so `.Library` (appended by base) is safe
+	# Track sandbox existence for user facing message
+	sandbox_ok <- FALSE     
+
 	if (r_match) {
-		rv_sandbox_system_library(rv_lib)
+		sandbox_ok <- isTRUE(rv_sandbox_system_library(rv_lib))
 	}
 
 	.libPaths(rv_lib, include.site = FALSE)
@@ -227,6 +238,20 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 			),
 			"\n"
 		)
+		message(
+			if (sandbox_ok) {
+				paste0(
+					"rv system library sandbox active (base+recommended only):\n  ",
+					.Library,
+					"\nopt-out: set RV_SANDBOX=0\n"
+				)
+			} else {
+				paste0(
+					"rv system library sandbox currently inactived.\n",
+					"\nyou can activate it by: set RV_SANDBOX=1\n"
+			}
+		)
+
 		message(
 			if (r_match) {
 				"rv libpaths active!\nlibrary paths: \n"

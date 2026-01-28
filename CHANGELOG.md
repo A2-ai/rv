@@ -1,3 +1,7 @@
+## v0.17.2 - Januray 28, 2025
+
+“Add renv-style system library sandboxing during activation to prevent .Library package leakage (opt-out via `RV_SANDBOX=0`).”
+
 ## v0.17.1 - December 19, 2025
 
 Internal refactoring to provide additional capabilities to those embedding rv in other programs.
