@@ -37,8 +37,18 @@ pub struct RInstall {
 
 impl RInstall {
     pub fn default_from_path() -> Self {
+        #[cfg(windows)]
+        let bin_path = if which::which("R.bat").is_ok() {
+            PathBuf::from("R.bat")
+        } else {
+            PathBuf::from("R")
+        };
+
+        #[cfg(not(windows))]
+        let bin_path = PathBuf::from("R");
+
         Self {
-            bin_path: PathBuf::from("R"),
+            bin_path,
             version: Version::default(),
             is_devel: false,
         }
