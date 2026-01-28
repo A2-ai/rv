@@ -88,6 +88,79 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		sub(paste0("^", prefix, ":\\s*"), "", line)
 	}
 
+	# -------------------------------------------------------------------------
+	# System library sandboxing (renv-style)
+	#
+	# base::.libPaths() always appends `.Library` at the end, meaning packages
+	# installed into the system library can leak into a project.
+	#
+	# This creates a per-project sandbox containing ONLY base + recommended
+	# packages and repoints `.Library` to that sandbox, so `.libPaths()` retains
+	# base R semantics without leaking extra packages.
+	#
+	# Opt-out:
+	#   Sys.setenv(RV_SANDBOX = "0")
+	# -------------------------------------------------------------------------
+	rv_sandbox_system_library <- function(rv_lib) {
+		enabled <- Sys.getenv("RV_SANDBOX", unset = "1")
+		if (!nzchar(enabled) || enabled %in% c("0", "false", "FALSE", "no", "NO"))
+			return(invisible(FALSE))
+
+		syslib <- .Library
+		if (!is.character(syslib) || !nzchar(syslib) || !dir.exists(syslib))
+			return(invisible(FALSE))
+
+		# Derive project rv dir from .../rv/library/<rver>/<arch>
+		rv_dir <- normalizePath(file.path(rv_lib, "..", "..", ".."), mustWork = FALSE)
+		r_ver <- basename(dirname(rv_lib))  # e.g. "4.4"
+		arch  <- basename(rv_lib)           # e.g. "arm64"
+
+		sandbox <- file.path(rv_dir, "sandbox", r_ver, arch)
+		if (!dir.exists(sandbox))
+			dir.create(sandbox, recursive = TRUE, showWarnings = FALSE)
+
+		# Collect base + recommended packages from system library
+		ip <- tryCatch(
+			installed.packages(lib.loc = syslib, priority = c("base", "recommended")),
+			error = function(e) NULL
+		)
+		pkgs <- if (is.null(ip)) character() else rownames(ip)
+
+		for (pkg in pkgs) {
+			from <- file.path(syslib, pkg)
+			to   <- file.path(sandbox, pkg)
+
+			if (!dir.exists(from) || file.exists(to))
+				next
+
+			# Prefer symlink (fast). Fallback to copy if symlink not possible.
+			ok <- tryCatch(file.symlink(from, to), error = function(e) FALSE)
+
+			if (!isTRUE(ok)) {
+				# robust directory copy
+				dir.create(to, recursive = TRUE, showWarnings = FALSE)
+				items <- list.files(from, full.names = TRUE, all.files = TRUE, no.. = TRUE)
+				if (length(items)) {
+					tryCatch(
+						file.copy(items, to, recursive = TRUE, copy.mode = TRUE),
+						error = function(e) NULL
+					)
+				}
+			}
+		}
+
+		# Repoint locked `.Library` binding to sandbox
+		ok <- tryCatch({
+			if (bindingIsLocked(".Library", baseenv()))
+				unlockBinding(".Library", baseenv())
+			assign(".Library", sandbox, envir = baseenv())
+			lockBinding(".Library", baseenv())
+			TRUE
+		}, error = function(e) FALSE)
+
+		invisible(isTRUE(ok))
+	}
+
 	# Set repos option
 	repo_str <- get_val("repositories")
 
@@ -130,6 +203,11 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 			message("creating temporary library: ", rv_lib, "\n")
 		}
 		dir.create(rv_lib, recursive = TRUE)
+	}
+
+	# IMPORTANT: sandbox BEFORE .libPaths() so `.Library` (appended by base) is safe
+	if (r_match) {
+		rv_sandbox_system_library(rv_lib)
 	}
 
 	.libPaths(rv_lib, include.site = FALSE)
