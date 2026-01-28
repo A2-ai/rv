@@ -249,6 +249,7 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 				paste0(
 					"rv system library sandbox currently inactived.\n",
 					"\nyou can activate it by: set RV_SANDBOX=1\n"
+				)
 			}
 		)
 
