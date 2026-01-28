@@ -300,7 +300,10 @@ fn try_main() -> Result<()> {
                 (r.original, false)
             } else {
                 match get_r_from_path() {
-                    Some(r_install) => (r_install.version.original, r_install.is_devel),
+                    Some(r_install) => {
+                        let [major, minor] = r_install.version.major_minor();
+                        (format!("{major}.{minor}"), r_install.is_devel)
+                    }
                     None => {
                         anyhow::bail!(
                             "Either no R available in path or R-devel detected but could not determine its version"
