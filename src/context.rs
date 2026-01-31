@@ -9,6 +9,7 @@ use fs_err as fs;
 use rayon::prelude::*;
 use url::Url;
 
+use crate::cache::Cache;
 use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
@@ -60,7 +61,7 @@ pub struct Context {
     pub config: Config,
     pub project_dir: PathBuf,
     pub r_version: Version,
-    pub cache: DiskCache,
+    pub cache: Cache,
     pub library: Library,
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
@@ -110,9 +111,9 @@ impl Context {
         };
 
         let cache = if let Some(dir) = cache_dir {
-            DiskCache::new_in_dir(&r_version, SystemInfo::from_os_info(), dir)?
+            Cache::new_in_dir(&r_version, SystemInfo::from_os_info(), dir)?
         } else {
-            DiskCache::new(&r_version, SystemInfo::from_os_info())?
+            Cache::new(&r_version, SystemInfo::from_os_info())?
         };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
@@ -137,7 +138,7 @@ impl Context {
         let mut library = if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
         } else {
-            Library::new(&project_dir, &cache.system_info, r_version.major_minor())
+            Library::new(&project_dir, cache.system_info(), r_version.major_minor())
         };
         fs::create_dir_all(&library.path)?;
         library.find_content();
@@ -175,7 +176,7 @@ impl Context {
     /// Load package databases from repositories
     pub fn load_databases(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let pb = create_spinner(self.show_progress_bar, "Loading databases...");
-        self.databases = load_databases(self.config.repositories(), &self.cache)?;
+        self.databases = load_databases(self.config.repositories(), self.cache.local())?;
         pb.finish_and_clear();
         Ok(())
     }
@@ -196,7 +197,7 @@ impl Context {
 
     /// Load system requirements from posit API (only supported on some Linux distros)
     pub fn load_system_requirements(&mut self) {
-        if !system_req::is_supported(&self.cache.system_info) {
+        if !system_req::is_supported(self.cache.system_info()) {
             return;
         }
         let pb = create_spinner(self.show_progress_bar, "Loading system requirements...");

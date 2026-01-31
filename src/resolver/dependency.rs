@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use url::Url;
 
-use crate::cache::InstallationStatus;
+use crate::cache::CacheStatus;
 use crate::lockfile::{LockedPackage, Source};
 use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
 use crate::resolver::QueueItem;
@@ -25,7 +25,7 @@ pub struct ResolvedDependency<'d> {
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
-    pub(crate) installation_status: InstallationStatus,
+    pub(crate) cache_status: CacheStatus,
     pub(crate) path: Option<Cow<'d, str>>,
     pub from_lockfile: bool,
     pub(crate) from_remote: bool,
@@ -44,8 +44,8 @@ pub struct ResolvedDependency<'d> {
 impl<'d> ResolvedDependency<'d> {
     pub fn is_installed(&self) -> bool {
         match self.kind {
-            PackageType::Source => self.installation_status.source_available(),
-            PackageType::Binary => self.installation_status.binary_available(),
+            PackageType::Source => self.cache_status.source_available(),
+            PackageType::Binary => self.cache_status.binary_available(),
         }
     }
 
@@ -65,10 +65,7 @@ impl<'d> ResolvedDependency<'d> {
     }
 
     /// We found the dependency from the lockfile
-    pub fn from_locked_package(
-        package: &'d LockedPackage,
-        installation_status: InstallationStatus,
-    ) -> Self {
+    pub fn from_locked_package(package: &'d LockedPackage, cache_status: CacheStatus) -> Self {
         Self {
             name: Cow::Borrowed(&package.name),
             version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
@@ -85,7 +82,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests: package.install_suggests(),
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             from_lockfile: true,
-            installation_status,
+            cache_status,
             remotes: HashMap::new(),
             // it might come from a remote but we don't keep track of that
             from_remote: false,
@@ -101,7 +98,7 @@ impl<'d> ResolvedDependency<'d> {
         package_type: PackageType,
         install_suggests: bool,
         force_source: bool,
-        installation_status: InstallationStatus,
+        cache_status: CacheStatus,
     ) -> (Self, InstallationDependencies<'d>) {
         let deps = package.dependencies_to_install(install_suggests);
         let source = match (&package.remote_url, &package.remote_sha) {
@@ -129,7 +126,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests,
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             from_lockfile: false,
-            installation_status,
+            cache_status,
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
@@ -146,7 +143,7 @@ impl<'d> ResolvedDependency<'d> {
         package: &Package,
         source: Source,
         install_suggests: bool,
-        installation_status: InstallationStatus,
+        cache_status: CacheStatus,
     ) -> (Self, InstallationDependencies<'_>) {
         let deps = package.dependencies_to_install(install_suggests);
 
@@ -164,7 +161,7 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.clone()),
             source,
-            installation_status,
+            cache_status,
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
@@ -198,7 +195,7 @@ impl<'d> ResolvedDependency<'d> {
             version: Cow::Owned(package.version.clone()),
             source,
             // We'll handle the installation status later by comparing mtimes
-            installation_status: InstallationStatus::Source,
+            cache_status: CacheStatus::new_local_source(),
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
@@ -231,7 +228,7 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.clone()),
             source,
-            installation_status: InstallationStatus::Source,
+            cache_status: CacheStatus::new_local_source(),
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
@@ -260,7 +257,7 @@ impl<'d> ResolvedDependency<'d> {
             install_suggests,
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             from_lockfile: false,
-            installation_status: InstallationStatus::Binary(false),
+            cache_status: CacheStatus::new_local_builtin_binary(),
             remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,

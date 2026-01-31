@@ -182,14 +182,15 @@ impl<'a> SyncHandler<'a> {
                         // safe unwrap, we know it's a repo dep
                         let tarball_url = get_tarball_urls(
                             dep,
-                            &self.context.cache.r_version,
-                            &self.context.cache.system_info,
+                            self.context.cache.r_version(),
+                            self.context.cache.system_info(),
                         )
                         .unwrap();
 
                         let tarball_path = self
                             .context
                             .cache
+                            .local()
                             .get_tarball_path(&dep.name, &dep.version.original);
 
                         let result = crate::http::download_to_file(
@@ -256,7 +257,7 @@ impl<'a> SyncHandler<'a> {
         if let Some(rules) = self.context.config.configure_args().get(package_name) {
             // Find first matching rule
             for rule in rules {
-                if let Some(args) = rule.matches(&self.context.cache.system_info) {
+                if let Some(args) = rule.matches(self.context.cache.system_info()) {
                     return args.to_vec();
                 }
             }
@@ -318,7 +319,7 @@ impl<'a> SyncHandler<'a> {
                 dep,
                 &self.context.project_dir,
                 &library_dirs,
-                &self.context.cache,
+                self.context.cache.local(),
                 r_cmd,
                 &configure_args,
                 cancellation,
@@ -326,7 +327,7 @@ impl<'a> SyncHandler<'a> {
             Source::Url { .. } => sources::url::install_package(
                 dep,
                 &library_dirs,
-                &self.context.cache,
+                self.context.cache.local(),
                 r_cmd,
                 &configure_args,
                 cancellation,
@@ -655,7 +656,7 @@ impl<'a> SyncHandler<'a> {
                                 if let Some(log_folder) = &save_install_logs_in_clone
                                     && !sync_change.is_builtin()
                                 {
-                                    let log_path = sync_change.log_path(&self.context.cache);
+                                    let log_path = sync_change.log_path(self.context.cache.local());
                                     if log_path.exists() {
                                         fs::copy(
                                             log_path,

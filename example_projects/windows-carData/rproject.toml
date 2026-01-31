@@ -2,7 +2,7 @@
 
 [project]
 name = "No R folder"
-r_version = "4.4"
+r_version = "4.5"
 
 repositories = [
     { alias = "PPM", url = "https://packagemanager.posit.co/cran/2025-04-12"}

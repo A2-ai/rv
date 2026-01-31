@@ -12,3 +12,4 @@ from*/
 .aider*
 logs/
 dist/
+global-cache/

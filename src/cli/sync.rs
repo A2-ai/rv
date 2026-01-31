@@ -105,7 +105,7 @@ impl SyncHelper {
                     .flat_map(|x| x.sys_deps.iter().map(|x| x.name.as_str()))
                     .collect();
                 let sysdeps_status = system_req::check_installation_status(
-                    &context.cache.system_info,
+                    context.cache.system_info(),
                     &all_sys_deps,
                 );
 
@@ -116,7 +116,7 @@ impl SyncHelper {
                 if let Some(log_folder) = &self.save_install_logs_in {
                     fs::create_dir_all(log_folder)?;
                     for change in changes.iter().filter(|x| x.installed) {
-                        let log_path = change.log_path(&context.cache);
+                        let log_path = change.log_path(context.cache.local());
                         if log_path.exists() {
                             fs::copy(log_path, log_folder.join(format!("{}.log", change.name)))?;
                         }

@@ -2,7 +2,7 @@
 # Note: do not update the lockfile from this project since we're testing whether an upgrade
 # url is updated by 10 months to upgrade the version/source of the packages
 name = "project-upgrade"
-r_version = "4.4"
+r_version = "4.5"
 repositories = [
     {alias = "PPM", url = "https://packagemanager.posit.co/cran/2025-04-12"},
     {alias = "PPM-old", url = "https://packagemanager.posit.co/cran/2025-04-01"}
