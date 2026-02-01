@@ -13,12 +13,13 @@ use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
     init_structure, migrate_renv, resolve_dependencies, tree,
 };
+use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
-    CacheInfo, Config, ProjectSummary, RCmd, RCommandLine, RepositoryAction, RepositoryMatcher,
-    RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
-    execute_repository_action, read_and_verify_config, system_req,
+    CacheInfo, Config, ProjectSummary, RepositoryAction, RepositoryMatcher, RepositoryPositioning,
+    RepositoryUpdates, Version, activate, add_packages, deactivate, execute_repository_action,
+    read_and_verify_config, system_req,
 };
 
 /// rv, the R package manager
@@ -130,7 +131,7 @@ pub enum Command {
         /// hidden otherwise
         hide_system_deps: bool,
         #[clap(long)]
-        /// Specify a R version different from the one in the config.
+        /// Specify an R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
     },
@@ -319,25 +320,20 @@ fn try_main() -> Result<()> {
             no_r_environment,
             force,
         } => {
-            let r_version = if let Some(r) = r_version {
-                r.original
+            let (r_version, use_devel) = if let Some(r) = r_version {
+                (r.original, false)
             } else {
-                // if R version is not provided, get the major.minor of the R version on the path
-                let [major, minor] = match (RCommandLine { r: None }).version() {
-                    Ok(r_ver) => r_ver,
-                    Err(e) => {
-                        if cfg!(windows) {
-                            RCommandLine {
-                                r: Some(PathBuf::from("R.bat")),
-                            }
-                            .version()?
-                        } else {
-                            Err(e)?
-                        }
+                match get_r_from_path() {
+                    Some(r_install) => {
+                        let [major, minor] = r_install.version.major_minor();
+                        (format!("{major}.{minor}"), r_install.is_devel)
+                    }
+                    None => {
+                        anyhow::bail!(
+                            "Either no R available in path or R-devel detected but could not determine its version"
+                        );
                     }
                 }
-                .major_minor();
-                format!("{major}.{minor}")
             };
 
             let repositories = if no_repositories {
@@ -354,7 +350,14 @@ fn try_main() -> Result<()> {
                 }
             };
 
-            init(&project_directory, &r_version, &repositories, &add, force)?;
+            init(
+                &project_directory,
+                &r_version,
+                &repositories,
+                &add,
+                use_devel,
+                force,
+            )?;
             activate(&project_directory, no_r_environment)?;
 
             if output_format.is_json() {

@@ -15,7 +15,7 @@ use crate::consts::{BUILD_LOG_FILENAME, BUILT_FROM_SOURCE_FILENAME};
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
-use crate::{RCmd, SystemInfo, Version};
+use crate::{RInstall, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
@@ -264,10 +264,9 @@ impl DiskCache {
 
     pub(super) fn get_builtin_packages_versions(
         &self,
-        r_cmd: &impl RCmd,
+        r_cmd: &RInstall,
     ) -> std::io::Result<HashMap<String, Package>> {
-        let version = r_cmd.version().expect("to work");
-        let filename = format!("builtin-{}.mp", version.original);
+        let filename = format!("builtin-{}.mp", r_cmd.version.original);
         let path = self.root.join(&filename);
         if let Some(builtin) = BuiltinPackages::load(&path) {
             Ok(builtin.packages)
