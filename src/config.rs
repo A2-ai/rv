@@ -315,6 +315,8 @@ pub(crate) struct Project {
     )]
     r_version: Version,
     #[serde(default)]
+    use_devel: Option<bool>,
+    #[serde(default)]
     description: String,
     license: Option<String>,
     #[serde(default)]
@@ -469,6 +471,10 @@ impl Config {
 
     pub fn r_version(&self) -> &Version {
         &self.project.r_version
+    }
+
+    pub fn use_devel(&self) -> bool {
+        self.project.use_devel.unwrap_or(false)
     }
 
     pub fn use_lockfile(&self) -> bool {

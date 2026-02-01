@@ -17,11 +17,11 @@ pub struct SyncError {
 pub enum SyncErrorKind {
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error("Failed to link files from cache: {0:?})")]
+    #[error("Failed to link files from cache: {0}")]
     LinkError(LinkError),
-    #[error("Failed to install R package: {0})")]
+    #[error(transparent)]
     InstallError(InstallError),
-    #[error("Failed to download package: {0:?})")]
+    #[error("Failed to download package: {0}")]
     HttpError(HttpError),
     #[error("{0}")]
     SyncFailed(SyncErrors),
@@ -75,7 +75,8 @@ impl fmt::Display for SyncErrors {
         write!(f, "Failed to install dependencies.")?;
 
         for (dep, e) in &self.errors {
-            write!(f, "\n    Failed to install {dep}:\n        {e}")?;
+            let indented = e.to_string().replace('\n', "\n        ");
+            write!(f, "\n    Failed to install {dep}:\n        {indented}")?;
         }
 
         Ok(())
