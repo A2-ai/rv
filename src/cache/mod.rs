@@ -5,7 +5,7 @@ pub mod utils;
 
 use crate::cache::utils::get_global_cache_dir;
 use crate::package::Package;
-use crate::{RCmd, Source, SystemInfo, Version};
+use crate::{RInstall, Source, SystemInfo, Version};
 pub use disk::{DiskCache, PackagePaths};
 pub use info::CacheInfo;
 pub use status::{CacheStatus, InstallationStatus};
@@ -77,7 +77,7 @@ impl Cache {
     /// We don't need to reach the global
     pub fn get_builtin_packages_versions(
         &self,
-        r_cmd: &impl RCmd,
+        r_cmd: &RInstall,
     ) -> std::io::Result<HashMap<String, Package>> {
         let builtin = if let Some(g) = self.global.as_ref() {
             g.get_builtin_packages_versions(r_cmd)
