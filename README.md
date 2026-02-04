@@ -47,12 +47,11 @@ Additional example projects with more configurations can be found in the [exampl
 
 ## Installation
 
-See the [installation documentation](docs/installation.md) for information on how to install `rv`.
+See the [documentation site](https://a2-ai.github.io/rv-docs/) for installation instructions.
 
 ## Usage
 
-See the [usage documentation](docs/usage.md) for information on how to use `rv` and how to [configure](docs/config.md) it with
-the `rproject.toml` file.
+See the [documentation site](https://a2-ai.github.io/rv-docs/) for usage guides and configuration reference.
 
 ## Contributing
 
@@ -93,4 +92,4 @@ cargo test --features=cli
 
 ### Snapshot testing
 
-Snapshots require R version 4.4.x.
+Snapshots require R version 4.5 (see `.github/workflows/ci.yaml` for current CI version).
