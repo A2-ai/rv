@@ -6,6 +6,6 @@ mod link;
 mod sources;
 
 pub use build_plan::{BuildPlan, BuildStep};
-pub use changes::SyncChange;
+pub use changes::{OutputSection, SyncChange};
 pub use handler::SyncHandler;
 pub use link::{LinkError, LinkMode};
