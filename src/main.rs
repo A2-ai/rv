@@ -1,6 +1,8 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+
+mod cli_docs;
 
 use anyhow::Result;
 use fs_err::{read_to_string, write};
@@ -176,6 +178,27 @@ pub enum Command {
     },
     /// Deactivate an rv project
     Deactivate,
+    /// Generate CLI documentation (experimental - output format may change)
+    Docs {
+        #[clap(subcommand)]
+        subcommand: DocsSubcommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsSubcommand {
+    /// Print complete CLI documentation for all commands (experimental - output format may change)
+    Cli {
+        /// Output format: markdown or json
+        #[clap(long, default_value = "markdown")]
+        format: String,
+    },
+    /// Print a terse list of all available commands (experimental - output format may change)
+    CliCmds {
+        /// Hide the description for each command
+        #[clap(long)]
+        no_description: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -263,6 +286,7 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Include the patch in the R version
         strict_r_version: bool,
+        #[clap(long)]
         /// Turn off rv access through .rv R environment
         no_r_environment: bool,
     },
@@ -801,6 +825,29 @@ fn try_main() -> Result<()> {
             } else {
                 println!("rv deactivated");
             }
+        }
+        Command::Docs {
+            subcommand: DocsSubcommand::Cli { format },
+        } => {
+            let mut cmd = Cli::command();
+            let output = match format.to_lowercase().as_str() {
+                "json" => cli_docs::generate_json(&mut cmd),
+                "markdown" | "md" => cli_docs::generate_markdown(&mut cmd),
+                _ => {
+                    return Err(anyhow!(
+                        "Unknown format '{}'. Supported formats: markdown, json",
+                        format
+                    ));
+                }
+            };
+            println!("{}", output);
+        }
+        Command::Docs {
+            subcommand: DocsSubcommand::CliCmds { no_description },
+        } => {
+            let cmd = Cli::command();
+            let output = cli_docs::generate_commands_list(&cmd, !no_description);
+            println!("{}", output);
         }
 
         Command::Configure { subcommand } => {
