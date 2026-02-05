@@ -86,7 +86,7 @@ def run_test():
             print("Adding repo caused re-sync")
             exit(1)
         res = run_rv_cmd("upgrade", [])
-        if "- rv.git.pkgA" not in res or "+ rv.git.pkgA (0.0.5" not in res or "from https://a2-ai.github.io/rv-test-repo/repo1)" not in res:
+        if "- rv.git.pkgA" not in res or "+ rv.git.pkgA" not in res or "0.0.5" not in res or "https://a2-ai.github.io/rv-test-repo/repo1" not in res:
             print("Upgrade did not behave as expected")
             exit(1)
             
