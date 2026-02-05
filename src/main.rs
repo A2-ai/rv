@@ -178,7 +178,7 @@ pub enum Command {
     },
     /// Deactivate an rv project
     Deactivate,
-    /// Generate CLI documentation
+    /// Generate CLI documentation (experimental - output format may change)
     Docs {
         #[clap(subcommand)]
         subcommand: DocsSubcommand,
@@ -187,13 +187,13 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsSubcommand {
-    /// Print complete CLI documentation for all commands
+    /// Print complete CLI documentation for all commands (experimental - output format may change)
     Cli {
         /// Output format: markdown or json
         #[clap(long, default_value = "markdown")]
         format: String,
     },
-    /// Print a terse list of all available commands
+    /// Print a terse list of all available commands (experimental - output format may change)
     CliCmds {
         /// Hide the description for each command
         #[clap(long)]
