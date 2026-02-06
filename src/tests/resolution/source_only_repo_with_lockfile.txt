@@ -1,0 +1,22 @@
+# Repo with source packages only (no binary packages).
+# The lockfile has force_source = false, so the resolved dependency
+# should still show type=source since the repo has no binaries.
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "R6",
+]
+---
+repos = [{name = "cran", source = "posit-src", force_source = false}]
+---
+version = 1
+r_version = "4.4"
+
+[[packages]]
+name = "R6"
+version = "2.5.1"
+source = { repository = "http://cran/" }
+force_source = false
+dependencies = []

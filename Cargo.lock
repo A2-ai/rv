@@ -1454,8 +1454,7 @@ checksum = "9f50d9b3dabb09ecd771ad0aa242ca6894994c130308ca3d7684634df8037391"
 [[package]]
 name = "os_info"
 version = "3.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4022a17595a00d6a369236fdae483f0de7f0a339960a53118b818238e132224"
+source = "git+https://github.com/Keats/os_info/#96420f1a4e9e8abeabb3da0eaf5ab99961e2ba10"
 dependencies = [
  "android_system_properties",
  "log",

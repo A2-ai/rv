@@ -216,8 +216,37 @@ impl<'d> Resolver<'d> {
 
             let installation_status =
                 cache.get_installation_status(&item.name, &package.version, &package.source);
+
+            // We search first in the repo for whether we have source or binary since
+            // we don't record that info in the lockfile
+            let kind = if package.force_source {
+                PackageType::Source
+            } else if let Source::Repository { repository } = &package.source {
+                let repo_url = repository.as_str();
+                let matching_repo = self
+                    .repositories
+                    .iter()
+                    .find(|(repo, _)| repo.url == repo_url);
+                match matching_repo {
+                    Some((repo, _)) => {
+                        let has_binary = repo
+                            .binary_packages
+                            .get(&self.r_version.major_minor())
+                            .is_some_and(|db| db.contains_key(package.name.as_str()));
+                        if has_binary {
+                            PackageType::Binary
+                        } else {
+                            PackageType::Source
+                        }
+                    }
+                    // DBs not loaded (e.g. lockfile resolved without needing them) — default to binary
+                    None => PackageType::Binary,
+                }
+            } else {
+                PackageType::Binary
+            };
             let resolved_dep =
-                ResolvedDependency::from_locked_package(package, installation_status);
+                ResolvedDependency::from_locked_package(package, installation_status, kind);
 
             let items = package
                 .dependencies
