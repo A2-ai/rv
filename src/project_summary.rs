@@ -368,15 +368,23 @@ impl fmt::Display for DependencyInfo<'_> {
                 "  {}: {}{}{}\n",
                 s,
                 when_non_zero(
-                    &format!(
-                        "{}/{} in cache{}",
-                        counts.in_cache,
-                        counts.to_install,
-                        when_non_zero(
-                            &format!(" ({} to compile)", counts.in_cache_to_compile),
-                            counts.in_cache_to_compile
-                        )
-                    ),
+                    &format!("{}/{} in cache{}", counts.in_cache, counts.to_install, {
+                        let mut details = Vec::new();
+                        if counts.in_global_cache > 0 {
+                            details.push(format!("{} global", counts.in_global_cache));
+                        }
+                        if counts.in_local_cache > 0 {
+                            details.push(format!("{} local", counts.in_local_cache));
+                        }
+                        if counts.in_cache_to_compile > 0 {
+                            details.push(format!("{} to compile", counts.in_cache_to_compile));
+                        }
+                        if details.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" ({})", details.join(", "))
+                        }
+                    }),
                     counts.in_cache
                 ),
                 when_non_zero(
@@ -503,6 +511,8 @@ struct Counts {
     installed_src: usize,
     to_install: usize, // total - installed (for binaries and src)
     in_cache: usize,   // all packages in cache, even if compilation required
+    in_global_cache: usize,
+    in_local_cache: usize,
     in_cache_to_compile: usize,
     to_download: usize, // all packages to download, even if compilation required
     to_download_to_compile: usize,
@@ -517,6 +527,8 @@ impl Counts {
             installed_src: 0,
             to_install: 0,
             in_cache: 0,
+            in_global_cache: 0,
+            in_local_cache: 0,
             in_cache_to_compile: 0,
             to_download: 0,
             to_download_to_compile: 0,
@@ -545,9 +557,14 @@ impl Counts {
             // Other fields are updated agnostic to if the dep is from binary or not
             counts.to_install += 1;
             match dep.status {
-                DependencyStatus::InLocalCache
-                | DependencyStatus::InGlobalCache
-                | DependencyStatus::ToCompile => counts.in_cache += 1,
+                DependencyStatus::InGlobalCache => {
+                    counts.in_cache += 1;
+                    counts.in_global_cache += 1;
+                }
+                DependencyStatus::InLocalCache | DependencyStatus::ToCompile => {
+                    counts.in_cache += 1;
+                    counts.in_local_cache += 1;
+                }
                 DependencyStatus::Missing => counts.to_download += 1,
                 _ => (),
             }

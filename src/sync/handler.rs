@@ -10,7 +10,7 @@ use crate::package::PackageType;
 #[cfg(feature = "cli")]
 use crate::r_cmd::kill_all_r_processes;
 use crate::r_cmd::{InstallError, InstallErrorKind};
-use crate::sync::changes::SyncChange;
+use crate::sync::changes::{CacheSource, SyncChange};
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
@@ -638,6 +638,32 @@ impl<'a> SyncHandler<'a> {
 
                         match install_result {
                             Ok(_) => {
+                                let cache_source = {
+                                    let is_binary = dep.kind == PackageType::Binary;
+                                    if is_binary {
+                                        if dep.cache_status.global_binary_available() {
+                                            Some(CacheSource::Global)
+                                        } else if dep.cache_status.local_binary_available() {
+                                            Some(CacheSource::Local)
+                                        } else {
+                                            None // Downloaded
+                                        }
+                                    } else {
+                                        // Source package
+                                        if dep
+                                            .cache_status
+                                            .global
+                                            .map(|x| x.source_available())
+                                            .unwrap_or(false)
+                                        {
+                                            Some(CacheSource::Global)
+                                        } else if dep.cache_status.local.source_available() {
+                                            Some(CacheSource::Local)
+                                        } else {
+                                            None // Downloaded
+                                        }
+                                    }
+                                };
                                 let sync_change = SyncChange::installed(
                                     &dep.name,
                                     &dep.version.original,
@@ -649,6 +675,7 @@ impl<'a> SyncHandler<'a> {
                                         .get(dep.name.as_ref())
                                         .cloned()
                                         .unwrap_or_default(),
+                                    cache_source,
                                 );
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);
