@@ -18,7 +18,7 @@ etcetera = "0.11.0"
 # Sets some spec like data in the cache dir
 cachedir = "0.3"
 # To get the OS name, version etc
-os_info = "3.9.1"
+os_info = { git = "https://github.com/Keats/os_info/" }
 # We use rmp-serde (MessagePack) to serialize package databases to disk
 rmp-serde = "1"
 # Error handling

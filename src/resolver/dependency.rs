@@ -65,19 +65,18 @@ impl<'d> ResolvedDependency<'d> {
     }
 
     /// We found the dependency from the lockfile
-    pub fn from_locked_package(package: &'d LockedPackage, cache_status: CacheStatus) -> Self {
+    pub fn from_locked_package(
+        package: &'d LockedPackage,
+        cache_status: CacheStatus,
+        kind: PackageType,
+    ) -> Self {
         Self {
             name: Cow::Borrowed(&package.name),
             version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
             source: package.source.clone(),
             dependencies: package.dependencies.iter().map(Cow::Borrowed).collect(),
             suggests: package.suggests.iter().map(Cow::Borrowed).collect(),
-            // TODO: what should we do here?
-            kind: if package.force_source {
-                PackageType::Source
-            } else {
-                PackageType::Binary
-            },
+            kind,
             force_source: package.force_source,
             install_suggests: package.install_suggests(),
             path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),

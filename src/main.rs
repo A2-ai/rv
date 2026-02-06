@@ -571,9 +571,10 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context
-                .load_for_resolve_mode(upgrade)
-                .map_err(|e| anyhow!("{e}"))?;
+            // We always load the databases for plan because we need them to know if we have
+            // source or binary available
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
+            context.load_system_requirements();
             SyncHelper {
                 dry_run: true,
                 output_format: Some(output_format),
