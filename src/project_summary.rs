@@ -270,7 +270,7 @@ impl<'a> DependencyInfo<'a> {
 
         // we keep track of the dependencies organized by their source identifier
         for r in resolved_deps {
-            lib_pkgs.remove(r.name.as_ref());
+            lib_pkgs.remove(&*r.name);
             let mut dep_sum = DependencySummary::new(r, library, repo_dbs, r_version, cache);
             // if the package was found in the library, but not in the lockfile, we consider it not locked and is missing
             if !is_in_lock(r.name.as_ref(), lockfile)

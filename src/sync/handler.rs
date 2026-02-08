@@ -275,8 +275,8 @@ impl<'a> SyncHandler<'a> {
         LinkMode::link_files(
             Some(LinkMode::Copy),
             &dep.name,
-            self.context.library.path().join(dep.name.as_ref()),
-            self.context.staging_path().join(dep.name.as_ref()),
+            self.context.library.path().join(&*dep.name),
+            self.context.staging_path().join(&*dep.name),
         )?;
 
         Ok(())
@@ -630,7 +630,7 @@ impl<'a> SyncHandler<'a> {
                             }
                         }
                         let start = std::time::Instant::now();
-                        let install_result = if deps_to_copy_clone.contains(dep.name.as_ref()) {
+                        let install_result = if deps_to_copy_clone.contains(&*dep.name) {
                             self.copy_package(dep)
                         } else {
                             self.install_package(dep, r_cmd, cancellation_clone.clone())
@@ -672,7 +672,7 @@ impl<'a> SyncHandler<'a> {
                                     start.elapsed(),
                                     self.context
                                         .system_dependencies
-                                        .get(dep.name.as_ref())
+                                        .get(&*dep.name)
                                         .cloned()
                                         .unwrap_or_default(),
                                     cache_source,

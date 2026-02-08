@@ -27,7 +27,7 @@ pub(crate) fn install_package(
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
 
     let compile_package = || -> Result<(), SyncError> {
-        let source_path = local_paths.source.join(pkg.name.as_ref());
+        let source_path = local_paths.source.join(&*pkg.name);
         log::debug!("Compiling package from {}", source_path.display());
         match r_cmd.install(
             &source_path,
@@ -54,7 +54,7 @@ pub(crate) fn install_package(
                 let _ = fs::File::create(
                     local_paths
                         .binary
-                        .join(pkg.name.as_ref())
+                        .join(&*pkg.name)
                         .join(BUILT_FROM_SOURCE_FILENAME),
                 )?;
                 Ok(())
@@ -137,8 +137,8 @@ pub(crate) fn install_package(
                     } else {
                         // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
                         // source files. We have to check first whether what we have is actually binary content.
-                        let bin_path = local_paths.binary.join(pkg.name.as_ref());
-                        if !is_binary_package(&bin_path, pkg.name.as_ref()).map_err(|err| {
+                        let bin_path = local_paths.binary.join(&*pkg.name);
+                        if !is_binary_package(&bin_path, &*pkg.name).map_err(|err| {
                             SyncError {
                                 source: crate::sync::errors::SyncErrorKind::InvalidPackage {
                                     path: bin_path,

@@ -183,7 +183,7 @@ impl Library {
 
     pub fn contains_package(&self, pkg: &ResolvedDependency) -> bool {
         if self.custom
-            || (!self.packages.contains_key(pkg.name.as_ref())
+            || (!self.packages.contains_key(&*pkg.name)
                 && !matches!(pkg.source, Source::Builtin { .. }))
         {
             return false;
@@ -194,11 +194,11 @@ impl Library {
             | Source::Url { ref sha, .. }
             | Source::RUniverse { ref sha, .. } => self
                 .non_repo_packages
-                .get(pkg.name.as_ref())
+                .get(&*pkg.name)
                 .and_then(|m| m.sha().map(|s| s == sha.as_str()))
                 .unwrap_or(false),
             Source::Local { ref sha, .. } => {
-                if let Some(metadata) = self.non_repo_packages.get(pkg.name.as_ref()) {
+                if let Some(metadata) = self.non_repo_packages.get(&*pkg.name) {
                     match metadata {
                         LocalMetadata::Mtime(local_mtime) => {
                             let current_mtime =
@@ -220,7 +220,7 @@ impl Library {
                     false
                 }
             }
-            Source::Repository { .. } => &self.packages[pkg.name.as_ref()] == pkg.version.as_ref(),
+            Source::Repository { .. } => &self.packages[&*pkg.name] == &*pkg.version,
             Source::Builtin { .. } => true,
         }
     }

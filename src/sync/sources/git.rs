@@ -66,7 +66,7 @@ pub(crate) fn install_package(
         }
 
         let metadata = LocalMetadata::Sha(sha.to_owned());
-        metadata.write(local_paths.binary.join(pkg.name.as_ref()))?;
+        metadata.write(local_paths.binary.join(&*pkg.name))?;
     }
 
     // Link from global cache if available there, otherwise from local cache

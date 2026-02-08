@@ -59,11 +59,11 @@ impl<'a> BuildPlan<'a> {
             .iter()
             .find(|d| d.name == name)
             .expect("to find the dep");
-        self.installed.insert(pkg.name.as_ref());
-        self.installing.remove(pkg.name.as_ref());
+        self.installed.insert(&*pkg.name);
+        self.installing.remove(&*pkg.name);
 
         for (_, deps) in self.full_deps.iter_mut() {
-            deps.remove(pkg.name.as_ref());
+            deps.remove(&*pkg.name);
         }
     }
 

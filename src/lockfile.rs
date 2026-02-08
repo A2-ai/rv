@@ -595,7 +595,7 @@ impl Lockfile {
 
     pub fn contains_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
         self.packages.iter().any(|lock_pkg| {
-            lock_pkg.name == dep.name.as_ref() && lock_pkg.version == dep.version.as_ref().original
+            lock_pkg.name == &*dep.name && lock_pkg.version == dep.version.original
         })
     }
 

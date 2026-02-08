@@ -35,7 +35,7 @@ pub(crate) fn install_package(
         canon_path.clone()
     };
 
-    if is_binary_package(&actual_path, pkg.name.as_ref()).map_err(|err| SyncError {
+    if is_binary_package(&actual_path, &*pkg.name).map_err(|err| SyncError {
         source: crate::sync::errors::SyncErrorKind::InvalidPackage {
             path: actual_path.to_path_buf(),
             error: err.to_string(),
@@ -47,9 +47,9 @@ pub(crate) fn install_package(
         );
         LinkMode::link_files(
             Some(LinkMode::Copy),
-            pkg.name.as_ref(),
+            &*pkg.name,
             &actual_path,
-            library_dirs.first().unwrap().join(pkg.name.as_ref()),
+            library_dirs.first().unwrap().join(&*pkg.name),
         )?;
     } else {
         log::debug!("Building the local package in {}", actual_path.display());
@@ -78,7 +78,7 @@ pub(crate) fn install_package(
     } else {
         LocalMetadata::Sha(sha.unwrap())
     };
-    metadata.write(library_dirs.first().unwrap().join(pkg.name.as_ref()))?;
+    metadata.write(library_dirs.first().unwrap().join(&*pkg.name))?;
 
     Ok(())
 }

@@ -101,7 +101,7 @@ impl<'d> Resolution<'d> {
                     if names.contains(&pkg.name) {
                         continue;
                     }
-                    if let Some(version) = assignments.get(pkg.name.as_ref()) {
+                    if let Some(version) = assignments.get(&*pkg.name) {
                         if pkg.version.as_ref() == *version {
                             names.insert(&pkg.name);
                             indices.insert(i);

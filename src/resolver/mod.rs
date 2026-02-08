@@ -436,7 +436,7 @@ impl<'d> Resolver<'d> {
         &self,
         item: &QueueItem<'d>,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
-        if let Some(package) = self.builtin_packages.get(item.name.as_ref()) {
+        if let Some(package) = self.builtin_packages.get(&*item.name) {
             if let Some(ref req) = item.version_requirement {
                 if req.is_satisfied(&package.version) {
                     let (resolved_dep, deps) =
@@ -501,9 +501,9 @@ impl<'d> Resolver<'d> {
             .collect();
 
         while let Some(item) = queue.pop_front() {
-            if let Some(ver_reqs) = processed.get(item.name.as_ref()) {
+            if let Some(ver_reqs) = processed.get(&*item.name) {
                 // If we have already found that dependency and it has a forced repo, skip it
-                if repo_required.contains(item.name.as_ref()) {
+                if repo_required.contains(&*item.name) {
                     continue;
                 }
 
@@ -572,7 +572,7 @@ impl<'d> Resolver<'d> {
             let can_be_overridden = item.version_requirement.is_some()
                 && prefer_repositories_for
                     .iter()
-                    .any(|s| s == item.name.as_ref());
+                    .any(|s| s == &*item.name);
 
             if let Some(ref remote) = item.remote {
                 match remote {
@@ -712,7 +712,7 @@ impl<'d> Resolver<'d> {
         }
 
         for dep in result.found.iter_mut() {
-            if let Some(args) = self.packages_env_vars.get(dep.name.as_ref()) {
+            if let Some(args) = self.packages_env_vars.get(&*dep.name) {
                 dep.env_vars = args.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
             }
         }

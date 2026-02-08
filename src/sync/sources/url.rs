@@ -19,7 +19,7 @@ pub(crate) fn install_package(
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let pkg_paths = cache.get_package_paths(&pkg.source, None, None);
-    let download_path = pkg_paths.source.join(pkg.name.as_ref());
+    let download_path = pkg_paths.source.join(&*pkg.name);
 
     // If we have a binary, copy it since we don't keep cache around for binary URL packages
     if pkg.kind == PackageType::Binary {
@@ -59,7 +59,7 @@ pub(crate) fn install_package(
     }
 
     let metadata = LocalMetadata::Sha(pkg.source.sha().to_owned());
-    metadata.write(pkg_paths.binary.join(pkg.name.as_ref()))?;
+    metadata.write(pkg_paths.binary.join(&*pkg.name))?;
 
     // And then we always link the binary folder into the staging library
     LinkMode::link_files(
