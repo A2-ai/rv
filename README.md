@@ -45,6 +45,13 @@ Running `rv sync` will synchronize the library, lock file, and configuration fil
 
 Additional example projects with more configurations can be found in the [example_projects](example_projects)  directory of this repository.
 
+## System library sandboxing
+
+- base R always appends `.Library` to `.libPaths()`
+- packages installed in the system library can leak into projects
+- `rv` now creates `rv/sandbox/<rver>/<arch>` containing only base+recommended and points `.Library` there during activation
+- opt-out: `RV_SANDBOX=0`
+
 ## Installation
 
 See the [documentation site](https://a2-ai.github.io/rv-docs/) for installation instructions.

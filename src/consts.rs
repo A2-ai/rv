@@ -89,6 +89,88 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		sub(paste0("^", prefix, ":\\s*"), "", line)
 	}
 
+	# -------------------------------------------------------------------------
+	# System library sandboxing (renv-style)
+	#
+	# base::.libPaths() always appends `.Library` at the end, meaning packages
+	# installed into the system library can leak into a project.
+	#
+	# This creates a per-project sandbox containing ONLY base + recommended
+	# packages and repoints `.Library` to that sandbox, so `.libPaths()` retains
+	# base R semantics without leaking extra packages.
+	#
+	# Opt-out:
+	#   Sys.setenv(RV_SANDBOX = "0")
+	# -------------------------------------------------------------------------
+	rv_sandbox_system_library <- function(rv_lib) {
+		enabled <- Sys.getenv("RV_SANDBOX", unset = "1")
+		if (!nzchar(enabled) || enabled %in% c("0", "false", "FALSE", "no", "NO"))
+			return(invisible(FALSE))
+
+		syslib <- .Library
+		if (!is.character(syslib) || !nzchar(syslib) || !dir.exists(syslib))
+			return(invisible(FALSE))
+
+		# Derive project rv dir from .../rv/library/<rver>/<arch>
+		rv_dir <- normalizePath(file.path(rv_lib, "..", "..", ".."), mustWork = FALSE)
+		r_ver <- basename(dirname(rv_lib))  # e.g. "4.4"
+		arch  <- basename(rv_lib)           # e.g. "arm64"
+
+		sandbox <- file.path(rv_dir, "sandbox", r_ver, arch)
+		if (!dir.exists(sandbox))
+			dir.create(sandbox, recursive = TRUE, showWarnings = FALSE)
+
+		# Collect base + recommended packages from system library WITHOUT utils
+		pkg_dirs <- list.dirs(syslib, full.names = FALSE, recursive = FALSE)
+
+		is_base_or_recommended <- function(pkg) {
+			dcf <- file.path(syslib, pkg, "DESCRIPTION")
+			if (!file.exists(dcf)) return(FALSE)
+			x <- tryCatch(readLines(dcf, warn = FALSE), error = function(e) character())
+			pr <- x[grepl("^Priority\\s*:", x)]
+			if (!length(pr)) return(FALSE)
+			val <- trimws(sub("^Priority\\s*:\\s*", "", pr[1]))
+			val %in% c("base", "recommended")
+		}
+
+		pkgs <- pkg_dirs[vapply(pkg_dirs, is_base_or_recommended, logical(1))]
+
+		# Populate sandbox
+		for (pkg in pkgs) {
+			from <- file.path(syslib, pkg)
+			to   <- file.path(sandbox, pkg)
+
+			if (!dir.exists(from) || file.exists(to))
+			next
+
+			ok_link <- tryCatch(file.symlink(from, to), error = function(e) FALSE)
+
+			if (!isTRUE(ok_link)) {
+			# Copy whole package dir into sandbox root
+			tryCatch(
+				file.copy(from, sandbox, recursive = TRUE, copy.mode = TRUE),
+				error = function(e) NULL
+			)
+			}
+		}
+
+		# Safety: only repoint if core packages are present
+		required <- c("utils", "stats", "graphics", "grDevices", "datasets", "methods", "compiler")
+		if (!all(dir.exists(file.path(sandbox, required)))) {
+			return(invisible(FALSE))
+		}
+
+		# Repoint locked `.Library` binding to sandbox
+		ok_set <- tryCatch({
+			if (bindingIsLocked(".Library", baseenv()))
+			unlockBinding(".Library", baseenv())
+			assign(".Library", sandbox, envir = baseenv())
+			lockBinding(".Library", baseenv())
+			TRUE
+		}, error = function(e) FALSE)
+
+		invisible(isTRUE(ok_set))
+	}
 	# Set repos option
 	repo_str <- get_val("repositories")
 
@@ -133,6 +215,13 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 		dir.create(rv_lib, recursive = TRUE)
 	}
 
+	# Track sandbox existence for user facing message
+	sandbox_ok <- FALSE     
+
+	if (r_match) {
+		sandbox_ok <- isTRUE(rv_sandbox_system_library(rv_lib))
+	}
+
 	.libPaths(rv_lib, include.site = FALSE)
 	Sys.setenv("R_LIBS_USER" = rv_lib)
 	Sys.setenv("R_LIBS_SITE" = rv_lib)
@@ -150,6 +239,21 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 			),
 			"\n"
 		)
+		message(
+			if (sandbox_ok) {
+				paste0(
+					"rv system library sandbox active (base+recommended only):\n  ",
+					.Library,
+					"\nopt-out: set RV_SANDBOX=0\n"
+				)
+			} else {
+				paste0(
+					"rv system library sandbox currently inactived.\n",
+					"\nyou can activate it by: set RV_SANDBOX=1\n"
+				)
+			}
+		)
+
 		message(
 			if (r_match) {
 				"rv libpaths active!\nlibrary paths: \n"
