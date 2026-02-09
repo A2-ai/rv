@@ -232,7 +232,13 @@ impl<'d> Resolver<'d> {
                         let has_binary = repo
                             .binary_packages
                             .get(&self.r_version.major_minor())
-                            .is_some_and(|db| db.contains_key(package.name.as_str()));
+                            .is_some_and(|db| {
+                                db.get(package.name.as_str()).is_some_and(|versions| {
+                                    versions
+                                        .iter()
+                                        .any(|p| p.version.to_string() == package.version)
+                                })
+                            });
                         if has_binary {
                             PackageType::Binary
                         } else {
