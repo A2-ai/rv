@@ -228,28 +228,40 @@ impl<'d> Resolver<'d> {
                     .iter()
                     .find(|(repo, _)| repo.url == repo_url);
                 match matching_repo {
-                    Some((repo, _)) => {
-                        let has_binary = repo
-                            .binary_packages
-                            .get(&self.r_version.major_minor())
-                            .is_some_and(|db| {
-                                db.get(package.name.as_str()).is_some_and(|versions| {
-                                    versions
-                                        .iter()
-                                        .any(|p| p.version.to_string() == package.version)
-                                })
-                            });
-                        if has_binary {
-                            PackageType::Binary
-                        } else {
+                    Some((repo, repo_force_source)) => {
+                        if *repo_force_source {
                             PackageType::Source
+                        } else {
+                            let version_req =
+                                VersionRequirement::from_str(&format!("(== {})", package.version))
+                                    .unwrap();
+
+                            let has_binary = repo
+                                .find_package(
+                                    &package.name,
+                                    Some(&version_req),
+                                    &self.r_version,
+                                    false,
+                                )
+                                .is_some_and(|(_, package_type)| {
+                                    package_type == PackageType::Binary
+                                });
+
+                            if has_binary {
+                                PackageType::Binary
+                            } else {
+                                PackageType::Source
+                            }
                         }
                     }
-                    // DBs not loaded (e.g. lockfile resolved without needing them) — default to binary
-                    None => PackageType::Binary,
+                    // DBs not found.
+                    // I think it can only happen when someone is changing a repository
+                    // URL in the config file and the one from the lockfile is not found anymore
+                    None => return None,
                 }
             } else {
-                PackageType::Binary
+                // url/git/local are probably source packages
+                PackageType::Source
             };
             let resolved_dep =
                 ResolvedDependency::from_locked_package(package, installation_status, kind);
