@@ -32,7 +32,9 @@ filetime = "0.2.25"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"
-zip = { version = "7", default-features = false, features = ["deflate"] }
+# we pin zip temporarily because it introduced a dep called typed-path which has some blanket impls
+# messing with normal std: https://github.com/zip-rs/zip2/issues/556
+zip = { version = ">=7, <7.2", default-features = false, features = ["deflate"] }
 # HTTP requests
 ureq = { version = "3", features = ["platform-verifier", "json"] }
 sha2 = "0.10"
