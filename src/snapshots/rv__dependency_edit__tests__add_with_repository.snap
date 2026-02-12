@@ -1,5 +1,5 @@
 ---
-source: src/add.rs
+source: src/dependency_edit.rs
 expression: doc.to_string()
 ---
 [project]

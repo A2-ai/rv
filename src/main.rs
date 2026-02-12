@@ -86,6 +86,18 @@ pub enum Command {
         #[clap(flatten)]
         add_options: AddOptions,
     },
+    /// Remove packages from the project and sync
+    Remove {
+        /// Packages to remove from config
+        #[clap(value_parser, required = true)]
+        packages: Vec<String>,
+        /// Do not make any changes, only report what would happen if those packages were removed
+        #[clap(long)]
+        dry_run: bool,
+        /// Remove packages from config file, but do not sync. No effect if --dry-run is used
+        #[clap(long)]
+        no_sync: bool,
+    },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
@@ -530,6 +542,56 @@ fn try_main() -> Result<()> {
             if dry_run {
                 context.config = doc.to_string().parse::<Config>()?;
             }
+            let resolve_mode = ResolveMode::Default;
+            context
+                .load_for_resolve_mode(resolve_mode)
+                .map_err(|e| anyhow!("{e}"))?;
+            SyncHelper {
+                dry_run,
+                output_format: Some(output_format),
+                ..Default::default()
+            }
+            .run(&context, resolve_mode)?;
+        }
+        Command::Remove {
+            packages,
+            dry_run,
+            no_sync,
+        } => {
+            use rv::remove_packages;
+
+            // Load config to verify structure is valid
+            let mut doc = read_and_verify_config(&cli.config_file)?;
+
+            remove_packages(&mut doc, packages)?;
+
+            // write the update if not dry run
+            if !dry_run {
+                write(&cli.config_file, doc.to_string())?;
+            }
+
+            // if no sync, exit early
+            if no_sync {
+                if output_format.is_json() {
+                    println!("{{}}");
+                } else {
+                    println!("Packages successfully removed");
+                }
+                return Ok(());
+            }
+
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+
+            // if dry run, the config won't have been edited to reflect the removed changes so must be updated
+            if dry_run {
+                context.config = doc.to_string().parse::<Config>()?;
+            }
+
             let resolve_mode = ResolveMode::Default;
             context
                 .load_for_resolve_mode(resolve_mode)
