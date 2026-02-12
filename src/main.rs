@@ -571,9 +571,10 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context
-                .load_for_resolve_mode(upgrade)
-                .map_err(|e| anyhow!("{e}"))?;
+            // We always load the databases for plan because we need them to know if we have
+            // source or binary available
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
+            context.load_system_requirements();
             SyncHelper {
                 dry_run: true,
                 output_format: Some(output_format),
@@ -648,9 +649,7 @@ fn try_main() -> Result<()> {
         } => {
             let mut context =
                 Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
-            context
-                .load_databases_if_needed()
-                .map_err(|e| anyhow!("{e}"))?;
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
             if !hide_system_deps {
                 context.load_system_requirements();
             }
@@ -763,9 +762,7 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context
-                .load_databases_if_needed()
-                .map_err(|e| anyhow!("{e}"))?;
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
             context.load_system_requirements();
 
             let resolved = resolve_dependencies(&context, ResolveMode::Default, false).found;

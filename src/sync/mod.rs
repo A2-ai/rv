@@ -6,6 +6,8 @@ mod link;
 mod sources;
 
 pub use build_plan::{BuildPlan, BuildStep};
-pub use changes::{OutputSection, SyncChange};
+#[cfg(feature = "cli")]
+pub use changes::OutputSection;
+pub use changes::SyncChange;
 pub use handler::SyncHandler;
 pub use link::{LinkError, LinkMode};

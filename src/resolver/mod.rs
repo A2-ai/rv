@@ -216,8 +216,55 @@ impl<'d> Resolver<'d> {
 
             let installation_status =
                 cache.get_installation_status(&item.name, &package.version, &package.source);
+
+            // We search first in the repo for whether we have source or binary since
+            // we don't record that info in the lockfile
+            let kind = if package.force_source {
+                PackageType::Source
+            } else if let Source::Repository { repository } = &package.source {
+                let repo_url = repository.as_str();
+                let matching_repo = self
+                    .repositories
+                    .iter()
+                    .find(|(repo, _)| repo.url == repo_url);
+                match matching_repo {
+                    Some((repo, repo_force_source)) => {
+                        if *repo_force_source {
+                            PackageType::Source
+                        } else {
+                            let version_req =
+                                VersionRequirement::from_str(&format!("(== {})", package.version))
+                                    .unwrap();
+
+                            let has_binary = repo
+                                .find_package(
+                                    &package.name,
+                                    Some(&version_req),
+                                    &self.r_version,
+                                    false,
+                                )
+                                .is_some_and(|(_, package_type)| {
+                                    package_type == PackageType::Binary
+                                });
+
+                            if has_binary {
+                                PackageType::Binary
+                            } else {
+                                PackageType::Source
+                            }
+                        }
+                    }
+                    // DBs not found.
+                    // I think it can only happen when someone is changing a repository
+                    // URL in the config file and the one from the lockfile is not found anymore
+                    None => return None,
+                }
+            } else {
+                // url/git/local are probably source packages
+                PackageType::Source
+            };
             let resolved_dep =
-                ResolvedDependency::from_locked_package(package, installation_status);
+                ResolvedDependency::from_locked_package(package, installation_status, kind);
 
             let items = package
                 .dependencies
@@ -503,11 +550,8 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // First let's check if it's a builtin package if the R version is matching if the package
-            // is not listed from a specific repo
-            if !item.has_required_repo()
-                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
-            {
+            // First we look at the lockfile and trust what is inside
+            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()
@@ -517,8 +561,11 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // Look at lockfile
-            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
+            // Then let's check if it's a builtin package if the R version is matching if the package
+            // is not listed from a specific repo
+            if !item.has_required_repo()
+                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
+            {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()

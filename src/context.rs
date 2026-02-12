@@ -183,20 +183,6 @@ impl Context {
         Ok(())
     }
 
-    /// Load databases only if the lockfile cannot fully resolve dependencies
-    pub fn load_databases_if_needed(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let can_resolve = self
-            .lockfile
-            .as_ref()
-            .map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
-            .unwrap_or(false);
-
-        if !can_resolve {
-            self.load_databases()?;
-        }
-        Ok(())
-    }
-
     /// Load system requirements from posit API (only supported on some Linux distros)
     pub fn load_system_requirements(&mut self) {
         if !system_req::is_supported(self.cache.system_info()) {
@@ -210,14 +196,9 @@ impl Context {
     /// Load databases and system requirements based on resolve mode
     pub fn load_for_resolve_mode(
         &mut self,
-        resolve_mode: ResolveMode,
+        _resolve_mode: ResolveMode,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // If the sync mode is an upgrade, we want to load the databases even if all packages
-        // are contained in the lockfile because we ignore the lockfile during initial resolution
-        match resolve_mode {
-            ResolveMode::Default => self.load_databases_if_needed()?,
-            ResolveMode::FullUpgrade => self.load_databases()?,
-        }
+        self.load_databases()?;
         self.load_system_requirements();
         Ok(())
     }
