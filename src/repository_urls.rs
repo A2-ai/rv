@@ -144,13 +144,13 @@ fn get_windows_url(url: &Url, file_path: &[&str], r_version: &[u32; 2]) -> Url {
 /// CRAN-type repositories have had to adapt to the introduction of the Mac arm64 processors
 /// For x86_64 processors, a split in the path to the binaries occurred at R/4.2:
 /// * R <= 4.2, the path is `/bin/macosx/contrib/4.<R minor version>`
-/// * R > 4.2, the path is `/bin/macosx/{codename}-x86_64/contrib/4.<R minor version>`
+/// * R > 4.2, the path is `/bin/macosx/<OS codename>-x86_64/contrib/4.<R minor version>`
 ///
 /// This split occurred to mirror the new path pattern for arm64 processors.
-/// The path to the binaries built for arm64 binaries is `/bin/macosx/{codename}-arm64/contrib/4.<R minor version>`
+/// The path to the binaries built for arm64 binaries is `/bin/macosx/<OS codename>-arm64/contrib/4.<R minor version>`
 /// While CRAN itself only started supporting arm64 binaries at R/4.2, many repositories (including PPM) support binaries for older versions
 ///
-/// In R 4.6, CRAN switched the OS codename for arm64 mac binaries to sonoma. All others arch/R version combo is big-sur
+/// Prior to R 4.6, all OS codename's for mac binaries were `big-sur``. Starting for R 4.6, on arm64 only the codename is `sonoma`.
 fn get_mac_url(
     url: &Url,
     file_path: &[&str],
