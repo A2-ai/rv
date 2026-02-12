@@ -550,11 +550,8 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // First let's check if it's a builtin package if the R version is matching if the package
-            // is not listed from a specific repo
-            if !item.has_required_repo()
-                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
-            {
+            // First we look at the lockfile and trust what is inside
+            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()
@@ -564,8 +561,11 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // Look at lockfile
-            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
+            // Then let's check if it's a builtin package if the R version is matching if the package
+            // is not listed from a specific repo
+            if !item.has_required_repo()
+                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
+            {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()
