@@ -1,5 +1,5 @@
 ---
-source: src/add.rs
+source: src/dependency_edit.rs
 expression: doc.to_string()
 ---
 [project]
@@ -12,5 +12,5 @@ repositories = [
 ]
 
 dependencies = [
-    { name = "mypkg", git = "https://github.com/user/repo", tag = "v1.0.0", directory = "subdir", install_suggestions = true, dependencies_only = true },
+    { name = "dplyr", install_suggestions = true },
 ]
