@@ -1,5 +1,4 @@
 mod activate;
-mod add;
 mod cache;
 mod cancellation;
 #[cfg(feature = "cli")]
@@ -8,6 +7,7 @@ mod config;
 mod configure;
 pub mod consts;
 mod context;
+mod dependency_edit;
 mod format;
 mod fs;
 mod git;
@@ -28,7 +28,6 @@ pub mod system_req;
 mod utils;
 
 pub use activate::{activate, deactivate};
-pub use add::{AddOptions, add_packages, read_and_verify_config};
 pub use cache::{Cache, CacheInfo, DiskCache, PackagePaths, utils::hash_string};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
@@ -37,6 +36,7 @@ pub use configure::{
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
 pub use context::{Context, RCommandLookup, ResolveMode};
+pub use dependency_edit::{AddOptions, add_packages, read_and_verify_config, remove_packages};
 pub use format::format_document;
 pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};

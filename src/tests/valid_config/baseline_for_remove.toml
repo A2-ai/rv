@@ -1,0 +1,14 @@
+[project]
+name = "test-project"
+r_version = "4.4"
+
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org"},
+    { alias = "ppm", url = "https://packagemanager.posit.co/cran/latest"},
+]
+
+dependencies = [
+    "dplyr",
+    { name = "purrr", path = "../purrr" },
+    { name = "dplyr", install_suggestions = true, force_source = true },
+]
