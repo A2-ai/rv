@@ -144,11 +144,13 @@ fn get_windows_url(url: &Url, file_path: &[&str], r_version: &[u32; 2]) -> Url {
 /// CRAN-type repositories have had to adapt to the introduction of the Mac arm64 processors
 /// For x86_64 processors, a split in the path to the binaries occurred at R/4.2:
 /// * R <= 4.2, the path is `/bin/macosx/contrib/4.<R minor version>`
-/// * R > 4.2, the path is `/bin/macosx/big-sur-x86_64/contrib/4.<R minor version>`
+/// * R > 4.2, the path is `/bin/macosx/<OS codename>-x86_64/contrib/4.<R minor version>`
 ///
 /// This split occurred to mirror the new path pattern for arm64 processors.
-/// The path to the binaries built for arm64 binaries is `/bin/macosx/big-sur-arm64/contrib/4.<R minor version>`
+/// The path to the binaries built for arm64 binaries is `/bin/macosx/<OS codename>-arm64/contrib/4.<R minor version>`
 /// While CRAN itself only started supporting arm64 binaries at R/4.2, many repositories (including PPM) support binaries for older versions
+///
+/// Prior to R 4.6, all OS codename's for mac binaries were `big-sur``. Starting for R 4.6, on arm64 only the codename is `sonoma`.
 fn get_mac_url(
     url: &Url,
     file_path: &[&str],
@@ -168,7 +170,14 @@ fn get_mac_url(
         // Some sources (PPM for example) start to include arch earlier for arm64.
         // Therefore, we only do not include the additional path element for x86_64 with R <= 4.2
         if !(arch == "x86_64" && r_version <= &[4, 2]) {
-            segments.push(&format!("big-sur-{arch}"));
+            // Starting in R 4.6, the OS codename switched to sonoma for arm64.
+            let codename = if arch == "arm64" && r_version >= &[4, 6] {
+                "sonoma"
+            } else {
+                "big-sur"
+            };
+
+            segments.push(&format!("{codename}-{arch}"));
         }
 
         segments.extend(
@@ -359,6 +368,30 @@ mod tests {
         let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
         let ref_url = format!(
             "{}/bin/macosx/big-sur-arm64/contrib/4.4/{}",
+            PPM_URL.as_str(),
+            TEST_FILE_NAME[0]
+        );
+        assert_eq!(source_url.as_str(), ref_url);
+    }
+
+    #[test]
+    fn test_mac_arm64_r46_url() {
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("arm64".to_string()), None, "");
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 6], &sysinfo).unwrap();
+        let ref_url = format!(
+            "{}/bin/macosx/sonoma-arm64/contrib/4.6/{}",
+            PPM_URL.as_str(),
+            TEST_FILE_NAME[0]
+        );
+        assert_eq!(source_url.as_str(), ref_url);
+    }
+
+    #[test]
+    fn test_mac_x86_64_r46_url() {
+        let sysinfo = SystemInfo::new(OsType::MacOs, Some("x86_64".to_string()), None, "");
+        let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 6], &sysinfo).unwrap();
+        let ref_url = format!(
+            "{}/bin/macosx/big-sur-x86_64/contrib/4.6/{}",
             PPM_URL.as_str(),
             TEST_FILE_NAME[0]
         );
