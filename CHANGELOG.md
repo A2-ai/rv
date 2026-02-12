@@ -1,3 +1,26 @@
+## v0.18.0 - February 12, 2026
+
+This release introduces a shared global cache for multi-user environments, a new `rv remove` command, support for R 4.6 on macOS, development R version support, and improved sync/summary output.
+
+
+### 🎉 New Features
+- **Global cache support**: `rv` now supports a shared read-only cache via `RV_GLOBAL_CACHE_DIR`, so projects can reuse already-downloaded packages across environments.
+- **Package removal command**: You can now remove dependencies with `rv remove <package...>`, with support for `--dry-run` and `--no-sync`.
+- **CLI documentation output**: `rv docs cli` now generates full command docs in Markdown or JSON, and `rv docs cli-cmds` prints a compact command list.
+
+### ⚡ Improvements
+- **Clearer sync and plan output**: `rv sync`, `rv plan`, and `rv summary` now clearly show whether packages come from global cache, local cache, download, or local paths.
+- **Improved R detection and project initialization**: `rv init` now better detects installed R versions (including devel setups) and carries that information into project configuration.
+- **Improved installation errors**: Package install failures now show cleaner, easier-to-read error output for troubleshooting.
+- **Documentation is now centralized**: The README now points to the hosted documentation site for install, usage, and configuration guidance.
+
+### 🐛 Bug Fixes
+- **Fixed lockfile ignoring builtin package overrides**: Resolved an issue where builtin R packages (e.g., MASS) specified in the lockfile from a custom repository were incorrectly resolved as builtins instead of using the lockfile-specified version.
+- **Fixed lockfile package type selection**: `rv` now correctly falls back to source builds when the exact locked version is not available as a binary.
+- **Fixed dependency resolution with `dependencies_only` entries**: Version constraints from dependencies-only packages are now correctly considered during resolution.
+- **Fixed macOS arm64 binary path handling for R 4.6**: `rv` now uses the correct repository path for macOS arm64 R 4.6 binaries.
+- **Fixed config round-tripping for `r_version`**: Configuration edits now preserve `r_version` correctly when writing back `rproject.toml`.
+
 ## v0.17.1 - December 19, 2025
 
 Internal refactoring to provide additional capabilities to those embedding rv in other programs.
