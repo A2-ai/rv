@@ -18,3 +18,4 @@ drift-reviews/
 
 # Claude code
 .claude/settings.local.json
+temp-pkg
