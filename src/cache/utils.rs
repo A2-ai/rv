@@ -54,3 +54,23 @@ pub fn hash_string(input: &str) -> String {
     let result = format!("{:x}", hasher.finalize());
     result[..10].to_string()
 }
+
+pub fn get_global_cache_dir() -> Option<PathBuf> {
+    let env_value = std::env::var(crate::consts::GLOBAL_CACHE_DIR_ENV_VAR_NAME).ok();
+
+    match env_value {
+        Some(path_str) => {
+            let path = PathBuf::from(&path_str);
+            if path.is_dir() {
+                Some(path)
+            } else {
+                log::warn!(
+                    "RV_GLOBAL_CACHE_DIR is set to '{}' but directory doesn't exist or isn't accessible",
+                    path_str
+                );
+                None
+            }
+        }
+        None => None,
+    }
+}

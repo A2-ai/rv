@@ -1,0 +1,6 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+pkgA=1.0.0 (repository(url: http://posit/), type=source, path='', from_lockfile=true, from_remote=false, env_vars=[])
+MASS=7.3-64 (repository(url: http://posit/), type=source, path='', from_lockfile=true, from_remote=false, env_vars=[])

@@ -1,0 +1,11 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "pkgA",
+    {name = "deponly", dependencies_only = true},
+]
+---
+repos = [{name = "repo1", source = "dep-only-ver-req-repo1", force_source = false}, {name = "repo2", source = "dep-only-ver-req-repo2", force_source = false}]
+---

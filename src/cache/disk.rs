@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt;
-use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -9,6 +7,7 @@ use filetime::FileTime;
 use fs_err as fs;
 use url::Url;
 
+use crate::cache::InstallationStatus;
 use crate::cache::utils::{
     get_current_system_path, get_packages_timeout, get_user_cache_dir, hash_string,
 };
@@ -16,70 +15,12 @@ use crate::consts::{BUILD_LOG_FILENAME, BUILT_FROM_SOURCE_FILENAME};
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
 use crate::system_req::get_system_requirements;
-use crate::{RCmd, SystemInfo, Version};
+use crate::{RInstall, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
     pub binary: PathBuf,
     pub source: PathBuf,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum InstallationStatus {
-    Absent,
-    Source,
-    /// The bool represents whether it has been built from source by rv
-    Binary(bool),
-    /// The bool represents whether the binary has been built from source by rv
-    Both(bool),
-}
-
-impl InstallationStatus {
-    pub fn available(&self) -> bool {
-        *self != InstallationStatus::Absent
-    }
-
-    pub fn binary_available(&self) -> bool {
-        matches!(
-            self,
-            InstallationStatus::Binary(_) | InstallationStatus::Both(_)
-        )
-    }
-
-    pub fn binary_available_from_source(&self) -> bool {
-        matches!(
-            self,
-            InstallationStatus::Binary(true) | InstallationStatus::Both(true)
-        )
-    }
-
-    /// If the user asked force_source and we have binary version but not built from source ourselves,
-    /// consider we don't actually have the binary
-    pub fn mark_as_binary_unavailable(self) -> Self {
-        match self {
-            InstallationStatus::Both(false) => InstallationStatus::Source,
-            InstallationStatus::Binary(false) => InstallationStatus::Absent,
-            _ => self,
-        }
-    }
-
-    pub fn source_available(&self) -> bool {
-        matches!(
-            self,
-            InstallationStatus::Source | InstallationStatus::Both(_)
-        )
-    }
-}
-
-impl fmt::Display for InstallationStatus {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            InstallationStatus::Source => write!(f, "source"),
-            InstallationStatus::Binary(b) => write!(f, "binary (built from source: {b})"),
-            InstallationStatus::Both(b) => write!(f, "source and binary (built from source: {b})"),
-            InstallationStatus::Absent => write!(f, "absent"),
-        }
-    }
 }
 
 /// This cache doesn't load anything, it just gets paths to cached objects.
@@ -97,6 +38,7 @@ pub struct DiskCache {
     /// How long the compiled databases are considered fresh for, in seconds
     /// Defaults to 3600s (1 hour)
     packages_timeout: u64,
+    readonly: bool,
     // TODO: check if it's worth keeping a hashmap of repo_url -> encoded
     // TODO: or if the overhead is the same as base64 directly
 }
@@ -119,6 +61,11 @@ impl DiskCache {
         Self::new_in_dir(r_version, system_info, root)
     }
 
+    pub fn mark_readonly(mut self) -> Self {
+        self.readonly = true;
+        self
+    }
+
     pub(crate) fn new_in_dir(
         r_version: &Version,
         system_info: SystemInfo,
@@ -129,11 +76,12 @@ impl DiskCache {
             system_info,
             r_version: r_version.major_minor(),
             packages_timeout: get_packages_timeout(),
+            readonly: false,
         })
     }
 
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
-    pub fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
+    pub(super) fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
         let encoded = hash_string(name);
         self.root
             .join(&encoded)
@@ -157,7 +105,7 @@ impl DiskCache {
     }
 
     /// Gets the folder where the R build package stdout+stderr output should be stored
-    pub fn get_build_log_path(
+    pub(crate) fn get_build_log_path(
         &self,
         source: &Source,
         pkg_name: Option<&str>,
@@ -201,23 +149,23 @@ impl DiskCache {
     }
 
     /// Gets where the source tarballs are saved when this option is enabled
-    pub fn get_source_tarball_folder(&self) -> PathBuf {
+    pub(super) fn get_source_tarball_folder(&self) -> PathBuf {
         self.root.join("source_tarballs")
     }
 
     /// Gets the path where a source tarball should be saved
-    pub fn get_tarball_path(&self, name: &str, version: &str) -> PathBuf {
+    pub(crate) fn get_tarball_path(&self, name: &str, version: &str) -> PathBuf {
         self.get_source_tarball_folder()
             .join(format!("{name}_{version}.tar.gz"))
     }
 
     /// We will download them in a separate path, we don't know if we have source or binary
-    pub fn get_url_download_path(&self, url: &Url) -> PathBuf {
+    pub(crate) fn get_url_download_path(&self, url: &Url) -> PathBuf {
         let encoded = hash_string(&url.as_str().to_ascii_lowercase());
         self.root.join("urls").join(encoded)
     }
 
-    pub fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
+    pub(crate) fn get_git_clone_path(&self, repo_url: &str) -> PathBuf {
         let encoded = hash_string(&repo_url.trim_end_matches("/").to_ascii_lowercase());
         self.root.join("git").join(encoded)
     }
@@ -245,7 +193,7 @@ impl DiskCache {
         (path, false)
     }
 
-    pub fn get_package_paths(
+    pub(crate) fn get_package_paths(
         &self,
         source: &Source,
         pkg_name: Option<&str>,
@@ -279,7 +227,7 @@ impl DiskCache {
 
     /// Finds where a package is present in the cache depending on its source.
     /// The version param is only used when the source is a repository
-    pub fn get_installation_status(
+    pub(crate) fn get_installation_status(
         &self,
         pkg_name: &str,
         version: &str,
@@ -314,15 +262,16 @@ impl DiskCache {
         }
     }
 
-    pub fn get_builtin_packages_versions(
+    pub(super) fn get_builtin_packages_versions(
         &self,
-        r_cmd: &impl RCmd,
+        r_cmd: &RInstall,
     ) -> std::io::Result<HashMap<String, Package>> {
-        let version = r_cmd.version().expect("to work");
-        let filename = format!("builtin-{}.mp", version.original);
+        let filename = format!("builtin-{}.mp", r_cmd.version.original);
         let path = self.root.join(&filename);
         if let Some(builtin) = BuiltinPackages::load(&path) {
             Ok(builtin.packages)
+        } else if self.readonly {
+            Ok(HashMap::new())
         } else {
             let builtin = get_builtin_versions_from_library(r_cmd)?;
             builtin.persist(&path)?;
@@ -330,7 +279,7 @@ impl DiskCache {
         }
     }
 
-    pub fn get_system_requirements(&self) -> HashMap<String, Vec<String>> {
+    pub(super) fn get_system_requirements(&self) -> HashMap<String, Vec<String>> {
         let (distrib, version) = self.system_info.sysreq_data();
         let key = format!("sysreq-{distrib}-{version}.json",);
         let path = self.root.join(&key);
@@ -338,6 +287,8 @@ impl DiskCache {
         if path.exists() {
             let content = fs::read_to_string(&path).expect("to work");
             serde_json::from_str(&content).unwrap()
+        } else if self.readonly {
+            HashMap::new()
         } else {
             let sysreq = get_system_requirements(&self.system_info);
             let content = serde_json::to_string(&sysreq).unwrap();

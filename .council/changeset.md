@@ -1,0 +1,114 @@
+Generate User-Facing Release Notes
+
+Examine the git diffs from all commits after release v0.17.1, along with the complete contents
+of the modified files and any other relevant files you believe would help with a review.
+
+Your goal is to communicate
+what's new, changed, or fixed from the user's perspective, ignoring internal implementation details.
+Input Files You'll Receive:
+
+README.md and other documentation files
+Architecture notes (claude.md, etc.)
+Git diffs showing code changes
+Full contents of modified files
+Previous release notes for style/format reference
+
+Instructions:
+
+Focus on User Impact Only
+
+Include only changes that users will notice or that affect their experience
+Ignore internal refactoring, code cleanup, dependency updates, or implementation changes
+Ask yourself: "Will the user see, feel, or experience this change?" If no, exclude it
+
+
+Categorize Changes
+
+New Features: Capabilities users didn't have before
+Improvements: Enhancements to existing functionality
+Bug Fixes: Issues users encountered that are now resolved
+Breaking Changes: Changes requiring users to modify their usage
+Deprecations: Features being phased out with migration guidance
+
+
+Writing Style
+
+Use clear, non-technical language
+Write in present tense ("The app now supports..." not "Added support for...")
+Be specific about benefits ("Upload files up to 100MB" not "Increased file size limit")
+Keep each item concise (1-2 sentences max)
+Use active voice
+
+
+Examples of What to Include:
+
+✅ ability to configure repositories programmatically via rv configure repository
+✅ fixed issue where rv could not remove a library on an NFS file system
+
+
+Examples of What to Exclude:
+
+❌ "Refactored http connection pooling"
+❌ "Updated library from v17 to v18"
+❌ "Improved code coverage to 85%"
+
+Format Requirements
+
+Start with a brief summary (2-3 sentences) highlighting the most important changes
+Group items by category
+Use bullet points for individual changes
+Include version number and release date
+Add migration notes for breaking changes
+
+
+
+Output Format:
+## vX.Y.Z - [Date]
+
+[Brief summary of major highlights]
+
+### 🎉 New Features
+- [Feature description focusing on user benefit]
+
+### ⚡ Improvements
+- [Enhancement description with specific user impact]
+
+### 🐛 Bug Fixes
+- [Fixed issue description from user perspective]
+
+### ⚠️ Breaking Changes
+- [Change description with migration instructions]
+
+
+When considering the different output types, bug fixes should be described in terms of what they fix.
+
+a real world example:
+
+### ⚡ Improvements
+- **Improved installation logging**: Install logs are now saved during the build process rather than at the end, providing better debugging capabilities for failed installations.
+- **Enhanced force_source handling**: When `force_source` is enabled, rv now properly ignores cached binary packages that weren't built from source by rv itself, ensuring packages are compiled locally as requested.
+- **Better error handling**: Enhanced error messages for invalid packages with clearer path and error information.
+- **Improved R command detection**: Better handling of R.bat detection on Windows systems and more reliable R version finding across platforms.
+
+### 🐛 Bug Fixes
+- **Fixed library comparison logic**: Resolved issues where builtin packages weren't properly recognized as installed in project summaries.
+- **Fixed database loading**: Added fallback mechanism when loading cached package databases fails, ensuring rv can recover by re-fetching the data.
+
+Note that better error handling and improved r cmd detection are improvements. In previous attempts you have classified these as bug fixes.
+Bug fixes are all noted as Fixed...
+
+another example, of an improvment, not a bug fix: - **Fixed git repository error handling**: Improved error messages when DESCRIPTION files are not found in git repositories, providing clearer feedback when package metadata is missing.
+
+after creating a potential message CAREFULLY REVIEW the messaging to determine its type, particularly improvements or adjustments to make user experience better vs true bug fixes
+
+Review the git diffs and file changes, but translate technical changes into user benefits.
+If a diff shows performance optimizations, describe how the app is now faster.
+If it shows new API endpoints, describe what new actions users can perform.
+
+Err on the side of uncertainty, if you're unsure of what a feature does or how it impacts a user,
+NOTE IT AS A TODO FOR REVIEW as these release notes will be reviewed by a human before final publication.
+
+USE THE STYLE OF THE @CHANGELOG.md FILE AS A GUIDE FOR FORMAT AND TONE. REVIEW ITS CONTENT CAREFULLY
+DO NOT INCLUDE ANY INTERNAL IMPLEMENTATION DETAILS OR TECHNICAL JARGON.
+
+write out your proposed review to {{agent_name}}-changelog.md

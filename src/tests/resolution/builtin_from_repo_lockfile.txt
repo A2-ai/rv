@@ -1,0 +1,30 @@
+ # MASS is a recommended/builtin package but the lockfile has it from a repo.
+ # It should resolve from the lockfile, not as builtin.
+ [project]
+ name = "test"
+ r_version = "4.4"
+ repositories = [
+     { alias = "posit", url = "http://posit" },
+ ]
+ dependencies = [
+     "pkgA",
+ ]
+ ---
+ repos = [{name = "posit", source = "posit-src", force_source = false}]
+ ---
+ version = 2
+ r_version = "4.4"
+
+ [[packages]]
+ name = "pkgA"
+ version = "1.0.0"
+ source = { repository = "http://posit/" }
+ force_source = false
+ dependencies = ["MASS"]
+
+ [[packages]]
+ name = "MASS"
+ version = "7.3-64"
+ source = { repository = "http://posit/" }
+ force_source = false
+ dependencies = []

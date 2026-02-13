@@ -16,7 +16,7 @@ const CONFIG_FILENAME: &str = "rproject.toml";
 const INITIAL_CONFIG: &str = r#"[project]
 name = "%project_name%"
 r_version = "%r_version%"
-
+%use_devel%
 # A list of repositories to fetch packages from. Order matters: we will try to get a package from each repository in order.
 # The alias is only used in this file if you want to specifically require a dependency to come from a certain repository.
 # Example: { alias = "PPM", url = "https://packagemanager.posit.co/cran/latest" },
@@ -46,6 +46,7 @@ pub fn init(
     r_version: &str,
     repositories: &[Repository],
     dependencies: &[String],
+    use_devel: bool,
     force: bool,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
@@ -64,7 +65,13 @@ pub fn init(
         .map(|x| x.to_string_lossy().to_string())
         .unwrap_or("my rv project".to_string());
 
-    let config = render_config(&project_name, r_version, repositories, dependencies);
+    let config = render_config(
+        &project_name,
+        r_version,
+        repositories,
+        dependencies,
+        use_devel,
+    );
 
     write(proj_dir.join(CONFIG_FILENAME), config)?;
     Ok(())
@@ -75,6 +82,7 @@ fn render_config(
     r_version: &str,
     repositories: &[Repository],
     dependencies: &[String],
+    use_devel: bool,
 ) -> String {
     let repos = repositories
         .iter()
@@ -88,9 +96,12 @@ fn render_config(
         .collect::<Vec<_>>()
         .join("\n");
 
+    let use_devel_str = if use_devel { "use_devel = true\n" } else { "" };
+
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
         .replace("%r_version%", r_version)
+        .replace("%use_devel%", use_devel_str)
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
 }
@@ -250,7 +261,8 @@ mod tests {
             &r_version.original,
             &repositories,
             &dependencies,
-            false,
+            false, // use_devel
+            false, // force
         )
         .unwrap();
         let dir = &project_directory.path();

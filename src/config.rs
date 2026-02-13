@@ -315,6 +315,8 @@ pub(crate) struct Project {
     )]
     r_version: Version,
     #[serde(default)]
+    use_devel: Option<bool>,
+    #[serde(default)]
     description: String,
     license: Option<String>,
     #[serde(default)]
@@ -471,6 +473,10 @@ impl Config {
         &self.project.r_version
     }
 
+    pub fn use_devel(&self) -> bool {
+        self.project.use_devel.unwrap_or(false)
+    }
+
     pub fn use_lockfile(&self) -> bool {
         self.use_lockfile
     }
@@ -565,7 +571,7 @@ mod tests {
         let toml_str = r#"
 [project]
 name = "test"
-r_version = "4.5"
+r_version = "4.4"
 repositories = []
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();

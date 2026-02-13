@@ -72,10 +72,9 @@ impl<'d> Resolution<'d> {
 
         let mut solver = DependencySolver::default();
         for package in &self.found {
-            if package.ignored {
-                continue;
+            if !package.ignored {
+                solver.add_package(&package.name, &package.version);
             }
-            solver.add_package(&package.name, &package.version);
 
             let deps = package.dependencies.iter().chain({
                 if package.install_suggests {

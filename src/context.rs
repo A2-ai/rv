@@ -1,22 +1,22 @@
 //! Project context for rv library usage
 
-use std::collections::HashMap;
-use std::error::Error;
-use std::path::{Path, PathBuf};
-
 use fs_err as fs;
 #[cfg(feature = "cli")]
 use rayon::prelude::*;
+use std::collections::HashMap;
+use std::error::Error;
+use std::path::{Path, PathBuf};
 use url::Url;
 
+use crate::cache::Cache;
 use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, STAGING_DIR_NAME};
 use crate::lockfile::Lockfile;
 use crate::package::Package;
+use crate::r_finder::find_r_install;
 use crate::utils::create_spinner;
 use crate::{
-    Config, DiskCache, GitExecutor, Http, Library, RCommandLine, Repository, RepositoryDatabase,
-    Resolution, Resolver, SystemInfo, Version, find_r_version_command, get_package_file_urls, http,
-    system_req,
+    Config, DiskCache, GitExecutor, Http, Library, RInstall, Repository, RepositoryDatabase,
+    Resolution, Resolver, SystemInfo, Version, get_package_file_urls, http, system_req,
 };
 
 /// Method on how to find the R Version on the system
@@ -60,11 +60,11 @@ pub struct Context {
     pub config: Config,
     pub project_dir: PathBuf,
     pub r_version: Version,
-    pub cache: DiskCache,
+    pub cache: Cache,
     pub library: Library,
     pub databases: Vec<(RepositoryDatabase, bool)>,
     pub lockfile: Option<Lockfile>,
-    pub r_cmd: RCommandLine,
+    pub r_cmd: RInstall,
     pub builtin_packages: HashMap<String, Package>,
     /// Taken from posit API. Only for some linux distrib, it will remain empty
     /// on mac/windows/arch etc
@@ -90,29 +90,32 @@ impl Context {
 
         // This can only be set to false if the user passed a r_version to rv plan
         let mut r_version_found = true;
-        let (r_version, r_cmd) = match r_command_lookup {
-            RCommandLookup::Strict => {
-                let r_version = config.r_version().clone();
-                let r_cmd = find_r_version_command(&r_version)?;
-                (r_version, r_cmd)
-            }
-            RCommandLookup::Soft(v) => {
-                let r_cmd = match find_r_version_command(&v) {
-                    Ok(r) => r,
-                    Err(_) => {
-                        r_version_found = false;
-                        RCommandLine::default()
-                    }
-                };
-                (v, r_cmd)
-            }
-            RCommandLookup::Skip => (config.r_version().clone(), RCommandLine::default()),
+        let r_version = match r_command_lookup {
+            RCommandLookup::Strict | RCommandLookup::Skip => config.r_version().clone(),
+            RCommandLookup::Soft(ref v) => v.clone(),
+        };
+        let r_cmd = match find_r_install(&r_version, config.use_devel()) {
+            Some(r_install) => r_install,
+            None => match r_command_lookup {
+                RCommandLookup::Strict => {
+                    return Err(format!(
+                        "Could not find an R version matching {}",
+                        r_version.original
+                    )
+                    .into());
+                }
+                RCommandLookup::Soft(_) => {
+                    r_version_found = false;
+                    RInstall::default_from_path()
+                }
+                RCommandLookup::Skip => RInstall::default_from_path(),
+            },
         };
 
         let cache = if let Some(dir) = cache_dir {
-            DiskCache::new_in_dir(&r_version, SystemInfo::from_os_info(), dir)?
+            Cache::new_in_dir(&r_version, SystemInfo::from_os_info(), dir)?
         } else {
-            DiskCache::new(&r_version, SystemInfo::from_os_info())?
+            Cache::new(&r_version, SystemInfo::from_os_info())?
         };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
@@ -137,7 +140,7 @@ impl Context {
         let mut library = if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
         } else {
-            Library::new(&project_dir, &cache.system_info, r_version.major_minor())
+            Library::new(&project_dir, cache.system_info(), r_version.major_minor())
         };
         fs::create_dir_all(&library.path)?;
         library.find_content();
@@ -175,28 +178,14 @@ impl Context {
     /// Load package databases from repositories
     pub fn load_databases(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let pb = create_spinner(self.show_progress_bar, "Loading databases...");
-        self.databases = load_databases(self.config.repositories(), &self.cache)?;
+        self.databases = load_databases(self.config.repositories(), self.cache.local())?;
         pb.finish_and_clear();
-        Ok(())
-    }
-
-    /// Load databases only if the lockfile cannot fully resolve dependencies
-    pub fn load_databases_if_needed(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let can_resolve = self
-            .lockfile
-            .as_ref()
-            .map(|l| l.can_resolve(self.config.dependencies(), self.config.repositories()))
-            .unwrap_or(false);
-
-        if !can_resolve {
-            self.load_databases()?;
-        }
         Ok(())
     }
 
     /// Load system requirements from posit API (only supported on some Linux distros)
     pub fn load_system_requirements(&mut self) {
-        if !system_req::is_supported(&self.cache.system_info) {
+        if !system_req::is_supported(self.cache.system_info()) {
             return;
         }
         let pb = create_spinner(self.show_progress_bar, "Loading system requirements...");
@@ -207,14 +196,9 @@ impl Context {
     /// Load databases and system requirements based on resolve mode
     pub fn load_for_resolve_mode(
         &mut self,
-        resolve_mode: ResolveMode,
+        _resolve_mode: ResolveMode,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // If the sync mode is an upgrade, we want to load the databases even if all packages
-        // are contained in the lockfile because we ignore the lockfile during initial resolution
-        match resolve_mode {
-            ResolveMode::Default => self.load_databases_if_needed()?,
-            ResolveMode::FullUpgrade => self.load_databases()?,
-        }
+        self.load_databases()?;
         self.load_system_requirements();
         Ok(())
     }

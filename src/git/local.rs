@@ -8,7 +8,7 @@ use crate::git::CommandExecutor;
 use crate::git::reference::{GitReference, Oid};
 use crate::utils::is_env_var_truthy;
 
-const HEAD_LINE_START: &str = "HEAD branch: ";
+const SYMREF_PREFIX: &str = "ref: refs/heads/";
 
 pub struct GitRepository {
     path: PathBuf,
@@ -202,16 +202,25 @@ impl GitRepository {
     fn checkout_head(&self) -> Result<(), std::io::Error> {
         let output = self.executor.execute(
             Command::new("git")
-                .arg("remote")
-                .arg("show")
+                .arg("ls-remote")
+                .arg("--symref")
                 .arg("origin")
+                .arg("HEAD")
                 .current_dir(&self.path),
         )?;
-        let mut branch_name = String::new();
 
-        for l in output.lines() {
-            if l.trim().starts_with(HEAD_LINE_START) {
-                branch_name = l.replace(HEAD_LINE_START, "").trim().to_string();
+        let mut branch_name = String::new();
+        // The output is something like:
+        // > git ls-remote --symref origin HEAD
+        // ref: refs/heads/main    HEAD
+        // 8823d1d2b5f4d80ed77f781e30df2eaa4c84fe9e        HEAD
+        for line in output.lines() {
+            if let Some(rest) = line.strip_prefix(SYMREF_PREFIX) {
+                // We get main    HEAD, and the branch name is the first one
+                if let Some(name) = rest.split_whitespace().next() {
+                    branch_name = name.trim().to_string();
+                    break;
+                }
             }
         }
 

@@ -1,5 +1,5 @@
 ---
-source: src/add.rs
+source: src/dependency_edit.rs
 expression: doc.to_string()
 ---
 [project]
@@ -12,5 +12,5 @@ repositories = [
 ]
 
 dependencies = [
-    { name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz" },
+    "dplyr",
 ]
