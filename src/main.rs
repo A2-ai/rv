@@ -533,12 +533,13 @@ fn try_main() -> Result<()> {
             } else {
                 add_packages(&mut doc, packages, add_options)?;
             }
-            // write the update if not dry run
-            if !dry_run {
-                write(&cli.config_file, doc.to_string())?;
-            }
+            let updated_config_toml = doc.to_string();
             // if no sync, exit early
             if no_sync {
+                // no_sync means we should persist config edits immediately
+                if !dry_run {
+                    write(&cli.config_file, &updated_config_toml)?;
+                }
                 if output_format.is_json() {
                     // Nothing to output for JSON format here since we didn't sync anything
                     println!("{{}}");
@@ -553,10 +554,8 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            // if dry run, the config won't have been edited to reflect the added changes so must be added
-            if dry_run {
-                context.config = doc.to_string().parse::<Config>()?;
-            }
+            // Keep config edits in-memory during sync; persist only after successful sync.
+            context.config = updated_config_toml.parse::<Config>()?;
             let resolve_mode = ResolveMode::Default;
             context
                 .load_for_resolve_mode(resolve_mode)
@@ -567,6 +566,9 @@ fn try_main() -> Result<()> {
                 ..Default::default()
             }
             .run(&context, resolve_mode)?;
+            if !dry_run {
+                write(&cli.config_file, &updated_config_toml)?;
+            }
         }
         Command::Remove {
             packages,
