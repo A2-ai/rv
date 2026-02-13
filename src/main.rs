@@ -19,7 +19,7 @@ use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
     CacheInfo, Config, ProjectSummary, RepositoryAction, RepositoryMatcher, RepositoryPositioning,
     RepositoryUpdates, Version, activate, add_packages, deactivate, execute_repository_action,
-    read_and_verify_config, system_req,
+    parse_add_package_spec, read_and_verify_config, system_req,
 };
 
 /// rv, the R package manager
@@ -75,6 +75,7 @@ pub enum Command {
     },
     /// Add packages to the project and sync
     Add {
+        /// Package names or git repo specs like owner/repo[@ref][:subdir] or https://...[@ref][:subdir]
         #[clap(value_parser, required = true)]
         packages: Vec<String>,
         #[clap(long)]
@@ -517,7 +518,21 @@ fn try_main() -> Result<()> {
                 }
             }
 
-            add_packages(&mut doc, packages, add_options)?;
+            // Parse shorthand git repo specs unless an explicit source option is provided.
+            if !add_options.has_source_options() {
+                for package in packages {
+                    let parsed =
+                        parse_add_package_spec(package.as_str(), config.git_shorthand_base_url())
+                            .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
+
+                    let mut options = parsed.options;
+                    options.install_suggestions = add_options.install_suggestions;
+                    options.dependencies_only = add_options.dependencies_only;
+                    add_packages(&mut doc, vec![parsed.name], options)?;
+                }
+            } else {
+                add_packages(&mut doc, packages, add_options)?;
+            }
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;

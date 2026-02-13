@@ -480,7 +480,9 @@ mod tests {
         run_git(&["commit", "-m", "initial"], &work_path);
 
         let branch_name = "main";
-        run_git(&["checkout", "-b", branch_name], &work_path);
+        // Some git installations default to `main`, others to `master`.
+        // Force checkout/reset to `main` so the test is stable across environments.
+        run_git(&["checkout", "-B", branch_name], &work_path);
         run_git(&["push", "origin", branch_name], &work_path);
 
         (temp_dir, branch_name.to_string())
