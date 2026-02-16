@@ -17,6 +17,8 @@ const INITIAL_CONFIG: &str = r#"[project]
 name = "%project_name%"
 r_version = "%r_version%"
 %use_devel%
+# Optional: base URL for `rv add owner/repo` shorthand (defaults to https://github.com).
+# git_shorthand_base_url = "https://github.example.com"
 # A list of repositories to fetch packages from. Order matters: we will try to get a package from each repository in order.
 # The alias is only used in this file if you want to specifically require a dependency to come from a certain repository.
 # Example: { alias = "PPM", url = "https://packagemanager.posit.co/cran/latest" },
