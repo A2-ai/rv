@@ -29,11 +29,17 @@ pub enum OutputSection {
 }
 
 impl OutputSection {
-    pub fn header(&self) -> &'static str {
+    pub fn header(&self, dry_run: bool) -> &'static str {
         match self {
             Self::GlobalCache => "From global cache",
             Self::LocalCache => "From local cache",
-            Self::Downloaded => "Downloaded",
+            Self::Downloaded => {
+                if dry_run {
+                    "To Download"
+                } else {
+                    "Downloaded"
+                }
+            }
             Self::LocalPath => "From local path",
             Self::Removed => "Removed",
         }
