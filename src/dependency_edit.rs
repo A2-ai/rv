@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
@@ -6,6 +7,7 @@ use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 #[cfg(feature = "cli")]
 use clap::Parser;
 
+use crate::git::{CommandExecutor, GitExecutor};
 use crate::{Config, config::ConfigLoadError, git::url::GitUrl};
 
 pub const DEFAULT_GIT_SHORTHAND_BASE_URL: &str = "https://github.com";
@@ -99,6 +101,12 @@ pub fn parse_add_package_spec(
     package_spec: &str,
     git_shorthand_base_url: &str,
 ) -> Result<ParsedAddPackage, String> {
+    if is_http_url(package_spec) && !looks_like_git_http_url(package_spec) {
+        return Err(format!(
+            "URL `{package_spec}` does not look like a git repository; use `--url` for archives or `--git` for git URLs."
+        ));
+    }
+
     if !looks_like_repo_spec(package_spec) {
         return Ok(ParsedAddPackage {
             name: package_spec.to_string(),
@@ -157,6 +165,10 @@ enum ParsedReference {
 }
 
 fn looks_like_repo_spec(package_spec: &str) -> bool {
+    if is_http_url(package_spec) {
+        return looks_like_git_http_url(package_spec);
+    }
+
     if is_git_url(package_spec) {
         return true;
     }
@@ -173,10 +185,32 @@ fn looks_like_repo_spec(package_spec: &str) -> bool {
 }
 
 fn is_git_url(package_spec: &str) -> bool {
-    package_spec.starts_with("https://")
-        || package_spec.starts_with("http://")
+    (is_http_url(package_spec) && looks_like_git_http_url(package_spec))
         || package_spec.starts_with("git@")
         || package_spec.starts_with("ssh@")
+}
+
+pub fn is_http_url(package_spec: &str) -> bool {
+    package_spec.starts_with("https://") || package_spec.starts_with("http://")
+}
+
+pub fn looks_like_git_http_url(package_spec: &str) -> bool {
+    sanitize_git_http_url(package_spec).ends_with(".git")
+}
+
+fn sanitize_git_http_url(package_spec: &str) -> String {
+    let mut base = package_spec
+        .split_once('@')
+        .map(|(left, _)| left)
+        .unwrap_or(package_spec)
+        .to_string();
+    if let Some(colon_idx) = base.rfind(':') {
+        let suffix = &base[colon_idx + 1..];
+        if !suffix.contains('/') {
+            base.truncate(colon_idx);
+        }
+    }
+    base.trim_end_matches('/').to_string()
 }
 
 fn split_source_and_reference(package_spec: &str, is_git_url: bool) -> (String, Option<String>) {
@@ -345,7 +379,7 @@ fn extract_package_name(source: &str) -> Result<String, String> {
 pub fn add_packages(
     config_doc: &mut DocumentMut,
     packages: Vec<String>,
-    options: AddOptions,
+    mut options: AddOptions,
 ) -> Result<(), DependencyEditError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
@@ -360,6 +394,11 @@ pub fn add_packages(
         })
         .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
         .collect::<Vec<_>>();
+
+    resolve_add_options_reference(&mut options).map_err(|e| DependencyEditError {
+        path: Path::new(".").into(),
+        source: Box::new(DependencyEditErrorKind::Reference(e)),
+    })?;
 
     // Determine if the dep to add is in the config, if not add it
     for package_name in packages {
@@ -404,8 +443,6 @@ fn create_dependency_value(
             table.insert("tag", Value::from(tag.as_str()));
         } else if let Some(ref branch) = options.branch {
             table.insert("branch", Value::from(branch.as_str()));
-        } else if let Some(ref reference) = options.reference {
-            table.insert("reference", Value::from(reference.as_str()));
         }
 
         if let Some(ref directory) = options.directory {
@@ -487,6 +524,120 @@ pub fn remove_packages(
     Ok(())
 }
 
+pub fn resolve_add_options_reference(options: &mut AddOptions) -> Result<(), String> {
+    resolve_add_options_reference_with_executor(options, &GitExecutor {})
+}
+
+pub fn resolve_add_options_reference_with_executor(
+    options: &mut AddOptions,
+    git_exec: &impl CommandExecutor,
+) -> Result<(), String> {
+    let Some(git_url) = options.git.clone() else {
+        return Ok(());
+    };
+
+    if options.commit.is_some() || options.tag.is_some() || options.branch.is_some() {
+        return Ok(());
+    }
+
+    let raw_ref = options
+        .reference
+        .take()
+        .unwrap_or_else(|| DEFAULT_GIT_HEAD_REFERENCE.to_string());
+
+    match resolve_git_reference(git_exec, git_url.as_str(), raw_ref.as_str())? {
+        ResolvedGitRef::Branch(branch) => options.branch = Some(branch),
+        ResolvedGitRef::Tag(tag) => options.tag = Some(tag),
+    }
+
+    Ok(())
+}
+
+enum ResolvedGitRef {
+    Branch(String),
+    Tag(String),
+}
+
+fn resolve_git_reference(
+    git_exec: &impl CommandExecutor,
+    git_url: &str,
+    raw_ref: &str,
+) -> Result<ResolvedGitRef, String> {
+    if raw_ref == "HEAD" {
+        return Ok(ResolvedGitRef::Branch(resolve_default_branch(
+            git_exec, git_url,
+        )?));
+    }
+
+    if let Some(branch_name) = raw_ref.strip_prefix("refs/heads/") {
+        return Ok(ResolvedGitRef::Branch(branch_name.to_string()));
+    }
+
+    if let Some(tag_name) = raw_ref.strip_prefix("refs/tags/") {
+        return Ok(ResolvedGitRef::Tag(tag_name.to_string()));
+    }
+
+    let is_branch = git_ls_remote_has_ref(git_exec, git_url, "--heads", raw_ref)?;
+    let is_tag = git_ls_remote_has_ref(git_exec, git_url, "--tags", raw_ref)?;
+
+    match (is_branch, is_tag) {
+        (true, false) => Ok(ResolvedGitRef::Branch(raw_ref.to_string())),
+        (false, true) => Ok(ResolvedGitRef::Tag(raw_ref.to_string())),
+        (false, false) => Err(format!(
+            "Could not resolve git ref `{raw_ref}` for `{git_url}`. Use `@branch:` or `@tag:` to disambiguate."
+        )),
+        (true, true) => Err(format!(
+            "Ambiguous git ref `{raw_ref}` for `{git_url}` (both branch and tag). Use `@branch:` or `@tag:`."
+        )),
+    }
+}
+
+fn resolve_default_branch(
+    git_exec: &impl CommandExecutor,
+    git_url: &str,
+) -> Result<String, String> {
+    let output = git_exec
+        .execute(
+            Command::new("git")
+                .arg("ls-remote")
+                .arg("--symref")
+                .arg(git_url)
+                .arg("HEAD"),
+        )
+        .map_err(|e| format!("Failed to resolve default branch for `{git_url}`: {e}"))?;
+
+    for line in output.lines() {
+        if let Some(rest) = line.strip_prefix("ref: refs/heads/") {
+            if let Some(name) = rest.split_whitespace().next() {
+                return Ok(name.trim().to_string());
+            }
+        }
+    }
+
+    Err(format!(
+        "Could not determine default branch for `{git_url}` from `git ls-remote` output."
+    ))
+}
+
+fn git_ls_remote_has_ref(
+    git_exec: &impl CommandExecutor,
+    git_url: &str,
+    kind: &str,
+    raw_ref: &str,
+) -> Result<bool, String> {
+    let output = git_exec
+        .execute(
+            Command::new("git")
+                .arg("ls-remote")
+                .arg(kind)
+                .arg(git_url)
+                .arg(raw_ref),
+        )
+        .map_err(|e| format!("Failed to resolve git ref `{raw_ref}` for `{git_url}`: {e}"))?;
+
+    Ok(!output.trim().is_empty())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to edit config at `{path}`")]
 #[non_exhaustive]
@@ -501,6 +652,8 @@ pub enum DependencyEditErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml_edit::TomlError),
     ConfigLoad(#[from] ConfigLoadError),
+    #[error("failed to resolve git reference: {0}")]
+    Reference(String),
 }
 
 #[cfg(test)]

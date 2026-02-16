@@ -38,8 +38,6 @@ pub enum Source {
         /// having to look up anything
         tag: Option<String>,
         branch: Option<String>,
-        #[serde(default)]
-        reference: Option<String>,
     },
     Url {
         url: Url,
@@ -69,7 +67,6 @@ impl Source {
                 directory,
                 tag,
                 branch,
-                reference,
             } => {
                 table.insert("git", Value::from(git.url()));
                 table.insert("sha", Value::from(sha));
@@ -81,9 +78,6 @@ impl Source {
                 }
                 if let Some(d) = branch {
                     table.insert("branch", Value::from(d));
-                }
-                if let Some(d) = reference {
-                    table.insert("reference", Value::from(d));
                 }
             }
             Self::Url { url, sha } => {
@@ -155,12 +149,7 @@ impl Source {
     /// hasn't changed (eg a git branch having new commits)
     pub fn could_have_changed(&self) -> bool {
         match self {
-            Source::Git {
-                tag,
-                branch,
-                reference,
-                ..
-            } => tag.is_some() || branch.is_some() || reference.is_some(),
+            Source::Git { tag, branch, .. } => tag.is_some() || branch.is_some(),
             Source::Url { .. } => true,
             _ => false,
         }
@@ -175,7 +164,6 @@ impl Source {
                     directory,
                     tag,
                     branch,
-                    reference,
                     sha,
                 },
                 ConfigDependency::Git {
@@ -184,16 +172,10 @@ impl Source {
                     directory: directory2,
                     branch: branch2,
                     tag: tag2,
-                    reference: reference2,
                     ..
                 },
             ) => {
-                if git != git2
-                    || directory != directory2
-                    || branch != branch2
-                    || tag != tag2
-                    || reference != reference2
-                {
+                if git != git2 || directory != directory2 || branch != branch2 || tag != tag2 {
                     return false;
                 }
                 if let Some(sha2) = commit {
@@ -237,19 +219,11 @@ impl fmt::Debug for Source {
                 directory,
                 tag,
                 branch,
-                reference,
             } => {
-                if let Some(reference) = reference {
-                    write!(
-                        f,
-                        "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?}, reference: Some(\"{reference}\"))"
-                    )
-                } else {
-                    write!(
-                        f,
-                        "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?})"
-                    )
-                }
+                write!(
+                    f,
+                    "git(url: {git}, sha: {sha}, directory: {directory:?}, tag: {tag:?}, branch: {branch:?})"
+                )
             }
             Self::Repository { repository } => {
                 write!(f, "repository(url: {repository})")
@@ -290,15 +264,12 @@ impl fmt::Display for Source {
                 sha,
                 tag,
                 branch,
-                reference,
                 ..
             } => {
                 if let Some(branch) = branch {
                     write!(f, "{git} (branch: {branch})")
                 } else if let Some(tag) = tag {
                     write!(f, "{git} (tag: {tag})")
-                } else if let Some(reference) = reference {
-                    write!(f, "{git} (reference: {reference})")
                 } else {
                     write!(f, "{git} (commit: {sha})")
                 }

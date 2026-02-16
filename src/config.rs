@@ -85,8 +85,6 @@ pub enum ConfigDependency {
         commit: Option<String>,
         tag: Option<String>,
         branch: Option<String>,
-        #[serde(default)]
-        reference: Option<String>,
         directory: Option<String>,
         name: String,
         #[serde(default)]
@@ -179,7 +177,6 @@ impl ConfigDependency {
                 directory,
                 tag,
                 branch,
-                reference,
                 ..
             } => Source::Git {
                 git,
@@ -187,7 +184,6 @@ impl ConfigDependency {
                 directory,
                 tag,
                 branch,
-                reference,
             },
             _ => unreachable!(),
         }
@@ -433,21 +429,12 @@ impl Config {
                     tag,
                     branch,
                     commit,
-                    reference,
                     ..
-                } => match (
-                    tag.is_some(),
-                    branch.is_some(),
-                    commit.is_some(),
-                    reference.is_some(),
-                ) {
-                    (true, false, false, false)
-                    | (false, true, false, false)
-                    | (false, false, true, false)
-                    | (false, false, false, true) => (),
+                } => match (tag.is_some(), branch.is_some(), commit.is_some()) {
+                    (true, false, false) | (false, true, false) | (false, false, true) => (),
                     _ => {
                         errors.push(format!(
-                            "A git dependency `{git}` requires one and only one of tag/branch/commit/reference set."
+                            "A git dependency `{git}` requires one and only one of tag/branch/commit set."
                         ));
                     }
                 },
@@ -626,26 +613,6 @@ repositories = []
             config.r_version().original,
             deserialized.r_version().original
         );
-    }
-
-    #[test]
-    fn git_dependency_allows_reference_field() {
-        let toml_str = r#"
-[project]
-name = "test"
-r_version = "4.4"
-repositories = []
-dependencies = [
-  { name = "cli", git = "https://github.com/r-lib/cli", reference = "main" }
-]
-"#;
-        let config = Config::from_str(toml_str).unwrap();
-        match &config.dependencies()[0] {
-            ConfigDependency::Git { reference, .. } => {
-                assert_eq!(reference.as_deref(), Some("main"));
-            }
-            _ => panic!("Expected a git dependency"),
-        }
     }
 
     #[test]

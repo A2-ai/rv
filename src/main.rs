@@ -17,9 +17,10 @@ use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
-    CacheInfo, Config, ProjectSummary, RepositoryAction, RepositoryMatcher, RepositoryPositioning,
-    RepositoryUpdates, Version, activate, add_packages, deactivate, execute_repository_action,
-    parse_add_package_spec, read_and_verify_config, system_req,
+    CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
+    RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
+    execute_repository_action, is_http_url, looks_like_git_http_url, parse_add_package_spec,
+    read_and_verify_config, resolve_add_options_reference_with_executor, system_req,
 };
 
 /// rv, the R package manager
@@ -521,6 +522,12 @@ fn try_main() -> Result<()> {
             // Parse shorthand git repo specs unless an explicit source option is provided.
             if !add_options.has_source_options() {
                 for package in packages {
+                    if is_http_url(package.as_str()) && !looks_like_git_http_url(package.as_str()) {
+                        return Err(anyhow!(
+                            "URL `{}` does not look like a git repository. Use `--url` for archives or `--git` for git URLs.",
+                            package
+                        ));
+                    }
                     let parsed =
                         parse_add_package_spec(package.as_str(), config.git_shorthand_base_url())
                             .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
@@ -528,10 +535,15 @@ fn try_main() -> Result<()> {
                     let mut options = parsed.options;
                     options.install_suggestions = add_options.install_suggestions;
                     options.dependencies_only = add_options.dependencies_only;
+                    resolve_add_options_reference_with_executor(&mut options, &GitExecutor {})
+                        .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
                     add_packages(&mut doc, vec![parsed.name], options)?;
                 }
             } else {
-                add_packages(&mut doc, packages, add_options)?;
+                let mut resolved_options = add_options.clone();
+                resolve_add_options_reference_with_executor(&mut resolved_options, &GitExecutor {})
+                    .map_err(|e| anyhow!("Invalid package spec: {e}"))?;
+                add_packages(&mut doc, packages, resolved_options)?;
             }
             let updated_config_toml = doc.to_string();
             // if no sync, exit early
