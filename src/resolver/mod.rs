@@ -392,7 +392,6 @@ impl<'d> Resolver<'d> {
                         directory: None,
                         tag: None,
                         branch: None,
-                        reference: None,
                     }
                 };
                 let status = cache.get_installation_status(
@@ -691,7 +690,6 @@ impl<'d> Resolver<'d> {
                     tag,
                     commit,
                     branch,
-                    reference,
                     directory,
                     ..
                 }) => {
@@ -701,8 +699,6 @@ impl<'d> Resolver<'d> {
                         GitReference::Branch(b)
                     } else if let Some(t) = tag {
                         GitReference::Tag(t)
-                    } else if let Some(r) = reference {
-                        GitReference::Unknown(r)
                     } else {
                         unreachable!("Got an empty git reference")
                     };
