@@ -10,7 +10,7 @@ pub fn resolve_dependencies(
     let resolution = context.resolve(resolve_mode);
 
     if !resolution.is_success() && exit_on_failure {
-        eprintln!("Failed to resolve all dependencies:");
+        eprintln!("Failed to resolve all dependencies");
         let req_error_messages = resolution.req_error_messages();
 
         for d in &resolution.failed {
