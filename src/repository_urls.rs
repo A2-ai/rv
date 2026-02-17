@@ -72,10 +72,21 @@ fn get_source_path(url: &Url, file_path: &[&str]) -> Url {
     new_url
 }
 
-// Archived packages under the format <base url>/src/contrib/Archive/<pkg name>/<pkg name>_<pkg version>.tar.gz
-fn get_archive_tarball_path(url: &Url, name: &str, version: &str) -> Url {
-    let file_name = format!("{name}_{version}.tar.gz");
-    get_source_path(url, &["Archive", name, &file_name])
+// Archived packages under the binary end point at Archive/<pkg name>/<pkg name>_<pkg version>.<ext>
+// returns source and binary archive paths
+fn get_archive_tarball_paths(
+    url: &Url,
+    name: &str,
+    version: &str,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> (Url, Option<Url>) {
+    let src_file_name = format!("{name}_{version}.tar.gz");
+    let src_url = get_source_path(url, &["Archive", name, &src_file_name]);
+
+    let bin_file_name = format!("{name}_{version}.{}", sysinfo.os_type.tarball_extension());
+    let bin_url = get_binary_path(url, &["Archive", name, &bin_file_name], r_version, sysinfo);
+    (src_url, bin_url)
 }
 
 /// # Get the path to the binary version of the file provided, when available.
@@ -234,10 +245,13 @@ fn get_linux_url(
     Some(new_url)
 }
 
+#[derive(Debug, Clone)]
+// Listed in order of query preference
 pub struct TarballUrls {
-    pub source: Url,
     pub binary: Option<Url>,
-    pub archive: Url,
+    pub source: Url,
+    pub binary_archive: Option<Url>,
+    pub source_archive: Url,
 }
 
 pub fn get_tarball_urls(
@@ -263,10 +277,14 @@ pub fn get_tarball_urls(
         let source_name = format!("{name}_{version}.tar.gz");
         source_file_path.push(&source_name);
 
+        let (source_archive, binary_archive) =
+            get_archive_tarball_paths(repository, name, version, r_version, sysinfo);
+
         Ok(TarballUrls {
             source: get_source_path(repository, &source_file_path),
             binary: get_binary_path(repository, &binary_file_path, r_version, sysinfo),
-            archive: get_archive_tarball_path(repository, name, version),
+            source_archive,
+            binary_archive,
         })
     } else {
         Err("Dependency does not have source Repository".into())
@@ -453,11 +471,22 @@ mod tests {
     #[test]
     // also test the additional path elements being handled properly
     fn test_archive_url() {
-        let source_url = get_archive_tarball_path(&PPM_URL, "name", "version");
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("almalinux"),
+            Some("x86_64".to_string()),
+            None,
+            "9.3",
+        );
+
+        let (source_url, binary_url) =
+            get_archive_tarball_paths(&PPM_URL, "name", "version", &[4, 4], &sysinfo);
         let ref_url = format!(
             "{}/src/contrib/Archive/name/name_version.tar.gz",
             PPM_URL.as_str()
         );
         assert_eq!(source_url.as_str(), ref_url);
+
+        let ref_url = "https://packagemanager.posit.co/cran/__linux__/rhel9/latest/src/contrib/Archive/name/name_version.tar.gz?r_version=4.4&arch=x86_64".to_string();
+        assert_eq!(binary_url.unwrap().as_str(), ref_url);
     }
 }

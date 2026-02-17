@@ -4,15 +4,18 @@ use fs_err as fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
+use url::Url;
 
 use crate::cache::{Cache, InstallationStatus};
 use crate::consts::BUILT_FROM_SOURCE_FILENAME;
 use crate::http::Http;
 use crate::package::PackageType;
+use crate::repository_urls::TarballUrls;
 use crate::sync::LinkMode;
-use crate::sync::errors::SyncError;
+use crate::sync::errors::{SyncError, SyncErrorKind};
 use crate::{
-    Cancellation, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls, is_binary_package,
+    Cancellation, HttpDownload, PackagePaths, RCmd, ResolvedDependency, get_tarball_urls,
+    is_binary_package,
 };
 
 pub(crate) fn install_package(
@@ -85,78 +88,10 @@ pub(crate) fn install_package(
                     .expect("Dependency has source Repository");
                 let http = Http {};
 
-                let download_and_install_source_or_archive = || -> Result<(), SyncError> {
-                    log::debug!(
-                        "Downloading package {} ({}) as source tarball",
-                        pkg.name,
-                        pkg.version.original
-                    );
-                    if let Err(e) = http.download_and_untar(
-                        &tarball_url.source,
-                        &local_paths.source,
-                        false,
-                        None,
-                    ) {
-                        log::warn!(
-                            "Failed to download/untar source package from {}: {e:?}, falling back to {}",
-                            tarball_url.source,
-                            tarball_url.archive
-                        );
-                        log::debug!(
-                            "Downloading package {} ({}) from archive",
-                            pkg.name,
-                            pkg.version.original
-                        );
-                        http.download_and_untar(
-                            &tarball_url.archive,
-                            &local_paths.source,
-                            false,
-                            None,
-                        )?;
-                    }
+                if let PackageType::Source =
+                    download_package(&http, &tarball_url, &local_paths, pkg)?
+                {
                     compile_package()?;
-                    Ok(())
-                };
-
-                if pkg.kind == PackageType::Source || tarball_url.binary.is_none() {
-                    download_and_install_source_or_archive()?;
-                } else {
-                    // If we get an error doing the binary download, fall back to source
-                    if let Err(e) = http.download_and_untar(
-                        &tarball_url.binary.clone().unwrap(),
-                        &local_paths.binary,
-                        false,
-                        None,
-                    ) {
-                        log::warn!(
-                            "Failed to download/untar binary package from {}: {e:?}, falling back to {}",
-                            tarball_url.binary.clone().unwrap(),
-                            tarball_url.source
-                        );
-                        download_and_install_source_or_archive()?;
-                    } else {
-                        // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
-                        // source files. We have to check first whether what we have is actually binary content.
-                        let bin_path = local_paths.binary.join(pkg.name.as_ref());
-                        if !is_binary_package(&bin_path, pkg.name.as_ref()).map_err(|err| {
-                            SyncError {
-                                source: crate::sync::errors::SyncErrorKind::InvalidPackage {
-                                    path: bin_path,
-                                    error: err.to_string(),
-                                },
-                            }
-                        })? {
-                            log::debug!("{} was expected as binary, found to be source.", pkg.name);
-                            // Move it to the source destination if we don't have it already
-                            if local_paths.source.is_dir() {
-                                fs::remove_dir_all(&local_paths.binary)?;
-                            } else {
-                                fs::create_dir_all(&local_paths.source)?;
-                                fs::rename(&local_paths.binary, &local_paths.source)?;
-                            }
-                            compile_package()?;
-                        }
-                    }
                 }
             }
             _ => {}
@@ -176,4 +111,116 @@ pub(crate) fn install_package(
     )?;
 
     Ok(())
+}
+
+fn download_package(
+    http: &impl HttpDownload,
+    urls: &TarballUrls,
+    local_paths: &PackagePaths,
+    pkg: &ResolvedDependency,
+) -> Result<PackageType, SyncError> {
+    // 1. Download Binary if possible/requested
+    if let Some(binary_url) = &urls.binary
+        && pkg.kind == PackageType::Binary
+    {
+        match try_download_package(http, binary_url, &local_paths, pkg.name.as_ref(), true) {
+            Ok(pkg_type) => return Ok(pkg_type),
+            Err(e) => {
+                log::warn!(
+                    "Failed to download binary from {}: {}. Trying source",
+                    binary_url,
+                    e
+                );
+            }
+        }
+    }
+
+    // 2. Download Source
+    match try_download_package(http, &urls.source, &local_paths, pkg.name.as_ref(), false) {
+        Ok(pkg_type) => return Ok(pkg_type),
+        Err(e) => {
+            log::warn!(
+                "Failed to download source from {}: {}. Trying {}archive",
+                &urls.source,
+                e,
+                if urls.binary_archive.is_some() && !pkg.force_source {
+                    "binary "
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+
+    // 3. Download binary from archive
+    if let Some(binary_archive_url) = &urls.binary_archive
+        && !pkg.force_source
+    {
+        match try_download_package(
+            http,
+            binary_archive_url,
+            &local_paths,
+            pkg.name.as_ref(),
+            true,
+        ) {
+            Ok(pkg_type) => return Ok(pkg_type),
+            Err(e) => {
+                log::warn!(
+                    "Failed to download binary archive from {}: {}. Trying archive",
+                    binary_archive_url,
+                    e
+                );
+            }
+        }
+    }
+
+    // 4. Download source from archive
+    try_download_package(
+        http,
+        &urls.source_archive,
+        &local_paths,
+        pkg.name.as_ref(),
+        false,
+    )
+}
+
+fn try_download_package(
+    http: &impl HttpDownload,
+    url: &Url,
+    local_paths: &PackagePaths,
+    pkg_name: &str,
+    expect_binary: bool,
+) -> Result<PackageType, SyncError> {
+    let mut pkg_type = PackageType::Source;
+
+    let destination = if expect_binary {
+        &local_paths.binary
+    } else {
+        &local_paths.source
+    };
+
+    http.download_and_untar(url, destination, false, None)?;
+
+    if expect_binary {
+        let pkg_path = destination.join(pkg_name);
+        if !is_binary_package(&pkg_path, pkg_name).map_err(|e| SyncError {
+            source: SyncErrorKind::InvalidPackage {
+                path: pkg_path,
+                error: e.to_string(),
+            },
+        })? {
+            log::debug!("{} was expected as binary, found to be source", pkg_name);
+            // Move it to the source destination if we don't have it already
+            if local_paths.source.is_dir() {
+                fs::remove_dir_all(&local_paths.binary)?;
+            } else {
+                fs::create_dir_all(&local_paths.source)?;
+                fs::rename(&local_paths.binary, &local_paths.source)?;
+            }
+        } else {
+            pkg_type = PackageType::Binary;
+        }
+    }
+
+    Ok(pkg_type)
 }
