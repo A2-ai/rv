@@ -62,11 +62,13 @@ impl AddOptions {
     }
 }
 
-pub fn read_and_verify_config(config_file: impl AsRef<Path>) -> Result<DocumentMut, AddError> {
+pub fn read_and_verify_config(
+    config_file: impl AsRef<Path>,
+) -> Result<DocumentMut, DependencyEditError> {
     let config_file = config_file.as_ref();
-    let _ = Config::from_file(config_file).map_err(|e| AddError {
+    let _ = Config::from_file(config_file).map_err(|e| DependencyEditError {
         path: config_file.into(),
-        source: Box::new(AddErrorKind::ConfigLoad(e)),
+        source: Box::new(DependencyEditErrorKind::ConfigLoad(e)),
     })?;
     let config_content = fs::read_to_string(config_file).unwrap(); // Verified config could be loaded above
 
@@ -77,7 +79,7 @@ pub fn add_packages(
     config_doc: &mut DocumentMut,
     packages: Vec<String>,
     options: AddOptions,
-) -> Result<(), AddError> {
+) -> Result<(), DependencyEditError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
 
@@ -111,7 +113,10 @@ pub fn add_packages(
     Ok(())
 }
 
-fn create_dependency_value(package_name: &str, options: &AddOptions) -> Result<Value, AddError> {
+fn create_dependency_value(
+    package_name: &str,
+    options: &AddOptions,
+) -> Result<Value, DependencyEditError> {
     if options.is_empty() {
         // Simple string dependency
         return Ok(Value::String(Formatted::new(package_name.to_string())));
@@ -188,17 +193,42 @@ fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
     deps
 }
 
+pub fn remove_packages(
+    config_doc: &mut DocumentMut,
+    packages: Vec<String>,
+) -> Result<(), DependencyEditError> {
+    let config_deps = get_mut_array(config_doc);
+
+    // Remove packages that match the names provided
+    config_deps.retain(|v| {
+        let dep_name = match v {
+            Value::String(s) => s.value().as_str(),
+            Value::InlineTable(t) => t.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            _ => "",
+        };
+
+        // Keep the element if it doesn't match any package to remove
+        !packages.iter().any(|p| p.as_str() == dep_name)
+    });
+
+    // Set a trailing new line and comma for the last element for proper formatting
+    config_deps.set_trailing("\n");
+    config_deps.set_trailing_comma(true);
+
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to edit config at `{path}`")]
 #[non_exhaustive]
-pub struct AddError {
+pub struct DependencyEditError {
     path: Box<Path>,
-    source: Box<AddErrorKind>,
+    source: Box<DependencyEditErrorKind>,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub enum AddErrorKind {
+pub enum DependencyEditErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml_edit::TomlError),
     ConfigLoad(#[from] ConfigLoadError),
@@ -207,22 +237,30 @@ pub enum AddErrorKind {
 #[cfg(test)]
 mod tests {
     use super::AddOptions;
-    use crate::{add_packages, read_and_verify_config};
+    use crate::{add_packages, read_and_verify_config, remove_packages};
 
-    const BASELINE_CONFIG: &str = "src/tests/valid_config/baseline_for_add.toml";
+    const BASELINE_ADD_CONFIG: &str = "src/tests/valid_config/baseline_for_add.toml";
+    const BASELINE_REMOVE_CONFIG: &str = "src/tests/valid_config/baseline_for_remove.toml";
 
     // Simple tests - one feature at a time
 
     #[test]
+    fn remove_package() {
+        let mut doc = read_and_verify_config(BASELINE_REMOVE_CONFIG).unwrap();
+        remove_packages(&mut doc, vec!["dplyr".to_string()]).unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
     fn add_simple_package() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(&mut doc, vec!["dplyr".to_string()], AddOptions::default()).unwrap();
         insta::assert_snapshot!(doc.to_string());
     }
 
     #[test]
     fn add_with_repository() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["dplyr".to_string()],
@@ -237,7 +275,7 @@ mod tests {
 
     #[test]
     fn add_with_force_source() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["dplyr".to_string()],
@@ -252,7 +290,7 @@ mod tests {
 
     #[test]
     fn add_with_install_suggestions() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["dplyr".to_string()],
@@ -267,7 +305,7 @@ mod tests {
 
     #[test]
     fn add_with_dependencies_only() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["dplyr".to_string()],
@@ -282,7 +320,7 @@ mod tests {
 
     #[test]
     fn add_git_with_commit() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],
@@ -298,7 +336,7 @@ mod tests {
 
     #[test]
     fn add_git_with_tag() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],
@@ -314,7 +352,7 @@ mod tests {
 
     #[test]
     fn add_git_with_branch() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],
@@ -330,7 +368,7 @@ mod tests {
 
     #[test]
     fn add_git_with_directory() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],
@@ -347,7 +385,7 @@ mod tests {
 
     #[test]
     fn add_local_path() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],
@@ -362,7 +400,7 @@ mod tests {
 
     #[test]
     fn add_url() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["dplyr".to_string()],
@@ -382,7 +420,7 @@ mod tests {
 
     #[test]
     fn add_git_comprehensive() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],
@@ -401,7 +439,7 @@ mod tests {
 
     #[test]
     fn add_repository_comprehensive() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["dplyr".to_string()],
@@ -419,7 +457,7 @@ mod tests {
 
     #[test]
     fn add_local_comprehensive() {
-        let mut doc = read_and_verify_config(BASELINE_CONFIG).unwrap();
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
         add_packages(
             &mut doc,
             vec!["mypkg".to_string()],

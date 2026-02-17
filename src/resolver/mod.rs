@@ -1,5 +1,5 @@
 use crate::VersionRequirement;
-use crate::{CommandExecutor, ConfigDependency, DiskCache, Lockfile, RepositoryDatabase, Version};
+use crate::{CommandExecutor, ConfigDependency, Lockfile, RepositoryDatabase, Version};
 
 use fs_err as fs;
 use std::borrow::Cow;
@@ -12,6 +12,7 @@ mod dependency;
 mod result;
 mod sat;
 
+use crate::cache::Cache;
 use crate::fs::untar_archive;
 use crate::git::url::GitUrl;
 use crate::git::{GitReference, GitRemote};
@@ -188,7 +189,7 @@ impl<'d> Resolver<'d> {
     fn lockfile_lookup(
         &self,
         item: &QueueItem<'d>,
-        cache: &'d DiskCache,
+        cache: &'d Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         // If the dependency is not matching, do not even look at the lockfile
         if let Some(matching) = item.matching_in_lockfile
@@ -215,8 +216,55 @@ impl<'d> Resolver<'d> {
 
             let installation_status =
                 cache.get_installation_status(&item.name, &package.version, &package.source);
+
+            // We search first in the repo for whether we have source or binary since
+            // we don't record that info in the lockfile
+            let kind = if package.force_source {
+                PackageType::Source
+            } else if let Source::Repository { repository } = &package.source {
+                let repo_url = repository.as_str();
+                let matching_repo = self
+                    .repositories
+                    .iter()
+                    .find(|(repo, _)| repo.url == repo_url);
+                match matching_repo {
+                    Some((repo, repo_force_source)) => {
+                        if *repo_force_source {
+                            PackageType::Source
+                        } else {
+                            let version_req =
+                                VersionRequirement::from_str(&format!("(== {})", package.version))
+                                    .unwrap();
+
+                            let has_binary = repo
+                                .find_package(
+                                    &package.name,
+                                    Some(&version_req),
+                                    &self.r_version,
+                                    false,
+                                )
+                                .is_some_and(|(_, package_type)| {
+                                    package_type == PackageType::Binary
+                                });
+
+                            if has_binary {
+                                PackageType::Binary
+                            } else {
+                                PackageType::Source
+                            }
+                        }
+                    }
+                    // DBs not found.
+                    // I think it can only happen when someone is changing a repository
+                    // URL in the config file and the one from the lockfile is not found anymore
+                    None => return None,
+                }
+            } else {
+                // url/git/local are probably source packages
+                PackageType::Source
+            };
             let resolved_dep =
-                ResolvedDependency::from_locked_package(package, installation_status);
+                ResolvedDependency::from_locked_package(package, installation_status, kind);
 
             let items = package
                 .dependencies
@@ -239,7 +287,7 @@ impl<'d> Resolver<'d> {
     fn repositories_lookup(
         &self,
         item: &QueueItem<'d>,
-        cache: &'d DiskCache,
+        cache: &'d Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
@@ -297,9 +345,9 @@ impl<'d> Resolver<'d> {
         directory: Option<&str>,
         git_ref: GitReference,
         git_executor: &'d (impl CommandExecutor + Clone + 'static),
-        cache: &'d DiskCache,
+        cache: &'d Cache,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        let clone_path = cache.get_git_clone_path(repo_url.url());
+        let clone_path = cache.local().get_git_clone_path(repo_url.url());
 
         let mut remote = GitRemote::new(repo_url.url());
         if let Some(d) = directory {
@@ -370,10 +418,10 @@ impl<'d> Resolver<'d> {
         &self,
         item: &QueueItem<'d>,
         url: &Url,
-        cache: &'d DiskCache,
+        cache: &'d Cache,
         http_downloader: &'d impl HttpDownload,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        let out_path = cache.get_url_download_path(url);
+        let out_path = cache.local().get_url_download_path(url);
         let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
 
         let install_path = dir.unwrap_or_else(|| out_path.clone());
@@ -431,7 +479,7 @@ impl<'d> Resolver<'d> {
         &self,
         dependencies: &'d [ConfigDependency],
         prefer_repositories_for: &'d [String],
-        cache: &'d DiskCache,
+        cache: &'d Cache,
         git_exec: &'d (impl CommandExecutor + Clone + 'static),
         http_download: &'d impl HttpDownload,
     ) -> Resolution<'d> {
@@ -502,11 +550,8 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // First let's check if it's a builtin package if the R version is matching if the package
-            // is not listed from a specific repo
-            if !item.has_required_repo()
-                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
-            {
+            // First we look at the lockfile and trust what is inside
+            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()
@@ -516,8 +561,11 @@ impl<'d> Resolver<'d> {
                 continue;
             }
 
-            // Look at lockfile
-            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
+            // Then let's check if it's a builtin package if the R version is matching if the package
+            // is not listed from a specific repo
+            if !item.has_required_repo()
+                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
+            {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()
@@ -704,12 +752,12 @@ mod tests {
     use serde::Deserialize;
     use tempfile::TempDir;
 
+    use crate::SystemInfo;
     use crate::config::Config;
     use crate::consts::{BASE_PACKAGES, DESCRIPTION_FILENAME};
     use crate::http::HttpError;
     use crate::package::{Package, parse_package_file};
     use crate::repository::RepositoryDatabase;
-    use crate::{DiskCache, SystemInfo};
 
     #[derive(Clone)]
     struct FakeGit;
@@ -804,10 +852,10 @@ mod tests {
         (config, r_version, repositories, lockfile)
     }
 
-    fn setup_cache(r_version: &Version) -> (TempDir, DiskCache) {
+    fn setup_cache(r_version: &Version) -> (TempDir, Cache) {
         let cache_dir = tempfile::tempdir().unwrap();
         let cache =
-            DiskCache::new_in_dir(r_version, SystemInfo::from_os_info(), cache_dir.path()).unwrap();
+            Cache::new_in_dir(r_version, SystemInfo::from_os_info(), cache_dir.path()).unwrap();
 
         // Add the DESCRIPTION file for git deps
         let remotes = vec![
@@ -818,7 +866,7 @@ mod tests {
         ];
 
         for (dep, url) in &remotes {
-            let cache_path = cache.get_git_clone_path(url);
+            let cache_path = cache.local().get_git_clone_path(url);
             fs::create_dir_all(&cache_path).unwrap();
             fs::copy(
                 format!("src/tests/descriptions/{dep}.DESCRIPTION"),
@@ -829,7 +877,9 @@ mod tests {
 
         // And a custom one for url deps
         let url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz";
-        let url_path = cache.get_url_download_path(&Url::parse(url).unwrap());
+        let url_path = cache
+            .local()
+            .get_url_download_path(&Url::parse(url).unwrap());
         fs::create_dir_all(&url_path).unwrap();
         fs::copy(
             "src/tests/descriptions/dplyr.DESCRIPTION",
@@ -838,7 +888,7 @@ mod tests {
         .unwrap();
 
         // Add a custom package that has downloaded a binary but didn't compile it
-        let paths = cache.get_package_paths(
+        let paths = cache.local().get_package_paths(
             &Source::Repository {
                 repository: Url::parse("http://repo1").unwrap(),
             },

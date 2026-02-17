@@ -1,0 +1,22 @@
+# Repo has binary R6 v2.5.1, but lockfile pins R6 v2.4.0.
+# Since the locked version is not available as binary, the resolved
+# dependency should show type=source.
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    "R6",
+]
+---
+repos = [{name = "cran", source = "posit-src", binary = "cran-binary", force_source = false}]
+---
+version = 1
+r_version = "4.4"
+
+[[packages]]
+name = "R6"
+version = "2.4.0"
+source = { repository = "http://cran/" }
+force_source = false
+dependencies = []

@@ -2,5 +2,5 @@
 source: src/resolver/mod.rs
 expression: out
 ---
-R6=3.5.2 (repository(url: http://cran/), type=binary, path='', from_lockfile=true, from_remote=false, env_vars=[])
-processx=3.5.2 (repository(url: http://cran/), type=binary, path='', from_lockfile=true, from_remote=false, env_vars=[])
+R6=3.5.2 (repository(url: http://cran/), type=source, path='', from_lockfile=true, from_remote=false, env_vars=[])
+processx=3.5.2 (repository(url: http://cran/), type=source, path='', from_lockfile=true, from_remote=false, env_vars=[])

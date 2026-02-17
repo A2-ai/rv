@@ -1,8 +1,8 @@
 [project]
 name = "simple"
-r_version = "4.4"
+r_version = "4.5"
 repositories = [
-    {alias = "posit", url = "https://packagemanager.posit.co/cran/2024-12-16/", force_source = true}
+    {alias = "posit", url = "https://packagemanager.posit.co/cran/2025-05-12/", force_source = true}
 ]
 dependencies = [
     {name = "dplyr", url = "https://cran.r-project.org/src/contrib/Archive/dplyr/dplyr_1.1.3.tar.gz"}

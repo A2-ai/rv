@@ -1,0 +1,22 @@
+
+[settings]
+output_dir = ".council/reviews"
+
+[[prompts]]
+name = "changeset"
+file = "changeset.md"
+
+[[agents.claude]]
+name = "claude-haiku"
+model = "haiku"
+dangerously_skip_permissions = true
+
+[[agents.claude]]
+name = "claude-opus"
+model = "opus"
+dangerously_skip_permissions = true
+
+[[agents.codex]]
+name = "codex-5.3"
+model = "gpt-5.3-codex"
+dangerously_bypass_approvals_and_sandbox = true

@@ -1,11 +1,13 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Result;
 use fs_err::{self as fs};
 use serde::Serialize;
 
 use crate::cli::{Context, OutputFormat, ResolveMode, resolve_dependencies};
+use crate::sync::OutputSection;
 use crate::{Lockfile, Resolution, SyncChange, SyncHandler, system_req, timeit};
 
 #[derive(Debug, Default, Serialize)]
@@ -105,7 +107,7 @@ impl SyncHelper {
                     .flat_map(|x| x.sys_deps.iter().map(|x| x.name.as_str()))
                     .collect();
                 let sysdeps_status = system_req::check_installation_status(
-                    &context.cache.system_info,
+                    context.cache.system_info(),
                     &all_sys_deps,
                 );
 
@@ -116,7 +118,7 @@ impl SyncHelper {
                 if let Some(log_folder) = &self.save_install_logs_in {
                     fs::create_dir_all(log_folder)?;
                     for change in changes.iter().filter(|x| x.installed) {
-                        let log_path = change.log_path(&context.cache);
+                        let log_path = change.log_path(context.cache.local());
                         if log_path.exists() {
                             fs::copy(log_path, log_folder.join(format!("{}.log", change.name)))?;
                         }
@@ -130,16 +132,20 @@ impl SyncHelper {
                             serde_json::to_string_pretty(&SyncChanges::from_changes(changes))
                                 .expect("valid json")
                         );
-                    } else if changes.is_empty() {
-                        println!("Nothing to do");
                     } else {
-                        for c in changes {
-                            println!("{}", c.print(!self.dry_run, !sysdeps_status.is_empty()));
-                        }
-                    }
+                        let installed_count = changes.iter().filter(|c| c.installed).count();
+                        let removed_count = changes.iter().filter(|c| !c.installed).count();
 
-                    if !self.dry_run && !format.is_json() {
-                        println!("sync completed in {} ms", sync_start.elapsed().as_millis());
+                        print_grouped_changes(&changes, !self.dry_run, !sysdeps_status.is_empty());
+
+                        if !self.dry_run {
+                            println!(
+                                "sync completed in {} ({} installed, {} removed)",
+                                format_duration(sync_start.elapsed()),
+                                installed_count,
+                                removed_count
+                            );
+                        }
                     }
                 }
 
@@ -152,5 +158,116 @@ impl SyncHelper {
                 Err(e.into())
             }
         }
+    }
+}
+
+/// Print changes grouped by section with aligned columns
+fn print_grouped_changes(changes: &[SyncChange], include_timings: bool, supports_sysdeps: bool) {
+    if changes.is_empty() {
+        println!("Nothing to do");
+        return;
+    }
+
+    // Group by section
+    let mut sections: BTreeMap<OutputSection, Vec<&SyncChange>> = BTreeMap::new();
+    for change in changes {
+        sections.entry(change.section()).or_default().push(change);
+    }
+
+    // Sort each section alphabetically by package name
+    for items in sections.values_mut() {
+        items.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    // Compute max widths across ALL installed packages for consistent alignment
+    let installed: Vec<_> = changes.iter().filter(|c| c.installed).collect();
+    let max_name = installed.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    let max_ver = installed
+        .iter()
+        .map(|c| c.version.as_ref().map(|v| v.len()).unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+    let max_kind = 6; // "binary" or "source"
+    let max_source = installed
+        .iter()
+        .map(|c| c.source_display().len())
+        .max()
+        .unwrap_or(0);
+
+    // Section order
+    let section_order: [OutputSection; 5] = [
+        OutputSection::GlobalCache,
+        OutputSection::LocalCache,
+        OutputSection::Downloaded,
+        OutputSection::LocalPath,
+        OutputSection::Removed,
+    ];
+
+    for section in section_order {
+        if let Some(items) = sections.get(&section) {
+            println!("{} ({}):", section.header(), items.len());
+            for c in items {
+                if c.installed {
+                    let timing_str = if include_timings {
+                        format!("  {:>8}", format_duration(c.timing.unwrap()))
+                    } else {
+                        String::new()
+                    };
+                    let sys_deps_str = format_sys_deps(c, supports_sysdeps);
+                    println!(
+                        "  + {:<name_w$}  {:>ver_w$}  {:<kind_w$}  {:<src_w$}{}{}",
+                        c.name,
+                        c.version.as_ref().unwrap(),
+                        c.kind.unwrap(),
+                        c.source_display(),
+                        timing_str,
+                        sys_deps_str,
+                        name_w = max_name,
+                        ver_w = max_ver,
+                        kind_w = max_kind,
+                        src_w = max_source,
+                    );
+                } else {
+                    println!("  - {}", c.name);
+                }
+            }
+            println!();
+        }
+    }
+}
+
+/// Format sys deps for display
+fn format_sys_deps(change: &SyncChange, supports_sysdeps: bool) -> String {
+    if change.sys_deps.is_empty() {
+        return String::new();
+    }
+
+    let deps: Vec<String> = change
+        .sys_deps
+        .iter()
+        .map(|sys_dep| {
+            if supports_sysdeps {
+                let status = if sys_dep.status == system_req::SysInstallationStatus::Present {
+                    "✓"
+                } else {
+                    "✗"
+                };
+                format!("{} {}", status, sys_dep.name)
+            } else {
+                sys_dep.name.clone()
+            }
+        })
+        .collect();
+
+    format!("  [sys deps: {}]", deps.join(", "))
+}
+
+/// Format duration for display (e.g., "1.2s" or "234ms")
+fn format_duration(d: Duration) -> String {
+    let ms = d.as_millis();
+    if ms >= 1000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else {
+        format!("{}ms", ms)
     }
 }

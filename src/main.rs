@@ -1,6 +1,8 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+
+mod cli_docs;
 
 use anyhow::Result;
 use fs_err::{read_to_string, write};
@@ -11,12 +13,13 @@ use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
     init_structure, migrate_renv, resolve_dependencies, tree,
 };
+use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
-    CacheInfo, Config, ProjectSummary, RCmd, RCommandLine, RepositoryAction, RepositoryMatcher,
-    RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
-    execute_repository_action, read_and_verify_config, system_req,
+    CacheInfo, Config, ProjectSummary, RepositoryAction, RepositoryMatcher, RepositoryPositioning,
+    RepositoryUpdates, Version, activate, add_packages, deactivate, execute_repository_action,
+    read_and_verify_config, system_req,
 };
 
 /// rv, the R package manager
@@ -83,6 +86,18 @@ pub enum Command {
         #[clap(flatten)]
         add_options: AddOptions,
     },
+    /// Remove packages from the project and sync
+    Remove {
+        /// Packages to remove from config
+        #[clap(value_parser, required = true)]
+        packages: Vec<String>,
+        /// Do not make any changes, only report what would happen if those packages were removed
+        #[clap(long)]
+        dry_run: bool,
+        /// Remove packages from config file, but do not sync. No effect if --dry-run is used
+        #[clap(long)]
+        no_sync: bool,
+    },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
@@ -128,7 +143,7 @@ pub enum Command {
         /// hidden otherwise
         hide_system_deps: bool,
         #[clap(long)]
-        /// Specify a R version different from the one in the config.
+        /// Specify an R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
     },
@@ -175,6 +190,27 @@ pub enum Command {
     },
     /// Deactivate an rv project
     Deactivate,
+    /// Generate CLI documentation (experimental - output format may change)
+    Docs {
+        #[clap(subcommand)]
+        subcommand: DocsSubcommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsSubcommand {
+    /// Print complete CLI documentation for all commands (experimental - output format may change)
+    Cli {
+        /// Output format: markdown or json
+        #[clap(long, default_value = "markdown")]
+        format: String,
+    },
+    /// Print a terse list of all available commands (experimental - output format may change)
+    CliCmds {
+        /// Hide the description for each command
+        #[clap(long)]
+        no_description: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -262,6 +298,7 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Include the patch in the R version
         strict_r_version: bool,
+        #[clap(long)]
         /// Turn off rv access through .rv R environment
         no_r_environment: bool,
     },
@@ -295,25 +332,20 @@ fn try_main() -> Result<()> {
             no_r_environment,
             force,
         } => {
-            let r_version = if let Some(r) = r_version {
-                r.original
+            let (r_version, use_devel) = if let Some(r) = r_version {
+                (r.original, false)
             } else {
-                // if R version is not provided, get the major.minor of the R version on the path
-                let [major, minor] = match (RCommandLine { r: None }).version() {
-                    Ok(r_ver) => r_ver,
-                    Err(e) => {
-                        if cfg!(windows) {
-                            RCommandLine {
-                                r: Some(PathBuf::from("R.bat")),
-                            }
-                            .version()?
-                        } else {
-                            Err(e)?
-                        }
+                match get_r_from_path() {
+                    Some(r_install) => {
+                        let [major, minor] = r_install.version.major_minor();
+                        (format!("{major}.{minor}"), r_install.is_devel)
+                    }
+                    None => {
+                        anyhow::bail!(
+                            "Either no R available in path or R-devel detected but could not determine its version"
+                        );
                     }
                 }
-                .major_minor();
-                format!("{major}.{minor}")
             };
 
             let repositories = if no_repositories {
@@ -330,7 +362,14 @@ fn try_main() -> Result<()> {
                 }
             };
 
-            init(&project_directory, &r_version, &repositories, &add, force)?;
+            init(
+                &project_directory,
+                &r_version,
+                &repositories,
+                &add,
+                use_devel,
+                force,
+            )?;
             activate(&project_directory, no_r_environment)?;
 
             if output_format.is_json() {
@@ -514,6 +553,56 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
+        Command::Remove {
+            packages,
+            dry_run,
+            no_sync,
+        } => {
+            use rv::remove_packages;
+
+            // Load config to verify structure is valid
+            let mut doc = read_and_verify_config(&cli.config_file)?;
+
+            remove_packages(&mut doc, packages)?;
+
+            // write the update if not dry run
+            if !dry_run {
+                write(&cli.config_file, doc.to_string())?;
+            }
+
+            // if no sync, exit early
+            if no_sync {
+                if output_format.is_json() {
+                    println!("{{}}");
+                } else {
+                    println!("Packages successfully removed");
+                }
+                return Ok(());
+            }
+
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+
+            if !log_enabled {
+                context.show_progress_bar();
+            }
+
+            // if dry run, the config won't have been edited to reflect the removed changes so must be updated
+            if dry_run {
+                context.config = doc.to_string().parse::<Config>()?;
+            }
+
+            let resolve_mode = ResolveMode::Default;
+            context
+                .load_for_resolve_mode(resolve_mode)
+                .map_err(|e| anyhow!("{e}"))?;
+            SyncHelper {
+                dry_run,
+                output_format: Some(output_format),
+                ..Default::default()
+            }
+            .run(&context, resolve_mode)?;
+        }
         Command::Upgrade { dry_run } => {
             let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
@@ -544,9 +633,10 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context
-                .load_for_resolve_mode(upgrade)
-                .map_err(|e| anyhow!("{e}"))?;
+            // We always load the databases for plan because we need them to know if we have
+            // source or binary available
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
+            context.load_system_requirements();
             SyncHelper {
                 dry_run: true,
                 output_format: Some(output_format),
@@ -571,7 +661,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             let sys_deps: Vec<_> = system_req::check_installation_status(
-                &context.cache.system_info,
+                context.cache.system_info(),
                 &project_sys_deps,
             )
             .into_iter()
@@ -621,9 +711,7 @@ fn try_main() -> Result<()> {
         } => {
             let mut context =
                 Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
-            context
-                .load_databases_if_needed()
-                .map_err(|e| anyhow!("{e}"))?;
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
             if !hide_system_deps {
                 context.load_system_requirements();
             }
@@ -665,18 +753,25 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            let info = CacheInfo::new(
-                &context.config,
-                &context.cache,
-                resolve_dependencies(&context, ResolveMode::Default, true).found,
-            );
+            let found = resolve_dependencies(&context, ResolveMode::Default, true).found;
+            let local_info = CacheInfo::new(&context.config, context.cache.local(), found.clone());
+            let global_info = context
+                .cache
+                .global()
+                .map(|x| CacheInfo::new(&context.config, x, found));
             if output_format.is_json() {
+                let info = json!({"local_info": local_info, "global_info": global_info});
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&info).expect("valid json")
                 );
             } else {
-                println!("{info}");
+                println!("Local:\n");
+                println!("{local_info}");
+                if let Some(g) = global_info {
+                    println!("\nGlobal:\n");
+                    println!("{g}");
+                }
             }
         }
         Command::Info {
@@ -729,9 +824,7 @@ fn try_main() -> Result<()> {
             if !log_enabled {
                 context.show_progress_bar();
             }
-            context
-                .load_databases_if_needed()
-                .map_err(|e| anyhow!("{e}"))?;
+            context.load_databases().map_err(|e| anyhow!("{e}"))?;
             context.load_system_requirements();
 
             let resolved = resolve_dependencies(&context, ResolveMode::Default, false).found;
@@ -743,7 +836,7 @@ fn try_main() -> Result<()> {
                 .collect();
 
             let sys_deps_status = system_req::check_installation_status(
-                &context.cache.system_info,
+                context.cache.system_info(),
                 &project_sys_deps,
             );
 
@@ -791,6 +884,29 @@ fn try_main() -> Result<()> {
             } else {
                 println!("rv deactivated");
             }
+        }
+        Command::Docs {
+            subcommand: DocsSubcommand::Cli { format },
+        } => {
+            let mut cmd = Cli::command();
+            let output = match format.to_lowercase().as_str() {
+                "json" => cli_docs::generate_json(&mut cmd),
+                "markdown" | "md" => cli_docs::generate_markdown(&mut cmd),
+                _ => {
+                    return Err(anyhow!(
+                        "Unknown format '{}'. Supported formats: markdown, json",
+                        format
+                    ));
+                }
+            };
+            println!("{}", output);
+        }
+        Command::Docs {
+            subcommand: DocsSubcommand::CliCmds { no_description },
+        } => {
+            let cmd = Cli::command();
+            let output = cli_docs::generate_commands_list(&cmd, !no_description);
+            println!("{}", output);
         }
 
         Command::Configure { subcommand } => {

@@ -1,12 +1,13 @@
 mod activate;
-mod add;
 mod cache;
 mod cancellation;
 #[cfg(feature = "cli")]
 pub mod cli;
 mod config;
 mod configure;
+pub mod consts;
 mod context;
+mod dependency_edit;
 mod format;
 mod fs;
 mod git;
@@ -16,6 +17,7 @@ mod lockfile;
 mod package;
 mod project_summary;
 mod r_cmd;
+pub mod r_finder;
 mod renv;
 mod repository;
 mod repository_urls;
@@ -25,11 +27,8 @@ mod system_info;
 pub mod system_req;
 mod utils;
 
-pub mod consts;
-
 pub use activate::{activate, deactivate};
-pub use add::{AddOptions, add_packages, read_and_verify_config};
-pub use cache::{CacheInfo, DiskCache, PackagePaths, utils::hash_string};
+pub use cache::{Cache, CacheInfo, DiskCache, PackagePaths, utils::hash_string};
 pub use cancellation::Cancellation;
 pub use config::{Config, ConfigDependency, Repository};
 pub use configure::{
@@ -37,6 +36,7 @@ pub use configure::{
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
 pub use context::{Context, RCommandLookup, ResolveMode};
+pub use dependency_edit::{AddOptions, add_packages, read_and_verify_config, remove_packages};
 pub use format::format_document;
 pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
@@ -45,7 +45,8 @@ pub use library::Library;
 pub use lockfile::{Lockfile, Source};
 pub use package::{Dependency, Operator, Version, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
-pub use r_cmd::{RCmd, RCommandLine, find_r_version_command};
+pub use r_cmd::RCmd;
+pub use r_finder::RInstall;
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};

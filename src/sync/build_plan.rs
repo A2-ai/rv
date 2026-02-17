@@ -117,7 +117,7 @@ impl<'a> BuildPlan<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::InstallationStatus;
+    use crate::cache::CacheStatus;
     use crate::lockfile::Source;
     use crate::package::{Dependency, PackageType};
     use std::borrow::Cow;
@@ -139,7 +139,7 @@ mod tests {
             install_suggests: false,
             force_source: false,
             kind: PackageType::Source,
-            installation_status: InstallationStatus::Binary(false),
+            cache_status: CacheStatus::new_local_builtin_binary(),
             path: None,
             from_lockfile: false,
             from_remote: false,

@@ -1,0 +1,16 @@
+Package: deponly
+Version: 1.0.0
+Depends: pkgB (>= 2.0.0)
+License: MIT
+MD5sum: aaaa1111
+
+Package: pkgA
+Version: 1.0.0
+Depends: pkgB
+License: MIT
+MD5sum: bbbb2222
+
+Package: pkgB
+Version: 1.0.0
+License: MIT
+MD5sum: cccc3333

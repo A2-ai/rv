@@ -1,0 +1,7 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+pkgA=1.0.0 (repository(url: http://repo1/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
+deponly=1.0.0 (repository(url: http://repo1/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[], ignored)
+pkgB=2.0.0 (repository(url: http://repo2/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
