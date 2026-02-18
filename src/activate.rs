@@ -14,6 +14,22 @@ const RVR_FILE_NAME: &str = "rv/scripts/rvr.R";
 pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
 
+    let config_path = dir.join("rproject.toml");
+
+    // Check if file exists first to provide a better error
+    if !config_path.exists() {
+        return Err(ActivateError {
+            source: ActivateErrorKind::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Config file not found at {}", config_path.display())
+            )),
+        });
+    }
+
+    let config = crate::Config::from_file(&config_path).map_err(|e| ActivateError {
+        source: ActivateErrorKind::Io(std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string())),
+    })?;
+
     // ensure the directory is a directory and that it exists. If not, activation cannot occur
     if !dir.is_dir() {
         return Err(ActivateError {
@@ -24,7 +40,8 @@ pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), Act
     let is_home = is_home_dir(&dir.canonicalize()?);
     let (activate_source_path, rvr_source_path) = scripts_as_paths(is_home);
 
-    write_activate_file(dir, is_home)?;
+    write_activate_file(dir, is_home, config.project.sandbox)?;
+
     add_rprofile_source_call(dir, activate_source_path)?;
     write_rvr_file(dir)?;
     if !no_r_environment {
@@ -95,7 +112,7 @@ fn scripts_as_paths(is_home: bool) -> (PathBuf, PathBuf) {
     }
 }
 
-fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), ActivateError> {
+fn write_activate_file(dir: impl AsRef<Path>, is_home: bool, sandbox_enabled: Option<bool>) -> Result<(), ActivateError> {
     let template = ACTIVATE_FILE_TEMPLATE.to_string();
     let global_wd_content = if is_home {
         r#"
@@ -108,9 +125,18 @@ fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), Activ
         ""
     };
     let rv_command = if cfg!(windows) { "rv.exe" } else { "rv" };
+
+    // Change the mapping to handle Option<bool>
+    let sandbox_val = match sandbox_enabled {
+        Some(true) => "TRUE",   // Explicitly enabled in TOML
+        Some(false) => "FALSE", // Explicitly disabled in TOML
+        None => "NULL",         // Missing from TOML (fallback to ENV)
+    };
+
     let content = template
         .replace("%rv command%", rv_command)
-        .replace("%global wd content%", global_wd_content);
+        .replace("%global wd content%", global_wd_content)
+        .replace("%sandbox enabled%", sandbox_val);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = dir.as_ref().join(ACTIVATE_FILE_NAME);

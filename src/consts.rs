@@ -102,10 +102,25 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 	# Opt-out:
 	#   Sys.setenv(RV_SANDBOX = "0")
 	# -------------------------------------------------------------------------
-	rv_sandbox_system_library <- function(rv_lib) {
-		enabled <- Sys.getenv("RV_SANDBOX", unset = "1")
-		if (!nzchar(enabled) || enabled %in% c("0", "false", "FALSE", "no", "NO"))
-			return(invisible(FALSE))
+	
+	# Injected by Rust from rproject.toml, config_val is TRUE|FALSE|NULL
+	config_val <- %sandbox enabled%
+	print(paste0("config_val: ", config_val, "\n"))
+	
+	# Environment variable
+	env_val <- Sys.getenv("RV_SANDBOX_ENABLE", unset = "")
+	
+	# PRECEDENCE LOGIC: 
+	# 1. If config is TRUE/FALSE, use it.
+	# 2. If config is NULL, check if ENV is "1".
+	should_sandbox <- if (!is.null(config_val)) {
+		config_val 
+	} else {
+	  	env_val %in% c("1", "true", "TRUE")
+    }
+
+	rv_sandbox_system_library <- function(rv_lib, execute = FALSE) {
+		if (!execute) return(invisible(FALSE))
 
 		syslib <- .Library
 		if (!is.character(syslib) || !nzchar(syslib) || !dir.exists(syslib))
@@ -126,11 +141,13 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		is_base_or_recommended <- function(pkg) {
 			dcf <- file.path(syslib, pkg, "DESCRIPTION")
 			if (!file.exists(dcf)) return(FALSE)
-			x <- tryCatch(readLines(dcf, warn = FALSE), error = function(e) character())
-			pr <- x[grepl("^Priority\\s*:", x)]
-			if (!length(pr)) return(FALSE)
-			val <- trimws(sub("^Priority\\s*:\\s*", "", pr[1]))
-			val %in% c("base", "recommended")
+			# Use base::readLines; avoid dependency on loaded utils if possible
+            x <- tryCatch(base::readLines(dcf, warn = FALSE), error = function(e) character())
+            pr <- x[base::grepl("^Priority\\s*:", x)]
+            if (!length(pr)) return(FALSE)
+            # Manual trim for extreme safety
+            val <- base::gsub("^Priority\\s*:\\s*|\\s*$", "", pr[1])
+            val %in% c("base", "recommended")
 		}
 
 		pkgs <- pkg_dirs[vapply(pkg_dirs, is_base_or_recommended, logical(1))]
@@ -217,9 +234,8 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 
 	# Track sandbox existence for user facing message
 	sandbox_ok <- FALSE     
-
-	if (r_match) {
-		sandbox_ok <- isTRUE(rv_sandbox_system_library(rv_lib))
+	if (r_match && should_sandbox) {
+		sandbox_ok <- isTRUE(rv_sandbox_system_library(rv_lib, execute = should_sandbox))
 	}
 
 	.libPaths(rv_lib, include.site = FALSE)
@@ -244,13 +260,13 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 				paste0(
 					"rv system library sandbox active (base+recommended only):\n  ",
 					.Library,
-					"\nopt-out: set RV_SANDBOX=0\n"
+					"\nopt-out: set RV_SANDBOX_ENABLE=0\n"
 				)
 			} else {
-				paste0(
-					"rv system library sandbox currently inactived.\n",
-					"\nyou can activate it by: set RV_SANDBOX=1\n"
-				)
+				message("rv system library sandbox disabled.\n",
+                    	"To Enable: set `sandbox = true` in `rproject.toml` `[project]` section\n",
+                        "           or run `RV_SANDBOX_ENABLE=1`.\n",
+						"Always run `rv init` after the changes for changes to take place.\n")
 			}
 		)
 
