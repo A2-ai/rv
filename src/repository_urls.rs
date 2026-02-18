@@ -249,8 +249,8 @@ fn get_linux_url(
 // Listed in order of query preference
 pub struct TarballUrls {
     pub binary: Option<Url>,
-    pub source: Url,
     pub binary_archive: Option<Url>,
+    pub source: Url,
     pub source_archive: Url,
 }
 
@@ -281,10 +281,10 @@ pub fn get_tarball_urls(
             get_archive_tarball_paths(repository, name, version, r_version, sysinfo);
 
         Ok(TarballUrls {
-            source: get_source_path(repository, &source_file_path),
             binary: get_binary_path(repository, &binary_file_path, r_version, sysinfo),
-            source_archive,
             binary_archive,
+            source: get_source_path(repository, &source_file_path),
+            source_archive,
         })
     } else {
         Err("Dependency does not have source Repository".into())

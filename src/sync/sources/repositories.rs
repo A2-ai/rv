@@ -134,32 +134,15 @@ fn download_package(
             Ok(pkg_type) => return Ok(pkg_type),
             Err(e) => {
                 log::warn!(
-                    "Failed to download binary from {}: {}. Trying source",
+                    "Failed to download binary from {}: {}. Trying binary archive",
                     binary_url,
-                    e
+                    e,
                 );
             }
         }
     }
 
-    // 2. Download Source
-    match try_download_package(http, &urls.source, &local_paths, pkg_name, false) {
-        Ok(pkg_type) => return Ok(pkg_type),
-        Err(e) => {
-            log::warn!(
-                "Failed to download source from {}: {}. Trying {}archive",
-                &urls.source,
-                e,
-                if urls.binary_archive.is_some() && !force_source {
-                    "binary "
-                } else {
-                    ""
-                }
-            );
-        }
-    }
-
-    // 3. Download binary from archive
+    // 2. Download binary from archive
     if let Some(binary_archive_url) = &urls.binary_archive
         && !force_source
     {
@@ -167,11 +150,23 @@ fn download_package(
             Ok(pkg_type) => return Ok(pkg_type),
             Err(e) => {
                 log::warn!(
-                    "Failed to download binary archive from {}: {}. Trying archive",
+                    "Failed to download binary archive from {}: {}. Trying source",
                     binary_archive_url,
                     e
                 );
             }
+        }
+    }
+
+    // 3. Download Source
+    match try_download_package(http, &urls.source, &local_paths, pkg_name, false) {
+        Ok(pkg_type) => return Ok(pkg_type),
+        Err(e) => {
+            log::warn!(
+                "Failed to download source from {}: {}. Trying archive",
+                &urls.source,
+                e,
+            );
         }
     }
 
