@@ -315,7 +315,11 @@ pub(crate) struct Project {
     )]
     r_version: Version,
     #[serde(default)]
+<<<<<<< HEAD
     use_devel: Option<bool>,
+=======
+    pub sandbox: Option<bool>, // None = missing from file
+>>>>>>> e451cda (add RV_SANDBOX_ENABLE and  in the config file .)
     #[serde(default)]
     description: String,
     license: Option<String>,
@@ -508,6 +512,10 @@ impl Config {
 
     pub fn configure_args(&self) -> &HashMap<String, Vec<ConfigureArgsRule>> {
         &self.project.configure_args
+    }
+
+    pub fn sandbox(&self) -> Option<bool> {
+        self.project.sandbox
     }
 }
 
