@@ -10,6 +10,7 @@ use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
 use crate::{Cancellation, DiskCache, RCmd, ResolvedDependency, is_binary_package};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
     project_dir: &Path,
@@ -17,6 +18,7 @@ pub(crate) fn install_package(
     cache: &DiskCache,
     r_cmd: &impl RCmd,
     configure_args: &[String],
+    strip: bool,
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let (local_path, sha) = match &pkg.source {
@@ -61,6 +63,7 @@ pub(crate) fn install_package(
             cancellation,
             &pkg.env_vars,
             configure_args,
+            strip,
         )?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);

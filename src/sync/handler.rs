@@ -266,6 +266,17 @@ impl<'a> SyncHandler<'a> {
         Vec::new()
     }
 
+    /// Check whether stripping should be applied for a package.
+    /// Returns false if the package is listed in [project.no_strip].
+    fn should_strip(&self, package_name: &str) -> bool {
+        !self
+            .context
+            .config
+            .no_strip()
+            .iter()
+            .any(|name| name == package_name)
+    }
+
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
         if self.dry_run {
             return Ok(());
@@ -296,6 +307,7 @@ impl<'a> SyncHandler<'a> {
         let staging_path = self.context.staging_path();
         let library_dirs = vec![&staging_path, self.context.library.path()];
         let configure_args = self.get_configure_args(&dep.name);
+        let strip = self.should_strip(&dep.name);
 
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
@@ -304,6 +316,7 @@ impl<'a> SyncHandler<'a> {
                 &self.context.cache,
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
@@ -313,6 +326,7 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 &GitExecutor {},
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Local { .. } => sources::local::install_package(
@@ -322,6 +336,7 @@ impl<'a> SyncHandler<'a> {
                 self.context.cache.local(),
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Url { .. } => sources::url::install_package(
@@ -330,6 +345,7 @@ impl<'a> SyncHandler<'a> {
                 self.context.cache.local(),
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Builtin { .. } => Ok(()),

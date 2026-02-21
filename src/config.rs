@@ -351,6 +351,11 @@ pub(crate) struct Project {
     /// Package-specific configure.args with system targeting
     #[serde(default)]
     pub configure_args: HashMap<String, Vec<ConfigureArgsRule>>,
+    /// Packages for which stripping should be disabled during installation.
+    /// By default, rv passes --strip and --strip-lib to R CMD INSTALL.
+    /// Packages listed here will be installed without those flags.
+    #[serde(default)]
+    no_strip: Vec<String>,
 }
 
 // That's the way to do it with serde :/
@@ -509,6 +514,10 @@ impl Config {
     pub fn configure_args(&self) -> &HashMap<String, Vec<ConfigureArgsRule>> {
         &self.project.configure_args
     }
+
+    pub fn no_strip(&self) -> &[String] {
+        &self.project.no_strip
+    }
 }
 
 impl FromStr for Config {
@@ -564,6 +573,31 @@ mod tests {
             println!("{res:#?}");
             assert!(res.is_err());
         }
+    }
+
+    #[test]
+    fn can_parse_no_strip() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+no_strip = ["rgl", "sf"]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.no_strip(), &["rgl", "sf"]);
+    }
+
+    #[test]
+    fn no_strip_defaults_to_empty() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.no_strip().is_empty());
     }
 
     #[test]

@@ -21,6 +21,7 @@ pub(crate) fn install_package(
     cache: &Cache,
     r_cmd: &impl RCmd,
     configure_args: &[String],
+    strip: bool,
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
     let (local_paths, global_paths) =
@@ -37,6 +38,7 @@ pub(crate) fn install_package(
             cancellation.clone(),
             &pkg.env_vars,
             configure_args,
+            strip,
         ) {
             Ok(output) => {
                 // not using the path for the cache

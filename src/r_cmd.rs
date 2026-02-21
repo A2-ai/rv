@@ -45,6 +45,7 @@ pub trait RCmd: Send + Sync {
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
         configure_args: &[String],
+        strip: bool,
     ) -> Result<String, InstallError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
@@ -113,6 +114,7 @@ impl RCmd for RInstall {
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
         configure_args: &[String],
+        strip: bool,
     ) -> Result<String, InstallError> {
         let destination = destination.as_ref();
         // We create a temp build dir so we only remove an existing destination if we have something we can replace it with
@@ -179,9 +181,11 @@ impl RCmd for RInstall {
                 "--library={}",
                 build_dir.as_ref().to_string_lossy()
             ))
-            .arg("--use-vanilla")
-            .arg("--strip")
-            .arg("--strip-lib");
+            .arg("--use-vanilla");
+
+        if strip {
+            command.arg("--strip").arg("--strip-lib");
+        }
 
         // Add configure args (Unix only - Windows R CMD INSTALL doesn't support --configure-args)
         // configure-args are unix only and should be a single string per:
@@ -203,8 +207,13 @@ impl RCmd for RInstall {
             .arg(&src_backup_dir)
             // Override where R should look for deps
             .env("R_LIBS_SITE", &library_paths)
-            .env("R_LIBS_USER", &library_paths)
-            .env("_R_SHLIB_STRIP_", "true")
+            .env("R_LIBS_USER", &library_paths);
+
+        if strip {
+            command.env("_R_SHLIB_STRIP_", "true");
+        }
+
+        command
             .stdout(
                 send.try_clone()
                     .map_err(|e| InstallError::from_fs_io(e, destination))?,
