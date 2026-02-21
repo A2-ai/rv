@@ -24,7 +24,7 @@ use rv::{
 
 /// rv, the R package manager
 #[derive(Parser)]
-#[clap(version, author, about, subcommand_negates_reqs = true)]
+#[clap(version = env!("RV_LONG_VERSION"), author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
     #[command(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
