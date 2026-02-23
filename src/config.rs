@@ -385,14 +385,19 @@ impl Config {
                 });
             }
         };
-        Self::from_str(&content)
+        let mut config: Self = toml::from_str(&content).map_err(|e| ConfigLoadError {
+            path: path.as_ref().into(),
+            source: ConfigLoadErrorKind::Parse(e),
+        })?;
+        config.finalize(path.as_ref())?;
+        Ok(config)
     }
 
     /// This will do 2 things:
     /// 1. verify alias used in deps are found
     /// 2. verify git sources are valid (eg no tag and branch at the same time)
     /// 3. replace the alias in the dependency by the URL
-    pub(crate) fn finalize(&mut self) -> Result<(), ConfigLoadError> {
+    pub(crate) fn finalize(&mut self, path: &Path) -> Result<(), ConfigLoadError> {
         let repo_mapping: HashMap<_, _> = self
             .project
             .repositories
@@ -442,7 +447,7 @@ impl Config {
 
         if !errors.is_empty() {
             return Err(ConfigLoadError {
-                path: Path::new(".").into(),
+                path: path.into(),
                 source: ConfigLoadErrorKind::InvalidConfig(errors.join("\n")),
             });
         }
@@ -528,13 +533,13 @@ impl FromStr for Config {
             path: Path::new(".").into(),
             source: ConfigLoadErrorKind::Parse(e),
         })?;
-        config.finalize()?;
+        config.finalize(Path::new("."))?;
         Ok(config)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to load config at `{path}`")]
+#[error("Failed to load config at `{path}`\n\nCaused by:\n  {source}")]
 #[non_exhaustive]
 pub struct ConfigLoadError {
     pub path: Box<Path>,
