@@ -75,6 +75,8 @@ insta = "1"
 mockito = "1"
 assert_cmd = "2"
 predicates = "3"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+rustls = { version = "0.23", features = ["ring"] }
 
 [profile.release]
 codegen-units = 1
