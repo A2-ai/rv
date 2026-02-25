@@ -4,15 +4,18 @@ use fs_err as fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
+use url::Url;
 
 use crate::cache::{Cache, InstallationStatus};
 use crate::consts::BUILT_FROM_SOURCE_FILENAME;
 use crate::http::Http;
 use crate::package::PackageType;
+use crate::repository_urls::TarballUrls;
 use crate::sync::LinkMode;
-use crate::sync::errors::SyncError;
+use crate::sync::errors::{SyncError, SyncErrorKind};
 use crate::{
-    Cancellation, HttpDownload, RCmd, ResolvedDependency, get_tarball_urls, is_binary_package,
+    Cancellation, HttpDownload, PackagePaths, RCmd, ResolvedDependency, get_tarball_urls,
+    is_binary_package,
 };
 
 pub(crate) fn install_package(
@@ -87,78 +90,16 @@ pub(crate) fn install_package(
                     .expect("Dependency has source Repository");
                 let http = Http {};
 
-                let download_and_install_source_or_archive = || -> Result<(), SyncError> {
-                    log::debug!(
-                        "Downloading package {} ({}) as source tarball",
-                        pkg.name,
-                        pkg.version.original
-                    );
-                    if let Err(e) = http.download_and_untar(
-                        &tarball_url.source,
-                        &local_paths.source,
-                        false,
-                        None,
-                    ) {
-                        log::warn!(
-                            "Failed to download/untar source package from {}: {e:?}, falling back to {}",
-                            tarball_url.source,
-                            tarball_url.archive
-                        );
-                        log::debug!(
-                            "Downloading package {} ({}) from archive",
-                            pkg.name,
-                            pkg.version.original
-                        );
-                        http.download_and_untar(
-                            &tarball_url.archive,
-                            &local_paths.source,
-                            false,
-                            None,
-                        )?;
-                    }
+                if let PackageType::Source = download_package(
+                    &http,
+                    &tarball_url,
+                    &local_paths,
+                    &pkg.name,
+                    &pkg.kind,
+                    pkg.force_source,
+                    pkg.from_lockfile,
+                )? {
                     compile_package()?;
-                    Ok(())
-                };
-
-                if pkg.kind == PackageType::Source || tarball_url.binary.is_none() {
-                    download_and_install_source_or_archive()?;
-                } else {
-                    // If we get an error doing the binary download, fall back to source
-                    if let Err(e) = http.download_and_untar(
-                        &tarball_url.binary.clone().unwrap(),
-                        &local_paths.binary,
-                        false,
-                        None,
-                    ) {
-                        log::warn!(
-                            "Failed to download/untar binary package from {}: {e:?}, falling back to {}",
-                            tarball_url.binary.clone().unwrap(),
-                            tarball_url.source
-                        );
-                        download_and_install_source_or_archive()?;
-                    } else {
-                        // Ok we download some tarball. We can't assume it's actually compiled though, it could be just
-                        // source files. We have to check first whether what we have is actually binary content.
-                        let bin_path = local_paths.binary.join(pkg.name.as_ref());
-                        if !is_binary_package(&bin_path, pkg.name.as_ref()).map_err(|err| {
-                            SyncError {
-                                source: crate::sync::errors::SyncErrorKind::InvalidPackage {
-                                    path: bin_path,
-                                    error: err.to_string(),
-                                },
-                            }
-                        })? {
-                            log::debug!("{} was expected as binary, found to be source.", pkg.name);
-                            // Move it to the source destination if we don't have it already
-                            if local_paths.source.is_dir() {
-                                fs::remove_dir_all(&local_paths.binary)?;
-                            } else {
-                                fs::create_dir_all(&local_paths.source)?;
-                                fs::rename(&local_paths.binary, &local_paths.source)?;
-                            }
-                            compile_package()?;
-                        }
-                    }
                 }
             }
             _ => {}
@@ -178,4 +119,660 @@ pub(crate) fn install_package(
     )?;
 
     Ok(())
+}
+
+fn download_package(
+    http: &impl HttpDownload,
+    urls: &TarballUrls,
+    local_paths: &PackagePaths,
+    pkg_name: &str,
+    pkg_type: &PackageType,
+    force_source: bool,
+    from_lockfile: bool, // if from repo, only downloading from archive if version resolved from lockfile
+) -> Result<PackageType, SyncError> {
+    // 1. Download Binary if possible/requested
+    if let Some(binary_url) = &urls.binary
+        && pkg_type == &PackageType::Binary
+    {
+        if let Ok(pkg_type) = try_download_package(http, binary_url, &local_paths, pkg_name, true) {
+            return Ok(pkg_type);
+        } else {
+            log::warn!(
+                "Failed to download binary from `{binary_url}`. Trying {}",
+                if !force_source && from_lockfile {
+                    "binary archive"
+                } else {
+                    "source"
+                }
+            );
+        }
+    }
+
+    // 2. Download binary from archive
+    if let Some(binary_archive_url) = &urls.binary_archive
+        && !force_source
+        && from_lockfile
+    {
+        if let Ok(pkg_type) =
+            try_download_package(http, binary_archive_url, &local_paths, pkg_name, true)
+        {
+            return Ok(pkg_type);
+        } else {
+            log::warn!(
+                "Failed to download archived binary from `{binary_archive_url}`. Trying source",
+            );
+        }
+    }
+
+    // 3. Download Source
+    if let Ok(pkg_type) = try_download_package(http, &urls.source, &local_paths, pkg_name, false) {
+        return Ok(pkg_type);
+    } else {
+        log::warn!(
+            "Failed to download source from `{}`. Trying source archive",
+            &urls.source
+        );
+    }
+
+    // 4. Download source from archive
+    try_download_package(http, &urls.source_archive, &local_paths, pkg_name, false)
+}
+
+fn try_download_package(
+    http: &impl HttpDownload,
+    url: &Url,
+    local_paths: &PackagePaths,
+    pkg_name: &str,
+    expect_binary: bool,
+) -> Result<PackageType, SyncError> {
+    let mut pkg_type = PackageType::Source;
+
+    let destination = if expect_binary {
+        &local_paths.binary
+    } else {
+        &local_paths.source
+    };
+
+    http.download_and_untar(url, destination, false, None)?;
+
+    if expect_binary {
+        let pkg_path = destination.join(pkg_name);
+        if !is_binary_package(&pkg_path, pkg_name).map_err(|e| SyncError {
+            source: SyncErrorKind::InvalidPackage {
+                path: pkg_path,
+                error: e.to_string(),
+            },
+        })? {
+            log::debug!("{} was expected as binary, found to be source", pkg_name);
+            // Move it to the source destination if we don't have it already
+            if local_paths.source.is_dir() {
+                fs::remove_dir_all(&local_paths.binary)?;
+            } else {
+                fs::create_dir_all(&local_paths.source)?;
+                fs::rename(&local_paths.binary, &local_paths.source)?;
+            }
+        } else {
+            pkg_type = PackageType::Binary;
+        }
+    }
+
+    Ok(pkg_type)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http::{HttpError, HttpErrorKind};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    /// Mock HttpDownload that creates minimal package structures
+    #[derive(Debug)]
+    struct MockHttpDownload {
+        /// Map of URL to Result - if URL is not in map, returns 404
+        responses: Mutex<HashMap<String, Result<bool, u16>>>,
+        /// Track which URLs were attempted in order
+        attempts: Mutex<Vec<String>>,
+    }
+
+    impl MockHttpDownload {
+        fn new() -> Self {
+            Self {
+                responses: Mutex::new(HashMap::new()),
+                attempts: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn set_success(&self, url: &str, is_binary: bool) {
+            self.responses
+                .lock()
+                .unwrap()
+                .insert(url.to_string(), Ok(is_binary));
+        }
+
+        fn set_error(&self, url: &str) {
+            self.responses
+                .lock()
+                .unwrap()
+                .insert(url.to_string(), Err(404));
+        }
+
+        fn get_attempts(&self) -> Vec<String> {
+            self.attempts.lock().unwrap().clone()
+        }
+    }
+
+    impl HttpDownload for MockHttpDownload {
+        fn download<W: std::io::Write>(
+            &self,
+            _url: &Url,
+            _writer: &mut W,
+            _headers: Vec<(&str, String)>,
+        ) -> Result<u64, HttpError> {
+            unimplemented!("Not used in these tests")
+        }
+
+        fn download_and_untar(
+            &self,
+            url: &Url,
+            destination: impl AsRef<Path>,
+            _use_sha_in_path: bool,
+            _save_tarball_to: Option<&Path>,
+        ) -> Result<(Option<PathBuf>, String), HttpError> {
+            let destination = destination.as_ref();
+
+            let url_str = url.to_string();
+            self.attempts.lock().unwrap().push(url_str.clone());
+
+            let responses = self.responses.lock().unwrap();
+            match responses.get(&url_str) {
+                Some(Ok(is_binary)) => {
+                    let pkg_name = "testpkg";
+                    if *is_binary {
+                        create_binary_package(destination, pkg_name)
+                            .map_err(|e| HttpError::from_io(&url_str, e))?;
+                    } else {
+                        create_source_package(destination, pkg_name)
+                            .map_err(|e| HttpError::from_io(&url_str, e))?;
+                    }
+                    Ok((None, "fake_hash".to_string()))
+                }
+                Some(Err(e)) => Err(HttpError {
+                    url: url_str,
+                    source: HttpErrorKind::Http(*e),
+                }),
+                None => Err(HttpError {
+                    url: url_str,
+                    source: HttpErrorKind::Http(404),
+                }),
+            }
+        }
+    }
+
+    fn create_binary_package(destination: impl AsRef<Path>, pkg_name: &str) -> std::io::Result<()> {
+        let destination = destination.as_ref();
+        let pkg_dir = destination.join(pkg_name);
+        fs::create_dir_all(&pkg_dir)?;
+
+        let desc_content = format!(
+            "Package: {pkg_name}\nVersion: 1.0.0\nBuilt: R 4.5.0; ; 2025-01-01 00:00:00 UTC; unix\n"
+        );
+
+        fs::write(pkg_dir.join("DESCRIPTION"), desc_content)?;
+
+        let meta_dir = pkg_dir.join("Meta");
+        fs::create_dir_all(&meta_dir)?;
+        fs::write(meta_dir.join("package.rds"), b"mock rds")?;
+
+        Ok(())
+    }
+
+    fn create_source_package(destination: impl AsRef<Path>, pkg_name: &str) -> std::io::Result<()> {
+        let destination = destination.as_ref();
+        let pkg_dir = destination.join(pkg_name);
+        fs::create_dir_all(&pkg_dir)?;
+
+        let desc_content = format!("Package: {pkg_name}\nVersion: 1.0.0\n");
+
+        fs::write(pkg_dir.join("DESCRIPTION"), desc_content)?;
+
+        Ok(())
+    }
+
+    fn create_test_urls() -> TarballUrls {
+        TarballUrls {
+            binary: Some(Url::parse("https://example.com/binary.tar.gz").unwrap()),
+            source: Url::parse("https://example.com/source.tar.gz").unwrap(),
+            binary_archive: Some(Url::parse("https://example.com/archive/binary.tar.gz").unwrap()),
+            source_archive: Url::parse("https://example.com/archive/source.tar.gz").unwrap(),
+        }
+    }
+
+    fn create_test_paths() -> PackagePaths {
+        let base = std::env::temp_dir()
+            .join("rv_test_download_package")
+            .join(format!(
+                "test_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+        PackagePaths {
+            binary: base.join("binary"),
+            source: base.join("source"),
+        }
+    }
+
+    #[test]
+    fn test_binary_succeeds_immediately() {
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        // Binary URL succeeds with binary package
+        mock.set_success("https://example.com/binary.tar.gz", true);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Binary);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(attempts.len(), 1, "Should only try binary URL");
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+    }
+
+    #[test]
+    fn test_binary_fails_fallback_to_source() {
+        // from_lockfile=false: binary archive is skipped, order is binary → source
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/binary.tar.gz");
+        mock.set_success("https://example.com/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Source);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            2,
+            "Should try binary then source (binary archive skipped, not from lockfile)"
+        );
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/source.tar.gz");
+    }
+
+    #[test]
+    fn test_binary_fails_fallback_to_binary_archive() {
+        // from_lockfile=true: binary archive is tried before source
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/binary.tar.gz");
+        mock.set_success("https://example.com/archive/binary.tar.gz", true);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Binary);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(attempts.len(), 2, "Should try binary then binary archive");
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/archive/binary.tar.gz");
+    }
+
+    #[test]
+    fn test_binary_and_archive_fail_fallback_to_source() {
+        // from_lockfile=true: binary → binary_archive → source
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/binary.tar.gz");
+        mock.set_error("https://example.com/archive/binary.tar.gz");
+        mock.set_success("https://example.com/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Source);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            3,
+            "Should try binary, binary archive, then source"
+        );
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/archive/binary.tar.gz");
+        assert_eq!(attempts[2], "https://example.com/source.tar.gz");
+    }
+
+    #[test]
+    fn test_all_fail_except_source_archive() {
+        // from_lockfile=true: full order is binary → binary_archive → source → source_archive
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/binary.tar.gz");
+        mock.set_error("https://example.com/archive/binary.tar.gz");
+        mock.set_error("https://example.com/source.tar.gz");
+        mock.set_success("https://example.com/archive/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Source);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(attempts.len(), 4, "Should try all 4 URLs in order");
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/archive/binary.tar.gz");
+        assert_eq!(attempts[2], "https://example.com/source.tar.gz");
+        assert_eq!(attempts[3], "https://example.com/archive/source.tar.gz");
+    }
+
+    #[test]
+    fn test_all_urls_fail() {
+        // from_lockfile=true: all 4 attempted in order before returning error
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/binary.tar.gz");
+        mock.set_error("https://example.com/archive/binary.tar.gz");
+        mock.set_error("https://example.com/source.tar.gz");
+        mock.set_error("https://example.com/archive/source.tar.gz");
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            true,
+        );
+
+        assert!(result.is_err());
+
+        let attempts = mock.get_attempts();
+        assert_eq!(attempts.len(), 4, "Should try all 4 URLs before failing");
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/archive/binary.tar.gz");
+        assert_eq!(attempts[2], "https://example.com/source.tar.gz");
+        assert_eq!(attempts[3], "https://example.com/archive/source.tar.gz");
+    }
+
+    #[test]
+    fn test_source_package_skips_binary() {
+        // PackageType::Source skips binary step; from_lockfile=false also skips binary archive
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_success("https://example.com/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Source,
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Source);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            1,
+            "Should skip binary and binary archive (not from lockfile), go straight to source"
+        );
+        assert_eq!(attempts[0], "https://example.com/source.tar.gz");
+    }
+
+    #[test]
+    fn test_source_package_tries_binary_archive_from_lockfile() {
+        // PackageType::Source with from_lockfile=true: binary archive tried before source
+        // order: (binary skipped) → binary_archive → source → source_archive
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/archive/binary.tar.gz");
+        mock.set_error("https://example.com/source.tar.gz");
+        mock.set_success("https://example.com/archive/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Source,
+            false,
+            true,
+        );
+
+        assert!(result.is_ok());
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            3,
+            "Should try binary archive, source, then source archive"
+        );
+        assert_eq!(attempts[0], "https://example.com/archive/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/source.tar.gz");
+        assert_eq!(attempts[2], "https://example.com/archive/source.tar.gz");
+    }
+
+    #[test]
+    fn test_force_source_skips_binary_archive() {
+        // force_source=true skips binary archive even when from_lockfile=true
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/source.tar.gz");
+        mock.set_success("https://example.com/archive/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Source,
+            true, // force_source = true
+            true, // from_lockfile = true (binary archive still skipped due to force_source)
+        );
+
+        assert!(result.is_ok());
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            2,
+            "Should skip binary archive due to force_source"
+        );
+        assert_eq!(attempts[0], "https://example.com/source.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/archive/source.tar.gz");
+    }
+
+    #[test]
+    fn test_not_from_lockfile_skips_binary_archive() {
+        // from_lockfile=false: binary archive is skipped regardless of force_source
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_error("https://example.com/binary.tar.gz");
+        mock.set_success("https://example.com/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false, // force_source = false
+            false, // from_lockfile = false
+        );
+
+        assert!(result.is_ok());
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            2,
+            "Should skip binary archive (not from lockfile), go binary → source"
+        );
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+        assert_eq!(attempts[1], "https://example.com/source.tar.gz");
+    }
+
+    #[test]
+    fn test_no_force_source_gets_binary_archive_for_source() {
+        // PackageType::Source with from_lockfile=true: binary archive is tried first (before source)
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        mock.set_success("https://example.com/archive/binary.tar.gz", true);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Source,
+            false,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PackageType::Binary);
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            1,
+            "Binary archive should be tried first and succeed immediately"
+        );
+        assert_eq!(attempts[0], "https://example.com/archive/binary.tar.gz");
+    }
+
+    #[test]
+    fn test_binary_returns_source_package() {
+        let mock = MockHttpDownload::new();
+        let urls = create_test_urls();
+        let paths = create_test_paths();
+
+        // Binary URL returns source package (not compiled)
+        mock.set_success("https://example.com/binary.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            PackageType::Source,
+            "Should detect binary is actually source"
+        );
+
+        let attempts = mock.get_attempts();
+        assert_eq!(attempts.len(), 1, "Should only try binary URL");
+        assert_eq!(attempts[0], "https://example.com/binary.tar.gz");
+    }
+
+    #[test]
+    fn test_no_binary_url_skips_to_source() {
+        let mock = MockHttpDownload::new();
+        let mut urls = create_test_urls();
+        urls.binary = None;
+        let paths = create_test_paths();
+
+        mock.set_success("https://example.com/source.tar.gz", false);
+
+        let result = download_package(
+            &mock,
+            &urls,
+            &paths,
+            "testpkg",
+            &PackageType::Binary,
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+
+        let attempts = mock.get_attempts();
+        assert_eq!(
+            attempts.len(),
+            1,
+            "Should skip binary (not available) and binary archive (not from lockfile), go to source"
+        );
+        assert_eq!(attempts[0], "https://example.com/source.tar.gz");
+    }
 }

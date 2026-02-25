@@ -199,10 +199,13 @@ impl<'a> SyncHandler<'a> {
                         )
                         .or_else(|e| {
                             log::warn!(
-                                "Failed to download source tarball from {}: {e:?}, trying archive",
+                                "Failed to download source tarball from {}: {e}, trying archive",
                                 tarball_url.source
                             );
-                            crate::http::download_to_file(&tarball_url.archive, &tarball_path)
+                            crate::http::download_to_file(
+                                &tarball_url.source_archive,
+                                &tarball_path,
+                            )
                         });
 
                         // Send result with name for tracking
