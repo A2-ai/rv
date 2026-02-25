@@ -187,7 +187,11 @@ fn print_grouped_changes(changes: &[SyncChange], dry_run: bool, supports_sysdeps
         .map(|c| c.version.as_ref().map(|v| v.len()).unwrap_or(0))
         .max()
         .unwrap_or(0);
-    let max_kind = 6; // "binary" or "source"
+    let max_kind = installed
+        .iter()
+        .map(|c| c.kind_display().len())
+        .max()
+        .unwrap_or(0);
     let max_source = installed
         .iter()
         .map(|c| c.source_display().len())
@@ -218,7 +222,7 @@ fn print_grouped_changes(changes: &[SyncChange], dry_run: bool, supports_sysdeps
                         "  + {:<name_w$}  {:>ver_w$}  {:<kind_w$}  {:<src_w$}{}{}",
                         c.name,
                         c.version.as_ref().unwrap(),
-                        c.kind.unwrap(),
+                        c.kind_display(),
                         c.source_display(),
                         timing_str,
                         sys_deps_str,
