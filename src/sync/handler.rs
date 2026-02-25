@@ -657,8 +657,10 @@ impl<'a> SyncHandler<'a> {
 
                         match install_result {
                             Ok(_) => {
+                                let is_binary = dep.kind == PackageType::Binary;
+                                let binary_cached =
+                                    !is_binary && dep.cache_status.binary_available();
                                 let cache_source = {
-                                    let is_binary = dep.kind == PackageType::Binary;
                                     if is_binary {
                                         if dep.cache_status.global_binary_available() {
                                             Some(CacheSource::Global)
@@ -667,8 +669,16 @@ impl<'a> SyncHandler<'a> {
                                         } else {
                                             None // Downloaded
                                         }
+                                    } else if binary_cached {
+                                        if dep.cache_status.global_binary_available() {
+                                            Some(CacheSource::Global)
+                                        } else if dep.cache_status.local_binary_available() {
+                                            Some(CacheSource::Local)
+                                        } else {
+                                            None
+                                        }
                                     } else {
-                                        // Source package
+                                        // Source package without cached binary
                                         if dep
                                             .cache_status
                                             .global
@@ -695,6 +705,7 @@ impl<'a> SyncHandler<'a> {
                                         .cloned()
                                         .unwrap_or_default(),
                                     cache_source,
+                                    binary_cached,
                                 );
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);

@@ -77,9 +77,12 @@ pub struct SyncChange {
     pub timing: Option<Duration>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sys_deps: Vec<SysDep>,
+    /// Whether we already have the compiled binary somewhere in the cache
+    pub binary_cached: bool,
 }
 
 impl SyncChange {
+    #[allow(clippy::too_many_arguments)]
     pub fn installed(
         name: &str,
         version: &str,
@@ -88,6 +91,7 @@ impl SyncChange {
         timing: Duration,
         sys_deps: Vec<String>,
         cache_source: Option<CacheSource>,
+        binary_cached: bool,
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -98,6 +102,7 @@ impl SyncChange {
             cache_source,
             version: Some(version.to_string()),
             sys_deps: sys_deps.into_iter().map(SysDep::new).collect(),
+            binary_cached,
         }
     }
 
@@ -111,6 +116,17 @@ impl SyncChange {
             cache_source: None,
             version: None,
             sys_deps: Vec::new(),
+            binary_cached: false,
+        }
+    }
+
+    /// Display string for the package kind, distinguishing cached binaries from source builds
+    pub fn kind_display(&self) -> &'static str {
+        match self.kind {
+            Some(PackageType::Binary) => "binary",
+            Some(PackageType::Source) if self.binary_cached => "compiled",
+            Some(PackageType::Source) => "source",
+            None => "",
         }
     }
 
@@ -160,7 +176,7 @@ impl SyncChange {
                 "+ {} ({}): {} {}, from {}{}",
                 self.name,
                 self.version.as_ref().unwrap(),
-                self.kind.unwrap(),
+                self.kind_display(),
                 cache_desc,
                 self.source.as_ref().map(|x| x.to_string()).unwrap(),
                 sys_deps_string
