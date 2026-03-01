@@ -1,3 +1,21 @@
+## v0.19.0 - March 1, 2026
+
+This release adds binary archive fallback for faster package installs, a new `no_strip` configuration option for packages that fail when stripped, an `RV_INSECURE` escape hatch for environments without proper TLS certificates, and improvements to CLI output and error messages.
+
+### 🎉 New Features
+- **Binary archive fallback**: When a pre-compiled binary package is not available from the current repository snapshot, rv now checks the repository's binary archive before falling back to source compilation. This can significantly reduce install times for lockfile-pinned packages where the binary has aged out of the main repository but is still available in the archive.
+- **`no_strip` configuration option**: You can now specify packages that should not be stripped during installation by adding `no_strip = ["pkg1", "pkg2"]` under `[project]` in your `rproject.toml`. This is useful for packages that fail or behave incorrectly when `R CMD INSTALL` applies stripping.
+- **TLS certificate verification bypass**: The new `RV_INSECURE` environment variable (set to `true` or `1`) disables TLS certificate verification for all HTTP requests. This is an escape hatch for environments where proper certificates are unavailable, such as systems behind corporate proxies with custom CAs.
+
+### ⚡ Improvements
+- **Clearer dry-run output**: `rv plan` now shows "To Download" instead of "Downloaded" in its output, making it clearer that no packages have actually been fetched yet.
+- **Cached binary indicator in sync output**: Source packages that already have a compiled binary available in the local cache now display as "compiled" rather than "source" in `rv sync` and `rv plan` output, so you can see at a glance which packages will need to be built from source.
+- **Better config error messages**: When `rproject.toml` fails to load, rv now shows the actual file path and the underlying cause of the error, making configuration problems easier to diagnose.
+- **More informative version string**: Non-release builds now include the git commit hash in `rv --version` output, making it easier to identify exactly which build you are running.
+
+### 🐛 Bug Fixes
+- **Fixed stack overflow in `rv tree` with cyclic dependencies**: Resolved a crash where `rv tree` would overflow the stack when a package had a cyclic dependency (e.g., a package that suggests itself). Cycles are now detected and displayed gracefully.
+
 ## v0.18.0 - February 12, 2026
 
 This release introduces a shared global cache for multi-user environments, a new `rv remove` command, support for R 4.6 on macOS, development R version support, and improved sync/summary output.
