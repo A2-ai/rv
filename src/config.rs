@@ -355,7 +355,11 @@ pub(crate) struct Project {
     /// Base URL used by `rv add <owner>/<repo>` shorthand.
     /// Defaults to https://github.com when not specified.
     #[serde(default)]
-    git_shorthand_base_url: Option<String>,
+    /// Packages for which stripping should be disabled during installation.
+    /// By default, rv passes --strip and --strip-lib to R CMD INSTALL.
+    /// Packages listed here will be installed without those flags.
+    #[serde(default)]
+    no_strip: Vec<String>,
 }
 
 // That's the way to do it with serde :/
@@ -385,14 +389,19 @@ impl Config {
                 });
             }
         };
-        Self::from_str(&content)
+        let mut config: Self = toml::from_str(&content).map_err(|e| ConfigLoadError {
+            path: path.as_ref().into(),
+            source: ConfigLoadErrorKind::Parse(e),
+        })?;
+        config.finalize(path.as_ref())?;
+        Ok(config)
     }
 
     /// This will do 2 things:
     /// 1. verify alias used in deps are found
     /// 2. verify git sources are valid (eg no tag and branch at the same time)
     /// 3. replace the alias in the dependency by the URL
-    pub(crate) fn finalize(&mut self) -> Result<(), ConfigLoadError> {
+    pub(crate) fn finalize(&mut self, path: &Path) -> Result<(), ConfigLoadError> {
         let repo_mapping: HashMap<_, _> = self
             .project
             .repositories
@@ -462,7 +471,7 @@ impl Config {
 
         if !errors.is_empty() {
             return Err(ConfigLoadError {
-                path: Path::new(".").into(),
+                path: path.into(),
                 source: ConfigLoadErrorKind::InvalidConfig(errors.join("\n")),
             });
         }
@@ -540,6 +549,8 @@ impl Config {
             .git_shorthand_base_url
             .as_deref()
             .unwrap_or(DEFAULT_GIT_SHORTHAND_BASE_URL)
+    pub fn no_strip(&self) -> &[String] {
+        &self.project.no_strip
     }
 }
 
@@ -551,13 +562,13 @@ impl FromStr for Config {
             path: Path::new(".").into(),
             source: ConfigLoadErrorKind::Parse(e),
         })?;
-        config.finalize()?;
+        config.finalize(Path::new("."))?;
         Ok(config)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to load config at `{path}`")]
+#[error("Failed to load config at `{path}`\n\nCaused by:\n  {source}")]
 #[non_exhaustive]
 pub struct ConfigLoadError {
     pub path: Box<Path>,
@@ -596,6 +607,31 @@ mod tests {
             println!("{res:#?}");
             assert!(res.is_err());
         }
+    }
+
+    #[test]
+    fn can_parse_no_strip() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+no_strip = ["rgl", "sf"]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.no_strip(), &["rgl", "sf"]);
+    }
+
+    #[test]
+    fn no_strip_defaults_to_empty() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.no_strip().is_empty());
     }
 
     #[test]

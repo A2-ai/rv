@@ -20,31 +20,91 @@ impl NodeKind {
     }
 }
 
+fn child_kind(idx: usize, len: usize) -> NodeKind {
+    if idx + 1 == len {
+        NodeKind::Last
+    } else {
+        NodeKind::Normal
+    }
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub enum NodeState<'a> {
+    Resolved {
+        version: &'a Version,
+        source: &'a Source,
+        package_type: PackageType,
+        ignored: bool,
+    },
+    Unresolved {
+        error: Option<String>,
+        version_req: Option<String>,
+    },
+}
+
 #[derive(Debug, PartialEq, Serialize)]
 pub struct TreeNode<'a> {
     name: &'a str,
-    version: Option<&'a Version>,
-    source: Option<&'a Source>,
-    package_type: Option<PackageType>,
     sys_deps: Option<&'a Vec<String>>,
-    resolved: bool,
-    error: Option<String>,
-    version_req: Option<String>,
     children: Vec<TreeNode<'a>>,
-    ignored: bool,
+    state: NodeState<'a>,
 }
 
-impl TreeNode<'_> {
+impl<'a> TreeNode<'a> {
+    fn resolved(
+        name: &'a str,
+        dependency: &'a ResolvedDependency,
+        sys_deps: Option<&'a Vec<String>>,
+        children: Vec<TreeNode<'a>>,
+    ) -> Self {
+        Self {
+            name,
+            sys_deps,
+            children,
+            state: NodeState::Resolved {
+                version: dependency.version.as_ref(),
+                source: &dependency.source,
+                package_type: dependency.kind,
+                ignored: dependency.ignored,
+            },
+        }
+    }
+
+    fn unresolved(
+        name: &'a str,
+        unresolved: Option<&'a UnresolvedDependency>,
+        sys_deps: Option<&'a Vec<String>>,
+    ) -> Self {
+        let (error, version_req) = if let Some(dep) = unresolved {
+            (
+                dep.error.clone(),
+                dep.version_requirement.clone().map(|x| x.to_string()),
+            )
+        } else {
+            (
+                Some("unresolved dependency metadata missing".to_string()),
+                None,
+            )
+        };
+
+        Self {
+            name,
+            sys_deps,
+            children: vec![],
+            state: NodeState::Unresolved { error, version_req },
+        }
+    }
+
     fn get_sys_deps(&self, show_sys_deps: bool) -> String {
-        if show_sys_deps {
-            if let Some(s) = self.sys_deps {
-                if s.is_empty() {
-                    String::new()
-                } else {
-                    format!(" (sys: {})", s.join(", "))
-                }
-            } else {
+        if !show_sys_deps {
+            return String::new();
+        }
+
+        if let Some(s) = self.sys_deps {
+            if s.is_empty() {
                 String::new()
+            } else {
+                format!(" (sys: {})", s.join(", "))
             }
         } else {
             String::new()
@@ -53,28 +113,40 @@ impl TreeNode<'_> {
 
     fn get_details(&self, show_sys_deps: bool) -> String {
         let sys_deps = self.get_sys_deps(show_sys_deps);
-        let mut elems = Vec::new();
-        if self.resolved {
-            if self.ignored {
-                return "ignored".to_string();
+
+        match &self.state {
+            NodeState::Resolved {
+                version,
+                source,
+                package_type,
+                ignored,
+            } => {
+                if *ignored {
+                    return "ignored".to_string();
+                }
+
+                let mut elems = vec![
+                    format!("version: {version}"),
+                    format!("source: {source}"),
+                    format!("type: {package_type}"),
+                ];
+
+                if !sys_deps.is_empty() {
+                    elems.push(format!("system deps: {sys_deps}"));
+                }
+
+                elems.join(", ")
             }
-            elems.push(format!("version: {}", self.version.unwrap()));
-            elems.push(format!("source: {}", self.source.unwrap()));
-            elems.push(format!("type: {}", self.package_type.unwrap()));
-            if !sys_deps.is_empty() {
-                elems.push(format!("system deps: {sys_deps}"));
+            NodeState::Unresolved { error, version_req } => {
+                let mut elems = vec![String::from("unresolved")];
+                if let Some(e) = error {
+                    elems.push(format!("error: {e}"));
+                }
+                if let Some(v) = version_req {
+                    elems.push(format!("version requirement: {v}"));
+                }
+                elems.join(", ")
             }
-            elems.join(", ")
-        } else {
-            let mut elems = Vec::new();
-            elems.push(String::from("unresolved"));
-            if let Some(e) = &self.error {
-                elems.push(format!("error: {}", e));
-            }
-            if let Some(v) = &self.version_req {
-                elems.push(format!("version requirement: {}", v));
-            }
-            elems.join(", ")
         }
     }
 
@@ -105,14 +177,9 @@ impl TreeNode<'_> {
         };
 
         for (idx, child) in self.children.iter().enumerate() {
-            let child_kind = if idx == self.children.len() - 1 {
-                NodeKind::Last
-            } else {
-                NodeKind::Normal
-            };
             child.print_recursive(
                 child_prefix,
-                child_kind,
+                child_kind(idx, self.children.len()),
                 current_depth + 1,
                 max_depth,
                 show_sys_deps,
@@ -121,58 +188,67 @@ impl TreeNode<'_> {
     }
 }
 
+fn unresolved_node<'d>(
+    name: &'d str,
+    unresolved_deps_by_name: &HashMap<&'d str, &'d UnresolvedDependency>,
+    sys_deps: Option<&'d Vec<String>>,
+) -> TreeNode<'d> {
+    TreeNode::unresolved(name, unresolved_deps_by_name.get(name).copied(), sys_deps)
+}
+
 fn recursive_finder<'d>(
     name: &'d str,
-    deps: Vec<&'d str>,
     deps_by_name: &HashMap<&'d str, &'d ResolvedDependency>,
     unresolved_deps_by_name: &HashMap<&'d str, &'d UnresolvedDependency>,
     context: &'d Context,
+    ancestors: &mut Vec<&'d str>,
 ) -> TreeNode<'d> {
+    if ancestors.contains(&name) {
+        if let Some(resolved) = deps_by_name.get(name) {
+            return TreeNode::resolved(
+                name,
+                resolved,
+                context.system_dependencies.get(name),
+                vec![],
+            );
+        }
+        return unresolved_node(
+            name,
+            unresolved_deps_by_name,
+            context.system_dependencies.get(name),
+        );
+    }
+
     if let Some(resolved) = deps_by_name.get(name) {
-        let sys_deps = context.system_dependencies.get(name);
-        let children: Vec<_> = deps
-            .iter()
-            .map(|x| {
-                let resolved = deps_by_name[*x];
+        ancestors.push(name);
+        let mut dep_names = resolved.all_dependencies_names();
+        dep_names.sort_unstable();
+        let children: Vec<_> = dep_names
+            .into_iter()
+            .map(|dep_name| {
                 recursive_finder(
-                    x,
-                    resolved.all_dependencies_names(),
+                    dep_name,
                     deps_by_name,
                     unresolved_deps_by_name,
                     context,
+                    ancestors,
                 )
             })
             .collect();
+        ancestors.pop();
 
-        TreeNode {
+        TreeNode::resolved(
             name,
-            version: Some(resolved.version.as_ref()),
-            source: Some(&resolved.source),
-            package_type: Some(resolved.kind),
-            resolved: true,
-            error: None,
-            version_req: None,
-            sys_deps,
+            resolved,
+            context.system_dependencies.get(name),
             children,
-            ignored: resolved.ignored,
-        }
+        )
     } else {
-        let unresolved = unresolved_deps_by_name[name];
-        TreeNode {
+        unresolved_node(
             name,
-            version: None,
-            source: None,
-            package_type: None,
-            sys_deps: None,
-            error: unresolved.error.clone(),
-            version_req: unresolved
-                .version_requirement
-                .clone()
-                .map(|x| x.to_string()),
-            resolved: false,
-            children: vec![],
-            ignored: false,
-        }
+            unresolved_deps_by_name,
+            context.system_dependencies.get(name),
+        )
     }
 }
 
@@ -186,17 +262,17 @@ impl Tree<'_> {
         for (i, tree) in self.nodes.iter().enumerate() {
             println!("▶ {} [{}]", tree.name, tree.get_details(show_sys_deps),);
 
-            // Print children with standard indentation
             for (j, child) in tree.children.iter().enumerate() {
-                let child_kind = if j == tree.children.len() - 1 {
-                    NodeKind::Last
-                } else {
-                    NodeKind::Normal
-                };
-                child.print_recursive("", child_kind, 2, max_depth, show_sys_deps);
+                child.print_recursive(
+                    "",
+                    child_kind(j, tree.children.len()),
+                    2,
+                    max_depth,
+                    show_sys_deps,
+                );
             }
 
-            if i < self.nodes.len() - 1 {
+            if i + 1 < self.nodes.len() {
                 println!();
             }
         }
@@ -214,36 +290,26 @@ pub fn tree<'a>(
         .map(|d| (d.name.as_ref(), d))
         .collect();
 
-    let mut out = Vec::new();
+    let mut nodes = Vec::new();
 
     for top_level_dep in context.config.dependencies() {
         if let Some(found) = deps_by_name.get(top_level_dep.name()) {
-            out.push(recursive_finder(
+            let mut ancestors = Vec::new();
+            nodes.push(recursive_finder(
                 found.name.as_ref(),
-                found.all_dependencies_names(),
                 &deps_by_name,
                 &unresolved_deps_by_name,
                 context,
+                &mut ancestors,
             ));
         } else {
-            let unresolved = unresolved_deps_by_name[top_level_dep.name()];
-            out.push(TreeNode {
-                name: top_level_dep.name(),
-                version: None,
-                source: None,
-                package_type: None,
-                sys_deps: None,
-                error: unresolved.error.clone(),
-                version_req: unresolved
-                    .version_requirement
-                    .clone()
-                    .map(|x| x.to_string()),
-                resolved: false,
-                children: vec![],
-                ignored: false,
-            })
+            nodes.push(unresolved_node(
+                top_level_dep.name(),
+                &unresolved_deps_by_name,
+                context.system_dependencies.get(top_level_dep.name()),
+            ));
         }
     }
 
-    Tree { nodes: out }
+    Tree { nodes }
 }

@@ -199,10 +199,13 @@ impl<'a> SyncHandler<'a> {
                         )
                         .or_else(|e| {
                             log::warn!(
-                                "Failed to download source tarball from {}: {e:?}, trying archive",
+                                "Failed to download source tarball from {}: {e}, trying archive",
                                 tarball_url.source
                             );
-                            crate::http::download_to_file(&tarball_url.archive, &tarball_path)
+                            crate::http::download_to_file(
+                                &tarball_url.source_archive,
+                                &tarball_path,
+                            )
                         });
 
                         // Send result with name for tracking
@@ -266,6 +269,17 @@ impl<'a> SyncHandler<'a> {
         Vec::new()
     }
 
+    /// Check whether stripping should be applied for a package.
+    /// Returns false if the package is listed in [project.no_strip].
+    fn should_strip(&self, package_name: &str) -> bool {
+        !self
+            .context
+            .config
+            .no_strip()
+            .iter()
+            .any(|name| name == package_name)
+    }
+
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
         if self.dry_run {
             return Ok(());
@@ -296,6 +310,7 @@ impl<'a> SyncHandler<'a> {
         let staging_path = self.context.staging_path();
         let library_dirs = vec![&staging_path, self.context.library.path()];
         let configure_args = self.get_configure_args(&dep.name);
+        let strip = self.should_strip(&dep.name);
 
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
@@ -304,6 +319,7 @@ impl<'a> SyncHandler<'a> {
                 &self.context.cache,
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
@@ -313,6 +329,7 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 &GitExecutor {},
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Local { .. } => sources::local::install_package(
@@ -322,6 +339,7 @@ impl<'a> SyncHandler<'a> {
                 self.context.cache.local(),
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Url { .. } => sources::url::install_package(
@@ -330,6 +348,7 @@ impl<'a> SyncHandler<'a> {
                 self.context.cache.local(),
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Builtin { .. } => Ok(()),
@@ -638,8 +657,10 @@ impl<'a> SyncHandler<'a> {
 
                         match install_result {
                             Ok(_) => {
+                                let is_binary = dep.kind == PackageType::Binary;
+                                let binary_cached =
+                                    !is_binary && dep.cache_status.binary_available();
                                 let cache_source = {
-                                    let is_binary = dep.kind == PackageType::Binary;
                                     if is_binary {
                                         if dep.cache_status.global_binary_available() {
                                             Some(CacheSource::Global)
@@ -648,8 +669,16 @@ impl<'a> SyncHandler<'a> {
                                         } else {
                                             None // Downloaded
                                         }
+                                    } else if binary_cached {
+                                        if dep.cache_status.global_binary_available() {
+                                            Some(CacheSource::Global)
+                                        } else if dep.cache_status.local_binary_available() {
+                                            Some(CacheSource::Local)
+                                        } else {
+                                            None
+                                        }
                                     } else {
-                                        // Source package
+                                        // Source package without cached binary
                                         if dep
                                             .cache_status
                                             .global
@@ -676,6 +705,7 @@ impl<'a> SyncHandler<'a> {
                                         .cloned()
                                         .unwrap_or_default(),
                                     cache_source,
+                                    binary_cached,
                                 );
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);

@@ -1,5 +1,6 @@
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
+use std::sync::Once;
 use std::time::Instant;
 use std::{fs, io, io::Write, time::Duration};
 
@@ -8,18 +9,32 @@ use ureq::http::{HeaderName, HeaderValue};
 use ureq::tls::{RootCerts, TlsConfig};
 use url::Url;
 
+use crate::consts::INSECURE_TLS_ENV_VAR_NAME;
 use crate::fs::{copy_folder, untar_archive};
+use crate::utils::is_env_var_truthy;
 
-pub fn get_agent() -> Agent {
+static INSECURE_WARNING: Once = Once::new();
+
+pub(crate) fn build_agent(insecure: bool) -> Agent {
+    let mut tls_builder = TlsConfig::builder().root_certs(RootCerts::PlatformVerifier);
+    if insecure {
+        tls_builder = tls_builder.disable_verification(true);
+    }
     Agent::config_builder()
-        .tls_config(
-            TlsConfig::builder()
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
+        .tls_config(tls_builder.build())
         .timeout_global(Some(Duration::from_secs(200)))
         .build()
         .new_agent()
+}
+
+pub fn get_agent() -> Agent {
+    let insecure = is_env_var_truthy(INSECURE_TLS_ENV_VAR_NAME);
+    if insecure {
+        INSECURE_WARNING.call_once(|| {
+            log::warn!("TLS certificate verification is disabled via {INSECURE_TLS_ENV_VAR_NAME}");
+        });
+    }
+    build_agent(insecure)
 }
 
 /// Downloads a remote content to the given writer.
@@ -222,6 +237,82 @@ impl HttpDownload for Http {
 #[cfg(test)]
 mod tests {
     use url::Url;
+
+    /// Spin up a minimal HTTPS server on localhost with a self-signed certificate.
+    /// Returns `(port, server_thread)`. The server handles exactly one request then exits.
+    fn spawn_self_signed_https_server() -> (u16, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let cert_der = rustls::pki_types::CertificateDer::from(cert.cert.der().to_vec());
+        let key_der =
+            rustls::pki_types::PrivateKeyDer::try_from(cert.signing_key.serialize_der()).unwrap();
+
+        let server_config = Arc::new(
+            rustls::ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der], key_der)
+            .unwrap(),
+        );
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut conn = rustls::ServerConnection::new(server_config).unwrap();
+            let mut tls = rustls::Stream::new(&mut conn, &mut stream);
+
+            let mut buf = [0u8; 1024];
+            let _ = tls.read(&mut buf);
+
+            let body = b"hello from self-signed server";
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+            let _ = tls.write_all(response.as_bytes());
+            let _ = tls.write_all(body);
+            let _ = tls.flush();
+        });
+
+        (port, handle)
+    }
+
+    #[test]
+    fn insecure_agent_skips_tls_verification() {
+        let (port, server_handle) = spawn_self_signed_https_server();
+        let url = format!("https://localhost:{port}/");
+
+        // Verification disabled: should succeed against the self-signed cert
+        let agent = super::build_agent(true);
+        let resp = agent.get(&url).call();
+        assert!(
+            resp.is_ok(),
+            "insecure agent should connect to self-signed server"
+        );
+
+        server_handle.join().unwrap();
+    }
+
+    #[test]
+    fn secure_agent_rejects_self_signed_cert() {
+        let (port, server_handle) = spawn_self_signed_https_server();
+        let url = format!("https://localhost:{port}/");
+
+        // Verification enabled (default): should fail against the self-signed cert
+        let agent = super::build_agent(false);
+        let resp = agent.get(&url).call();
+        assert!(
+            resp.is_err(),
+            "secure agent should reject self-signed server"
+        );
+
+        // The server thread may error since the client disconnects during handshake — that's fine
+        let _ = server_handle.join();
+    }
 
     #[test]
     fn mock_download_with_no_header() {
