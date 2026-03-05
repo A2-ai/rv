@@ -147,6 +147,56 @@ impl RCmd for RInstall {
         // and install from the subdirectory directly
         if let Some(sub_dir) = sub_folder {
             src_backup_dir.push(sub_dir);
+
+            if src_backup_dir.join("bootstrap.R").exists() {
+                log::debug!(
+                    "bootstrap.R is found for {}. Checking if Config/build/bootstrap is truthy...",
+                    destination.display()
+                );
+                let to_bootstrap = match fs::read_to_string(src_backup_dir.join("DESCRIPTION")) {
+                    Ok(s) => {
+                        if !s.contains("Config/build/bootstrap: T") {
+                            log::trace!(
+                                "Config/build/bootstrap is not truthy in the DESCRIPTION file"
+                            );
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    Err(e) => {
+                        log::trace!(
+                            "Could not read description file at {} to check if Config/build/bootstrap is truthy: {e}. Assuming truthy and bootstrapping...",
+                            src_backup_dir.join("DESCRIPTION").display()
+                        );
+                        true
+                    }
+                };
+
+                if to_bootstrap {
+                    log::debug!("Bootstrapping {}...", destination.display());
+                    let output = Command::new(self.effective_r_command())
+                        .arg("-f")
+                        .arg("bootstrap.R")
+                        .current_dir(&src_backup_dir)
+                        .output()
+                        .map_err(|e| InstallError {
+                            source: InstallErrorKind::Command(e),
+                        })?;
+
+                    if !output.status.success() {
+                        let stderr =
+                            std::str::from_utf8(&output.stderr).map_err(|e| InstallError {
+                                source: InstallErrorKind::Utf8(e),
+                            })?;
+
+                        log::warn!(
+                            "Failed to bootstrap package at {}: {stderr}. Proceeding in case package has been previously bootstrapped...",
+                            src_backup_dir.display()
+                        );
+                    }
+                }
+            }
         }
 
         let canonicalized_libraries = libraries
