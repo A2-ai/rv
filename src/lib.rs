@@ -52,7 +52,7 @@ pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
-pub use run::run;
+pub use run::{RunError, run};
 pub use sync::{BuildPlan, BuildStep, LinkMode, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
 
