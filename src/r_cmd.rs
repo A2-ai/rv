@@ -331,23 +331,11 @@ impl RCmd for RInstall {
     }
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError> {
-        let output = Command::new(&self.bin_path)
-            .arg("RHOME")
-            .output()
-            .map_err(|e| LibraryError {
-                source: LibraryErrorKind::Io(e),
-            })?;
-
-        let stdout = std::str::from_utf8(if cfg!(windows) {
-            &output.stderr
-        } else {
-            &output.stdout
-        })
-        .map_err(|e| LibraryError {
-            source: LibraryErrorKind::Utf8(e),
+        let r_home = get_r_home(&self.bin_path).map_err(|e| LibraryError {
+            source: LibraryErrorKind::Io(e),
         })?;
 
-        let lib_path = PathBuf::from(stdout.trim()).join("library");
+        let lib_path = r_home.join("library");
 
         if lib_path.is_dir() {
             Ok(lib_path)
@@ -458,9 +446,27 @@ pub struct LibraryError {
 #[error(transparent)]
 pub enum LibraryErrorKind {
     Io(#[from] std::io::Error),
-    Utf8(#[from] std::str::Utf8Error),
     #[error("Library for current R not found")]
     NotFound,
+}
+
+pub(crate) fn get_r_home(r_bin_path: &Path) -> Result<PathBuf, std::io::Error> {
+    let output = Command::new(r_bin_path)
+        .arg("RHOME")
+        .env_remove("R_HOME")
+        .output()?;
+
+    let raw = if cfg!(windows) {
+        &output.stderr
+    } else {
+        &output.stdout
+    };
+
+    let r_home = std::str::from_utf8(raw)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        .trim();
+
+    Ok(PathBuf::from(r_home))
 }
 
 #[cfg(test)]

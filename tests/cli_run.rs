@@ -2,8 +2,9 @@ use assert_cmd::cargo;
 use std::fs;
 use tempfile::TempDir;
 
-fn create_project() -> (TempDir, std::path::PathBuf) {
+fn create_project() -> (TempDir, TempDir, std::path::PathBuf) {
     let temp = TempDir::new().unwrap();
+    let cache = TempDir::new().unwrap();
     let config = temp.path().join("rproject.toml");
     fs::write(
         &config,
@@ -15,14 +16,15 @@ dependencies = []
 "#,
     )
     .unwrap();
-    (temp, config)
+    (temp, cache, config)
 }
 
 #[test]
 fn run_clears_r_libs() {
-    let (temp, config) = create_project();
+    let (temp, cache, config) = create_project();
     let mut cmd = cargo::cargo_bin_cmd!();
     cmd.current_dir(temp.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
     cmd.args(["--config-file", config.to_str().unwrap()]);
     cmd.env("R_LIBS", "/should/not/appear");
     cmd.args(["run", "-e", r#"cat(Sys.getenv("R_LIBS"))"#]);
@@ -39,9 +41,10 @@ fn run_clears_r_libs() {
 
 #[test]
 fn run_sets_library_path() {
-    let (temp, config) = create_project();
+    let (temp, cache, config) = create_project();
     let mut cmd = cargo::cargo_bin_cmd!();
     cmd.current_dir(temp.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
     cmd.args(["--config-file", config.to_str().unwrap()]);
     cmd.args(["run", "-e", r#"cat(Sys.getenv("R_LIBS_USER"))"#]);
 
@@ -59,35 +62,46 @@ fn run_sets_library_path() {
 }
 
 #[test]
-fn run_activates_project() {
-    let (temp, config) = create_project();
-    // No activation files exist yet
-    assert!(!temp.path().join(".Rprofile").exists());
-
+fn run_forwards_exit_code() {
+    let (temp, cache, config) = create_project();
     let mut cmd = cargo::cargo_bin_cmd!();
     cmd.current_dir(temp.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
     cmd.args(["--config-file", config.to_str().unwrap()]);
-    cmd.args(["run", "-e", "cat('ok')"]);
+    cmd.args(["run", "-e", "quit(status=42)"]);
+
+    let output = cmd.output().unwrap();
+    assert_eq!(output.status.code(), Some(42));
+}
+
+#[test]
+fn run_sanitizes_r_env() {
+    let (temp, cache, config) = create_project();
+    let mut cmd = cargo::cargo_bin_cmd!();
+    cmd.current_dir(temp.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
+    cmd.args(["--config-file", config.to_str().unwrap()]);
+    cmd.env("R_HOME", "/bogus/r/home");
+    cmd.env("R_INCLUDE_DIR", "/bogus/include");
+    cmd.args([
+        "run",
+        "-e",
+        r#"cat(Sys.getenv("R_HOME"), Sys.getenv("R_INCLUDE_DIR"), sep="\n")"#,
+    ]);
+
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
         "command failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-
-    // After rv run, activation files should exist
-    assert!(temp.path().join(".Rprofile").exists());
-    assert!(temp.path().join("rv/scripts/activate.R").exists());
-}
-
-#[test]
-fn run_forwards_exit_code() {
-    let (temp, config) = create_project();
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.current_dir(temp.path());
-    cmd.args(["--config-file", config.to_str().unwrap()]);
-    cmd.args(["run", "-e", "quit(status=42)"]);
-
-    let output = cmd.output().unwrap();
-    assert_eq!(output.status.code(), Some(42));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("/bogus/r/home"),
+        "R_HOME should be overridden"
+    );
+    assert!(
+        !stdout.contains("/bogus/include"),
+        "R_INCLUDE_DIR should have been removed"
+    );
 }

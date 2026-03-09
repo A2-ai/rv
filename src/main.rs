@@ -918,7 +918,6 @@ fn try_main() -> Result<()> {
         Command::Run { args } => {
             let context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
-            activate(&context.project_dir, false)?;
             let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
             std::process::exit(code);
         }
