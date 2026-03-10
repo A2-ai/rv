@@ -354,13 +354,7 @@ impl RCmd for RInstall {
                 source: VersionErrorKind::Io(e),
             })?;
 
-        // R.bat on Windows will write to stderr rather than stdout for some reasons
-        let stdout = std::str::from_utf8(if cfg!(windows) {
-            &output.stderr
-        } else {
-            &output.stdout
-        })
-        .map_err(|e| VersionError {
+        let stdout = r_output_str(&output).map_err(|e| VersionError {
             source: VersionErrorKind::Utf8(e),
         })?;
 
@@ -450,19 +444,28 @@ pub enum LibraryErrorKind {
     NotFound,
 }
 
+/// On Windows, R may write to stdout or stderr depending on how it's invoked
+/// (R.bat vs R.exe), so check both. On other platforms, just use stdout.
+fn r_output_str(output: &std::process::Output) -> Result<&str, std::str::Utf8Error> {
+    if cfg!(windows) {
+        let stdout = std::str::from_utf8(&output.stdout)?;
+        if stdout.trim().is_empty() {
+            std::str::from_utf8(&output.stderr)
+        } else {
+            Ok(stdout)
+        }
+    } else {
+        std::str::from_utf8(&output.stdout)
+    }
+}
+
 pub(crate) fn get_r_home(r_bin_path: &Path) -> Result<PathBuf, std::io::Error> {
     let output = Command::new(r_bin_path)
         .arg("RHOME")
         .env_remove("R_HOME")
         .output()?;
 
-    let raw = if cfg!(windows) {
-        &output.stderr
-    } else {
-        &output.stdout
-    };
-
-    let r_home = std::str::from_utf8(raw)
+    let r_home = r_output_str(&output)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
         .trim();
 
