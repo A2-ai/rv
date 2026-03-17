@@ -39,7 +39,7 @@ pub use context::{Context, RCommandLookup, ResolveMode};
 pub use dependency_edit::{AddOptions, add_packages, read_and_verify_config, remove_packages};
 pub use format::format_document;
 pub use fs::is_network_fs;
-pub use git::{CommandExecutor, GitExecutor, GitRepository};
+pub use git::{CommandExecutor, GitExecutor, GitReference, GitRemote, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::{Lockfile, Source};
@@ -56,5 +56,5 @@ pub use system_info::{OsType, SystemInfo};
 
 #[doc(hidden)]
 pub mod internal {
-    pub use crate::package::{parse_dependencies, parse_package_file};
+    pub use crate::package::{parse_dependencies, parse_description_file, parse_package_file};
 }

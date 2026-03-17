@@ -104,8 +104,8 @@ pub struct Package {
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct InstallationDependencies<'a> {
-    pub(crate) direct: Vec<&'a Dependency>,
-    pub(crate) suggests: Vec<&'a Dependency>,
+    pub direct: Vec<&'a Dependency>,
+    pub suggests: Vec<&'a Dependency>,
 }
 
 impl Package {
