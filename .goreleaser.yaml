@@ -15,6 +15,7 @@ before:
 builds:
   - id: default
     builder: rust
+    tool: .github/scripts/cargo-zigbuild-glibc228.sh
     flags:
       - --release
       - --features=cli
