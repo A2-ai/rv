@@ -16,6 +16,7 @@ builds:
   - id: default
     builder: rust
     flags:
+      - --release
       - --features=cli
     targets:
       - x86_64-unknown-linux-gnu
@@ -28,6 +29,7 @@ builds:
     # Use native cargo build for MSVC targets to avoid zig linker flag incompatibilities on Windows runners.
     command: build
     flags:
+      - --release
       - --features=cli
     targets:
       - x86_64-pc-windows-msvc
@@ -36,6 +38,7 @@ builds:
   - id: musl
     builder: rust
     flags:
+      - --release
       - --features=cli
     targets:
       - x86_64-unknown-linux-musl
