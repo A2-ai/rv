@@ -99,9 +99,14 @@ jobs:
           name: build-linux
           path: dist/linux
 
+      - name: List artifact files
+        run: find dist -type f | sort
+
       - name: Extract and test binary
         run: |
-          tar -xzf dist/linux/default/rv_Linux_x86_64.tar.gz -C /usr/local/bin
+          ARCHIVE=$(find dist -name "rv_Linux_x86_64.tar.gz" -type f | head -1)
+          echo "Found archive: $ARCHIVE"
+          tar -xzf "$ARCHIVE" -C /usr/local/bin
           rv --version
           rv --help
 
