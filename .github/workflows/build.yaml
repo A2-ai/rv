@@ -1,0 +1,176 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        required: true
+        type: boolean
+        default: false
+    secrets:
+      GORELEASER_KEY:
+        required: true
+      TAP_GITHUB_TOKEN:
+        required: false
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+jobs:
+  # Split step - build binaries on each platform
+  prepare:
+    name: Prepare
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+          - os: macos-latest
+            platform: darwin
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install cargo-zigbuild
+        run: cargo binstall cargo-zigbuild
+
+      - name: Install musl tools (Linux)
+        if: ${{ contains(matrix.os, 'ubuntu') }}
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y musl-tools musl-dev
+
+      # Set release flags
+      - name: Set release flags
+        if: inputs.release != true
+        run: |
+          echo "release_flags=--snapshot" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Run GoReleaser Split
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: latest
+          args: release --clean --split ${{ env.release_flags }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+
+      # Debug - list files in dist directory
+      - name: List files in dist directory
+        run: find dist -type f | sort
+        shell: bash
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}
+          path: dist/${{ matrix.platform }}
+          retention-days: 1
+
+  # Smoke test - verify the linux-gnu binary runs on AlmaLinux 8
+  smoke-test:
+    name: Smoke Test (AlmaLinux 8)
+    needs: prepare
+    runs-on: ubuntu-latest
+    container:
+      image: almalinux:8
+    steps:
+      - name: Download linux build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux
+          path: dist/linux
+
+      - name: Extract and test binary
+        run: |
+          tar -xzf dist/linux/default/rv_Linux_x86_64.tar.gz -C /usr/local/bin
+          rv --version
+          rv --help
+
+  # Merge step - combine artifacts and create release
+  release:
+    name: Release
+    needs: [prepare, smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Download all build artifacts
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: dist
+          merge-multiple: false
+
+      # Rename folders to remove build- prefix
+      - name: Rename artifact folders
+        run: |
+          cd dist
+          for dir in build-*; do
+            if [ -d "$dir" ]; then
+              mv "$dir" "${dir#build-}"
+            fi
+          done
+
+      # Debug: List downloaded files
+      - name: List artifact files
+        run: find dist -type f | sort
+
+      # Set release flags
+      - name: Set release flags
+        if: inputs.release != true
+        run: |
+          echo "release_flags=--snapshot" >> $GITHUB_ENV
+
+      # Continue with merge
+      - name: Run GoReleaser Merge
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: latest
+          args: continue --merge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      # Pull build artifacts up to the root dist directory for easier access
+      - name: Pull build artifacts up
+        run: |
+          find dist -type f -name "rv_*" -not -path "*/\.*" -not -path "dist/rv_*" -exec mv {} dist/ \; || true
+          ls -la dist/
+
+      - name: Attest Build Provenance
+        if: inputs.release == true
+        uses: actions/attest@v2
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist
+          retention-days: 1
