@@ -19,6 +19,7 @@ mod project_summary;
 mod r_cmd;
 pub mod r_finder;
 mod renv;
+pub mod renv_lock;
 mod repository;
 mod repository_urls;
 mod resolver;

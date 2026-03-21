@@ -599,6 +599,10 @@ impl Lockfile {
         })
     }
 
+    pub fn packages(&self) -> &[LockedPackage] {
+        &self.packages
+    }
+
     /// Gets a set of all the package names listed in the lockfile
     pub fn package_names(&self) -> HashSet<&str> {
         let mut out = HashSet::new();
@@ -611,6 +615,10 @@ impl Lockfile {
     /// Returns the parsed Version of the R version listed in the lockfile
     pub fn r_version(&self) -> Version {
         Version::from_str(&self.r_version.to_string()).unwrap()
+    }
+
+    pub fn r_version_str(&self) -> &str {
+        &self.r_version
     }
 
     pub fn version(&self) -> i64 {

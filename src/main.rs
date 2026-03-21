@@ -10,8 +10,8 @@ use serde_json::json;
 
 use anyhow::anyhow;
 use rv::cli::{
-    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
-    init_structure, migrate_renv, resolve_dependencies, tree,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories,
+    generate_renv_lock, init, init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
@@ -67,6 +67,11 @@ pub enum Command {
     Migrate {
         #[clap(subcommand)]
         subcommand: MigrateSubcommand,
+    },
+    /// Generate renv-compatible files
+    Renv {
+        #[clap(subcommand)]
+        subcommand: RenvSubcommand,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync {
@@ -304,6 +309,16 @@ pub enum MigrateSubcommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+pub enum RenvSubcommand {
+    /// Generate an renv.lock file from rv.lock and installed library
+    Lock {
+        /// Output file path
+        #[clap(long, default_value = "renv.lock")]
+        output: PathBuf,
+    },
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -442,6 +457,26 @@ fn try_main() -> Result<()> {
                 for u in &unresolved {
                     eprintln!("    {u}");
                 }
+            }
+        }
+        Command::Renv {
+            subcommand: RenvSubcommand::Lock { output },
+        } => {
+            let context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+            let lockfile = rv::Lockfile::load(context.lockfile_path())
+                .map_err(|e| anyhow!("{e}"))?
+                .ok_or_else(|| anyhow!("Lockfile is outdated or missing. Run `rv sync` first."))?;
+
+            let renv_lock =
+                generate_renv_lock(&lockfile, &context.config, context.library_path())?;
+            let json_string = serde_json::to_string_pretty(&renv_lock)?;
+            fs_err::write(&output, format!("{json_string}\n"))?;
+
+            if output_format.is_json() {
+                println!("{}", json!({"output": output.display().to_string()}));
+            } else {
+                println!("renv.lock generated at {}", output.display());
             }
         }
         Command::Sync {
