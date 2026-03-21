@@ -10,10 +10,12 @@ fn create_test_project() -> (TempDir, std::path::PathBuf) {
 name = "test-renv-lock"
 r_version = "4.5"
 repositories = [
-    {alias = "CRAN", url = "https://packagemanager.posit.co/cran/2025-01-01/"}
+    {alias = "CRAN", url = "https://packagemanager.posit.co/cran/2025-01-01/"},
+    {alias = "FakeRepo", url = "https://fake-repo.example.com/packages/"},
 ]
 dependencies = [
     "R6",
+    "fakepkg",
     { name = "rv.git.pkgA", git = "https://github.com/A2-ai/rv.git.pkgA", tag = "v0.0.6" },
 ]
 "#;
@@ -25,6 +27,13 @@ r_version = "4.5"
 name = "R6"
 version = "2.6.1"
 source = { repository = "https://packagemanager.posit.co/cran/2025-01-01/" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "fakepkg"
+version = "1.0.0"
+source = { repository = "https://fake-repo.example.com/packages/" }
 force_source = false
 dependencies = []
 
@@ -69,6 +78,19 @@ Suggests: lobstr, testthat (>= 3.0.0)
 Encoding: UTF-8
 NeedsCompilation: no
 Repository: RSPM
+"#,
+        ),
+        (
+            "fakepkg",
+            // Server-stamped `Repository: SomeServer` — must be overridden
+            // by the config alias "FakeRepo" in the renv.lock output.
+            r#"Package: fakepkg
+Title: A Fake Package For Testing Repository Override
+Version: 1.0.0
+Description: Not a real package.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Repository: SomeServer
 "#,
         ),
         (
@@ -159,15 +181,26 @@ fn test_renv_lock_generation() {
     assert_eq!(renv_lock["R"]["Version"], "4.5");
     assert_eq!(renv_lock["R"]["Repositories"][0]["Name"], "CRAN");
 
-    // Repository source
+    // Repository source — R6's DESCRIPTION has `Repository: RSPM` (server-stamped by
+    // Posit Package Manager), but the config alias is "CRAN". The output must use the
+    // config alias, not the server-stamped value.
     let r6 = &renv_lock["Packages"]["R6"];
     assert_eq!(r6["Source"], "Repository");
     assert_eq!(r6["Repository"], "CRAN");
+    assert_ne!(r6["Repository"], "RSPM", "must not leak server-stamped Repository value");
     assert_eq!(r6["Depends"], serde_json::json!(["R (>= 3.6)"]));
     assert_eq!(
         r6["Suggests"],
         serde_json::json!(["lobstr", "testthat (>= 3.0.0)"])
     );
+
+    // Fake package — DESCRIPTION has `Repository: SomeServer` (server-stamped),
+    // but the config alias is "FakeRepo". Verifies the override works for any
+    // server-stamped value, not just RSPM.
+    let fakepkg = &renv_lock["Packages"]["fakepkg"];
+    assert_eq!(fakepkg["Source"], "Repository");
+    assert_eq!(fakepkg["Repository"], "FakeRepo");
+    assert_ne!(fakepkg["Repository"], "SomeServer", "must not leak server-stamped Repository value");
 
     // Git source — tag: verify both remote metadata and carried-through DESCRIPTION fields
     let git_pkg = &renv_lock["Packages"]["rv.git.pkgA"];

@@ -431,6 +431,64 @@ mod tests {
         );
     }
 
+    fn make_repo_locked_pkg(name: &str, repo_url: &str) -> LockedPackage {
+        LockedPackage {
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            source: Source::Repository {
+                repository: url::Url::parse(repo_url).unwrap(),
+            },
+            path: None,
+            force_source: false,
+            dependencies: vec![],
+            suggests: vec![],
+        }
+    }
+
+    #[test]
+    fn test_repository_field_overrides_description() {
+        // The server stamps DESCRIPTION with `Repository: RSPM`, but the user's
+        // rproject.toml maps that URL to alias "CRAN". The renv.lock output must
+        // use the config alias, not the server-stamped value.
+        let pkg = make_repo_locked_pkg(
+            "R6",
+            "https://packagemanager.posit.co/cran/2025-01-01/",
+        );
+        let desc = "Package: R6\nVersion: 1.0.0\nRepository: RSPM\n";
+        let url_to_alias: HashMap<&str, &str> = HashMap::from([(
+            "https://packagemanager.posit.co/cran/2025-01-01/",
+            "CRAN",
+        )]);
+
+        let entry = package_to_renv_entry(&pkg, desc, &url_to_alias).unwrap();
+
+        assert_eq!(entry["Source"], "Repository");
+        // Must be the config alias "CRAN", not the server-stamped "RSPM"
+        assert_eq!(entry["Repository"], "CRAN");
+        assert_ne!(
+            entry["Repository"], "RSPM",
+            "Repository field must not leak the server-stamped value"
+        );
+    }
+
+    #[test]
+    fn test_repository_field_without_description_repository() {
+        // DESCRIPTION has no Repository field at all (e.g., a custom/internal repo).
+        // The output must still get the correct alias from the config.
+        let pkg = make_repo_locked_pkg(
+            "custompkg",
+            "https://internal.example.com/repo/",
+        );
+        let desc = "Package: custompkg\nVersion: 1.0.0\nTitle: Custom Package\n";
+        let url_to_alias: HashMap<&str, &str> =
+            HashMap::from([("https://internal.example.com/repo/", "Internal")]);
+
+        let entry = package_to_renv_entry(&pkg, desc, &url_to_alias).unwrap();
+
+        assert_eq!(entry["Source"], "Repository");
+        assert_eq!(entry["Repository"], "Internal");
+    }
+
     #[test]
     fn test_url_source_errors() {
         let pkg = LockedPackage {
