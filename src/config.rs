@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -405,6 +405,13 @@ impl Config {
             .map(|r| (r.alias.as_str(), r))
             .collect();
         let mut errors = Vec::new();
+
+        let mut seen_aliases = HashSet::new();
+        for repo in &self.project.repositories {
+            if !seen_aliases.insert(repo.alias.as_str()) {
+                errors.push(format!("Duplicate repository alias: {}", repo.alias));
+            }
+        }
 
         for d in self.project.dependencies.iter_mut() {
             match d {
