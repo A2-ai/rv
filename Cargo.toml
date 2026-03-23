@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2024"
 license = "MIT"
 
@@ -61,13 +61,13 @@ nix = { version = "0.30", default-features = false, features = ["fs"] }
 
 [features]
 cli = [
-    "dep:clap",
-    "dep:rayon",
-    "dep:anyhow",
-    "dep:clap-verbosity-flag",
-    "dep:env_logger",
-    "dep:jiff",
-    "dep:ctrlc",
+  "dep:clap",
+  "dep:rayon",
+  "dep:anyhow",
+  "dep:clap-verbosity-flag",
+  "dep:env_logger",
+  "dep:jiff",
+  "dep:ctrlc",
 ]
 
 [dev-dependencies]
