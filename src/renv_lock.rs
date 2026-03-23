@@ -27,11 +27,12 @@
 //! let lockfile = Lockfile::load("rv.lock").unwrap().unwrap();
 //! let library_path = Path::new("rv/library/4.5/x86_64/noble");
 //!
-//! let renv_lock = generate_renv_lock(&lockfile, &config, library_path).unwrap();
+//! let renv_lock = generate_renv_lock(&lockfile, &config, library_path, &[]).unwrap();
 //! let json = serde_json::to_string_pretty(&renv_lock).unwrap();
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -235,6 +236,215 @@ fn package_to_renv_entry(
     Ok(Value::Object(map))
 }
 
+/// Compute the set of packages to exclude from renv.lock output.
+///
+/// Each name in `exclude_names` must be a top-level dependency in the config.
+/// Returns the full set of package names to exclude (the excluded packages plus
+/// any transitive dependencies that are only needed by excluded packages).
+///
+/// Errors if:
+/// - An excluded package is not a top-level dependency in rproject.toml
+/// - An excluded package is required by a non-excluded package's dependency tree
+pub fn compute_exclusion_set<'a>(
+    lockfile: &'a Lockfile,
+    config: &Config,
+    exclude_names: &[String],
+) -> Result<HashSet<&'a str>> {
+    if exclude_names.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let top_level_names: HashSet<&str> = config.dependencies().iter().map(|d| d.name()).collect();
+
+    // Validate all excluded names are top-level dependencies
+    for name in exclude_names {
+        if !top_level_names.contains(name.as_str()) {
+            bail!(
+                "Cannot exclude '{}': it is not a top-level dependency in rproject.toml.\n\
+                 Only packages listed in [project] dependencies can be excluded.",
+                name
+            );
+        }
+    }
+
+    let exclude_set: HashSet<&str> = exclude_names.iter().map(|s| s.as_str()).collect();
+
+    // Compute retained set: union of dep trees for all non-excluded top-level deps
+    let mut retained_set: HashSet<&str> = HashSet::new();
+    for dep in config.dependencies() {
+        if !exclude_set.contains(dep.name()) {
+            retained_set.extend(lockfile.get_package_tree(dep.name(), Some(dep)));
+        }
+    }
+
+    // Compute excluded candidates: union of dep trees for excluded packages
+    let mut excluded_candidates: HashSet<&str> = HashSet::new();
+    for name in exclude_names {
+        excluded_candidates.extend(lockfile.get_package_tree(name, None));
+    }
+
+    // Packages to actually exclude = candidates not retained by other packages
+    let exclusion_set: HashSet<&str> = excluded_candidates
+        .difference(&retained_set)
+        .copied()
+        .collect();
+
+    // Validate: each explicitly excluded package must actually be excludable
+    // (if it's in retained_set, a non-excluded package depends on it)
+    for name in exclude_names {
+        if !exclusion_set.contains(name.as_str()) {
+            // Find which non-excluded top-level dep requires it
+            let required_by: Vec<&str> = config
+                .dependencies()
+                .iter()
+                .filter(|d| !exclude_set.contains(d.name()))
+                .filter(|d| {
+                    lockfile
+                        .get_package_tree(d.name(), Some(d))
+                        .contains(name.as_str())
+                })
+                .map(|d| d.name())
+                .collect();
+            bail!(
+                "Cannot exclude '{}': it is required by non-excluded package(s): {}",
+                name,
+                required_by.join(", ")
+            );
+        }
+    }
+
+    Ok(exclusion_set)
+}
+
+/// Report describing the impact of package exclusions.
+pub struct ExclusionReport {
+    /// Packages directly requested for exclusion
+    pub directly_excluded: Vec<String>,
+    /// Transitive deps removed because they're only needed by excluded packages
+    pub transitively_removed: Vec<String>,
+    /// Deps of excluded packages that are kept because other packages need them
+    pub retained: Vec<(String, Vec<String>)>,
+    /// Total packages that would remain
+    pub remaining_count: usize,
+}
+
+impl ExclusionReport {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "directly_excluded": self.directly_excluded,
+            "transitively_removed": self.transitively_removed,
+            "retained": self.retained.iter().map(|(pkg, required_by)| {
+                json!({"package": pkg, "required_by": required_by})
+            }).collect::<Vec<_>>(),
+            "excluded_count": self.directly_excluded.len() + self.transitively_removed.len(),
+            "remaining_count": self.remaining_count,
+        })
+    }
+}
+
+impl fmt::Display for ExclusionReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Packages to exclude from renv.lock:\n")?;
+
+        writeln!(f, "  Directly excluded (from --exclude-pkgs):")?;
+        for pkg in &self.directly_excluded {
+            writeln!(f, "    {pkg}")?;
+        }
+
+        if !self.transitively_removed.is_empty() {
+            writeln!(
+                f,
+                "\n  Transitively removed (only needed by excluded packages):"
+            )?;
+            for pkg in &self.transitively_removed {
+                writeln!(f, "    {pkg}")?;
+            }
+        }
+
+        if !self.retained.is_empty() {
+            writeln!(
+                f,
+                "\n  Retained despite being dependencies of excluded packages:"
+            )?;
+            for (pkg, required_by) in &self.retained {
+                writeln!(f, "    {pkg} (also required by: {})", required_by.join(", "))?;
+            }
+        }
+
+        let excluded_count = self.directly_excluded.len() + self.transitively_removed.len();
+        writeln!(
+            f,
+            "\nTotal: {excluded_count} package(s) would be excluded, {} package(s) would remain",
+            self.remaining_count
+        )?;
+        Ok(())
+    }
+}
+
+/// Compute a detailed report of what would be excluded from renv.lock.
+pub fn compute_exclusion_report(
+    lockfile: &Lockfile,
+    config: &Config,
+    exclude_names: &[String],
+) -> Result<ExclusionReport> {
+    let exclusion_set = compute_exclusion_set(lockfile, config, exclude_names)?;
+    let exclude_input: HashSet<&str> = exclude_names.iter().map(|s| s.as_str()).collect();
+
+    let mut directly_excluded: Vec<String> = exclude_names.to_vec();
+    directly_excluded.sort();
+
+    let mut transitively_removed: Vec<String> = exclusion_set
+        .iter()
+        .filter(|name| !exclude_input.contains(*name))
+        .map(|s| s.to_string())
+        .collect();
+    transitively_removed.sort();
+
+    // Find retained deps: packages in excluded dep trees that aren't being removed
+    let mut excluded_candidates: HashSet<&str> = HashSet::new();
+    for name in exclude_names {
+        excluded_candidates.extend(lockfile.get_package_tree(name, None));
+    }
+    let retained_names: HashSet<&&str> = excluded_candidates
+        .iter()
+        .filter(|name| !exclusion_set.contains(*name))
+        .collect();
+
+    let exclude_set: HashSet<&str> = exclude_names.iter().map(|s| s.as_str()).collect();
+    let mut retained: Vec<(String, Vec<String>)> = retained_names
+        .iter()
+        .map(|&&pkg| {
+            let required_by: Vec<String> = config
+                .dependencies()
+                .iter()
+                .filter(|d| !exclude_set.contains(d.name()))
+                .filter(|d| {
+                    lockfile
+                        .get_package_tree(d.name(), Some(d))
+                        .contains(pkg)
+                })
+                .map(|d| d.name().to_string())
+                .collect();
+            (pkg.to_string(), required_by)
+        })
+        .collect();
+    retained.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let total_non_builtin = lockfile
+        .packages()
+        .iter()
+        .filter(|p| !p.source.is_builtin())
+        .count();
+    let remaining_count = total_non_builtin - exclusion_set.len();
+
+    Ok(ExclusionReport {
+        directly_excluded,
+        transitively_removed,
+        retained,
+        remaining_count,
+    })
+}
+
 /// Generate a complete renv.lock JSON structure from an rv lockfile, project config,
 /// and installed library.
 ///
@@ -251,7 +461,10 @@ pub fn generate_renv_lock(
     lockfile: &Lockfile,
     config: &Config,
     library_path: &Path,
+    exclude_pkgs: &[String],
 ) -> Result<Value> {
+    let exclusion_set = compute_exclusion_set(lockfile, config, exclude_pkgs)?;
+
     let url_to_alias: HashMap<&str, &str> = config
         .repositories()
         .iter()
@@ -274,6 +487,9 @@ pub fn generate_renv_lock(
 
     for locked_pkg in lockfile.packages() {
         if locked_pkg.source.is_builtin() {
+            continue;
+        }
+        if exclusion_set.contains(locked_pkg.name.as_str()) {
             continue;
         }
 
@@ -487,6 +703,190 @@ mod tests {
 
         assert_eq!(entry["Source"], "Repository");
         assert_eq!(entry["Repository"], "Internal");
+    }
+
+    // --- Exclusion set tests ---
+    //
+    // These use temp files to construct Lockfile + Config since their fields are private.
+    // Dependency graph for tests:
+    //
+    //   top-level: pkgA, pkgB, devpkg
+    //   pkgA   → sharedlib, utilA
+    //   pkgB   → sharedlib
+    //   devpkg → devhelper, sharedlib
+    //
+    // Excluding devpkg should remove devpkg + devhelper, but keep sharedlib (needed by pkgA, pkgB).
+
+    fn make_exclusion_test_fixtures() -> (tempfile::TempDir, Lockfile, Config) {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        let config_content = r#"[project]
+name = "test-exclusion"
+r_version = "4.5"
+repositories = [
+    { alias = "CRAN", url = "https://cran.example.com/" }
+]
+dependencies = ["pkgA", "pkgB", "devpkg"]
+"#;
+        let config_path = dir.path().join("rproject.toml");
+        std::fs::write(&config_path, config_content).unwrap();
+
+        let lockfile_content = r#"version = 2
+r_version = "4.5"
+
+[[packages]]
+name = "pkgA"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = ["sharedlib", "utilA"]
+
+[[packages]]
+name = "pkgB"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = ["sharedlib"]
+
+[[packages]]
+name = "devpkg"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = ["devhelper", "sharedlib"]
+
+[[packages]]
+name = "sharedlib"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "utilA"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "devhelper"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = []
+"#;
+        let lockfile_path = dir.path().join("rv.lock");
+        std::fs::write(&lockfile_path, lockfile_content).unwrap();
+
+        let config = Config::from_file(&config_path).unwrap();
+        let lockfile = Lockfile::load(&lockfile_path).unwrap().unwrap();
+
+        (dir, lockfile, config)
+    }
+
+    #[test]
+    fn test_exclusion_empty_list() {
+        let (_dir, lockfile, config) = make_exclusion_test_fixtures();
+        let result = compute_exclusion_set(&lockfile, &config, &[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_exclusion_removes_pkg_and_exclusive_deps() {
+        let (_dir, lockfile, config) = make_exclusion_test_fixtures();
+        let excluded = vec!["devpkg".to_string()];
+        let result = compute_exclusion_set(&lockfile, &config, &excluded).unwrap();
+
+        // devpkg and devhelper should be excluded
+        assert!(result.contains("devpkg"));
+        assert!(result.contains("devhelper"));
+        // sharedlib is used by pkgA and pkgB — must NOT be excluded
+        assert!(!result.contains("sharedlib"));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_exclusion_keeps_shared_deps() {
+        let (_dir, lockfile, config) = make_exclusion_test_fixtures();
+        let excluded = vec!["pkgA".to_string()];
+        let result = compute_exclusion_set(&lockfile, &config, &excluded).unwrap();
+
+        // pkgA and utilA (exclusive to pkgA) should be excluded
+        assert!(result.contains("pkgA"));
+        assert!(result.contains("utilA"));
+        // sharedlib is used by pkgB and devpkg — must NOT be excluded
+        assert!(!result.contains("sharedlib"));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_exclusion_multiple_packages() {
+        let (_dir, lockfile, config) = make_exclusion_test_fixtures();
+        let excluded = vec!["pkgA".to_string(), "devpkg".to_string()];
+        let result = compute_exclusion_set(&lockfile, &config, &excluded).unwrap();
+
+        // pkgA, utilA, devpkg, devhelper should be excluded
+        assert!(result.contains("pkgA"));
+        assert!(result.contains("utilA"));
+        assert!(result.contains("devpkg"));
+        assert!(result.contains("devhelper"));
+        // sharedlib still needed by pkgB
+        assert!(!result.contains("sharedlib"));
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_exclusion_rejects_non_top_level() {
+        let (_dir, lockfile, config) = make_exclusion_test_fixtures();
+        let excluded = vec!["devhelper".to_string()];
+        let result = compute_exclusion_set(&lockfile, &config, &excluded);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not a top-level dependency"));
+    }
+
+    #[test]
+    fn test_exclusion_rejects_required_by_other() {
+        // Create a scenario where pkgB depends on devpkg
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_content = r#"[project]
+name = "test"
+r_version = "4.5"
+repositories = [{ alias = "CRAN", url = "https://cran.example.com/" }]
+dependencies = ["pkgA", "devpkg"]
+"#;
+        let lockfile_content = r#"version = 2
+r_version = "4.5"
+
+[[packages]]
+name = "pkgA"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = ["devpkg"]
+
+[[packages]]
+name = "devpkg"
+version = "1.0.0"
+source = { repository = "https://cran.example.com/" }
+force_source = false
+dependencies = []
+"#;
+        std::fs::write(dir.path().join("rproject.toml"), config_content).unwrap();
+        std::fs::write(dir.path().join("rv.lock"), lockfile_content).unwrap();
+
+        let config = Config::from_file(dir.path().join("rproject.toml")).unwrap();
+        let lockfile = Lockfile::load(dir.path().join("rv.lock")).unwrap().unwrap();
+
+        let excluded = vec!["devpkg".to_string()];
+        let result = compute_exclusion_set(&lockfile, &config, &excluded);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("required by non-excluded package(s)"));
+        assert!(err.contains("pkgA"));
     }
 
     #[test]

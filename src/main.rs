@@ -316,6 +316,13 @@ pub enum RenvSubcommand {
         /// Output file path
         #[clap(long, default_value = "renv.lock")]
         output: PathBuf,
+        /// Packages to exclude from renv.lock (comma-separated). Must be top-level dependencies in rproject.toml.
+        /// Transitive dependencies only needed by excluded packages are also removed.
+        #[clap(long, value_delimiter = ',')]
+        exclude_pkgs: Vec<String>,
+        /// Show what would be excluded without writing the file
+        #[clap(long)]
+        dry_run: bool,
     },
 }
 
@@ -460,7 +467,12 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Renv {
-            subcommand: RenvSubcommand::Lock { output },
+            subcommand:
+                RenvSubcommand::Lock {
+                    output,
+                    exclude_pkgs,
+                    dry_run,
+                },
         } => {
             let context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
@@ -468,15 +480,32 @@ fn try_main() -> Result<()> {
                 .map_err(|e| anyhow!("{e}"))?
                 .ok_or_else(|| anyhow!("Lockfile is outdated or missing. Run `rv sync` first."))?;
 
-            let renv_lock =
-                generate_renv_lock(&lockfile, &context.config, context.library_path())?;
-            let json_string = serde_json::to_string_pretty(&renv_lock)?;
-            fs_err::write(&output, format!("{json_string}\n"))?;
-
-            if output_format.is_json() {
-                println!("{}", json!({"output": output.display().to_string()}));
+            if dry_run {
+                let report = rv::renv_lock::compute_exclusion_report(
+                    &lockfile,
+                    &context.config,
+                    &exclude_pkgs,
+                )?;
+                if output_format.is_json() {
+                    println!("{}", serde_json::to_string_pretty(&report.to_json())?);
+                } else {
+                    print!("{report}");
+                }
             } else {
-                println!("renv.lock generated at {}", output.display());
+                let renv_lock = generate_renv_lock(
+                    &lockfile,
+                    &context.config,
+                    context.library_path(),
+                    &exclude_pkgs,
+                )?;
+                let json_string = serde_json::to_string_pretty(&renv_lock)?;
+                fs_err::write(&output, format!("{json_string}\n"))?;
+
+                if output_format.is_json() {
+                    println!("{}", json!({"output": output.display().to_string()}));
+                } else {
+                    println!("renv.lock generated at {}", output.display());
+                }
             }
         }
         Command::Sync {
