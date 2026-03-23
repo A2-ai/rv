@@ -27,6 +27,7 @@ pub const CACHE_DIR_ENV_VAR_NAME: &str = "RV_CACHE_DIR";
 pub const COPY_THREADS_ENV_VAR_NAME: &str = "RV_COPY_THREADS";
 pub const GLOBAL_CACHE_DIR_ENV_VAR_NAME: &str = "RV_GLOBAL_CACHE_DIR";
 pub const INSECURE_TLS_ENV_VAR_NAME: &str = "RV_INSECURE";
+pub const LIBRARY_DIR_ENV_VAR_NAME: &str = "RV_LIBRARY_DIR";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R
