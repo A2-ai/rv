@@ -1,0 +1,59 @@
+{
+  "Packages": {
+    "R6": {
+      "Author": "Winston Chang [aut, cre], Posit Software, PBC [cph, fnd]",
+      "Authors@R": "c( person(\"Winston\", \"Chang\", , \"winston@posit.co\", role = c(\"aut\", \"cre\")), person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\")) )",
+      "BugReports": "https://github.com/r-lib/R6/issues",
+      "Config/Needs/website": "tidyverse/tidytemplate, ggplot2, microbenchmark, scales",
+      "Config/testthat/edition": "3",
+      "Depends": [
+        "R (>= 3.6)"
+      ],
+      "Description": "Creates classes with reference semantics, similar to R's built-in reference classes. Compared to reference classes, R6 classes are simpler and lighter-weight, and they are not built on S4 classes so they do not require the methods package. These classes allow public and private members, and they support inheritance, even when the classes are defined in different packages.",
+      "Encoding": "UTF-8",
+      "License": "MIT + file LICENSE",
+      "Maintainer": "Winston Chang <winston@posit.co>",
+      "NeedsCompilation": "no",
+      "Package": "R6",
+      "Repository": "CRAN",
+      "RoxygenNote": "7.3.2",
+      "Source": "Repository",
+      "Suggests": [
+        "lobstr",
+        "testthat (>= 3.0.0)"
+      ],
+      "Title": "Encapsulated Classes with Reference Semantics",
+      "URL": "https://r6.r-lib.org, https://github.com/r-lib/R6",
+      "Version": "2.6.1"
+    },
+    "rv.git.pkgA": {
+      "Author": "Wes Cummings [aut, cre]",
+      "Authors@R": "person(\"Wes\", \"Cummings\", , \"wes@a2-ai.com\", role = c(\"aut\", \"cre\"))",
+      "Description": "This package has no dependencies",
+      "Encoding": "UTF-8",
+      "License": "MIT + file LICENSE",
+      "Maintainer": "Wes Cummings <wes@a2-ai.com>",
+      "Package": "rv.git.pkgA",
+      "RemoteHost": "api.github.com",
+      "RemoteRef": "v0.0.6",
+      "RemoteRepo": "rv.git.pkgA",
+      "RemoteSha": "cbc24e97b857305558ad5a4769086922812627cc",
+      "RemoteType": "github",
+      "RemoteUsername": "A2-ai",
+      "Roxygen": "list(markdown = TRUE)",
+      "RoxygenNote": "7.3.2",
+      "Source": "GitHub",
+      "Title": "Package Which Has No Dependencies",
+      "Version": "0.0.5"
+    }
+  },
+  "R": {
+    "Repositories": [
+      {
+        "Name": "CRAN",
+        "URL": "https://packagemanager.posit.co/cran/__linux__/noble/2025-07-15"
+      }
+    ],
+    "Version": "4.5"
+  }
+}
