@@ -190,6 +190,12 @@ pub enum Command {
     },
     /// Deactivate an rv project
     Deactivate,
+    /// Run an Rscript command with the project library paths configured
+    #[clap(trailing_var_arg = true)]
+    Run {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Generate CLI documentation (experimental - output format may change)
     Docs {
         #[clap(subcommand)]
@@ -907,6 +913,13 @@ fn try_main() -> Result<()> {
             let cmd = Cli::command();
             let output = cli_docs::generate_commands_list(&cmd, !no_description);
             println!("{}", output);
+        }
+
+        Command::Run { args } => {
+            let context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            std::process::exit(code);
         }
 
         Command::Configure { subcommand } => {
