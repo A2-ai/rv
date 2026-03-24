@@ -1,3 +1,14 @@
+## v0.20.0 - March 23, 2026
+
+This release adds support for overriding the project library location through an environment variable, making it easier to customize where packages are installed without modifying configuration files.
+
+### 🎉 New Features
+- **Library directory environment variable**: You can now override the project library location using the `RV_LIBRARY_DIR` environment variable. This variable supports both absolute and relative paths (resolved against the project directory) and takes precedence over the `library` field in `rproject.toml`. This is particularly useful for CI/CD environments, shared development setups, or when you need to temporarily use a different library location without modifying your project configuration.
+
+---
+
+**Migration Notes**: No breaking changes in this release. The new `RV_LIBRARY_DIR` environment variable is optional and only affects library location when explicitly set.
+
 ## v0.19.0 - March 1, 2026
 
 This release adds binary archive fallback for faster package installs, a new `no_strip` configuration option for packages that fail when stripped, an `RV_INSECURE` escape hatch for environments without proper TLS certificates, and improvements to CLI output and error messages.
