@@ -9,7 +9,7 @@ use crate::lockfile::Source;
 use crate::package::PackageType;
 #[cfg(feature = "cli")]
 use crate::r_cmd::kill_all_r_processes;
-use crate::r_cmd::{InstallError, InstallErrorKind};
+use crate::r_cmd::{RCmdError, RCmdErrorKind};
 use crate::sync::changes::{CacheSource, SyncChange};
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
@@ -729,8 +729,10 @@ impl<'a> SyncHandler<'a> {
                             Err(e) => {
                                 has_errors_clone.store(true, Ordering::Relaxed);
 
-                                if let SyncErrorKind::InstallError(InstallError {
-                                    source: InstallErrorKind::InstallationFailed(msg),
+                                if let SyncErrorKind::RCmdError(RCmdError {
+                                    source:
+                                        RCmdErrorKind::InstallationFailed(msg)
+                                        | RCmdErrorKind::BuildFailed(msg),
                                     ..
                                 }) = &e.source
                                     && let Some(log_folder) = &save_install_logs_in_clone

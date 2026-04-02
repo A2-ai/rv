@@ -46,11 +46,37 @@ pub trait RCmd: Send + Sync {
         env_vars: &HashMap<&str, &str>,
         configure_args: &[String],
         strip: bool,
-    ) -> Result<String, InstallError>;
+    ) -> Result<String, RCmdError>;
+
+    /// Runs `R CMD build` on a source directory and returns the path to the resulting tarball.
+    fn build(
+        &self,
+        source_dir: impl AsRef<Path>,
+        output_dir: impl AsRef<Path>,
+        libraries: &[impl AsRef<Path>],
+        cancellation: Arc<Cancellation>,
+        env_vars: &HashMap<&str, &str>,
+    ) -> Result<PathBuf, RCmdError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
 
     fn version(&self) -> Result<Option<Version>, VersionError>;
+}
+
+/// Canonicalize library paths and join them into R's expected format
+/// (colon-separated on Unix, semicolon-separated on Windows).
+fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Error> {
+    let canonicalized = libraries
+        .iter()
+        .map(|lib| lib.as_ref().canonicalize())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    Ok(canonicalized
+        .iter()
+        .map(|p| p.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(sep))
 }
 
 /// By default, doing ctrl+c on rv will kill it as well as all its child process.
@@ -79,6 +105,98 @@ fn spawn_isolated_r_command(r_cmd: &RInstall) -> Command {
     }
 
     command
+}
+
+/// Spawns a prepared R command with output capture, PID tracking, and cancellation support.
+/// Returns captured output on success. On failure, calls `on_failure` with the output to
+/// produce the appropriate error kind.
+fn run_r_command(
+    mut command: Command,
+    cancellation: Arc<Cancellation>,
+    on_failure: impl FnOnce(String) -> RCmdErrorKind,
+) -> Result<String, RCmdError> {
+    let (recv, send) = std::io::pipe().map_err(|e| RCmdError {
+        source: RCmdErrorKind::Command(e),
+    })?;
+    command
+        .stdout(send.try_clone().map_err(|e| RCmdError {
+            source: RCmdErrorKind::Command(e),
+        })?)
+        .stderr(send);
+
+    let mut handle = command.spawn().map_err(|e| RCmdError {
+        source: RCmdErrorKind::Command(e),
+    })?;
+
+    let pid = handle.id();
+
+    {
+        let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+        process_ids.insert(pid);
+    }
+
+    // could deadlock otherwise
+    drop(command);
+
+    // Read output in a separate thread to avoid blocking on pipe buffers
+    let output_handle = {
+        let mut recv = recv;
+        thread::spawn(move || {
+            let mut output = String::new();
+            let _ = recv.read_to_string(&mut output);
+            output
+        })
+    };
+
+    // Poll for completion or cancellation
+    loop {
+        match handle.try_wait() {
+            Ok(Some(status)) => {
+                {
+                    let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+                    process_ids.remove(&pid);
+                }
+                let output = output_handle.join().unwrap();
+
+                if !status.success() {
+                    return Err(RCmdError {
+                        source: on_failure(output),
+                    });
+                }
+
+                return Ok(output);
+            }
+            Ok(None) => {
+                if cancellation.is_soft_cancellation() {
+                    // On soft cancellation, let R finish naturally
+                    // On hard cancellation, rv will kill
+                    let status = handle.wait().unwrap();
+                    let output = output_handle.join().unwrap();
+
+                    {
+                        let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
+                        process_ids.remove(&pid);
+                    }
+
+                    if !status.success() {
+                        return Err(RCmdError {
+                            source: on_failure(output),
+                        });
+                    }
+
+                    return Ok(output);
+                }
+
+                // Sleep briefly to avoid busy waiting
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(RCmdError {
+                    source: RCmdErrorKind::Command(e),
+                });
+            }
+        }
+    }
 }
 
 #[cfg(feature = "cli")]
@@ -115,18 +233,18 @@ impl RCmd for RInstall {
         env_vars: &HashMap<&str, &str>,
         configure_args: &[String],
         strip: bool,
-    ) -> Result<String, InstallError> {
+    ) -> Result<String, RCmdError> {
         let destination = destination.as_ref();
         // We create a temp build dir so we only remove an existing destination if we have something we can replace it with
-        let build_dir = tempfile::tempdir().map_err(|e| InstallError {
-            source: InstallErrorKind::TempDir(e),
+        let build_dir = tempfile::tempdir().map_err(|e| RCmdError {
+            source: RCmdErrorKind::TempDir(e),
         })?;
 
         // We move the source to a temp dir since compilation might create a lot of artifacts that
         // we don't want to keep around in the cache once we're done
         // We symlink if possible except on Windows
-        let src_backup_dir_temp = tempfile::tempdir().map_err(|e| InstallError {
-            source: InstallErrorKind::TempDir(e),
+        let src_backup_dir_temp = tempfile::tempdir().map_err(|e| RCmdError {
+            source: RCmdErrorKind::TempDir(e),
         })?;
 
         let mut src_backup_dir = src_backup_dir_temp.path().to_owned();
@@ -137,8 +255,8 @@ impl RCmd for RInstall {
             &source_folder,
             &src_backup_dir,
         )
-        .map_err(|e| InstallError {
-            source: InstallErrorKind::LinkError(e),
+        .map_err(|e| RCmdError {
+            source: RCmdErrorKind::LinkError(e),
         })?;
 
         // Some R package structures, especially those that make use of
@@ -149,29 +267,9 @@ impl RCmd for RInstall {
             src_backup_dir.push(sub_dir);
         }
 
-        let canonicalized_libraries = libraries
-            .iter()
-            .map(|lib| lib.as_ref().canonicalize())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| InstallError::from_fs_io(e, destination))?;
+        let library_paths =
+            r_library_paths(libraries).map_err(|e| RCmdError::from_fs_io(e, destination))?;
 
-        // combine them to the single string path that R wants, specifically:
-        //  colon-separated on Unix-alike systems and semicolon-separated on Windows.
-        let library_paths = if cfg!(windows) {
-            canonicalized_libraries
-                .iter()
-                .map(|p| p.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(";")
-        } else {
-            canonicalized_libraries
-                .iter()
-                .map(|p| p.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(":")
-        };
-
-        let (recv, send) = std::io::pipe().map_err(|e| InstallError::from_fs_io(e, destination))?;
         let mut command = spawn_isolated_r_command(self);
         command
             .arg("CMD")
@@ -213,13 +311,7 @@ impl RCmd for RInstall {
             command.env("_R_SHLIB_STRIP_", "true");
         }
 
-        command
-            .stdout(
-                send.try_clone()
-                    .map_err(|e| InstallError::from_fs_io(e, destination))?,
-            )
-            .stderr(send)
-            .envs(env_vars);
+        command.envs(env_vars);
         log::debug!(
             "Compiling {} with env vars: {}",
             source_folder.as_ref().display(),
@@ -233,101 +325,80 @@ impl RCmd for RInstall {
                 .collect::<Vec<_>>()
                 .join(" ")
         );
-        let mut handle = command.spawn().map_err(|e| InstallError {
-            source: InstallErrorKind::Command(e),
-        })?;
 
-        let pid = handle.id();
-
-        {
-            let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
-            process_ids.insert(pid);
-        }
-
-        // deadlock otherwise according to os_pipe docs
-        drop(command);
-
-        // Read output in a separate thread to avoid blocking on pipe buffers
-        let output_handle = {
-            let mut recv = recv;
-            thread::spawn(move || {
-                let mut output = String::new();
-                let _ = recv.read_to_string(&mut output);
-                output
-            })
-        };
-
-        let cleanup = |output| {
-            {
-                let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
-                process_ids.remove(&pid);
-            }
-
+        let output = run_r_command(
+            command,
+            cancellation,
+            RCmdErrorKind::InstallationFailed,
+        )
+        .map_err(|e| {
+            // Clean up destination on failure
             if destination.is_dir() {
-                // We ignore that error intentionally since we want to keep the one from CLI
-                if let Err(e) = fs::remove_dir_all(destination) {
+                if let Err(rm_err) = fs::remove_dir_all(destination) {
                     log::error!(
-                        "Failed to remove directory `{}` after R CMD INSTALL failed: {e}. Delete this folder manually",
+                        "Failed to remove directory `{}` after R CMD INSTALL failed: {rm_err}. Delete this folder manually",
                         destination.display()
                     );
                 }
             }
-            Err(InstallError {
-                source: InstallErrorKind::InstallationFailed(output),
-            })
-        };
+            e
+        })?;
 
-        // Poll for completion or cancellation
-        loop {
-            // Did the command finish?
-            match handle.try_wait() {
-                Ok(Some(status)) => {
-                    {
-                        let mut process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
-                        process_ids.remove(&pid);
-                    }
-                    // Process finished, get the output from the reading thread
-                    let output = output_handle.join().unwrap();
+        // Copy the build tmp dir to the actual destination
+        // we don't move the folder since the tmp dir might be in another drive/format
+        // than the cache dir
+        fs::create_dir_all(destination).map_err(|e| RCmdError::from_fs_io(e, destination))?;
+        copy_folder(build_dir.as_ref(), destination)
+            .map_err(|e| RCmdError::from_fs_io(e, destination))?;
 
-                    if !status.success() {
-                        return cleanup(output);
-                    }
+        Ok(output)
+    }
 
-                    // If it's a success, copy the build tmp dir to the actual destination
-                    // we don't move the folder since the tmp dir might be in another drive/format
-                    // than the cache dir
-                    fs::create_dir_all(destination)
-                        .map_err(|e| InstallError::from_fs_io(e, destination))?;
-                    copy_folder(build_dir.as_ref(), destination)
-                        .map_err(|e| InstallError::from_fs_io(e, destination))?;
+    fn build(
+        &self,
+        source_dir: impl AsRef<Path>,
+        output_dir: impl AsRef<Path>,
+        libraries: &[impl AsRef<Path>],
+        cancellation: Arc<Cancellation>,
+        env_vars: &HashMap<&str, &str>,
+    ) -> Result<PathBuf, RCmdError> {
+        let output_dir = output_dir.as_ref();
+        let source_dir = source_dir.as_ref();
 
-                    return Ok(output);
-                }
-                Ok(None) => {
-                    // Process still running, check for cancellation
-                    if cancellation.is_soft_cancellation() {
-                        // On soft cancellation, let R finish naturally
-                        // On hard cancellation, rv will kill
-                        let status = handle.wait().unwrap();
-                        let output = output_handle.join().unwrap();
+        let library_paths =
+            r_library_paths(libraries).map_err(|e| RCmdError::from_fs_io(e, source_dir))?;
 
-                        if !status.success() {
-                            return cleanup(output);
-                        }
+        let mut command = spawn_isolated_r_command(self);
+        command
+            .arg("CMD")
+            .arg("build")
+            .arg("--no-build-vignettes")
+            .arg("--no-manual")
+            .arg(source_dir)
+            .current_dir(output_dir)
+            .env("R_LIBS_SITE", &library_paths)
+            .env("R_LIBS_USER", &library_paths)
+            .envs(env_vars);
 
-                        return Ok(output);
-                    }
+        log::debug!("Running R CMD build on {}", source_dir.display());
 
-                    // Sleep briefly to avoid busy waiting
-                    thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    return Err(InstallError {
-                        source: InstallErrorKind::Command(e),
-                    });
-                }
-            }
-        }
+        let output = run_r_command(command, cancellation, RCmdErrorKind::BuildFailed)?;
+
+        // Find the produced tarball in output_dir
+        let tarball = fs::read_dir(output_dir)
+            .map_err(|e| RCmdError::from_fs_io(e, output_dir))?
+            .filter_map(|entry| entry.ok())
+            .find(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
+            .map(|entry| entry.path())
+            .ok_or_else(|| RCmdError {
+                source: RCmdErrorKind::BuildFailed(format!(
+                    "R CMD build succeeded but no tarball found in {}.\nOutput: {}",
+                    output_dir.display(),
+                    output
+                )),
+            })?;
+
+        Ok(tarball)
     }
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError> {
@@ -389,14 +460,14 @@ impl RCmd for RInstall {
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 #[non_exhaustive]
-pub struct InstallError {
-    pub source: InstallErrorKind,
+pub struct RCmdError {
+    pub source: RCmdErrorKind,
 }
 
-impl InstallError {
+impl RCmdError {
     pub fn from_fs_io(error: std::io::Error, path: &Path) -> Self {
         Self {
-            source: InstallErrorKind::File {
+            source: RCmdErrorKind::File {
                 error,
                 path: path.to_path_buf(),
             },
@@ -405,7 +476,7 @@ impl InstallError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum InstallErrorKind {
+pub enum RCmdErrorKind {
     #[error("IO error: {error} ({path})")]
     File {
         error: std::io::Error,
@@ -421,6 +492,8 @@ pub enum InstallErrorKind {
     Utf8(#[from] std::str::Utf8Error),
     #[error("{0}")]
     InstallationFailed(String),
+    #[error("R CMD build failed:\n{0}")]
+    BuildFailed(String),
     #[error("Installation cancelled by user")]
     Cancelled,
 }

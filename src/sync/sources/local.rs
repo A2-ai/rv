@@ -53,8 +53,49 @@ pub(crate) fn install_package(
             &actual_path,
             library_dirs.first().unwrap().join(pkg.name.as_ref()),
         )?;
+    } else if canon_path.is_dir() {
+        // For local directories, run R CMD build first so that .Rbuildignore is respected
+        // and extraneous files (like rv/library/) are excluded from the installation.
+        log::debug!(
+            "Running R CMD build on local package in {}",
+            actual_path.display()
+        );
+        let build_output_dir = tempfile::tempdir()?;
+        let tarball_path = r_cmd.build(
+            &actual_path,
+            build_output_dir.path(),
+            library_dirs,
+            cancellation.clone(),
+            &pkg.env_vars,
+        )?;
+
+        // Untar the built tarball and install from the clean source
+        let untar_dir = tempfile::tempdir()?;
+        let (extracted_path, _) =
+            untar_archive(fs::read(&tarball_path)?.as_slice(), untar_dir.path(), false)?;
+        let source_path = extracted_path.unwrap_or_else(|| tarball_path.clone());
+
+        log::debug!("Installing built package from {}", source_path.display());
+        let output = r_cmd.install(
+            &source_path,
+            Option::<&Path>::None,
+            library_dirs,
+            library_dirs.first().unwrap(),
+            cancellation,
+            &pkg.env_vars,
+            configure_args,
+            strip,
+        )?;
+
+        let log_path = cache.get_build_log_path(&pkg.source, None, None);
+        if let Some(parent) = log_path.parent() {
+            fs::create_dir_all(parent)?;
+            let mut f = fs::File::create(log_path)?;
+            f.write_all(output.as_bytes())?;
+        }
     } else {
-        log::debug!("Building the local package in {}", actual_path.display());
+        // Tarball source package: install directly from extracted path
+        log::debug!("Installing the local package in {}", actual_path.display());
         let output = r_cmd.install(
             &actual_path,
             Option::<&Path>::None,
