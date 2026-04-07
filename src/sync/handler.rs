@@ -499,16 +499,16 @@ impl<'a> SyncHandler<'a> {
                 });
             }
 
+            if *notify {
+                sync_changes.push(SyncChange::removed(dir_name));
+            }
+
             // Only actually remove the deps if we are not going to do any other changes.
             if !needs_sync {
                 let p = self.context.library.path().join(dir_name);
                 if !self.dry_run && *notify {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
-                }
-
-                if *notify {
-                    sync_changes.push(SyncChange::removed(dir_name));
                 }
             }
         }
@@ -806,16 +806,12 @@ impl<'a> SyncHandler<'a> {
         } else {
             // If we are there, it means we are successful.
 
-            // mv new packages to the library and delete the ones that need to be removed
+            // Delete the packages that need to be removed from the library
             for (name, notify) in deps_to_remove {
-                let p = self.context.library.path().join(name);
-                if !self.dry_run && notify {
+                if notify {
+                    let p = self.context.library.path().join(name);
                     log::debug!("Removing {name} from library");
                     fs::remove_dir_all(&p)?;
-                }
-
-                if notify {
-                    sync_changes.push(SyncChange::removed(name));
                 }
             }
 
