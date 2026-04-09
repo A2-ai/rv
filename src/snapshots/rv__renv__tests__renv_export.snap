@@ -1,0 +1,61 @@
+---
+source: src/renv.rs
+expression: out
+---
+{
+  "R": {
+    "Version": "4.4.2",
+    "Repositories": [
+      {
+        "Name": "CRAN",
+        "URL": "https://cran.r-project.org/"
+      }
+    ]
+  },
+  "Packages": {
+    "cli": {
+      "Package": "cli",
+      "Version": "3.6.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "rlang"
+      ]
+    },
+    "ghqc": {
+      "Package": "ghqc",
+      "Version": "0.3.2",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "ghqc",
+      "RemoteUsername": "a2-ai",
+      "RemoteSha": "55c23eb6a444542dab742d3d37c7b65af7b12e38",
+      "Requirements": [
+        "cli",
+        "rlang"
+      ]
+    },
+    "gitlabpkg": {
+      "Package": "gitlabpkg",
+      "Version": "0.1.0",
+      "Source": "Git",
+      "RemoteType": "git",
+      "RemoteSha": "0123456789abcdef0123456789abcdef01234567",
+      "RemoteUrl": "https://gitlab.com/a2-ai/gitlabpkg.git"
+    },
+    "localpkg": {
+      "Package": "localpkg",
+      "Version": "0.1.0",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "/tmp/localpkg"
+    },
+    "rlang": {
+      "Package": "rlang",
+      "Version": "1.1.4",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    }
+  }
+}

@@ -1,25 +1,44 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     error::Error,
     fmt,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
-use crate::consts::RECOMMENDED_PACKAGES;
+use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
+use crate::git::url::GitUrl;
+use crate::lockfile::Source as LockSource;
 use crate::{
-    Repository, RepositoryDatabase,
-    package::{Operator, Version, VersionRequirement, deserialize_version},
+    Config, Lockfile, Repository, RepositoryDatabase,
+    package::{Operator, Version, VersionRequirement, deserialize_version, serialize_version},
 };
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use url::Url;
 
 #[derive(Debug, PartialEq, Clone)]
 // as enum since logic to resolve depends on this
 enum RenvSource {
     Repository,
+    Git,
     GitHub,
     Local,
     Other(String),
+}
+
+impl Serialize for RenvSource {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            RenvSource::Repository => serializer.serialize_str("Repository"),
+            RenvSource::Git => serializer.serialize_str("Git"),
+            RenvSource::GitHub => serializer.serialize_str("GitHub"),
+            RenvSource::Local => serializer.serialize_str("Local"),
+            RenvSource::Other(s) => serializer.serialize_str(s),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for RenvSource {
@@ -30,6 +49,7 @@ impl<'de> Deserialize<'de> for RenvSource {
         let s = String::deserialize(deserializer)?;
         let source_enum = match s.as_str() {
             "Repository" => RenvSource::Repository,
+            "Git" => RenvSource::Git,
             "GitHub" => RenvSource::GitHub,
             "Local" => RenvSource::Local,
             other => RenvSource::Other(other.to_string()),
@@ -38,36 +58,39 @@ impl<'de> Deserialize<'de> for RenvSource {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct PackageInfo {
     package: String,
-    #[serde(deserialize_with = "deserialize_version")]
+    #[serde(
+        deserialize_with = "deserialize_version",
+        serialize_with = "serialize_version"
+    )]
     version: Version,
     source: RenvSource,
-    #[serde(default)]
-    repository: Option<String>, // when source is Repository
-    #[serde(default)]
-    remote_type: Option<String>, // when source is GitHub
-    #[serde(default)]
-    remote_host: Option<String>, // when source is GitHub
-    #[serde(default)]
-    remote_repo: Option<String>, // when source is GitHub
-    #[serde(default)]
-    remote_username: Option<String>, // when source is GitHub
-    #[serde(default)]
-    remote_sha: Option<String>, // when source is GitHub
-    #[serde(default)]
-    remote_subdir: Option<String>, // when source is GitHub
-    #[serde(default)]
-    remote_url: Option<String>, // when source is Local
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_sha: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_subdir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     requirements: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     hash: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct RenvRepository {
     name: String,
@@ -75,19 +98,22 @@ struct RenvRepository {
     url: String,
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct RInfo {
-    #[serde(deserialize_with = "deserialize_version")]
+    #[serde(
+        deserialize_with = "deserialize_version",
+        serialize_with = "serialize_version"
+    )]
     version: Version,
     repositories: Vec<RenvRepository>,
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RenvLock {
     r: RInfo,
-    packages: HashMap<String, PackageInfo>,
+    packages: BTreeMap<String, PackageInfo>,
 }
 
 impl RenvLock {
@@ -131,6 +157,7 @@ impl RenvLock {
                     repository_database,
                     &self.r.version,
                 ),
+                RenvSource::Git => resolve_git(package_info),
                 RenvSource::GitHub => resolve_github(package_info),
                 RenvSource::Local => resolve_local(package_info),
                 RenvSource::Other(source) => {
@@ -264,6 +291,26 @@ fn resolve_repository<'a>(
     } else {
         Err("Package not found in repositories".into())
     }
+}
+
+// Expected generic git sourced package format from renv.lock
+// "mypkg": {
+//     "Package": "mypkg",
+//     "Version": "0.1.0",
+//     "Source": "Git",
+//     "RemoteType": "git",
+//     "RemoteUrl": "https://gitlab.com/org/mypkg.git",
+//     "RemoteSha": "0123456789abcdef",
+// }
+fn resolve_git(pkg_info: &PackageInfo) -> Result<Source<'_>, Box<dyn Error>> {
+    let git = pkg_info.remote_url.as_ref().ok_or("RemoteUrl not found")?;
+    let sha = &pkg_info.remote_sha.as_ref().ok_or("RemoteSha not found")?;
+    let directory = pkg_info.remote_subdir.as_deref();
+    Ok(Source::Git {
+        git: git.to_string(),
+        sha,
+        directory,
+    })
 }
 
 // Expected GitHub sourced package format from renv.lock
@@ -403,11 +450,190 @@ pub struct FromJsonFileError {
     pub source: FromJsonFileErrorKind,
 }
 
+/// Attempts to parse a GitHub git URL into (username, repo).
+/// Supports both HTTP ("https://github.com/a2-ai/ghqc") and SSH ("git@github.com:a2-ai/ghqc.git").
+fn parse_github_url(git_url: &GitUrl) -> Option<(String, String)> {
+    match git_url {
+        GitUrl::Http(url) => {
+            if url.host_str() != Some("github.com") {
+                return None;
+            }
+            let segments: Vec<_> = url.path_segments()?.collect();
+            if segments.len() >= 2 {
+                let repo = segments[1].trim_end_matches(".git");
+                Some((segments[0].to_string(), repo.to_string()))
+            } else {
+                None
+            }
+        }
+        GitUrl::Ssh(url) => {
+            let rest = url.strip_prefix("git@github.com:")?;
+            let rest = rest.trim_end_matches(".git");
+            let (org, repo) = rest.split_once('/')?;
+            Some((org.to_string(), repo.to_string()))
+        }
+    }
+}
+
+fn locked_package_to_renv(
+    pkg: &crate::LockedPackage,
+    url_to_alias: &HashMap<&str, &str>,
+) -> Option<(PackageInfo, Option<String>)> {
+    let mut warning = None;
+
+    let version = Version::from_str(&pkg.version).ok()?;
+
+    let requirements: Vec<String> = pkg
+        .dependencies
+        .iter()
+        .map(|d| d.name())
+        .filter(|name| *name != "R" && !BASE_PACKAGES.contains(name))
+        .map(|s| s.to_string())
+        .collect();
+
+    let mut info = PackageInfo {
+        package: pkg.name.clone(),
+        version,
+        requirements,
+        // default, overridden below
+        source: RenvSource::Repository,
+        repository: None,
+        remote_type: None,
+        remote_host: None,
+        remote_repo: None,
+        remote_username: None,
+        remote_sha: None,
+        remote_subdir: None,
+        remote_url: None,
+        hash: None,
+    };
+
+    match &pkg.source {
+        LockSource::Repository { repository } => {
+            info.source = RenvSource::Repository;
+            info.repository = Some(
+                url_to_alias
+                    .get(repository.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| repository.to_string()),
+            );
+        }
+        LockSource::Git {
+            git,
+            sha,
+            directory,
+            ..
+        } => {
+            if let Some((username, repo)) = parse_github_url(git) {
+                info.source = RenvSource::GitHub;
+                info.remote_type = Some("github".into());
+                info.remote_host = Some("api.github.com".into());
+                info.remote_username = Some(username);
+                info.remote_repo = Some(repo);
+                info.remote_sha = Some(sha.clone());
+                info.remote_subdir = directory.clone();
+            } else {
+                info.source = RenvSource::Git;
+                info.remote_type = Some("git".into());
+                info.remote_url = Some(git.url().to_string());
+                info.remote_sha = Some(sha.clone());
+                info.remote_subdir = directory.clone();
+            }
+        }
+        LockSource::RUniverse {
+            repository,
+            git,
+            sha,
+            directory,
+        } => {
+            info.source = RenvSource::Repository;
+            info.repository = Some(
+                url_to_alias
+                    .get(repository.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| repository.to_string()),
+            );
+            info.remote_url = Some(git.url().to_string());
+            info.remote_sha = Some(sha.clone());
+            info.remote_subdir = directory.clone();
+        }
+        LockSource::Local { path, .. } => {
+            info.source = RenvSource::Local;
+            info.remote_type = Some("local".into());
+            info.remote_url = Some(path.display().to_string());
+        }
+        LockSource::Url { url, sha } => {
+            info.source = RenvSource::Repository;
+            info.remote_type = Some("url".into());
+            info.remote_url = Some(url.as_str().to_string());
+            info.remote_sha = Some(sha.clone());
+            warning = Some(format!(
+                "URL source `{url}` has no direct renv equivalent, mapped as Repository with RemoteUrl"
+            ));
+        }
+        LockSource::Builtin { .. } => return None,
+    }
+
+    Some((info, warning))
+}
+
+fn normalize_renv_r_version(r_version: &str) -> String {
+    if r_version.matches('.').count() < 2 {
+        format!("{r_version}.0")
+    } else {
+        r_version.to_string()
+    }
+}
+
+/// Convert an rv Lockfile + Config into an RenvLock.
+/// Returns the RenvLock and a list of warnings for packages that couldn't be perfectly mapped.
+pub fn to_renv_lock(lockfile: &Lockfile, config: &Config) -> (RenvLock, Vec<String>) {
+    let mut warnings = Vec::new();
+
+    let r_version = Version::from_str(&normalize_renv_r_version(lockfile.r_version_string()))
+        .expect("valid R version in lockfile");
+
+    let repositories: Vec<RenvRepository> = config
+        .repositories()
+        .iter()
+        .map(|r| RenvRepository {
+            name: r.alias.clone(),
+            url: r.url().to_string(),
+        })
+        .collect();
+
+    let url_to_alias: HashMap<&str, &str> = config
+        .repositories()
+        .iter()
+        .map(|r| (r.url(), r.alias.as_str()))
+        .collect();
+
+    let mut packages = BTreeMap::new();
+    for pkg in lockfile.packages() {
+        if let Some((info, warning)) = locked_package_to_renv(pkg, &url_to_alias) {
+            if let Some(w) = warning {
+                warnings.push(format!("`{}`: {w}", pkg.name));
+            }
+            packages.insert(pkg.name.clone(), info);
+        }
+    }
+
+    let renv_lock = RenvLock {
+        r: RInfo {
+            version: r_version,
+            repositories,
+        },
+        packages,
+    };
+
+    (renv_lock, warnings)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{Repository, RepositoryDatabase, Version};
+    use crate::{Config, Lockfile, Repository, RepositoryDatabase, Version};
 
-    use super::RenvLock;
+    use super::{RenvLock, to_renv_lock};
 
     fn repository_databases(
         r_version: &Version,
@@ -448,5 +674,104 @@ mod tests {
         }
 
         insta::assert_snapshot!("renv_resolver".to_string(), out);
+    }
+
+    #[test]
+    fn test_renv_export() {
+        let lockfile_toml = r#"
+version = 2
+r_version = "4.4.2"
+
+[[packages]]
+name = "rlang"
+version = "1.1.4"
+source = { repository = "https://cran.r-project.org/" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "cli"
+version = "3.6.3"
+source = { repository = "https://cran.r-project.org/" }
+force_source = false
+dependencies = ["rlang"]
+
+[[packages]]
+name = "ghqc"
+version = "0.3.2"
+source = { git = "https://github.com/a2-ai/ghqc", sha = "55c23eb6a444542dab742d3d37c7b65af7b12e38" }
+force_source = false
+dependencies = ["cli", "rlang"]
+
+[[packages]]
+name = "gitlabpkg"
+version = "0.1.0"
+source = { git = "https://gitlab.com/a2-ai/gitlabpkg.git", sha = "0123456789abcdef0123456789abcdef01234567" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "localpkg"
+version = "0.1.0"
+source = { path = "/tmp/localpkg" }
+force_source = false
+dependencies = []
+"#;
+
+        let config_toml = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "CRAN", url = "https://cran.r-project.org/" },
+]
+dependencies = ["rlang", "cli"]
+"#;
+
+        let lockfile: Lockfile = lockfile_toml.parse().unwrap();
+        let config: Config = config_toml.parse().unwrap();
+        let (renv_lock, warnings) = to_renv_lock(&lockfile, &config);
+
+        let out = serde_json::to_string_pretty(&renv_lock).unwrap();
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        insta::assert_snapshot!("renv_export", out);
+    }
+
+    #[test]
+    fn test_renv_parse_generic_git_source() {
+        let renv_lock: RenvLock = serde_json::from_str(
+            r#"
+{
+  "R": {
+    "Version": "4.4.1",
+    "Repositories": []
+  },
+  "Packages": {
+    "gitlabpkg": {
+      "Package": "gitlabpkg",
+      "Version": "0.1.0",
+      "Source": "Git",
+      "RemoteType": "git",
+      "RemoteUrl": "https://gitlab.com/a2-ai/gitlabpkg.git",
+      "RemoteSha": "0123456789abcdef0123456789abcdef01234567"
+    }
+  }
+}
+"#,
+        )
+        .unwrap();
+
+        let (resolved, unresolved) = renv_lock.resolve(&[]);
+
+        assert!(unresolved.is_empty(), "unexpected unresolved entries");
+        assert_eq!(
+            resolved
+                .into_iter()
+                .map(|entry| entry.to_string())
+                .collect::<Vec<_>>(),
+            vec![
+                r#"{ name = "gitlabpkg", git = "https://gitlab.com/a2-ai/gitlabpkg.git", commit = "0123456789abcdef0123456789abcdef01234567" }"#.to_string()
+            ]
+        );
     }
 }
