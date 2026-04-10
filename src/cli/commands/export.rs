@@ -7,7 +7,9 @@ use crate::{Config, Lockfile, renv::to_renv_lock};
 pub fn export_renv(config_file: &Path, output_file: &Path) -> Result<Vec<String>> {
     let config = Config::from_file(config_file).map_err(|e| anyhow!("{e}"))?;
 
-    let project_dir = config_file.parent().unwrap();
+    let project_dir = config_file
+        .parent()
+        .ok_or_else(|| anyhow!("Could not determine project directory from config file path"))?;
     let lockfile_path = project_dir.join(config.lockfile_name());
     let lockfile = Lockfile::load(&lockfile_path)
         .map_err(|e| anyhow!("{e}"))?

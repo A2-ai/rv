@@ -560,7 +560,7 @@ fn locked_package_to_renv(
         LockSource::Local { path, .. } => {
             info.source = RenvSource::Local;
             info.remote_type = Some("local".into());
-            info.remote_url = Some(path.display().to_string());
+            info.remote_url = Some(path.to_string_lossy().replace('\\', "/"));
         }
         LockSource::Url { url, sha } => {
             info.source = RenvSource::Repository;
