@@ -1,0 +1,13 @@
+[project]
+name = "renv-export"
+r_version = "4.5"
+
+repositories = [
+    {alias = "r-universe", url = "https://a2-ai.r-universe.dev"},
+    {alias = "CRAN", url = "https://packagemanager.posit.co/cran/2026-04-01"},
+]
+
+dependencies = [
+    "renv",
+    "osinfo",
+]

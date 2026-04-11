@@ -1,0 +1,31 @@
+{
+  "R": {
+    "Version": "4.5.0",
+    "Repositories": [
+      {
+        "Name": "r-universe",
+        "URL": "https://a2-ai.r-universe.dev/"
+      },
+      {
+        "Name": "CRAN",
+        "URL": "https://packagemanager.posit.co/cran/2026-04-01"
+      }
+    ]
+  },
+  "Packages": {
+    "osinfo": {
+      "Package": "osinfo",
+      "Version": "0.0.1",
+      "Source": "Repository",
+      "Repository": "r-universe",
+      "RemoteSha": "f815095b7b04cbf57da0e0c0a55ef5e03c16f477",
+      "RemoteUrl": "https://github.com/a2-ai/osinfo"
+    },
+    "renv": {
+      "Package": "renv",
+      "Version": "1.2.0",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    }
+  }
+}
