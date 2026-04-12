@@ -1,0 +1,10 @@
+[project]
+name = "e2e-renv-comparison"
+r_version = "4.5"
+repositories = [
+    { alias = "CRAN", url = "https://packagemanager.posit.co/cran/__linux__/noble/2025-07-15/" }
+]
+dependencies = [
+    "R6",
+    { name = "rv.git.pkgA", git = "https://github.com/A2-ai/rv.git.pkgA", tag = "v0.0.6" },
+]

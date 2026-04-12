@@ -1,0 +1,23 @@
+Package: rv.git.pkgA
+Title: Package Which Has No Dependencies
+Version: 0.0.5
+Authors@R: person("Wes", "Cummings", , "wes@a2-ai.com", role = c("aut", "cre"))
+Description: This package has no dependencies
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Author: Wes Cummings [aut, cre]
+Maintainer: Wes Cummings <wes@a2-ai.com>
+Built: R 4.5.2; ; 2026-03-21 09:47:22 UTC; unix
+RemoteType: github
+RemoteHost: api.github.com
+RemoteUsername: A2-ai
+RemoteRepo: rv.git.pkgA
+RemoteRef: v0.0.6
+RemoteSha: cbc24e97b857305558ad5a4769086922812627cc
+GithubHost: api.github.com
+GithubRepo: rv.git.pkgA
+GithubUsername: A2-ai
+GithubRef: v0.0.6
+GithubSHA1: cbc24e97b857305558ad5a4769086922812627cc

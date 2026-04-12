@@ -5,7 +5,7 @@ use std::path::Path;
 use toml_edit::{InlineTable, Value};
 
 mod builtin;
-mod description;
+pub(crate) mod description;
 mod parser;
 mod remotes;
 mod version;
