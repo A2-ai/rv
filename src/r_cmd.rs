@@ -77,9 +77,7 @@ fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Er
         .map(|p| {
             let s = p.to_string_lossy();
             // Strip Windows \\?\ extended-length prefix that R can't handle
-            s.strip_prefix(r"\\?\")
-                .unwrap_or(&s)
-                .to_string()
+            s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
         })
         .collect::<Vec<_>>()
         .join(sep))
