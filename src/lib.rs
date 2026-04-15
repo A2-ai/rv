@@ -40,7 +40,7 @@ pub use dependency_edit::{AddOptions, add_packages, read_and_verify_config, remo
 pub use format::format_document;
 pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitReference, GitRemote, GitRepository};
-pub use http::{Http, HttpDownload};
+pub use http::{Http, HttpDownload, HttpError};
 pub use library::Library;
 pub use lockfile::{Lockfile, Source};
 pub use package::{Dependency, Operator, Package, Version, VersionRequirement, is_binary_package};
