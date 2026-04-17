@@ -53,8 +53,8 @@ pub enum Command {
         #[clap(long)]
         /// Do no populated repositories
         no_repositories: bool,
-        #[clap(long, value_parser, num_args = 1..)]
-        /// Add simple packages to the config
+        #[clap(long, action = clap::ArgAction::Append)]
+        /// Add simple package to the config (repeatable, e.g. --add pkg1 --add pkg2)
         add: Vec<String>,
         #[clap(long)]
         /// Turn off rv access through .rv R environment
