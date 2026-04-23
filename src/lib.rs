@@ -30,7 +30,7 @@ mod utils;
 pub use activate::{activate, deactivate};
 pub use cache::{Cache, CacheInfo, DiskCache, PackagePaths, utils::hash_string};
 pub use cancellation::Cancellation;
-pub use config::{Config, ConfigDependency, Repository};
+pub use config::{Config, ConfigDependency, ConfigureArgsRule, Repository};
 pub use configure::{
     ConfigureRepositoryResponse, RepositoryAction, RepositoryMatcher, RepositoryOperation,
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
