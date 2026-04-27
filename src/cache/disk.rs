@@ -254,7 +254,16 @@ impl DiskCache {
             false
         };
 
-        match (source_path.is_dir(), binary_path.is_dir()) {
+        // Git sources may be in a sparse-only state from resolution (only DESCRIPTION
+        // files materialized). Treat those as not having source available.
+        let source_present = match source {
+            Source::Git { .. } | Source::RUniverse { .. } => {
+                source_path.is_dir() && has_full_git_source(&source_path)
+            }
+            _ => source_path.is_dir(),
+        };
+
+        match (source_present, binary_path.is_dir()) {
             (true, true) => InstallationStatus::Both(from_source),
             (true, false) => InstallationStatus::Source,
             (false, true) => InstallationStatus::Binary(from_source),
@@ -295,5 +304,34 @@ impl DiskCache {
             fs::write(&path, content).expect("to work");
             sysreq
         }
+    }
+}
+
+/// During resolution we sparse-checkout only `**/DESCRIPTION`, so the cache dir
+/// holds just `.git/` plus a DESCRIPTION file but it shouldn't count as having the source
+fn has_full_git_source(path: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(path) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let name = entry.file_name();
+        name != ".git" && name != "DESCRIPTION"
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn has_full_git_source_distinguishes_sparse_from_full() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::write(dir.path().join(".git").join("HEAD"), "ref").unwrap();
+        fs::write(dir.path().join("DESCRIPTION"), "Package: x\n").unwrap();
+        assert!(!has_full_git_source(dir.path()));
+
+        fs::write(dir.path().join("NAMESPACE"), "").unwrap();
+        assert!(has_full_git_source(dir.path()));
     }
 }
