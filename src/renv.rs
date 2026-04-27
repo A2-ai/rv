@@ -541,21 +541,29 @@ fn locked_package_to_renv(
             }
         }
         LockSource::RUniverse {
-            repository,
+            repository: _,
             git,
             sha,
             directory,
         } => {
-            info.source = RenvSource::Repository;
-            info.repository = Some(
-                url_to_alias
-                    .get(repository.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| repository.to_string()),
-            );
-            info.remote_url = Some(git.url().to_string());
-            info.remote_sha = Some(sha.clone());
-            info.remote_subdir = directory.clone();
+            // r-universe is a rolling build that does not preserve historical versions,
+            // but we want the renv export to represent exactly what is in rv so we do
+            // convert it to a git source
+            if let Some((username, repo)) = parse_github_url(git) {
+                info.source = RenvSource::GitHub;
+                info.remote_type = Some("github".into());
+                info.remote_host = Some("api.github.com".into());
+                info.remote_username = Some(username);
+                info.remote_repo = Some(repo);
+                info.remote_sha = Some(sha.clone());
+                info.remote_subdir = directory.clone();
+            } else {
+                info.source = RenvSource::Git;
+                info.remote_type = Some("git".into());
+                info.remote_url = Some(git.url().to_string());
+                info.remote_sha = Some(sha.clone());
+                info.remote_subdir = directory.clone();
+            }
         }
         LockSource::Local { path, .. } => {
             info.source = RenvSource::Local;
@@ -707,6 +715,13 @@ dependencies = ["cli", "rlang"]
 name = "gitlabpkg"
 version = "0.1.0"
 source = { git = "https://gitlab.com/a2-ai/gitlabpkg.git", sha = "0123456789abcdef0123456789abcdef01234567" }
+force_source = false
+dependencies = []
+
+[[packages]]
+name = "osinfo"
+version = "0.0.1"
+source = { repository = "https://a2-ai.r-universe.dev/", git = "https://github.com/a2-ai/osinfo", sha = "f815095b7b04cbf57da0e0c0a55ef5e03c16f477" }
 force_source = false
 dependencies = []
 

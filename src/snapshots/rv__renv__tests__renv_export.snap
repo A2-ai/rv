@@ -1,5 +1,6 @@
 ---
 source: src/renv.rs
+assertion_line: 751
 expression: out
 ---
 {
@@ -50,6 +51,16 @@ expression: out
       "Source": "Local",
       "RemoteType": "local",
       "RemoteUrl": "/tmp/localpkg"
+    },
+    "osinfo": {
+      "Package": "osinfo",
+      "Version": "0.0.1",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "osinfo",
+      "RemoteUsername": "a2-ai",
+      "RemoteSha": "f815095b7b04cbf57da0e0c0a55ef5e03c16f477"
     },
     "rlang": {
       "Package": "rlang",
