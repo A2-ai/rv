@@ -170,7 +170,9 @@ impl GitRepository {
                     .arg(oid.as_str())
                     .current_dir(&self.path),
             )
-            .map_err(|_| std::io::Error::other(format!("Failed to checkout `{}`", oid.as_str())))?;
+            .map_err(|e| {
+                std::io::Error::other(format!("Failed to checkout `{}`: {e}", oid.as_str()))
+            })?;
 
         self.update_submodules()?;
         Ok(())
@@ -190,8 +192,8 @@ impl GitRepository {
                     .arg(format!("origin/{branch_name}"))
                     .current_dir(&self.path),
             )
-            .map_err(|_| {
-                std::io::Error::other(format!("Failed to checkout branch `{branch_name}`"))
+            .map_err(|e| {
+                std::io::Error::other(format!("Failed to checkout branch `{branch_name}`: {e}"))
             })?;
 
         self.update_submodules()?;
@@ -347,7 +349,7 @@ impl GitRepository {
                     .arg("--recursive")
                     .current_dir(&self.path),
             )
-            .map_err(|_| std::io::Error::other("Failed to update submodules".to_string()))?;
+            .map_err(|e| std::io::Error::other(format!("Failed to update submodules: {e}")))?;
         Ok(())
     }
 
@@ -411,31 +413,24 @@ fn fetch_with_cli(
     executor: &dyn CommandExecutor,
 ) -> Result<(), std::io::Error> {
     // https://github.com/astral-sh/uv/blob/main/crates/uv-git/src/git.rs#L572-L617
-    let _ = executor
-        .execute(
-            Command::new("git")
-                .arg("fetch")
-                .arg("--tags")
-                .arg("--force")
-                .arg("--update-head-ok")
-                .arg(url)
-                .arg(refspec)
-                .current_dir(&repo.path)
-                // Disable interactive prompts
-                .env("GIT_TERMINAL_PROMPT", "0")
-                // From Cargo
-                // If rv is run by git (for example, the `exec` command in `git
-                // rebase`), the GIT_DIR is set by git and will point to the wrong
-                // location (this takes precedence over the cwd). Make sure this is
-                // unset so git will look at cwd for the repo.
-                .env_remove("GIT_DIR"),
-        )
-        .map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Could not fetch repository".to_string(),
-            )
-        })?;
+    executor.execute(
+        Command::new("git")
+            .arg("fetch")
+            .arg("--tags")
+            .arg("--force")
+            .arg("--update-head-ok")
+            .arg(url)
+            .arg(refspec)
+            .current_dir(&repo.path)
+            // Disable interactive prompts
+            .env("GIT_TERMINAL_PROMPT", "0")
+            // From Cargo
+            // If rv is run by git (for example, the `exec` command in `git
+            // rebase`), the GIT_DIR is set by git and will point to the wrong
+            // location (this takes precedence over the cwd). Make sure this is
+            // unset so git will look at cwd for the repo.
+            .env_remove("GIT_DIR"),
+    )?;
     Ok(())
 }
 
