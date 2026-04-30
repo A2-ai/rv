@@ -10,8 +10,8 @@ use serde_json::json;
 
 use anyhow::anyhow;
 use rv::cli::{
-    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
-    init_structure, migrate_renv, resolve_dependencies, tree,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
+    find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
@@ -67,6 +67,11 @@ pub enum Command {
     Migrate {
         #[clap(subcommand)]
         subcommand: MigrateSubcommand,
+    },
+    /// Export rv project to other formats
+    Export {
+        #[clap(subcommand)]
+        subcommand: ExportSubcommand,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync {
@@ -310,6 +315,16 @@ pub enum MigrateSubcommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+pub enum ExportSubcommand {
+    /// Export to renv.lock format
+    Renv {
+        /// Output file path
+        #[clap(long, short, default_value = "renv.lock")]
+        output: PathBuf,
+    },
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -448,6 +463,28 @@ fn try_main() -> Result<()> {
                 for u in &unresolved {
                     eprintln!("    {u}");
                 }
+            }
+        }
+        Command::Export {
+            subcommand: ExportSubcommand::Renv { output },
+        } => {
+            let warnings = export_renv(&cli.config_file, &output)?;
+            if output_format.is_json() {
+                println!(
+                    "{}",
+                    json!({
+                        "success": true,
+                        "output": output.display().to_string(),
+                        "warnings": warnings,
+                    })
+                );
+            } else {
+                if !warnings.is_empty() {
+                    for w in &warnings {
+                        eprintln!("WARNING: {w}");
+                    }
+                }
+                println!("Successfully exported to {}", output.display());
             }
         }
         Command::Sync {

@@ -43,7 +43,7 @@ pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
-pub use lockfile::{Lockfile, Source};
+pub use lockfile::{LockedPackage, Lockfile, Source};
 pub use package::{Dependency, Operator, Version, VersionRequirement, is_binary_package};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::RCmd;
