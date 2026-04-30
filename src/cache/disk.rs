@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use filetime::FileTime;
 use fs_err as fs;
 use url::Url;
+use walkdir::WalkDir;
 
 use crate::cache::InstallationStatus;
 use crate::cache::utils::{
@@ -254,7 +255,16 @@ impl DiskCache {
             false
         };
 
-        match (source_path.is_dir(), binary_path.is_dir()) {
+        // Git sources may be in a sparse-only state from resolution (only DESCRIPTION
+        // files materialized). Treat those as not having source available.
+        let source_present = match source {
+            Source::Git { .. } | Source::RUniverse { .. } => {
+                source_path.is_dir() && has_full_git_source(&source_path)
+            }
+            _ => source_path.is_dir(),
+        };
+
+        match (source_present, binary_path.is_dir()) {
             (true, true) => InstallationStatus::Both(from_source),
             (true, false) => InstallationStatus::Source,
             (false, true) => InstallationStatus::Binary(from_source),
@@ -295,5 +305,67 @@ impl DiskCache {
             fs::write(&path, content).expect("to work");
             sysreq
         }
+    }
+}
+
+/// During resolution we sparse-checkout `**/DESCRIPTION`, so the cache dir holds
+/// just `.git/` plus DESCRIPTION files (possibly nested in a package subdir,
+/// which leaves an otherwise-empty parent directory at the top level). It
+/// shouldn't count as having the source. Walk recursively, skip the `.git`
+/// subtree, and only count regular files other than DESCRIPTION.
+fn has_full_git_source(path: &Path) -> bool {
+    WalkDir::new(path)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
+        .filter_map(Result::ok)
+        .any(|e| e.file_type().is_file() && e.file_name() != "DESCRIPTION")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_sparse_repo(root: &Path) {
+        fs::create_dir(root.join(".git")).unwrap();
+        fs::write(root.join(".git").join("HEAD"), "ref").unwrap();
+        fs::write(root.join(".git").join("config"), "[core]\n").unwrap();
+    }
+
+    #[test]
+    fn has_full_git_source_distinguishes_sparse_from_full() {
+        let dir = tempfile::tempdir().unwrap();
+        make_sparse_repo(dir.path());
+        fs::write(dir.path().join("DESCRIPTION"), "Package: x\n").unwrap();
+        assert!(!has_full_git_source(dir.path()));
+
+        fs::write(dir.path().join("NAMESPACE"), "").unwrap();
+        assert!(has_full_git_source(dir.path()));
+    }
+
+    #[test]
+    fn has_full_git_source_handles_nested_description() {
+        let dir = tempfile::tempdir().unwrap();
+        make_sparse_repo(dir.path());
+        fs::create_dir(dir.path().join("pkg")).unwrap();
+        fs::write(dir.path().join("pkg").join("DESCRIPTION"), "Package: x\n").unwrap();
+        assert!(!has_full_git_source(dir.path()));
+
+        fs::write(dir.path().join("pkg").join("NAMESPACE"), "").unwrap();
+        assert!(has_full_git_source(dir.path()));
+    }
+
+    #[test]
+    fn has_full_git_source_ignores_files_inside_dot_git() {
+        let dir = tempfile::tempdir().unwrap();
+        make_sparse_repo(dir.path());
+        fs::create_dir(dir.path().join(".git").join("objects")).unwrap();
+        fs::write(
+            dir.path().join(".git").join("objects").join("pack"),
+            "stuff",
+        )
+        .unwrap();
+        fs::write(dir.path().join("DESCRIPTION"), "Package: x\n").unwrap();
+        assert!(!has_full_git_source(dir.path()));
     }
 }
