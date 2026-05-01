@@ -3,7 +3,7 @@ use crate::lockfile::Source;
 use crate::package::PackageType;
 use crate::{ResolvedDependency, UnresolvedDependency, Version};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum NodeKind {
@@ -48,6 +48,8 @@ pub struct TreeNode<'a> {
     sys_deps: Option<&'a Vec<String>>,
     children: Vec<TreeNode<'a>>,
     state: NodeState<'a>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    is_duplicate: bool,
 }
 
 impl<'a> TreeNode<'a> {
@@ -67,7 +69,18 @@ impl<'a> TreeNode<'a> {
                 package_type: dependency.kind,
                 ignored: dependency.ignored,
             },
+            is_duplicate: false,
         }
+    }
+
+    fn duplicate(
+        name: &'a str,
+        dependency: &'a ResolvedDependency,
+        sys_deps: Option<&'a Vec<String>>,
+    ) -> Self {
+        let mut node = Self::resolved(name, dependency, sys_deps, vec![]);
+        node.is_duplicate = true;
+        node
     }
 
     fn unresolved(
@@ -92,7 +105,12 @@ impl<'a> TreeNode<'a> {
             sys_deps,
             children: vec![],
             state: NodeState::Unresolved { error, version_req },
+            is_duplicate: false,
         }
+    }
+
+    fn has_duplicate_descendant(&self) -> bool {
+        self.is_duplicate || self.children.iter().any(Self::has_duplicate_descendant)
     }
 
     fn get_sys_deps(&self, show_sys_deps: bool) -> String {
@@ -164,12 +182,17 @@ impl<'a> TreeNode<'a> {
             return;
         }
 
+        let dup_marker = if self.is_duplicate { " (*)" } else { "" };
         println!(
-            "{prefix}{} {} [{}]",
+            "{prefix}{} {} [{}]{dup_marker}",
             kind.prefix(),
             self.name,
             self.get_details(show_sys_deps)
         );
+
+        if self.is_duplicate {
+            return;
+        }
 
         let child_prefix = match kind {
             NodeKind::Normal => &format!("{prefix}│ "),
@@ -202,6 +225,7 @@ fn recursive_finder<'d>(
     unresolved_deps_by_name: &HashMap<&'d str, &'d UnresolvedDependency>,
     context: &'d Context,
     ancestors: &mut Vec<&'d str>,
+    visited: &mut HashSet<&'d str>,
 ) -> TreeNode<'d> {
     if ancestors.contains(&name) {
         if let Some(resolved) = deps_by_name.get(name) {
@@ -219,6 +243,12 @@ fn recursive_finder<'d>(
         );
     }
 
+    if visited.contains(name)
+        && let Some(resolved) = deps_by_name.get(name)
+    {
+        return TreeNode::duplicate(name, resolved, context.system_dependencies.get(name));
+    }
+
     if let Some(resolved) = deps_by_name.get(name) {
         ancestors.push(name);
         let mut dep_names = resolved.all_dependencies_names();
@@ -232,10 +262,12 @@ fn recursive_finder<'d>(
                     unresolved_deps_by_name,
                     context,
                     ancestors,
+                    visited,
                 )
             })
             .collect();
         ancestors.pop();
+        visited.insert(name);
 
         TreeNode::resolved(
             name,
@@ -260,21 +292,33 @@ pub struct Tree<'a> {
 impl Tree<'_> {
     pub fn print(&self, max_depth: Option<usize>, show_sys_deps: bool) {
         for (i, tree) in self.nodes.iter().enumerate() {
-            println!("▶ {} [{}]", tree.name, tree.get_details(show_sys_deps),);
+            let dup_marker = if tree.is_duplicate { " (*)" } else { "" };
+            println!(
+                "▶ {} [{}]{dup_marker}",
+                tree.name,
+                tree.get_details(show_sys_deps)
+            );
 
-            for (j, child) in tree.children.iter().enumerate() {
-                child.print_recursive(
-                    "",
-                    child_kind(j, tree.children.len()),
-                    2,
-                    max_depth,
-                    show_sys_deps,
-                );
+            if !tree.is_duplicate {
+                for (j, child) in tree.children.iter().enumerate() {
+                    child.print_recursive(
+                        "",
+                        child_kind(j, tree.children.len()),
+                        2,
+                        max_depth,
+                        show_sys_deps,
+                    );
+                }
             }
 
             if i + 1 < self.nodes.len() {
                 println!();
             }
+        }
+
+        if self.nodes.iter().any(TreeNode::has_duplicate_descendant) {
+            println!();
+            println!("(*) dependency already shown above");
         }
     }
 }
@@ -291,16 +335,22 @@ pub fn tree<'a>(
         .collect();
 
     let mut nodes = Vec::new();
+    let mut visited: HashSet<&str> = HashSet::new();
 
     for top_level_dep in context.config.dependencies() {
         if let Some(found) = deps_by_name.get(top_level_dep.name()) {
+            let name = found.name.as_ref();
+            // Top-level deps are user-requested — always show their full subtree, even if it
+            // was already encountered as a transitive dep of an earlier top-level.
+            visited.remove(name);
             let mut ancestors = Vec::new();
             nodes.push(recursive_finder(
-                found.name.as_ref(),
+                name,
                 &deps_by_name,
                 &unresolved_deps_by_name,
                 context,
                 &mut ancestors,
+                &mut visited,
             ));
         } else {
             nodes.push(unresolved_node(
