@@ -1,6 +1,6 @@
 [package]
 name = "rv"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2024"
 license = "MIT"
 
@@ -34,10 +34,11 @@ flate2 = "1"
 tar = "0.4"
 # we pin zip temporarily because it introduced a dep called typed-path which has some blanket impls
 # messing with normal std: https://github.com/zip-rs/zip2/issues/556
-zip = { version = ">=7, <7.2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 # HTTP requests
 ureq = { version = "3", features = ["platform-verifier", "json"] }
-sha2 = "0.10"
+sha2 = "0.11"
+hex = "0.4"
 # For rv sync
 crossbeam = "0.8.4"
 num_cpus = "1.16.0"
@@ -57,7 +58,7 @@ libc = "0.2.172"
 taplo = "0.14.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.30", default-features = false, features = ["fs"] }
+nix = { version = "0.31", default-features = false, features = ["fs"] }
 
 [features]
 cli = [

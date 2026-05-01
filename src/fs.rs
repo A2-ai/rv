@@ -178,8 +178,7 @@ pub(crate) fn untar_archive<R: Read>(
     if compute_hash {
         let mut hasher = Sha256::new();
         hasher.update(&buffer);
-        let hash_out = hasher.finalize();
-        hash = Some(format!("{hash_out:x}"));
+        hash = Some(hex::encode(hasher.finalize()));
     }
 
     match buffer[..4] {

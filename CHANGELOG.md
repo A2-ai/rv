@@ -1,3 +1,26 @@
+## v0.21.0 - May 1, 2026
+
+This release adds two new commands — `rv run` for executing Rscript against the project library and `rv export renv` for converting an rv project to `renv.lock` — along with proper `R CMD build` support for local source packages and a number of fixes around git caching, tree output, and Windows path handling.
+
+### 🎉 New Features
+- **`rv run`**: A new top-level command that runs an Rscript invocation with the project library paths configured, so you can execute scripts against your rv-managed library.
+- **`rv export renv`**: Export an rv project to `renv.lock` format with `rv export renv [--output renv.lock]`. R-universe sources are converted to git entries on export. Any unsupported configuration is reported as warnings.
+- **`R CMD build` for local sources**: Local directory dependencies are now run through `R CMD build` before installation, matching how CRAN-style sources are handled and fixing edge cases where local packages required the build step.
+
+### ⚡ Improvements
+- **Deduplicated `rv tree` output**: Shared dependencies in the tree view are now deduplicated
+- **Smarter git cache status**: Sparse checkouts are no longer counted as having the source available, so rv now correctly re-fetches the full source when needed. Git error reporting was also improved.
+
+### 🐛 Bug Fixes
+- **Error on duplicate repository alias**: `rproject.toml` configurations with duplicate repository aliases now fail validation with a clear error rather than silently using one of them.
+- **Windows path canonicalization**: The `\\?\` prefix added by Windows path canonicalization is now stripped, fixing paths that surfaced through to user-visible output and downstream tools.
+- **renv migration path handling**: `migrate renv` now uses the parent directory name of the `renv.lock` file rather than the absolute path, producing more portable migrated configurations.
+- **`rv init --add` regression**: Fixed an issue where `rv init --add` did not work as expected. `--add` now uses append semantics, so you can pass it multiple times (`--add pkg1 --add pkg2`) instead of a single space-separated list.
+
+---
+
+**Migration Notes**: No breaking changes to project configuration. CLI users invoking `rv init --add pkg1 pkg2` should switch to the repeatable form `--add pkg1 --add pkg2`.
+
 ## v0.20.0 - March 23, 2026
 
 This release adds support for overriding the project library location through an environment variable, making it easier to customize where packages are installed without modifying configuration files.

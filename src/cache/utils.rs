@@ -51,7 +51,7 @@ pub fn get_user_cache_dir() -> Option<PathBuf> {
 pub fn hash_string(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.to_ascii_lowercase().as_bytes());
-    let result = format!("{:x}", hasher.finalize());
+    let result = hex::encode(hasher.finalize());
     result[..10].to_string()
 }
 
