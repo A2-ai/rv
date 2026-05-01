@@ -1,0 +1,10 @@
+[project]
+name = "git monorepo"
+r_version = "4.4"
+
+repositories = [
+]
+
+dependencies = [
+    { name = "pkg", git = "https://github.com/a2-ai/git.monorepo.pkg", branch = "main", directory = "R/pkg" },
+]
