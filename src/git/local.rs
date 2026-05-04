@@ -6,9 +6,8 @@ use fs_err as fs;
 use crate::consts::{DESCRIPTION_FILENAME, SUBMODULE_UPDATE_DISABLE_ENV_VAR_NAME};
 use crate::git::CommandExecutor;
 use crate::git::reference::{GitReference, Oid};
+use crate::git::resolve_default_branch_in_repo;
 use crate::utils::is_env_var_truthy;
-
-const SYMREF_PREFIX: &str = "ref: refs/heads/";
 
 pub struct GitRepository {
     path: PathBuf,
@@ -202,36 +201,7 @@ impl GitRepository {
 
     /// If we don't know what we have, we will fetch the HEAD branch
     fn checkout_head(&self) -> Result<(), std::io::Error> {
-        let output = self.executor.execute(
-            Command::new("git")
-                .arg("ls-remote")
-                .arg("--symref")
-                .arg("origin")
-                .arg("HEAD")
-                .current_dir(&self.path),
-        )?;
-
-        let mut branch_name = String::new();
-        // The output is something like:
-        // > git ls-remote --symref origin HEAD
-        // ref: refs/heads/main    HEAD
-        // 8823d1d2b5f4d80ed77f781e30df2eaa4c84fe9e        HEAD
-        for line in output.lines() {
-            if let Some(rest) = line.strip_prefix(SYMREF_PREFIX) {
-                // We get main    HEAD, and the branch name is the first one
-                if let Some(name) = rest.split_whitespace().next() {
-                    branch_name = name.trim().to_string();
-                    break;
-                }
-            }
-        }
-
-        if branch_name.is_empty() {
-            return Err(std::io::Error::other(format!(
-                "No HEAD branch found, output of CLI was:\n{output}\n"
-            )));
-        }
-
+        let branch_name = resolve_default_branch_in_repo(&*self.executor, &self.path)?;
         self.checkout_branch(&branch_name)
     }
 

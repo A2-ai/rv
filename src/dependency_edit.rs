@@ -478,7 +478,7 @@ fn resolve_git_reference(
 ) -> Result<ResolvedGitRef, String> {
     if raw_ref == "HEAD" {
         let branch =
-            git::resolve_default_branch(git_exec, git_url, None).map_err(|e| e.to_string())?;
+            git::resolve_default_branch_for_url(git_exec, git_url).map_err(|e| e.to_string())?;
         return Ok(ResolvedGitRef::Branch(branch));
     }
 
