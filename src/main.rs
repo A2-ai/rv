@@ -19,8 +19,8 @@ use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
     CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
-    execute_repository_action, is_http_url, looks_like_git_http_url, parse_add_package_spec,
-    read_and_verify_config, resolve_add_options_reference_with_executor, system_req,
+    execute_repository_action, parse_add_package_spec, read_and_verify_config,
+    resolve_add_options_reference_with_executor, system_req,
 };
 
 /// rv, the R package manager
@@ -85,7 +85,7 @@ pub enum Command {
     },
     /// Add packages to the project and sync
     Add {
-        /// Package names or git repo specs like owner/repo[@ref][:subdir] or https://...[@ref][:subdir]
+        /// Package names or `owner/repo[@ref][:subdir]` shorthands for git repositories
         #[clap(value_parser, required = true)]
         packages: Vec<String>,
         #[clap(long)]
@@ -616,12 +616,6 @@ fn try_main() -> Result<()> {
             let mut added = Vec::new();
             if !add_options.has_source_options() {
                 for package in packages {
-                    if is_http_url(package.as_str()) && !looks_like_git_http_url(package.as_str()) {
-                        return Err(anyhow!(
-                            "URL `{}` does not look like a git repository. Use `--url` for archives or `--git` for git URLs.",
-                            package
-                        ));
-                    }
                     let parsed =
                         parse_add_package_spec(package.as_str(), config.git_shorthand_base_url())
                             .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;

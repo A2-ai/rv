@@ -101,9 +101,9 @@ pub fn parse_add_package_spec(
     package_spec: &str,
     git_shorthand_base_url: &str,
 ) -> Result<ParsedAddPackage, String> {
-    if is_http_url(package_spec) && !looks_like_git_http_url(package_spec) {
+    if looks_like_url_or_path(package_spec) {
         return Err(format!(
-            "URL `{package_spec}` does not look like a git repository; use `--url` for archives or `--git` for git URLs."
+            "`{package_spec}` cannot be used as a positional argument. Use `--git` for git repositories, `--url` for archives, or `--path` for local directories."
         ));
     }
 
@@ -114,9 +114,7 @@ pub fn parse_add_package_spec(
         });
     }
 
-    let is_git_url = is_git_url(package_spec);
-    let (source_with_optional_directory, reference_part) =
-        split_source_and_reference(package_spec, is_git_url);
+    let (source_with_optional_directory, reference_part) = split_source_and_reference(package_spec);
 
     let (source, reference, directory) = if let Some(reference_part) = reference_part {
         let (reference, directory) = parse_reference_and_directory(reference_part.as_str())?;
@@ -126,11 +124,7 @@ pub fn parse_add_package_spec(
         (source, None, directory)
     };
 
-    let git_url = if is_git_url {
-        source.clone()
-    } else {
-        resolve_shorthand_git_url(git_shorthand_base_url, source.as_str())?
-    };
+    let git_url = resolve_shorthand_git_url(git_shorthand_base_url, source.as_str())?;
 
     GitUrl::try_from(git_url.as_str())
         .map_err(|e| format!("Invalid git URL `{git_url}` in spec `{package_spec}`: {e}"))?;
@@ -164,88 +158,24 @@ enum ParsedReference {
     Unknown(String),
 }
 
-fn looks_like_repo_spec(package_spec: &str) -> bool {
-    if is_http_url(package_spec) {
-        return looks_like_git_http_url(package_spec);
-    }
-
-    if is_git_url(package_spec) {
-        return true;
-    }
-
-    if package_spec.starts_with("./")
+fn looks_like_url_or_path(package_spec: &str) -> bool {
+    package_spec.contains("://")
+        || package_spec.starts_with("git@")
+        || package_spec.starts_with("ssh@")
+        || package_spec.starts_with("./")
         || package_spec.starts_with("../")
         || package_spec.starts_with('/')
         || package_spec.starts_with("~/")
-    {
-        return false;
+}
+
+fn looks_like_repo_spec(package_spec: &str) -> bool {
+    !looks_like_url_or_path(package_spec) && package_spec.contains('/')
+}
+
+fn split_source_and_reference(package_spec: &str) -> (String, Option<String>) {
+    if let Some((source, reference)) = package_spec.split_once('@') {
+        return (source.to_string(), Some(reference.to_string()));
     }
-
-    package_spec.contains('/')
-}
-
-fn is_git_url(package_spec: &str) -> bool {
-    (is_http_url(package_spec) && looks_like_git_http_url(package_spec))
-        || package_spec.starts_with("git@")
-        || package_spec.starts_with("ssh@")
-}
-
-pub fn is_http_url(package_spec: &str) -> bool {
-    package_spec.starts_with("https://") || package_spec.starts_with("http://")
-}
-
-pub fn looks_like_git_http_url(package_spec: &str) -> bool {
-    sanitize_git_http_url(package_spec).ends_with(".git")
-}
-
-fn sanitize_git_http_url(package_spec: &str) -> String {
-    let mut base = package_spec
-        .split_once('@')
-        .map(|(left, _)| left)
-        .unwrap_or(package_spec)
-        .to_string();
-    if let Some(colon_idx) = base.rfind(':') {
-        let suffix = &base[colon_idx + 1..];
-        if !suffix.contains('/') {
-            base.truncate(colon_idx);
-        }
-    }
-    base.trim_end_matches('/').to_string()
-}
-
-fn split_source_and_reference(package_spec: &str, is_git_url: bool) -> (String, Option<String>) {
-    if !is_git_url {
-        if let Some((source, reference)) = package_spec.split_once('@') {
-            return (source.to_string(), Some(reference.to_string()));
-        }
-
-        return (package_spec.to_string(), None);
-    }
-
-    // URL-like inputs can contain `@` in userinfo, so only parse references from the path.
-    if package_spec.starts_with("https://") || package_spec.starts_with("http://") {
-        if let Some(path_start) = package_spec.find("://").and_then(|scheme_idx| {
-            package_spec[scheme_idx + 3..]
-                .find('/')
-                .map(|i| scheme_idx + 3 + i)
-        }) && let Some(at_idx) = package_spec[path_start..].rfind('@')
-        {
-            let at_idx = path_start + at_idx;
-            return (
-                package_spec[..at_idx].to_string(),
-                Some(package_spec[at_idx + 1..].to_string()),
-            );
-        }
-    } else if let Some(host_sep) = package_spec.find(':')
-        && let Some(at_idx) = package_spec[host_sep + 1..].rfind('@')
-    {
-        let at_idx = host_sep + 1 + at_idx;
-        return (
-            package_spec[..at_idx].to_string(),
-            Some(package_spec[at_idx + 1..].to_string()),
-        );
-    }
-
     (package_spec.to_string(), None)
 }
 
@@ -335,38 +265,15 @@ fn resolve_shorthand_git_url(base_url: &str, source: &str) -> Result<String, Str
         return Err("Git shorthand source cannot be empty".to_string());
     }
 
-    let full_url = if trimmed_base.ends_with(':') {
-        format!("{trimmed_base}{source}")
-    } else {
-        format!("{}/{}", trimmed_base.trim_end_matches('/'), source)
-    };
-
-    Ok(full_url)
+    Ok(format!("{}/{}", trimmed_base.trim_end_matches('/'), source))
 }
 
 fn extract_package_name(source: &str) -> Result<String, String> {
-    let source = source.trim_end_matches('/');
-
-    let repo_part = if source.starts_with("https://") || source.starts_with("http://") {
-        source
-            .find("://")
-            .and_then(|scheme_idx| {
-                source[scheme_idx + 3..]
-                    .find('/')
-                    .map(|i| scheme_idx + 3 + i + 1)
-            })
-            .map(|path_start| source[path_start..].to_string())
-    } else if source.starts_with("git@") || source.starts_with("ssh@") {
-        source.split_once(':').map(|(_, path)| path.to_string())
-    } else {
-        Some(source.to_string())
-    };
-
-    let repo_part = repo_part.ok_or_else(|| format!("Invalid repository spec `{source}`"))?;
-    let package_name = repo_part
-        .split('/')
-        .next_back()
-        .map(|v| v.trim_end_matches(".git").to_string())
+    let package_name = source
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .map(str::to_string)
         .unwrap_or_default();
 
     if package_name.is_empty() {
@@ -896,33 +803,30 @@ mod tests {
     }
 
     #[test]
-    fn parse_https_git_url_with_tag() {
-        let parsed = parse_add_package_spec(
-            "https://github.com/r-lib/cli.git@tag:v3.6.2",
+    fn parse_https_url_rejected_as_positional() {
+        let err = parse_add_package_spec(
+            "https://github.com/r-lib/cli.git",
             DEFAULT_GIT_SHORTHAND_BASE_URL,
         )
-        .unwrap();
-        assert_eq!(parsed.name, "cli");
-        assert_eq!(
-            parsed.options.git.as_deref(),
-            Some("https://github.com/r-lib/cli.git")
-        );
-        assert_eq!(parsed.options.tag.as_deref(), Some("v3.6.2"));
+        .unwrap_err();
+        assert!(err.contains("--git"), "error should mention --git: {err}");
     }
 
     #[test]
-    fn parse_ssh_git_url_with_reference() {
-        let parsed = parse_add_package_spec(
-            "git@github.com:r-lib/cli.git@main",
+    fn parse_ssh_url_rejected_as_positional() {
+        let err = parse_add_package_spec(
+            "git@github.com:r-lib/cli.git",
             DEFAULT_GIT_SHORTHAND_BASE_URL,
         )
-        .unwrap();
-        assert_eq!(parsed.name, "cli");
-        assert_eq!(
-            parsed.options.git.as_deref(),
-            Some("git@github.com:r-lib/cli.git")
-        );
-        assert_eq!(parsed.options.reference.as_deref(), Some("main"));
+        .unwrap_err();
+        assert!(err.contains("--git"), "error should mention --git: {err}");
+    }
+
+    #[test]
+    fn parse_local_path_rejected_as_positional() {
+        let err =
+            parse_add_package_spec("./local/pkg", DEFAULT_GIT_SHORTHAND_BASE_URL).unwrap_err();
+        assert!(err.contains("--path"), "error should mention --path: {err}");
     }
 
     #[test]
