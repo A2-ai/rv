@@ -620,9 +620,16 @@ fn try_main() -> Result<()> {
                         parse_add_package_spec(package.as_str(), config.git_shorthand_base_url())
                             .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
 
+                    if add_options.force_source && parsed.options.git.is_some() {
+                        return Err(anyhow!(
+                            "--force-source cannot be used with the `{package}` git shorthand. --force-source only applies to packages from a configured repository."
+                        ));
+                    }
+
                     let mut options = parsed.options;
                     options.install_suggestions = add_options.install_suggestions;
                     options.dependencies_only = add_options.dependencies_only;
+                    options.force_source = add_options.force_source;
                     resolve_add_options_reference_with_executor(&mut options, &GitExecutor {})
                         .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
                     added.extend(add_packages(&mut doc, vec![parsed.name], options)?);

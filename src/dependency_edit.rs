@@ -7,7 +7,7 @@ use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 #[cfg(feature = "cli")]
 use clap::Parser;
 
-use crate::git::{CommandExecutor, GitExecutor};
+use crate::git::{self, CommandExecutor, GitExecutor};
 use crate::{Config, config::ConfigLoadError, git::url::GitUrl};
 
 pub const DEFAULT_GIT_SHORTHAND_BASE_URL: &str = "https://github.com";
@@ -66,11 +66,7 @@ impl AddOptions {
     }
 
     pub fn has_source_options(&self) -> bool {
-        self.repository.is_some()
-            || self.force_source
-            || self.git.is_some()
-            || self.path.is_some()
-            || self.url.is_some()
+        self.repository.is_some() || self.git.is_some() || self.path.is_some() || self.url.is_some()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -481,9 +477,9 @@ fn resolve_git_reference(
     raw_ref: &str,
 ) -> Result<ResolvedGitRef, String> {
     if raw_ref == "HEAD" {
-        return Ok(ResolvedGitRef::Branch(resolve_default_branch(
-            git_exec, git_url,
-        )?));
+        let branch =
+            git::resolve_default_branch(git_exec, git_url, None).map_err(|e| e.to_string())?;
+        return Ok(ResolvedGitRef::Branch(branch));
     }
 
     if let Some(branch_name) = raw_ref.strip_prefix("refs/heads/") {
@@ -507,33 +503,6 @@ fn resolve_git_reference(
             "Ambiguous git ref `{raw_ref}` for `{git_url}` (both branch and tag). Use `@branch:` or `@tag:`."
         )),
     }
-}
-
-fn resolve_default_branch(
-    git_exec: &impl CommandExecutor,
-    git_url: &str,
-) -> Result<String, String> {
-    let output = git_exec
-        .execute(
-            Command::new("git")
-                .arg("ls-remote")
-                .arg("--symref")
-                .arg(git_url)
-                .arg("HEAD"),
-        )
-        .map_err(|e| format!("Failed to resolve default branch for `{git_url}`: {e}"))?;
-
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("ref: refs/heads/") {
-            if let Some(name) = rest.split_whitespace().next() {
-                return Ok(name.trim().to_string());
-            }
-        }
-    }
-
-    Err(format!(
-        "Could not determine default branch for `{git_url}` from `git ls-remote` output."
-    ))
 }
 
 fn git_ls_remote_has_ref(
