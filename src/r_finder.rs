@@ -53,6 +53,29 @@ impl RInstall {
             is_devel: false,
         }
     }
+
+    #[cfg(feature = "cli")]
+    pub fn try_from_bin<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+        let bin_path = path.as_ref().to_path_buf();
+
+        anyhow::ensure!(bin_path.exists(), "R binary not found: {:?}", bin_path);
+
+        // R binary one level up is resources then we go to inlcude/Rversion.h to read from
+        let parent = bin_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine parent from path: {:?}", bin_path))?;
+
+        let header = parent.join("include").join("Rversion.h");
+
+        let (version, is_devel) = read_version_from_header(&header)
+            .ok_or_else(|| anyhow::anyhow!("Could not read version from {:?}", header))?;
+
+        Ok(Self {
+            bin_path,
+            version,
+            is_devel,
+        })
+    }
 }
 
 impl Display for RInstall {

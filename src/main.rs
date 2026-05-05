@@ -13,7 +13,7 @@ use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
     find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies, tree,
 };
-use rv::r_finder::get_r_from_path;
+use rv::r_finder::{RInstall, get_r_from_path};
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
@@ -36,6 +36,10 @@ pub struct Cli {
     /// Path to a config file other than rproject.toml in the current directory
     #[clap(short = 'c', long, default_value = "rproject.toml", global = true)]
     pub config_file: PathBuf,
+
+    /// Path to an R binary to use instead of automatic discovery
+    #[clap(long, global = true)]
+    pub r_bin: Option<PathBuf>,
 
     #[clap(subcommand)]
     pub command: Command,
@@ -344,6 +348,11 @@ fn try_main() -> Result<()> {
         .filter(Some("os_info"), log::LevelFilter::Off)
         .init();
 
+    let r_lookup = match cli.r_bin {
+        Some(ref bin) => RCommandLookup::Explicit(RInstall::try_from_bin(bin)?),
+        None => RCommandLookup::Strict,
+    };
+
     match cli.command {
         Command::Init {
             project_directory,
@@ -490,8 +499,8 @@ fn try_main() -> Result<()> {
         Command::Sync {
             save_install_logs_in,
         } => {
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let mut context =
+                Context::new(&cli.config_file, r_lookup.clone()).map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -575,8 +584,8 @@ fn try_main() -> Result<()> {
                 }
                 return Ok(());
             }
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let mut context =
+                Context::new(&cli.config_file, r_lookup.clone()).map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -623,8 +632,8 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
 
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let mut context =
+                Context::new(&cli.config_file, r_lookup.clone()).map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -647,8 +656,8 @@ fn try_main() -> Result<()> {
             .run(&context, resolve_mode)?;
         }
         Command::Upgrade { dry_run } => {
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let mut context =
+                Context::new(&cli.config_file, r_lookup.clone()).map_err(|e| anyhow!("{e}"))?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -953,8 +962,8 @@ fn try_main() -> Result<()> {
         }
 
         Command::Run { args } => {
-            let context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let context =
+                Context::new(&cli.config_file, r_lookup.clone()).map_err(|e| anyhow!("{e}"))?;
             let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
             std::process::exit(code);
         }

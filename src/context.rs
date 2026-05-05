@@ -30,6 +30,8 @@ pub enum RCommandLookup {
     /// Used when finding the RCommand is not required, primarily for information commands like
     /// cache, library, etc.
     Skip,
+    /// Use a specific R binary directly, bypassing all discovery
+    Explicit(RInstall),
 }
 
 impl From<Option<Version>> for RCommandLookup {
@@ -93,22 +95,27 @@ impl Context {
         let r_version = match r_command_lookup {
             RCommandLookup::Strict | RCommandLookup::Skip => config.r_version().clone(),
             RCommandLookup::Soft(ref v) => v.clone(),
+            RCommandLookup::Explicit(ref install) => install.version.clone(),
         };
-        let r_cmd = match find_r_install(&r_version, config.use_devel()) {
-            Some(r_install) => r_install,
-            None => match r_command_lookup {
-                RCommandLookup::Strict => {
-                    return Err(format!(
-                        "Could not find an R version matching {}",
-                        r_version.original
-                    )
-                    .into());
-                }
-                RCommandLookup::Soft(_) => {
-                    r_version_found = false;
-                    RInstall::default_from_path()
-                }
-                RCommandLookup::Skip => RInstall::default_from_path(),
+        let r_cmd = match r_command_lookup {
+            RCommandLookup::Explicit(install) => install,
+            _ => match find_r_install(&r_version, config.use_devel()) {
+                Some(r_install) => r_install,
+                None => match r_command_lookup {
+                    RCommandLookup::Strict => {
+                        return Err(format!(
+                            "Could not find an R version matching {}",
+                            r_version.original
+                        )
+                        .into());
+                    }
+                    RCommandLookup::Soft(_) => {
+                        r_version_found = false;
+                        RInstall::default_from_path()
+                    }
+                    RCommandLookup::Skip => RInstall::default_from_path(),
+                    RCommandLookup::Explicit(_) => unreachable!(),
+                },
             },
         };
 
