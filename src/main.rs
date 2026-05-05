@@ -593,16 +593,26 @@ fn try_main() -> Result<()> {
 
             // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
-            let config = Config::from_file(&cli.config_file)?;
+
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
 
             // Validate repository alias exists if specified
             if let Some(ref repo_alias) = add_options.repository {
-                let repo_exists = config.repositories().iter().any(|r| r.alias == *repo_alias);
+                let repo_exists = context
+                    .config
+                    .repositories()
+                    .iter()
+                    .any(|r| r.alias == *repo_alias);
                 if !repo_exists {
                     return Err(anyhow::anyhow!(
                         "Repository alias '{}' not found in config. Available repositories: {}",
                         repo_alias,
-                        config
+                        context
+                            .config
                             .repositories()
                             .iter()
                             .map(|r| r.alias.as_str())
@@ -616,9 +626,11 @@ fn try_main() -> Result<()> {
             let mut added = Vec::new();
             if !add_options.has_source_options() {
                 for package in packages {
-                    let parsed =
-                        parse_add_package_spec(package.as_str(), config.git_shorthand_base_url())
-                            .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
+                    let parsed = parse_add_package_spec(
+                        package.as_str(),
+                        context.config.git_shorthand_base_url(),
+                    )
+                    .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
 
                     if add_options.force_source && parsed.options.git.is_some() {
                         return Err(anyhow!(
@@ -630,14 +642,35 @@ fn try_main() -> Result<()> {
                     options.install_suggestions = add_options.install_suggestions;
                     options.dependencies_only = add_options.dependencies_only;
                     options.force_source = add_options.force_source;
-                    resolve_add_options_reference_with_executor(&mut options, &GitExecutor {})
-                        .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
-                    added.extend(add_packages(&mut doc, vec![parsed.name], options)?);
+                    let resolved_ref =
+                        resolve_add_options_reference_with_executor(&mut options, &GitExecutor {})
+                            .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
+
+                    let final_name = match (parsed.name, resolved_ref, options.git.as_deref()) {
+                        (None, Some(ref_), Some(git_url)) => {
+                            rv::fetch_package_name_from_description(
+                                git_url,
+                                options.directory.as_deref(),
+                                &ref_,
+                                &context.cache,
+                                GitExecutor {},
+                            )
+                            .map_err(|e| anyhow!("Failed to add `{package}`: {e}"))?
+                        }
+                        (Some(name), _, _) => name,
+                        _ => unreachable!(
+                            "parser invariant: git-spec → name=None+git=Some, simple → name=Some"
+                        ),
+                    };
+                    added.extend(add_packages(&mut doc, vec![final_name], options)?);
                 }
             } else {
                 let mut resolved_options = add_options.clone();
-                resolve_add_options_reference_with_executor(&mut resolved_options, &GitExecutor {})
-                    .map_err(|e| anyhow!("Invalid package spec: {e}"))?;
+                let _ = resolve_add_options_reference_with_executor(
+                    &mut resolved_options,
+                    &GitExecutor {},
+                )
+                .map_err(|e| anyhow!("Invalid package spec: {e}"))?;
                 added.extend(add_packages(&mut doc, packages, resolved_options)?);
             }
             // write the update if not dry run
@@ -658,12 +691,7 @@ fn try_main() -> Result<()> {
                 }
                 return Ok(());
             }
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
 
-            if !log_enabled {
-                context.show_progress_bar();
-            }
             // Keep config edits in-memory during sync; persist only after successful sync.
             context.config = updated_config_toml.parse::<Config>()?;
             let resolve_mode = ResolveMode::Default;
