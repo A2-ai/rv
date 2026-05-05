@@ -11,7 +11,7 @@ use serde_json::json;
 use anyhow::anyhow;
 use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
-    find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies, tree,
+    find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies, tree, update_rv,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
@@ -206,6 +206,18 @@ pub enum Command {
         #[clap(subcommand)]
         subcommand: DocsSubcommand,
     },
+    /// Manage rv itself
+    #[clap(name = "self")]
+    RvSelf {
+        #[clap(subcommand)]
+        subcommand: SelfSubcommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SelfSubcommand {
+    /// Update rv to the latest version
+    Update,
 }
 
 #[derive(Debug, Subcommand)]
@@ -950,6 +962,12 @@ fn try_main() -> Result<()> {
             let cmd = Cli::command();
             let output = cli_docs::generate_commands_list(&cmd, !no_description);
             println!("{}", output);
+        }
+
+        Command::RvSelf {
+            subcommand: SelfSubcommand::Update,
+        } => {
+            update_rv()?;
         }
 
         Command::Run { args } => {

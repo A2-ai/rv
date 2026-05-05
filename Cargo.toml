@@ -56,6 +56,7 @@ jiff = { version = "0.2", optional = true }
 ctrlc = { version = "3", optional = true, features = ["termination"] }
 libc = "0.2.172"
 taplo = "0.14.0"
+self_update = {version = "0.44", optional = true, features = ["archive-tar", "compression-flate2"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs"] }
@@ -69,6 +70,7 @@ cli = [
   "dep:env_logger",
   "dep:jiff",
   "dep:ctrlc",
+  "dep:self_update"
 ]
 
 [dev-dependencies]
