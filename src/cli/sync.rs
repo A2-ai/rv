@@ -136,7 +136,7 @@ impl SyncHelper {
                         let installed_count = changes.iter().filter(|c| c.installed).count();
                         let removed_count = changes.iter().filter(|c| !c.installed).count();
 
-                        print_grouped_changes(&changes, !self.dry_run, !sysdeps_status.is_empty());
+                        print_grouped_changes(&changes, self.dry_run, !sysdeps_status.is_empty());
 
                         if !self.dry_run {
                             println!(
@@ -162,7 +162,7 @@ impl SyncHelper {
 }
 
 /// Print changes grouped by section with aligned columns
-fn print_grouped_changes(changes: &[SyncChange], include_timings: bool, supports_sysdeps: bool) {
+fn print_grouped_changes(changes: &[SyncChange], dry_run: bool, supports_sysdeps: bool) {
     if changes.is_empty() {
         println!("Nothing to do");
         return;
@@ -187,7 +187,11 @@ fn print_grouped_changes(changes: &[SyncChange], include_timings: bool, supports
         .map(|c| c.version.as_ref().map(|v| v.len()).unwrap_or(0))
         .max()
         .unwrap_or(0);
-    let max_kind = 6; // "binary" or "source"
+    let max_kind = installed
+        .iter()
+        .map(|c| c.kind_display().len())
+        .max()
+        .unwrap_or(0);
     let max_source = installed
         .iter()
         .map(|c| c.source_display().len())
@@ -205,10 +209,10 @@ fn print_grouped_changes(changes: &[SyncChange], include_timings: bool, supports
 
     for section in section_order {
         if let Some(items) = sections.get(&section) {
-            println!("{} ({}):", section.header(), items.len());
+            println!("{} ({}):", section.header(dry_run), items.len());
             for c in items {
                 if c.installed {
-                    let timing_str = if include_timings {
+                    let timing_str = if !dry_run {
                         format!("  {:>8}", format_duration(c.timing.unwrap()))
                     } else {
                         String::new()
@@ -218,7 +222,7 @@ fn print_grouped_changes(changes: &[SyncChange], include_timings: bool, supports
                         "  + {:<name_w$}  {:>ver_w$}  {:<kind_w$}  {:<src_w$}{}{}",
                         c.name,
                         c.version.as_ref().unwrap(),
-                        c.kind.unwrap(),
+                        c.kind_display(),
                         c.source_display(),
                         timing_str,
                         sys_deps_str,

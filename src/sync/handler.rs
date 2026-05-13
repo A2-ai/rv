@@ -9,7 +9,7 @@ use crate::lockfile::Source;
 use crate::package::PackageType;
 #[cfg(feature = "cli")]
 use crate::r_cmd::kill_all_r_processes;
-use crate::r_cmd::{InstallError, InstallErrorKind};
+use crate::r_cmd::{RCmdError, RCmdErrorKind};
 use crate::sync::changes::{CacheSource, SyncChange};
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::{LinkMode, sources};
@@ -199,10 +199,13 @@ impl<'a> SyncHandler<'a> {
                         )
                         .or_else(|e| {
                             log::warn!(
-                                "Failed to download source tarball from {}: {e:?}, trying archive",
+                                "Failed to download source tarball from {}: {e}, trying archive",
                                 tarball_url.source
                             );
-                            crate::http::download_to_file(&tarball_url.archive, &tarball_path)
+                            crate::http::download_to_file(
+                                &tarball_url.source_archive,
+                                &tarball_path,
+                            )
                         });
 
                         // Send result with name for tracking
@@ -266,6 +269,17 @@ impl<'a> SyncHandler<'a> {
         Vec::new()
     }
 
+    /// Check whether stripping should be applied for a package.
+    /// Returns false if the package is listed in [project.no_strip].
+    fn should_strip(&self, package_name: &str) -> bool {
+        !self
+            .context
+            .config
+            .no_strip()
+            .iter()
+            .any(|name| name == package_name)
+    }
+
     fn copy_package(&self, dep: &ResolvedDependency) -> Result<(), SyncError> {
         if self.dry_run {
             return Ok(());
@@ -296,6 +310,7 @@ impl<'a> SyncHandler<'a> {
         let staging_path = self.context.staging_path();
         let library_dirs = vec![&staging_path, self.context.library.path()];
         let configure_args = self.get_configure_args(&dep.name);
+        let strip = self.should_strip(&dep.name);
 
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
@@ -304,6 +319,7 @@ impl<'a> SyncHandler<'a> {
                 &self.context.cache,
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
@@ -313,6 +329,7 @@ impl<'a> SyncHandler<'a> {
                 r_cmd,
                 &GitExecutor {},
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Local { .. } => sources::local::install_package(
@@ -322,6 +339,7 @@ impl<'a> SyncHandler<'a> {
                 self.context.cache.local(),
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Url { .. } => sources::url::install_package(
@@ -330,6 +348,7 @@ impl<'a> SyncHandler<'a> {
                 self.context.cache.local(),
                 r_cmd,
                 &configure_args,
+                strip,
                 cancellation,
             ),
             Source::Builtin { .. } => Ok(()),
@@ -480,16 +499,16 @@ impl<'a> SyncHandler<'a> {
                 });
             }
 
+            if *notify {
+                sync_changes.push(SyncChange::removed(dir_name));
+            }
+
             // Only actually remove the deps if we are not going to do any other changes.
             if !needs_sync {
                 let p = self.context.library.path().join(dir_name);
                 if !self.dry_run && *notify {
                     log::debug!("Removing {dir_name} from library");
                     fs::remove_dir_all(&p)?;
-                }
-
-                if *notify {
-                    sync_changes.push(SyncChange::removed(dir_name));
                 }
             }
         }
@@ -638,8 +657,10 @@ impl<'a> SyncHandler<'a> {
 
                         match install_result {
                             Ok(_) => {
+                                let is_binary = dep.kind == PackageType::Binary;
+                                let binary_cached =
+                                    !is_binary && dep.cache_status.binary_available();
                                 let cache_source = {
-                                    let is_binary = dep.kind == PackageType::Binary;
                                     if is_binary {
                                         if dep.cache_status.global_binary_available() {
                                             Some(CacheSource::Global)
@@ -648,8 +669,16 @@ impl<'a> SyncHandler<'a> {
                                         } else {
                                             None // Downloaded
                                         }
+                                    } else if binary_cached {
+                                        if dep.cache_status.global_binary_available() {
+                                            Some(CacheSource::Global)
+                                        } else if dep.cache_status.local_binary_available() {
+                                            Some(CacheSource::Local)
+                                        } else {
+                                            None
+                                        }
                                     } else {
-                                        // Source package
+                                        // Source package without cached binary
                                         if dep
                                             .cache_status
                                             .global
@@ -676,6 +705,7 @@ impl<'a> SyncHandler<'a> {
                                         .cloned()
                                         .unwrap_or_default(),
                                     cache_source,
+                                    binary_cached,
                                 );
                                 let mut plan = plan.lock().unwrap();
                                 plan.mark_installed(&dep.name);
@@ -699,8 +729,10 @@ impl<'a> SyncHandler<'a> {
                             Err(e) => {
                                 has_errors_clone.store(true, Ordering::Relaxed);
 
-                                if let SyncErrorKind::InstallError(InstallError {
-                                    source: InstallErrorKind::InstallationFailed(msg),
+                                if let SyncErrorKind::RCmdError(RCmdError {
+                                    source:
+                                        RCmdErrorKind::InstallationFailed(msg)
+                                        | RCmdErrorKind::BuildFailed(msg),
                                     ..
                                 }) = &e.source
                                     && let Some(log_folder) = &save_install_logs_in_clone
@@ -776,16 +808,12 @@ impl<'a> SyncHandler<'a> {
         } else {
             // If we are there, it means we are successful.
 
-            // mv new packages to the library and delete the ones that need to be removed
+            // Delete the packages that need to be removed from the library
             for (name, notify) in deps_to_remove {
-                let p = self.context.library.path().join(name);
-                if !self.dry_run && notify {
+                if notify {
+                    let p = self.context.library.path().join(name);
                     log::debug!("Removing {name} from library");
                     fs::remove_dir_all(&p)?;
-                }
-
-                if notify {
-                    sync_changes.push(SyncChange::removed(name));
                 }
             }
 

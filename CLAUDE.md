@@ -58,6 +58,12 @@ All environment variable names are defined in `src/consts.rs`.
 | `RV_GLOBAL_CACHE_DIR` | unset | Path to shared cache for multi-user systems. Directory must exist |
 | `PKGCACHE_TIMEOUT` | 3600 (1 hour) | Package database cache TTL in seconds. Compatible with R's pkgcache |
 
+### Library Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RV_LIBRARY_DIR` | unset | Override the project library directory. Supports absolute and relative paths (resolved against project dir). Takes precedence over the `library` field in `rproject.toml` |
+
 ### Performance Tuning
 
 | Variable | Default | Description |

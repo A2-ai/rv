@@ -616,6 +616,14 @@ impl Lockfile {
     pub fn version(&self) -> i64 {
         self.version
     }
+
+    pub fn packages(&self) -> &[LockedPackage] {
+        &self.packages
+    }
+
+    pub fn r_version_string(&self) -> &str {
+        &self.r_version
+    }
 }
 
 impl FromStr for Lockfile {

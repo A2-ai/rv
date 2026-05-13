@@ -35,7 +35,8 @@ pub fn migrate_renv(
     let abs_renv_file = absolute(renv_file.as_ref())?;
     let project_name = abs_renv_file
         .parent()
-        .and_then(|p| p.to_str())
+        .and_then(|p| p.file_name())
+        .and_then(|f| f.to_str())
         .unwrap_or("renv migrated project");
 
     // use the repositories and r version from the renv.lock to determine the repository databases

@@ -1,5 +1,5 @@
 use crate::http::HttpError;
-use crate::r_cmd::InstallError;
+use crate::r_cmd::RCmdError;
 use crate::sync::LinkError;
 use std::fmt;
 use std::fmt::Formatter;
@@ -20,7 +20,7 @@ pub enum SyncErrorKind {
     #[error("Failed to link files from cache: {0}")]
     LinkError(LinkError),
     #[error(transparent)]
-    InstallError(InstallError),
+    RCmdError(RCmdError),
     #[error("Failed to download package: {0}")]
     HttpError(HttpError),
     #[error("{0}")]
@@ -33,10 +33,10 @@ pub enum SyncErrorKind {
     InvalidPackage { path: PathBuf, error: String },
 }
 
-impl From<InstallError> for SyncError {
-    fn from(error: InstallError) -> Self {
+impl From<RCmdError> for SyncError {
+    fn from(error: RCmdError) -> Self {
         Self {
-            source: SyncErrorKind::InstallError(error),
+            source: SyncErrorKind::RCmdError(error),
         }
     }
 }

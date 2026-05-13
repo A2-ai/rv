@@ -14,3 +14,6 @@ logs/
 dist/
 global-cache/
 drift-reviews/
+
+# Claude code
+.claude/settings.local.json

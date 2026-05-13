@@ -10,8 +10,8 @@ use serde_json::json;
 
 use anyhow::anyhow;
 use rv::cli::{
-    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, find_r_repositories, init,
-    init_structure, migrate_renv, resolve_dependencies, tree,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
+    find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies, tree,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
@@ -24,7 +24,7 @@ use rv::{
 
 /// rv, the R package manager
 #[derive(Parser)]
-#[clap(version, author, about, subcommand_negates_reqs = true)]
+#[clap(version = env!("RV_LONG_VERSION"), author, about, subcommand_negates_reqs = true)]
 pub struct Cli {
     #[command(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
@@ -53,8 +53,8 @@ pub enum Command {
         #[clap(long)]
         /// Do no populated repositories
         no_repositories: bool,
-        #[clap(long, value_parser, num_args = 1..)]
-        /// Add simple packages to the config
+        #[clap(long, action = clap::ArgAction::Append)]
+        /// Add simple package to the config (repeatable, e.g. --add pkg1 --add pkg2)
         add: Vec<String>,
         #[clap(long)]
         /// Turn off rv access through .rv R environment
@@ -67,6 +67,11 @@ pub enum Command {
     Migrate {
         #[clap(subcommand)]
         subcommand: MigrateSubcommand,
+    },
+    /// Export rv project to other formats
+    Export {
+        #[clap(subcommand)]
+        subcommand: ExportSubcommand,
     },
     /// Replaces the library with exactly what is in the lock file
     Sync {
@@ -190,6 +195,12 @@ pub enum Command {
     },
     /// Deactivate an rv project
     Deactivate,
+    /// Run an Rscript command with the project library paths configured
+    #[clap(trailing_var_arg = true)]
+    Run {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Generate CLI documentation (experimental - output format may change)
     Docs {
         #[clap(subcommand)]
@@ -301,6 +312,16 @@ pub enum MigrateSubcommand {
         #[clap(long)]
         /// Turn off rv access through .rv R environment
         no_r_environment: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ExportSubcommand {
+    /// Export to renv.lock format
+    Renv {
+        /// Output file path
+        #[clap(long, short, default_value = "renv.lock")]
+        output: PathBuf,
     },
 }
 
@@ -442,6 +463,28 @@ fn try_main() -> Result<()> {
                 for u in &unresolved {
                     eprintln!("    {u}");
                 }
+            }
+        }
+        Command::Export {
+            subcommand: ExportSubcommand::Renv { output },
+        } => {
+            let warnings = export_renv(&cli.config_file, &output)?;
+            if output_format.is_json() {
+                println!(
+                    "{}",
+                    json!({
+                        "success": true,
+                        "output": output.display().to_string(),
+                        "warnings": warnings,
+                    })
+                );
+            } else {
+                if !warnings.is_empty() {
+                    for w in &warnings {
+                        eprintln!("WARNING: {w}");
+                    }
+                }
+                println!("Successfully exported to {}", output.display());
             }
         }
         Command::Sync {
@@ -907,6 +950,13 @@ fn try_main() -> Result<()> {
             let cmd = Cli::command();
             let output = cli_docs::generate_commands_list(&cmd, !no_description);
             println!("{}", output);
+        }
+
+        Command::Run { args } => {
+            let context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            std::process::exit(code);
         }
 
         Command::Configure { subcommand } => {

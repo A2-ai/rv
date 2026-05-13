@@ -137,7 +137,9 @@ impl Context {
             None
         };
 
-        let mut library = if let Some(p) = config.library() {
+        let mut library = if let Ok(p) = std::env::var(crate::consts::LIBRARY_DIR_ENV_VAR_NAME) {
+            Library::new_custom(&project_dir, PathBuf::from(p))
+        } else if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
         } else {
             Library::new(&project_dir, cache.system_info(), r_version.major_minor())

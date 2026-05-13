@@ -1,0 +1,13 @@
+---
+source: tests/cli_tree_cycle.rs
+assertion_line: 100
+expression: stdout
+---
+▶ a [version: 1.0.0, source: https://diamond.test/repo, type: source]
+├─ b [version: 1.0.0, source: https://diamond.test/repo, type: source]
+│ └─ d [version: 1.0.0, source: https://diamond.test/repo, type: source]
+│   └─ e [version: 1.0.0, source: https://diamond.test/repo, type: source]
+└─ c [version: 1.0.0, source: https://diamond.test/repo, type: source]
+  └─ d [version: 1.0.0, source: https://diamond.test/repo, type: source] (*)
+
+(*) dependency already shown above
