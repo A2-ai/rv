@@ -75,11 +75,13 @@ pub fn read_and_verify_config(
     Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
 
+/// Adds the given packages to the dependencies array, skipping any already present.
+/// Returns the names of packages actually appended (in input order).
 pub fn add_packages(
     config_doc: &mut DocumentMut,
     packages: Vec<String>,
     options: AddOptions,
-) -> Result<(), DependencyEditError> {
+) -> Result<Vec<String>, DependencyEditError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
 
@@ -94,6 +96,7 @@ pub fn add_packages(
         .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
         .collect::<Vec<_>>();
 
+    let mut added = Vec::new();
     // Determine if the dep to add is in the config, if not add it
     for package_name in packages {
         if !config_dep_names.contains(&package_name) {
@@ -103,6 +106,7 @@ pub fn add_packages(
             if let Some(last) = config_deps.iter_mut().last() {
                 last.decor_mut().set_prefix("\n    ");
             }
+            added.push(package_name);
         }
     }
 
@@ -110,7 +114,7 @@ pub fn add_packages(
     config_deps.set_trailing("\n");
     config_deps.set_trailing_comma(true);
 
-    Ok(())
+    Ok(added)
 }
 
 fn create_dependency_value(
@@ -193,13 +197,15 @@ fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
     deps
 }
 
+/// Removes the given packages from the dependencies array.
+/// Returns the names of packages actually removed (in the order they appeared in the config).
 pub fn remove_packages(
     config_doc: &mut DocumentMut,
     packages: Vec<String>,
-) -> Result<(), DependencyEditError> {
+) -> Result<Vec<String>, DependencyEditError> {
     let config_deps = get_mut_array(config_doc);
 
-    // Remove packages that match the names provided
+    let mut removed = Vec::new();
     config_deps.retain(|v| {
         let dep_name = match v {
             Value::String(s) => s.value().as_str(),
@@ -207,15 +213,19 @@ pub fn remove_packages(
             _ => "",
         };
 
-        // Keep the element if it doesn't match any package to remove
-        !packages.iter().any(|p| p.as_str() == dep_name)
+        if packages.iter().any(|p| p.as_str() == dep_name) {
+            removed.push(dep_name.to_string());
+            false
+        } else {
+            true
+        }
     });
 
     // Set a trailing new line and comma for the last element for proper formatting
     config_deps.set_trailing("\n");
     config_deps.set_trailing_comma(true);
 
-    Ok(())
+    Ok(removed)
 }
 
 #[derive(Debug, thiserror::Error)]
