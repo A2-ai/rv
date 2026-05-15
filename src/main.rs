@@ -77,6 +77,10 @@ pub enum Command {
     Sync {
         #[clap(long)]
         save_install_logs_in: Option<PathBuf>,
+        /// Fail if the lockfile is missing or out of sync with the config.
+        /// Intended for CI and reproducible installs.
+        #[clap(long)]
+        locked: bool,
     },
     /// Add packages to the project and sync
     Add {
@@ -116,6 +120,10 @@ pub enum Command {
         /// The command will not error even if this R version is not found
         #[clap(long)]
         r_version: Option<Version>,
+        /// Fail if the lockfile is missing or out of sync with the config.
+        /// Intended for CI and reproducible installs.
+        #[clap(long)]
+        locked: bool,
     },
     /// Provide a summary about the project status
     Summary {
@@ -489,6 +497,7 @@ fn try_main() -> Result<()> {
         }
         Command::Sync {
             save_install_logs_in,
+            locked,
         } => {
             let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
@@ -504,6 +513,7 @@ fn try_main() -> Result<()> {
                 dry_run: false,
                 output_format: Some(output_format),
                 save_install_logs_in,
+                locked,
                 ..Default::default()
             }
             .run(&context, resolve_mode)?;
@@ -664,7 +674,14 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Plan { upgrade, r_version } => {
+        Command::Plan {
+            upgrade,
+            r_version,
+            locked,
+        } => {
+            if locked && upgrade {
+                return Err(anyhow!("--locked and --upgrade are mutually exclusive"));
+            }
             let upgrade = if upgrade || r_version.is_some() {
                 ResolveMode::FullUpgrade
             } else {
@@ -683,6 +700,7 @@ fn try_main() -> Result<()> {
             SyncHelper {
                 dry_run: true,
                 output_format: Some(output_format),
+                locked,
                 ..Default::default()
             }
             .run(&context, upgrade)?;

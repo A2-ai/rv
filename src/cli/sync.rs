@@ -37,6 +37,7 @@ pub struct SyncHelper {
     pub output_format: Option<OutputFormat>,
     pub save_install_logs_in: Option<PathBuf>,
     pub exit_on_failure: bool,
+    pub locked: bool,
 }
 
 impl Default for SyncHelper {
@@ -46,6 +47,7 @@ impl Default for SyncHelper {
             output_format: None,
             save_install_logs_in: None,
             exit_on_failure: true,
+            locked: false,
         }
     }
 }
@@ -56,10 +58,34 @@ impl SyncHelper {
         context: &'a Context,
         resolve_mode: ResolveMode,
     ) -> Result<Resolution<'a>> {
+        if self.locked && !context.config.use_lockfile() {
+            return Err(anyhow::anyhow!(
+                "`--locked` requires the lockfile to be enabled in rproject.toml"
+            ));
+        }
+
         let sync_start = std::time::Instant::now();
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
         let resolution = resolve_dependencies(context, resolve_mode, self.exit_on_failure);
+
+        if self.locked {
+            let new_lockfile =
+                Lockfile::from_resolved(&context.r_version.major_minor(), resolution.found.clone());
+            if let Some(lockfile) = &context.lockfile {
+                if lockfile != &new_lockfile {
+                    return Err(anyhow::anyhow!(
+                        "the lockfile {} needs to be updated but --locked was passed to prevent this",
+                        context.config.lockfile_name()
+                    ));
+                }
+            } else if !new_lockfile.packages().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "`--locked` was set but no lockfile was found at {}. Run `rv sync` (without --locked) to generate one.",
+                    context.lockfile_path().display()
+                ));
+            }
+        }
 
         match timeit!(
             if self.dry_run {
@@ -80,7 +106,7 @@ impl SyncHelper {
             }
         ) {
             Ok(mut changes) => {
-                if !self.dry_run && context.config.use_lockfile() {
+                if !self.dry_run && context.config.use_lockfile() && !self.locked {
                     if resolution.found.is_empty() {
                         // delete the lockfiles if there are no dependencies
                         let lockfile_path = context.lockfile_path();
