@@ -211,31 +211,35 @@ impl SystemInfo {
 
     /// Returns (distrib name, version)
     pub fn sysreq_data(&self) -> (&'static str, String) {
+        let major_or_default = || -> String {
+            self.major_version()
+                .map(|v| v.to_string())
+                .unwrap_or(self.version.to_string())
+        };
+
         match self.os_type {
             OsType::Linux(distrib) => {
                 let api_distrib = self.api_distribution();
                 match distrib {
                     "suse" => ("sle", self.version.to_string()),
-                    "ubuntu" => {
+                    "ubuntu" | "debian" => {
                         let version = match self.version {
-                            Version::Semantic(year, month, _) => {
-                                format!("{year}.{month:02}")
+                            Version::Semantic(major, minor, _) => {
+                                if distrib == "ubuntu" {
+                                    // ubuntu YY.MM
+                                    format!("{major}.{minor:02}")
+                                } else {
+                                    // debian <major>
+                                    major.to_string()
+                                }
                             }
-                            _ => unreachable!(),
+                            _ => major_or_default(),
                         };
                         (api_distrib, version)
                     }
-                    "debian" => match self.version {
-                        Version::Semantic(major, _, _) => (api_distrib, major.to_string()),
-                        _ => unreachable!(),
-                    },
                     // RPM-based distributions (CentOS, AlmaLinux, RHEL, Rocky) use major version only
                     "centos" | "almalinux" | "redhat" | "rocky" | "fedora" => {
-                        let version = self
-                            .major_version()
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| self.version.to_string());
-                        (api_distrib, version)
+                        (api_distrib, major_or_default())
                     }
                     _ => (api_distrib, self.version.to_string()),
                 }
