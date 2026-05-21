@@ -222,21 +222,16 @@ impl SystemInfo {
                 let api_distrib = self.api_distribution();
                 match distrib {
                     "suse" => ("sle", self.version.to_string()),
-                    "ubuntu" | "debian" => {
-                        let version = match self.version {
-                            Version::Semantic(major, minor, _) => {
-                                if distrib == "ubuntu" {
-                                    // ubuntu YY.MM
-                                    format!("{major}.{minor:02}")
-                                } else {
-                                    // debian <major>
-                                    major.to_string()
-                                }
-                            }
-                            _ => major_or_default(),
-                        };
-                        (api_distrib, version)
-                    }
+                    "ubuntu" => match self.version {
+                        Version::Semantic(year, month, _) => {
+                            (api_distrib, format!("{year}.{month:02}"))
+                        }
+                        _ => (api_distrib, major_or_default()),
+                    },
+                    "debian" => match self.version {
+                        Version::Semantic(major, _, _) => (api_distrib, major.to_string()),
+                        _ => (api_distrib, major_or_default()),
+                    },
                     // RPM-based distributions (CentOS, AlmaLinux, RHEL, Rocky) use major version only
                     "centos" | "almalinux" | "redhat" | "rocky" | "fedora" => {
                         (api_distrib, major_or_default())
