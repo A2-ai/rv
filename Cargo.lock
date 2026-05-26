@@ -1639,12 +1639,13 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "os_info"
-version = "3.14.0"
-source = "git+https://github.com/Keats/os_info/#96420f1a4e9e8abeabb3da0eaf5ab99961e2ba10"
+version = "3.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cf20a545b305cf1da722b236b5155c9bb35f1d5ceb28c048bd96ca842f41b5b"
 dependencies = [
  "android_system_properties",
  "log",
- "nix 0.30.1",
+ "nix 0.31.2",
  "objc2",
  "objc2-foundation",
  "objc2-ui-kit",
