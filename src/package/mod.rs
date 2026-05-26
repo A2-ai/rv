@@ -130,18 +130,6 @@ impl Package {
         }
     }
 
-    /// Returns the needs entries for the given keys, or all entries if `all` is true.
-    pub fn needs_entries(&self, keys: &[String], all: bool) -> Vec<&NeedsEntry> {
-        if all {
-            self.needs.values().flatten().collect()
-        } else {
-            keys.iter()
-                .filter_map(|k| self.needs.get(k))
-                .flatten()
-                .collect()
-        }
-    }
-
     pub fn dependencies_to_install(
         &self,
         install_suggestions: bool,
