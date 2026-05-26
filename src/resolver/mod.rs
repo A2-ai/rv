@@ -584,6 +584,58 @@ impl<'d> Resolver<'d> {
         }
     }
 
+    /// Resolves a package that originates from a `Config/Needs/*` remote shorthand.
+    ///
+    /// Unlike a user-pinned git dep, a needs remote is a declaration of where the package
+    /// *comes from*, not a requirement to fetch it from git. If the package name is listed in
+    /// `prefer_repositories_for`, repos are tried first; git is used as a fallback (or primary
+    /// if not preferred).
+    fn resolve_needs_remote<E: CommandExecutor + Clone + 'static>(
+        &self,
+        item: &QueueItem<'d>,
+        prefer_repositories_for: &[String],
+        cache: &'d Cache,
+        git_exec: &'d E,
+    ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+        let prefer_repo = prefer_repositories_for
+            .iter()
+            .any(|s| s == item.name.as_ref());
+
+        if prefer_repo {
+            if let Some(found) = self.repositories_lookup(item, cache) {
+                return Some(found);
+            }
+            log::debug!(
+                "{} not found in repositories, falling back to needs remote git source",
+                item.name
+            );
+        }
+
+        if let Some(PackageRemote::Git {
+            url,
+            reference,
+            directory,
+            ..
+        }) = &item.remote
+        {
+            let git_ref = reference
+                .as_deref()
+                .map(GitReference::Unknown)
+                .unwrap_or(GitReference::Unknown("HEAD"));
+            match self.git_lookup(item, url, directory.as_deref(), git_ref, git_exec, cache) {
+                Ok((mut resolved_dep, items)) => {
+                    resolved_dep.from_remote = true;
+                    return Some((resolved_dep, items));
+                }
+                Err(e) => {
+                    log::debug!("Git lookup failed for needs remote {}: {e}", item.name);
+                }
+            }
+        }
+
+        None
+    }
+
     /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
@@ -672,7 +724,10 @@ impl<'d> Resolver<'d> {
                     .insert(item.version_requirement.clone());
                 if !item.needs.is_empty() || item.install_all_needs {
                     let needs_fetch = item.install_all_needs
-                        || item.needs.iter().any(|k| !resolved_dep.needs.contains_key(k));
+                        || item
+                            .needs
+                            .iter()
+                            .any(|k| !resolved_dep.needs.contains_key(k));
                     if needs_fetch {
                         if let Source::Repository { ref repository } = resolved_dep.source {
                             if let Some(pkg) = read_repo_description_for_needs(
@@ -697,12 +752,12 @@ impl<'d> Resolver<'d> {
                             .cloned()
                             .collect();
                         if !missing.is_empty() {
-                            result.failed.push(
-                                UnresolvedDependency::from_item(&item).with_error(format!(
+                            result
+                                .failed
+                                .push(UnresolvedDependency::from_item(&item).with_error(format!(
                                     "Config/Needs key(s) not found in DESCRIPTION: {}",
                                     missing.join(", ")
-                                )),
-                            );
+                                )));
                             continue;
                         }
                     }
@@ -734,15 +789,29 @@ impl<'d> Resolver<'d> {
                 .or_default()
                 .insert(item.version_requirement.clone());
 
+            // Needs remotes (Config/Needs/* shorthands like "org/pkg") get their own resolution
+            // path: repo-first if preferred, git as fallback. They are need declarations, not
+            // pinned sources, so they never flow through the standard remote override logic.
+            if item.from_needs_remote {
+                match self.resolve_needs_remote(&item, prefer_repositories_for, cache, git_exec) {
+                    Some((resolved_dep, items)) => {
+                        queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                        result.add_found(resolved_dep);
+                        queue.extend(items);
+                    }
+                    None => {
+                        result.failed.push(UnresolvedDependency::from_item(&item));
+                    }
+                }
+                continue;
+            }
+
             // But first, we check if the item has a remote and use that instead
             // We will keep the remote result around _if_ the item has a version requirement and is in
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
             // .contains would need to allocate, so using iter().any() instead
-            // Needs remotes don't need a version constraint to be overridable — the remote
-            // is a declaration of need, not a pinned source. Regular git deps require a
-            // version_requirement so there's something to validate against the repo version.
-            let can_be_overridden = (item.version_requirement.is_some() || item.from_needs_remote)
+            let can_be_overridden = item.version_requirement.is_some()
                 && prefer_repositories_for
                     .iter()
                     .any(|s| s == item.name.as_ref());
@@ -781,21 +850,11 @@ impl<'d> Resolver<'d> {
                                 }
                             }
                             Err(e) => {
-                                if item.from_needs_remote {
-                                    // Fall through to repositories_lookup rather than failing
-                                    // immediately — the remote is a needs declaration, not a
-                                    // pinned source, so the repo is the preferred resolution.
-                                    log::debug!(
-                                        "Git lookup failed for needs remote {}: {e}; trying repositories",
-                                        item.name
-                                    );
-                                } else {
-                                    result.failed.push(
-                                        UnresolvedDependency::from_item(&item)
-                                            .with_error(format!("{e}"))
-                                            .with_remote(remote.clone()),
-                                    );
-                                }
+                                result.failed.push(
+                                    UnresolvedDependency::from_item(&item)
+                                        .with_error(format!("{e}"))
+                                        .with_remote(remote.clone()),
+                                );
                             }
                         }
                     }
@@ -807,7 +866,7 @@ impl<'d> Resolver<'d> {
                         );
                     }
                 }
-                if remote_result.is_none() && !item.from_needs_remote {
+                if remote_result.is_none() {
                     continue;
                 }
             }
@@ -825,7 +884,10 @@ impl<'d> Resolver<'d> {
                     {
                         if !item.needs.is_empty() || item.install_all_needs {
                             let needs_fetch = item.install_all_needs
-                                || item.needs.iter().any(|k| !resolved_dep.needs.contains_key(k));
+                                || item
+                                    .needs
+                                    .iter()
+                                    .any(|k| !resolved_dep.needs.contains_key(k));
                             if needs_fetch {
                                 if let Source::Repository { ref repository } = resolved_dep.source {
                                     if let Some(pkg) = read_repo_description_for_needs(
@@ -851,12 +913,10 @@ impl<'d> Resolver<'d> {
                                     .collect();
                                 if !missing.is_empty() {
                                     result.failed.push(
-                                        UnresolvedDependency::from_item(&item).with_error(
-                                            format!(
-                                                "Config/Needs key(s) not found in DESCRIPTION: {}",
-                                                missing.join(", ")
-                                            ),
-                                        ),
+                                        UnresolvedDependency::from_item(&item).with_error(format!(
+                                            "Config/Needs key(s) not found in DESCRIPTION: {}",
+                                            missing.join(", ")
+                                        )),
                                     );
                                     continue;
                                 }
@@ -1014,11 +1074,8 @@ mod tests {
             // Serve the DESCRIPTION for rv.needs.A v1.0.0 from repo1.
             // Its Config/Needs/website lists rv.needs.B, which depends on rv.needs.A >= 2.0,
             // forcing the resolver to upgrade rv.needs.A from v1.0.0 (repo1) to v2.0.0 (repo2).
-            let needs_packages: &[(&str, &str, &str)] = &[(
-                "rv.needs.A",
-                "1.0.0",
-                "Config/Needs/website: rv.needs.B\n",
-            )];
+            let needs_packages: &[(&str, &str, &str)] =
+                &[("rv.needs.A", "1.0.0", "Config/Needs/website: rv.needs.B\n")];
             for (name, version, extra) in needs_packages {
                 let suffix = format!("src/contrib/{}_{}.tar.gz", name, version);
                 if url.as_str().ends_with(&suffix) {
@@ -1097,7 +1154,10 @@ mod tests {
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
             ("rv_needs_simple", "https://github.com/test/rv-needs-simple"),
-            ("rv_needs_upgrade", "https://github.com/test/rv-needs-upgrade"),
+            (
+                "rv_needs_upgrade",
+                "https://github.com/test/rv-needs-upgrade",
+            ),
             (
                 "rv_needs_remote_override",
                 "https://github.com/test/rv-needs-remote-override",

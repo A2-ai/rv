@@ -13,6 +13,34 @@ static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(?P<key>[\w/]+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
 static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
+/// Parses the comma-separated value of a `Config/Needs/*` field into a list of entries.
+/// Returns `None` if the value is empty or contains only whitespace.
+pub(crate) fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
+    // Parses one token from a `Config/Needs/*` value into a `NeedsEntry`.
+    // Tokens containing `/` or `::` are treated as remote shorthands (e.g. `tidyverse/tidytemplate`);
+    // all others are plain package names, optionally with a version requirement.
+    let parse_needs_entry = |token: &str| -> NeedsEntry {
+        let token = token.trim();
+        if token.contains('/') || token.contains("::") {
+            let (name, remote) = parse_remote(token);
+            let pkg_name = name.unwrap_or_else(|| token.to_string());
+            NeedsEntry::Remote(pkg_name, remote)
+        } else {
+            let dep = parse_dependencies(token)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| Dependency::Simple(token.to_string()));
+            NeedsEntry::Package(dep)
+        }
+    };
+
+    value
+        .split(',')
+        .filter(|t| !t.trim().is_empty())
+        .map(parse_needs_entry)
+        .collect()
+}
+
 pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
 
@@ -101,26 +129,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "SystemRequirements" => continue,
                 key if key.starts_with("Config/Needs/") => {
                     let need_key = key["Config/Needs/".len()..].to_string();
-                    let entries: Vec<NeedsEntry> = value
-                        .split(',')
-                        .filter(|t| !t.trim().is_empty())
-                        .map(|t| {
-                            let t = t.trim();
-                            // Tokens with '/' or '::' are remote shorthands (e.g. tidyverse/tidytemplate)
-                            if t.contains('/') || t.contains("::") {
-                                let (name, remote) = parse_remote(t);
-                                let pkg_name = name.unwrap_or_else(|| t.to_string());
-                                NeedsEntry::Remote(pkg_name, remote)
-                            } else {
-                                // Plain name, possibly with a version requirement
-                                let dep = parse_dependencies(t)
-                                    .into_iter()
-                                    .next()
-                                    .unwrap_or_else(|| Dependency::Simple(t.to_string()));
-                                NeedsEntry::Package(dep)
-                            }
-                        })
-                        .collect();
+                    let entries = parse_needs_entries(value);
                     if !entries.is_empty() {
                         package.needs.insert(need_key, entries);
                     }
@@ -365,6 +374,9 @@ Config/Needs/website: knitr (>= 1.20), rmarkdown
             }
             _ => None,
         });
-        assert_eq!(plain.expect("rmarkdown should be Simple").name(), "rmarkdown");
+        assert_eq!(
+            plain.expect("rmarkdown should be Simple").name(),
+            "rmarkdown"
+        );
     }
 }

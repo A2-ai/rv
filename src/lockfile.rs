@@ -344,9 +344,7 @@ where
 /// Custom deserializer for needs from TOML lockfile format.
 /// Handles `needs = {website = ["knitr", "rmarkdown"]}` where inner arrays can contain
 /// either "simple_string" or { name = "pkg", requirement = "(>= 1.0)" } entries.
-fn deserialize_needs<'de, D>(
-    deserializer: D,
-) -> Result<HashMap<String, Vec<Dependency>>, D::Error>
+fn deserialize_needs<'de, D>(deserializer: D) -> Result<HashMap<String, Vec<Dependency>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
