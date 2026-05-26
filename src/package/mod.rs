@@ -20,7 +20,7 @@ pub use version::{Operator, Version, VersionRequirement, deserialize_version, se
 /// Represents a single entry in a `Config/Needs/*` field.
 /// Entries are either plain package names (possibly with a version requirement)
 /// or remote shorthands like `tidyverse/tidytemplate`.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum NeedsEntry {
     Package(Dependency),
     Remote(String, PackageRemote),
@@ -110,7 +110,7 @@ pub struct Package {
     // https://rstudio.github.io/r-manuals/r-ints/Package-Structure.html
     pub(crate) built: Option<String>,
     // Parsed Config/Needs/* fields: need-key → list of entries (plain pkgs or remote shorthands)
-    #[serde(skip)]
+    #[serde(default)]
     pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
