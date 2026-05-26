@@ -325,6 +325,46 @@ pub enum ExportSubcommand {
     },
 }
 
+fn print_add_summary(output_format: &OutputFormat, added: &[String], dry_run: bool) {
+    if output_format.is_json() {
+        return;
+    }
+    if added.is_empty() {
+        println!("All packages already in rproject.toml. Nothing to add.");
+        return;
+    }
+    let verb = if dry_run { "Would add" } else { "Added" };
+    let noun = if added.len() == 1 {
+        "package"
+    } else {
+        "packages"
+    };
+    println!("{} {} {} to rproject.toml:", verb, added.len(), noun);
+    for name in added {
+        println!("  + {name}");
+    }
+}
+
+fn print_remove_summary(output_format: &OutputFormat, removed: &[String], dry_run: bool) {
+    if output_format.is_json() {
+        return;
+    }
+    if removed.is_empty() {
+        println!("No matching packages in rproject.toml. Nothing to remove.");
+        return;
+    }
+    let verb = if dry_run { "Would remove" } else { "Removed" };
+    let noun = if removed.len() == 1 {
+        "package"
+    } else {
+        "packages"
+    };
+    println!("{} {} {} from rproject.toml:", verb, removed.len(), noun);
+    for name in removed {
+        println!("  - {name}");
+    }
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -560,18 +600,17 @@ fn try_main() -> Result<()> {
                 }
             }
 
-            add_packages(&mut doc, packages, add_options)?;
+            let added = add_packages(&mut doc, packages, add_options)?;
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
             }
+            print_add_summary(&output_format, &added, dry_run);
             // if no sync, exit early
             if no_sync {
                 if output_format.is_json() {
                     // Nothing to output for JSON format here since we didn't sync anything
                     println!("{{}}");
-                } else {
-                    println!("Packages successfully added");
                 }
                 return Ok(());
             }
@@ -589,6 +628,9 @@ fn try_main() -> Result<()> {
             context
                 .load_for_resolve_mode(resolve_mode)
                 .map_err(|e| anyhow!("{e}"))?;
+            if !output_format.is_json() {
+                println!("\nResolving dependencies...");
+            }
             SyncHelper {
                 dry_run,
                 output_format: Some(output_format),
@@ -606,19 +648,18 @@ fn try_main() -> Result<()> {
             // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
 
-            remove_packages(&mut doc, packages)?;
+            let removed = remove_packages(&mut doc, packages)?;
 
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
             }
+            print_remove_summary(&output_format, &removed, dry_run);
 
             // if no sync, exit early
             if no_sync {
                 if output_format.is_json() {
                     println!("{{}}");
-                } else {
-                    println!("Packages successfully removed");
                 }
                 return Ok(());
             }
@@ -639,6 +680,9 @@ fn try_main() -> Result<()> {
             context
                 .load_for_resolve_mode(resolve_mode)
                 .map_err(|e| anyhow!("{e}"))?;
+            if !output_format.is_json() {
+                println!("\nResolving dependencies...");
+            }
             SyncHelper {
                 dry_run,
                 output_format: Some(output_format),
