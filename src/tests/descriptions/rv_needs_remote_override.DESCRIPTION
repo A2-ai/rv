@@ -1,0 +1,5 @@
+Package: rv_needs_remote_override
+Version: 1.0.0
+Config/Needs/website: some-org/rv.needs.website.pkg
+License: MIT
+NeedsCompilation: no

@@ -781,11 +781,21 @@ impl<'d> Resolver<'d> {
                                 }
                             }
                             Err(e) => {
-                                result.failed.push(
-                                    UnresolvedDependency::from_item(&item)
-                                        .with_error(format!("{e}"))
-                                        .with_remote(remote.clone()),
-                                );
+                                if item.from_needs_remote {
+                                    // Fall through to repositories_lookup rather than failing
+                                    // immediately — the remote is a needs declaration, not a
+                                    // pinned source, so the repo is the preferred resolution.
+                                    log::debug!(
+                                        "Git lookup failed for needs remote {}: {e}; trying repositories",
+                                        item.name
+                                    );
+                                } else {
+                                    result.failed.push(
+                                        UnresolvedDependency::from_item(&item)
+                                            .with_error(format!("{e}"))
+                                            .with_remote(remote.clone()),
+                                    );
+                                }
                             }
                         }
                     }
@@ -797,7 +807,7 @@ impl<'d> Resolver<'d> {
                         );
                     }
                 }
-                if remote_result.is_none() {
+                if remote_result.is_none() && !item.from_needs_remote {
                     continue;
                 }
             }
@@ -1088,6 +1098,10 @@ mod tests {
             ("missing.remote", "https://github.com/dummy/missing.remote"),
             ("rv_needs_simple", "https://github.com/test/rv-needs-simple"),
             ("rv_needs_upgrade", "https://github.com/test/rv-needs-upgrade"),
+            (
+                "rv_needs_remote_override",
+                "https://github.com/test/rv-needs-remote-override",
+            ),
         ];
 
         for (dep, url) in &remotes {
