@@ -121,6 +121,7 @@ fn build_needs_queue_items<'d>(
                     resolved_dep.name.clone(),
                 );
                 i.remote = Some(remote.clone());
+                i.from_needs_remote = true;
                 i
             }
         })
@@ -144,6 +145,10 @@ pub(crate) struct QueueItem<'d> {
     needs: Vec<String>,
     /// If true, install all Config/Needs/* entries from the package DESCRIPTION
     install_all_needs: bool,
+    /// True if this item was created from a Config/Needs/* Remote entry. Allows
+    /// prefer_repositories_for to override the remote even without a version constraint,
+    /// since the remote is a declaration of need rather than a pinned source.
+    from_needs_remote: bool,
 }
 
 impl<'d> QueueItem<'d> {
@@ -622,6 +627,7 @@ impl<'d> Resolver<'d> {
                 }),
                 needs: d.needs().to_vec(),
                 install_all_needs: d.install_all_needs(),
+                from_needs_remote: false,
             })
             .collect();
 
@@ -733,7 +739,10 @@ impl<'d> Resolver<'d> {
             // override list so we can check in the repo before pushing the remote version
             let mut remote_result = None;
             // .contains would need to allocate, so using iter().any() instead
-            let can_be_overridden = item.version_requirement.is_some()
+            // Needs remotes don't need a version constraint to be overridable — the remote
+            // is a declaration of need, not a pinned source. Regular git deps require a
+            // version_requirement so there's something to validate against the repo version.
+            let can_be_overridden = (item.version_requirement.is_some() || item.from_needs_remote)
                 && prefer_repositories_for
                     .iter()
                     .any(|s| s == item.name.as_ref());
