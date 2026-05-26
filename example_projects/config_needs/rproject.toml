@@ -1,0 +1,12 @@
+[project]
+name = "Config/Needs test"
+description = "Testing Config/Needs/website using ggplot2 which adds 2 packages + a git remote"
+r_version = "4.5"
+
+repositories = [
+    { alias = "PRISM", url = "https://prism.dev.a2-ai.cloud/rpkgs/stratus/2026-05-11" }
+]
+
+dependencies = [
+    { name = "ggplot2", needs = ["website"] },
+]
