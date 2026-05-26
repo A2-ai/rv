@@ -90,6 +90,10 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        needs: Vec<String>,
+        #[serde(default)]
+        install_all_needs: bool,
     },
     Local {
         path: PathBuf,
@@ -98,6 +102,10 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        needs: Vec<String>,
+        #[serde(default)]
+        install_all_needs: bool,
     },
     Url {
         url: HttpUrl,
@@ -106,6 +114,10 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        needs: Vec<String>,
+        #[serde(default)]
+        install_all_needs: bool,
     },
     Detailed {
         name: String,
@@ -116,6 +128,10 @@ pub enum ConfigDependency {
         force_source: Option<bool>,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        needs: Vec<String>,
+        #[serde(default)]
+        install_all_needs: bool,
     },
 }
 
@@ -207,6 +223,34 @@ impl ConfigDependency {
                 install_suggestions,
                 ..
             } => *install_suggestions,
+        }
+    }
+
+    pub fn needs(&self) -> &[String] {
+        match self {
+            ConfigDependency::Simple(_) => &[],
+            ConfigDependency::Detailed { needs, .. }
+            | ConfigDependency::Url { needs, .. }
+            | ConfigDependency::Local { needs, .. }
+            | ConfigDependency::Git { needs, .. } => needs.as_slice(),
+        }
+    }
+
+    pub fn install_all_needs(&self) -> bool {
+        match self {
+            ConfigDependency::Simple(_) => false,
+            ConfigDependency::Detailed {
+                install_all_needs, ..
+            }
+            | ConfigDependency::Url {
+                install_all_needs, ..
+            }
+            | ConfigDependency::Local {
+                install_all_needs, ..
+            }
+            | ConfigDependency::Git {
+                install_all_needs, ..
+            } => *install_all_needs,
         }
     }
 }
@@ -450,6 +494,13 @@ impl Config {
                 },
                 _ => (),
             }
+
+            if !d.needs().is_empty() && d.install_all_needs() {
+                errors.push(format!(
+                    "Dependency `{}` specifies both `needs` and `install_all_needs = true`. Use one or the other.",
+                    d.name()
+                ));
+            }
         }
 
         if !errors.is_empty() {
@@ -626,6 +677,60 @@ repositories = []
         assert_eq!(
             config.r_version().original,
             deserialized.r_version().original
+        );
+    }
+
+    #[test]
+    fn config_needs_round_trips() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "pkg", needs = ["website", "coverage"] },
+]
+"#;
+        let config = Config::from_str(toml_str).unwrap();
+        let dep = &config.dependencies()[0];
+        assert_eq!(dep.needs(), &["website", "coverage"]);
+        assert!(!dep.install_all_needs());
+    }
+
+    #[test]
+    fn config_install_all_needs_round_trips() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "pkg", install_all_needs = true },
+]
+"#;
+        let config = Config::from_str(toml_str).unwrap();
+        let dep = &config.dependencies()[0];
+        assert!(dep.install_all_needs());
+        assert!(dep.needs().is_empty());
+    }
+
+    #[test]
+    fn config_needs_and_install_all_needs_errors() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "pkg", needs = ["website"], install_all_needs = true },
+]
+"#;
+        let result = Config::from_str(toml_str);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Use one or the other"),
+            "expected mutual-exclusion message, got: {err}"
         );
     }
 }

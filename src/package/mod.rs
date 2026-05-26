@@ -17,6 +17,15 @@ pub use parser::{parse_dependencies, parse_package_file};
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
 
+/// Represents a single entry in a `Config/Needs/*` field.
+/// Entries are either plain package names (possibly with a version requirement)
+/// or remote shorthands like `tidyverse/tidytemplate`.
+#[derive(Debug, PartialEq, Clone)]
+pub enum NeedsEntry {
+    Package(Dependency),
+    Remote(String, PackageRemote),
+}
+
 pub(crate) use remotes::parse_remote;
 
 const COMPILED_R_SUBDIRS: [&str; 2] = ["R", "data"];
@@ -100,6 +109,9 @@ pub struct Package {
     // The built field only exists when a package is a binary
     // https://rstudio.github.io/r-manuals/r-ints/Package-Structure.html
     pub(crate) built: Option<String>,
+    // Parsed Config/Needs/* fields: need-key → list of entries (plain pkgs or remote shorthands)
+    #[serde(skip)]
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -115,6 +127,18 @@ impl Package {
             r_req.is_satisfied(r_version)
         } else {
             true
+        }
+    }
+
+    /// Returns the needs entries for the given keys, or all entries if `all` is true.
+    pub fn needs_entries(&self, keys: &[String], all: bool) -> Vec<&NeedsEntry> {
+        if all {
+            self.needs.values().flatten().collect()
+        } else {
+            keys.iter()
+                .filter_map(|k| self.needs.get(k))
+                .flatten()
+                .collect()
         }
     }
 

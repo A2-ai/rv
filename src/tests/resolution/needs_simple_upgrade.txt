@@ -1,0 +1,24 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv_needs_upgrade", git = "https://github.com/test/rv-needs-upgrade", commit = "HEAD", needs = ["website"] }
+]
+---
+Package: rv.pkgC
+Version: 1.0.0
+License: MIT
+NeedsCompilation: no
+
+Package: rv.pkgC
+Version: 2.0.0
+License: MIT
+NeedsCompilation: no
+
+Package: rv.pkgD
+Version: 1.0.0
+Depends: rv.pkgC (>= 2.0)
+License: MIT
+NeedsCompilation: no
+---

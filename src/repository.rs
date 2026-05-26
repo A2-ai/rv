@@ -243,6 +243,7 @@ impl From<RUniversePackage> for Package {
             remote_sha: Some(pkg.remote_sha),
             remote_subdir: pkg.remote_subdir,
             built: None,
+            needs: std::collections::HashMap::new(),
         }
     }
 }

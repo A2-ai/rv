@@ -147,6 +147,7 @@ mod tests {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: HashMap::new(),
         }
     }
 

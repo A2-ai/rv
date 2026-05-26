@@ -8,7 +8,9 @@ use url::Url;
 
 use crate::cache::CacheStatus;
 use crate::lockfile::{LockedPackage, Source};
-use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
+use crate::package::{
+    Dependency, InstallationDependencies, NeedsEntry, Package, PackageRemote, PackageType,
+};
 use crate::resolver::QueueItem;
 use crate::{Version, VersionRequirement};
 
@@ -39,6 +41,10 @@ pub struct ResolvedDependency<'d> {
     /// { name = "dplyr", dependencies_only = true } in your rproject.toml
     /// in which case we want to keep track of it but not write it anywhere
     pub(crate) ignored: bool,
+    /// Parsed Config/Needs/* from the package DESCRIPTION.
+    /// Populated for git/local/url sources during resolution; empty for repo sources
+    /// (fetched on demand from cache when needed).
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -88,6 +94,17 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: package
+                .needs
+                .iter()
+                .map(|(key, deps)| {
+                    let entries = deps
+                        .iter()
+                        .map(|d| NeedsEntry::Package(d.clone()))
+                        .collect();
+                    (key.clone(), entries)
+                })
+                .collect(),
         }
     }
 
@@ -131,6 +148,7 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: HashMap::new(), // PACKAGES files don't include Config/Needs/*; fetched on demand
         };
 
         (res, deps)
@@ -167,6 +185,7 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: package.needs.clone(),
         };
 
         (res, deps)
@@ -201,6 +220,7 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: Some(local_resolved_path),
             env_vars: HashMap::new(),
             ignored: false,
+            needs: package.needs.clone(),
         };
 
         (res, deps)
@@ -234,6 +254,7 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: package.needs.clone(),
         };
 
         (res, deps)
@@ -262,6 +283,7 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: HashMap::new(),
         };
 
         (res, deps)

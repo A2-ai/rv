@@ -1,15 +1,16 @@
 //! Parses the PACKAGES files
 
 use crate::package::remotes::parse_remote;
-use crate::package::{Dependency, Package};
+use crate::package::{Dependency, NeedsEntry, Package};
 use crate::{Version, VersionRequirement};
 use regex::Regex;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
+// [\w/]+ instead of \w+ to capture slash-separated keys like Config/Needs/website
 static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?m)^(?P<key>[\w/]+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
 static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
 pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
@@ -98,6 +99,30 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Built" => package.built = Some(value.to_string()),
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
+                key if key.starts_with("Config/Needs/") => {
+                    let need_key = key["Config/Needs/".len()..].to_string();
+                    let entries = value
+                        .split(',')
+                        .filter(|t| !t.trim().is_empty())
+                        .map(|t| {
+                            let t = t.trim();
+                            // Tokens with '/' or '::' are remote shorthands (e.g. tidyverse/tidytemplate)
+                            if t.contains('/') || t.contains("::") {
+                                let (name, remote) = parse_remote(t);
+                                let pkg_name = name.unwrap_or_else(|| t.to_string());
+                                NeedsEntry::Remote(pkg_name, remote)
+                            } else {
+                                // Plain name, possibly with a version requirement
+                                let dep = parse_dependencies(t)
+                                    .into_iter()
+                                    .next()
+                                    .unwrap_or_else(|| Dependency::Simple(t.to_string()));
+                                NeedsEntry::Package(dep)
+                            }
+                        })
+                        .collect();
+                    package.needs.insert(need_key, entries);
+                }
                 _ => continue,
             }
         }
@@ -235,5 +260,109 @@ NeedsCompilation: no
             packages["shinytest2"][0].linking_to,
             vec![Dependency::Simple("cpp11".to_string())]
         );
+    }
+
+    #[test]
+    fn parses_config_needs() {
+        let content = r#"
+Package: ggplot2
+Version: 3.5.0
+Imports: scales
+Suggests: testthat
+Config/Needs/website: knitr, rmarkdown, tidyverse/tidytemplate
+Config/Needs/coverage: covr
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["ggplot2"][0];
+
+        // Plain package names come through as Package entries
+        let website = pkg.needs.get("website").expect("website needs");
+        let plain_names: Vec<_> = website
+            .iter()
+            .filter_map(|e| match e {
+                crate::package::NeedsEntry::Package(d) => Some(d.name().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(plain_names.contains(&"knitr".to_string()));
+        assert!(plain_names.contains(&"rmarkdown".to_string()));
+
+        // Remote shorthand comes through as Remote entry
+        let remote_count = website
+            .iter()
+            .filter(|e| matches!(e, crate::package::NeedsEntry::Remote(_, _)))
+            .count();
+        assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
+
+        // Second need key is parsed correctly
+        let coverage = pkg.needs.get("coverage").expect("coverage needs");
+        assert_eq!(coverage.len(), 1);
+    }
+
+    #[test]
+    fn parses_config_needs_multiline() {
+        let content = r#"
+Package: ggplot2
+Version: 3.5.0
+Config/Needs/website: knitr,
+    rmarkdown,
+    tidyverse/tidytemplate
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["ggplot2"][0];
+        let website = pkg.needs.get("website").expect("website needs");
+
+        let plain_names: Vec<_> = website
+            .iter()
+            .filter_map(|e| match e {
+                crate::package::NeedsEntry::Package(d) => Some(d.name().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(plain_names.contains(&"knitr".to_string()));
+        assert!(plain_names.contains(&"rmarkdown".to_string()));
+
+        let remote_count = website
+            .iter()
+            .filter(|e| matches!(e, crate::package::NeedsEntry::Remote(_, _)))
+            .count();
+        assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
+    }
+
+    #[test]
+    fn parses_config_needs_version_constraints() {
+        let content = r#"
+Package: ggplot2
+Version: 3.5.0
+Config/Needs/website: knitr (>= 1.20), rmarkdown
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["ggplot2"][0];
+        let website = pkg.needs.get("website").expect("website needs");
+        assert_eq!(website.len(), 2);
+
+        let pinned = website.iter().find_map(|e| match e {
+            crate::package::NeedsEntry::Package(d @ crate::package::Dependency::Pinned { .. }) => {
+                Some(d)
+            }
+            _ => None,
+        });
+        let pinned = pinned.expect("knitr should be a pinned dependency");
+        assert_eq!(pinned.name(), "knitr");
+        assert_eq!(
+            pinned.version_requirement().unwrap().to_string(),
+            "(>= 1.20)"
+        );
+
+        let plain = website.iter().find_map(|e| match e {
+            crate::package::NeedsEntry::Package(d @ crate::package::Dependency::Simple(_)) => {
+                Some(d)
+            }
+            _ => None,
+        });
+        assert_eq!(plain.expect("rmarkdown should be Simple").name(), "rmarkdown");
     }
 }
