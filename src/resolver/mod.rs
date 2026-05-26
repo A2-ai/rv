@@ -684,6 +684,21 @@ impl<'d> Resolver<'d> {
                     }
                     if !item.install_all_needs {
                         resolved_dep.needs.retain(|k, _| item.needs.contains(k));
+                        let missing: Vec<_> = item
+                            .needs
+                            .iter()
+                            .filter(|k| !resolved_dep.needs.contains_key(k.as_str()))
+                            .cloned()
+                            .collect();
+                        if !missing.is_empty() {
+                            result.failed.push(
+                                UnresolvedDependency::from_item(&item).with_error(format!(
+                                    "Config/Needs key(s) not found in DESCRIPTION: {}",
+                                    missing.join(", ")
+                                )),
+                            );
+                            continue;
+                        }
                     }
                 }
                 queue.extend(build_needs_queue_items(&item, &resolved_dep));
@@ -809,6 +824,23 @@ impl<'d> Resolver<'d> {
                             }
                             if !item.install_all_needs {
                                 resolved_dep.needs.retain(|k, _| item.needs.contains(k));
+                                let missing: Vec<_> = item
+                                    .needs
+                                    .iter()
+                                    .filter(|k| !resolved_dep.needs.contains_key(k.as_str()))
+                                    .cloned()
+                                    .collect();
+                                if !missing.is_empty() {
+                                    result.failed.push(
+                                        UnresolvedDependency::from_item(&item).with_error(
+                                            format!(
+                                                "Config/Needs key(s) not found in DESCRIPTION: {}",
+                                                missing.join(", ")
+                                            ),
+                                        ),
+                                    );
+                                    continue;
+                                }
                             }
                         }
                         queue.extend(build_needs_queue_items(&item, &resolved_dep));

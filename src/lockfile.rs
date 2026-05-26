@@ -407,6 +407,9 @@ impl LockedPackage {
                     .into_iter()
                     .map(|e| match e {
                         NeedsEntry::Package(d) => d,
+                        // Remote shorthands (e.g. tidyverse/tidytemplate) are stored by package
+                        // name only. The resolved package is separately locked as its own entry
+                        // with its full source (git/repo), so the remote URL is not needed here.
                         NeedsEntry::Remote(name, _) => Dependency::Simple(name),
                     })
                     .collect();

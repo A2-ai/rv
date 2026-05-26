@@ -101,7 +101,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "SystemRequirements" => continue,
                 key if key.starts_with("Config/Needs/") => {
                     let need_key = key["Config/Needs/".len()..].to_string();
-                    let entries = value
+                    let entries: Vec<NeedsEntry> = value
                         .split(',')
                         .filter(|t| !t.trim().is_empty())
                         .map(|t| {
@@ -121,7 +121,9 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                             }
                         })
                         .collect();
-                    package.needs.insert(need_key, entries);
+                    if !entries.is_empty() {
+                        package.needs.insert(need_key, entries);
+                    }
                 }
                 _ => continue,
             }
