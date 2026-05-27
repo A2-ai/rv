@@ -12,6 +12,24 @@ use walkdir::WalkDir;
 #[cfg(feature = "cli")]
 use rayon::prelude::*;
 
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    let resolved = link
+        .parent()
+        .map(|p| p.join(target))
+        .unwrap_or_else(|| target.to_path_buf());
+    if resolved.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+}
+
 /// Copy the whole content of a folder to another folder
 pub(crate) fn copy_folder(
     from: impl AsRef<Path>,
@@ -27,7 +45,11 @@ pub(crate) fn copy_folder(
         let relative = path.strip_prefix(from).expect("walkdir starts with root");
         let out_path = to.join(relative);
 
-        if entry.file_type().is_dir() {
+        let file_type = entry.file_type();
+        if file_type.is_symlink() {
+            let target = fs::read_link(path)?;
+            symlink(&target, &out_path)?;
+        } else if file_type.is_dir() {
             fs::create_dir_all(&out_path)?;
         } else {
             fs::copy(path, out_path)?;
@@ -73,7 +95,14 @@ fn copy_folder_parallel(
             let relative = path.strip_prefix(from).expect("walkdir starts with root");
             let out_path = to.join(relative);
 
-            if entry.file_type().is_dir() {
+            let file_type = entry.file_type();
+            if file_type.is_symlink() {
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let target = fs::read_link(path)?;
+                symlink(&target, &out_path)?;
+            } else if file_type.is_dir() {
                 fs::create_dir_all(&out_path)?;
             } else {
                 // Ensure parent directory exists before copying file
