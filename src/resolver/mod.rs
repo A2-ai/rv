@@ -34,7 +34,7 @@ fn read_repo_description_for_needs(
     repository: &Url,
     cache: &Cache,
     http_downloader: &impl HttpDownload,
-) -> Option<Package> {
+) -> Result<Package, String> {
     let source = Source::Repository {
         repository: repository.clone(),
     };
@@ -45,21 +45,21 @@ fn read_repo_description_for_needs(
     // 1. Binary already in cache: read DESCRIPTION from extracted binary directory
     let binary_desc = paths.binary.join(name).join("DESCRIPTION");
     if binary_desc.exists() {
-        if let Ok(content) = fs::read_to_string(&binary_desc) {
-            if let Some(pkg) = parse_description_file(&content) {
-                return Some(pkg);
-            }
-        }
+        let content = fs::read_to_string(&binary_desc).map_err(|e| {
+            format!("failed to read DESCRIPTION from binary cache for {name}: {e}")
+        })?;
+        return parse_description_file(&content)
+            .ok_or_else(|| format!("failed to parse DESCRIPTION from binary cache for {name}"));
     }
 
     // 2. Source already extracted in cache
     let source_desc = paths.source.join(name).join("DESCRIPTION");
     if source_desc.exists() {
-        if let Ok(content) = fs::read_to_string(&source_desc) {
-            if let Some(pkg) = parse_description_file(&content) {
-                return Some(pkg);
-            }
-        }
+        let content = fs::read_to_string(&source_desc).map_err(|e| {
+            format!("failed to read DESCRIPTION from source cache for {name}: {e}")
+        })?;
+        return parse_description_file(&content)
+            .ok_or_else(|| format!("failed to parse DESCRIPTION from source cache for {name}"));
     }
 
     // 3. Download source tarball and extract to source cache path
@@ -69,13 +69,70 @@ fn read_repo_description_for_needs(
         name,
         version
     );
-    let tarball_url = Url::parse(&tarball_url_str).ok()?;
+    let tarball_url = Url::parse(&tarball_url_str)
+        .map_err(|e| format!("failed to construct tarball URL for {name}: {e}"))?;
     let (dir, _sha) = http_downloader
         .download_and_untar(&tarball_url, &paths.source, true, None)
-        .ok()?;
+        .map_err(|e| {
+            format!("failed to download source tarball for {name} from {tarball_url}: {e}")
+        })?;
 
     let install_path = dir.unwrap_or_else(|| paths.source.clone());
-    parse_description_file_in_folder(&install_path).ok()
+    parse_description_file_in_folder(&install_path)
+        .map_err(|e| format!("failed to parse DESCRIPTION for {name} from downloaded tarball: {e}"))
+}
+
+/// Fetches Config/Needs/* entries for `resolved_dep` if requested by `item`, then filters to
+/// only the requested keys. Returns `Err` if the DESCRIPTION cannot be fetched/parsed, or if
+/// any requested need key is absent from the DESCRIPTION.
+fn enrich_and_filter_needs(
+    item: &QueueItem<'_>,
+    resolved_dep: &mut ResolvedDependency<'_>,
+    cache: &Cache,
+    http_download: &impl HttpDownload,
+) -> Result<(), String> {
+    if item.needs.is_empty() && !item.install_all_needs {
+        return Ok(());
+    }
+
+    let needs_fetch = item.install_all_needs
+        || item
+            .needs
+            .iter()
+            .any(|k| !resolved_dep.needs.contains_key(k));
+
+    if needs_fetch {
+        if let Source::Repository { ref repository } = resolved_dep.source {
+            let pkg = read_repo_description_for_needs(
+                resolved_dep.name.as_ref(),
+                resolved_dep.version.original.as_str(),
+                repository,
+                cache,
+                http_download,
+            )?;
+            for (k, v) in pkg.needs {
+                resolved_dep.needs.entry(k).or_insert(v);
+            }
+        }
+    }
+
+    if !item.install_all_needs {
+        resolved_dep.needs.retain(|k, _| item.needs.contains(k));
+        let missing: Vec<_> = item
+            .needs
+            .iter()
+            .filter(|k| !resolved_dep.needs.contains_key(k.as_str()))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            return Err(format!(
+                "Config/Needs key(s) not found in DESCRIPTION: {}",
+                missing.join(", ")
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 /// Generates queue items for Config/Needs/* entries from a resolved dependency.
@@ -722,45 +779,13 @@ impl<'d> Resolver<'d> {
                     .entry(resolved_dep.name.to_string())
                     .or_default()
                     .insert(item.version_requirement.clone());
-                if !item.needs.is_empty() || item.install_all_needs {
-                    let needs_fetch = item.install_all_needs
-                        || item
-                            .needs
-                            .iter()
-                            .any(|k| !resolved_dep.needs.contains_key(k));
-                    if needs_fetch {
-                        if let Source::Repository { ref repository } = resolved_dep.source {
-                            if let Some(pkg) = read_repo_description_for_needs(
-                                resolved_dep.name.as_ref(),
-                                resolved_dep.version.original.as_str(),
-                                repository,
-                                cache,
-                                http_download,
-                            ) {
-                                for (k, v) in pkg.needs {
-                                    resolved_dep.needs.entry(k).or_insert(v);
-                                }
-                            }
-                        }
-                    }
-                    if !item.install_all_needs {
-                        resolved_dep.needs.retain(|k, _| item.needs.contains(k));
-                        let missing: Vec<_> = item
-                            .needs
-                            .iter()
-                            .filter(|k| !resolved_dep.needs.contains_key(k.as_str()))
-                            .cloned()
-                            .collect();
-                        if !missing.is_empty() {
-                            result
-                                .failed
-                                .push(UnresolvedDependency::from_item(&item).with_error(format!(
-                                    "Config/Needs key(s) not found in DESCRIPTION: {}",
-                                    missing.join(", ")
-                                )));
-                            continue;
-                        }
-                    }
+                if let Err(e) =
+                    enrich_and_filter_needs(&item, &mut resolved_dep, cache, http_download)
+                {
+                    result
+                        .failed
+                        .push(UnresolvedDependency::from_item(&item).with_error(e));
+                    continue;
                 }
                 queue.extend(build_needs_queue_items(&item, &resolved_dep));
                 result.add_found(resolved_dep);
@@ -882,45 +907,13 @@ impl<'d> Resolver<'d> {
                     }
                     if let Some((mut resolved_dep, items)) = self.repositories_lookup(&item, cache)
                     {
-                        if !item.needs.is_empty() || item.install_all_needs {
-                            let needs_fetch = item.install_all_needs
-                                || item
-                                    .needs
-                                    .iter()
-                                    .any(|k| !resolved_dep.needs.contains_key(k));
-                            if needs_fetch {
-                                if let Source::Repository { ref repository } = resolved_dep.source {
-                                    if let Some(pkg) = read_repo_description_for_needs(
-                                        resolved_dep.name.as_ref(),
-                                        resolved_dep.version.original.as_str(),
-                                        repository,
-                                        cache,
-                                        http_download,
-                                    ) {
-                                        for (k, v) in pkg.needs {
-                                            resolved_dep.needs.entry(k).or_insert(v);
-                                        }
-                                    }
-                                }
-                            }
-                            if !item.install_all_needs {
-                                resolved_dep.needs.retain(|k, _| item.needs.contains(k));
-                                let missing: Vec<_> = item
-                                    .needs
-                                    .iter()
-                                    .filter(|k| !resolved_dep.needs.contains_key(k.as_str()))
-                                    .cloned()
-                                    .collect();
-                                if !missing.is_empty() {
-                                    result.failed.push(
-                                        UnresolvedDependency::from_item(&item).with_error(format!(
-                                            "Config/Needs key(s) not found in DESCRIPTION: {}",
-                                            missing.join(", ")
-                                        )),
-                                    );
-                                    continue;
-                                }
-                            }
+                        if let Err(e) =
+                            enrich_and_filter_needs(&item, &mut resolved_dep, cache, http_download)
+                        {
+                            result
+                                .failed
+                                .push(UnresolvedDependency::from_item(&item).with_error(e));
+                            continue;
                         }
                         queue.extend(build_needs_queue_items(&item, &resolved_dep));
                         result.add_found(resolved_dep);
