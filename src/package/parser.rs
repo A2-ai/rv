@@ -138,6 +138,35 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             }
         }
 
+        // Enrich needs entries: if a package appears in Config/Needs/* without a version
+        // requirement but has one in Suggests, promote it to Pinned using that requirement.
+        let suggests_versions: HashMap<&str, &VersionRequirement> = package
+            .suggests
+            .iter()
+            .filter_map(|dep| match dep {
+                Dependency::Pinned { name, requirement } => Some((name.as_str(), requirement)),
+                _ => None,
+            })
+            .collect();
+
+        for entries in package.needs.values_mut() {
+            for entry in entries.iter_mut() {
+                let new_entry = if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry {
+                    suggests_versions.get(name.as_str()).map(|req| {
+                        NeedsEntry::Package(Dependency::Pinned {
+                            name: name.clone(),
+                            requirement: (*req).clone(),
+                        })
+                    })
+                } else {
+                    None
+                };
+                if let Some(new) = new_entry {
+                    *entry = new;
+                }
+            }
+        }
+
         package
     };
 
@@ -340,6 +369,79 @@ Config/Needs/website: knitr,
             .filter(|e| matches!(e, crate::package::NeedsEntry::Remote(_, _)))
             .count();
         assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
+    }
+
+    #[test]
+    fn needs_entries_inherit_version_from_suggests() {
+        // Packages listed in Config/Needs/* without a version requirement should pick up
+        // the version constraint from Suggests when one exists there.
+        let content = r#"
+Package: bit64
+Version: 4.8.99
+Suggests:
+    patrick (>= 0.3.0),
+    testthat (>= 3.3.0),
+    withr
+Config/Needs/development: patrick, testthat
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["bit64"][0];
+        let dev = pkg.needs.get("development").expect("development needs");
+        assert_eq!(dev.len(), 2);
+
+        let patrick = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "patrick" => Some(d),
+            _ => None,
+        });
+        let patrick = patrick.expect("patrick entry");
+        assert_eq!(
+            patrick.version_requirement().unwrap().to_string(),
+            "(>= 0.3.0)",
+            "patrick should inherit version requirement from Suggests"
+        );
+
+        let testthat = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
+            _ => None,
+        });
+        let testthat = testthat.expect("testthat entry");
+        assert_eq!(
+            testthat.version_requirement().unwrap().to_string(),
+            "(>= 3.3.0)",
+            "testthat should inherit version requirement from Suggests"
+        );
+
+        // withr is in Suggests without a version — should not appear in needs at all
+        let withr = dev.iter().find(|e| match e {
+            NeedsEntry::Package(d) => d.name() == "withr",
+            _ => false,
+        });
+        assert!(withr.is_none(), "withr is not in Config/Needs/development");
+    }
+
+    #[test]
+    fn needs_explicit_version_not_overridden_by_suggests() {
+        // A version requirement already present in Config/Needs/* must not be replaced.
+        let content = r#"
+Package: mypkg
+Version: 1.0.0
+Suggests: testthat (>= 3.3.0)
+Config/Needs/development: testthat (>= 2.0.0)
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["mypkg"][0];
+        let dev = pkg.needs.get("development").expect("development needs");
+        let testthat = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
+            _ => None,
+        });
+        assert_eq!(
+            testthat.unwrap().version_requirement().unwrap().to_string(),
+            "(>= 2.0.0)",
+            "explicit needs version should not be overridden by Suggests"
+        );
     }
 
     #[test]
