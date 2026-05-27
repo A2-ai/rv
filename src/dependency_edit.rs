@@ -23,6 +23,12 @@ pub struct AddOptions {
     /// Install only the dependencies, not the package itself
     #[cfg_attr(feature = "cli", clap(long))]
     pub dependencies_only: bool,
+    /// Specify specific needs from Config/Needs/*
+    #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
+    pub needs: Vec<String>,
+    /// Install all needs from Config/Needs/*
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with = "needs"))]
+    pub install_all_needs: bool,
     /// Git repository URL (https or ssh)
     #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["repository", "path", "url"]))]
     pub git: Option<String>,
@@ -172,6 +178,18 @@ fn add_common_options(table: &mut InlineTable, options: &AddOptions) {
 
     if options.dependencies_only {
         table.insert("dependencies_only", Value::from(true));
+    }
+
+    if options.install_all_needs {
+        table.insert("install_all_needs", Value::from(true));
+    }
+
+    if !options.needs.is_empty() {
+        let mut array = Array::new();
+        for need in &options.needs {
+            array.push(Value::from(need));
+        }
+        table.insert("needs", Value::Array(array));
     }
 }
 
@@ -391,6 +409,35 @@ mod tests {
             vec!["mypkg".to_string()],
             AddOptions {
                 path: Some("../local/package".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_needs() {
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                needs: vec!["test".to_string(), "needs".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+    #[test]
+    fn add_install_all_needs() {
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                install_all_needs: true,
                 ..Default::default()
             },
         )
