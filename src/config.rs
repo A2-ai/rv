@@ -372,7 +372,7 @@ fn default_true() -> bool {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    pub(crate) library: Option<PathBuf>,
+    pub(crate) library: Option<String>,
     #[serde(default = "default_true")]
     pub(crate) use_lockfile: bool,
     lockfile_name: Option<String>,
@@ -523,12 +523,18 @@ impl Config {
         self.use_lockfile
     }
 
-    pub fn library(&self) -> Option<&PathBuf> {
-        self.library.as_ref()
+    pub fn library(&self) -> Option<PathBuf> {
+        self.library.as_ref().map(|s| {
+            let [maj, min] = self.project.r_version.major_minor();
+            let expanded = s
+                .replace("{r_version}", &format!("{maj}.{min}"))
+                .replace("{name}", &self.project.name);
+            PathBuf::from(expanded)
+        })
     }
 
-    pub fn set_library(&mut self, library: PathBuf) {
-        self.library = Some(library);
+    pub fn set_library(&mut self, library: &str) {
+        self.library = Some(library.to_string());
     }
 
     pub fn lockfile_name(&self) -> &str {
@@ -687,6 +693,32 @@ git_shorthand_base_url = "https://git.example.com/scm"
             custom_config.git_shorthand_base_url(),
             "https://git.example.com/scm"
         );
+    }
+
+    #[test]
+    fn library_expands_r_version_and_name_placeholders() {
+        let toml_str = r#"
+library = "lib/{r_version}/{name}"
+[project]
+name = "foo"
+r_version = "4.5.2"
+repositories = []
+"#;
+        let config = Config::from_str(toml_str).unwrap();
+        assert_eq!(config.library(), Some(PathBuf::from("lib/4.5/foo")));
+    }
+
+    #[test]
+    fn library_without_placeholders_is_returned_as_is() {
+        let toml_str = r#"
+library = "/abs/path/to/lib"
+[project]
+name = "foo"
+r_version = "4.5.2"
+repositories = []
+"#;
+        let config = Config::from_str(toml_str).unwrap();
+        assert_eq!(config.library(), Some(PathBuf::from("/abs/path/to/lib")));
     }
 
     #[test]

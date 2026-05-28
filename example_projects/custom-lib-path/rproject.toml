@@ -1,4 +1,4 @@
-library = "libs"
+library = "libs/{r_version}/{name}"
 
 [project]
 name = "simple"
