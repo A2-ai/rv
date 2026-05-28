@@ -45,9 +45,8 @@ fn read_repo_description_for_needs(
     // 1. Binary already in cache: read DESCRIPTION from extracted binary directory
     let binary_desc = paths.binary.join(name).join("DESCRIPTION");
     if binary_desc.exists() {
-        let content = fs::read_to_string(&binary_desc).map_err(|e| {
-            format!("failed to read DESCRIPTION from binary cache for {name}: {e}")
-        })?;
+        let content = fs::read_to_string(&binary_desc)
+            .map_err(|e| format!("failed to read DESCRIPTION from binary cache for {name}: {e}"))?;
         return parse_description_file(&content)
             .ok_or_else(|| format!("failed to parse DESCRIPTION from binary cache for {name}"));
     }
@@ -55,9 +54,8 @@ fn read_repo_description_for_needs(
     // 2. Source already extracted in cache
     let source_desc = paths.source.join(name).join("DESCRIPTION");
     if source_desc.exists() {
-        let content = fs::read_to_string(&source_desc).map_err(|e| {
-            format!("failed to read DESCRIPTION from source cache for {name}: {e}")
-        })?;
+        let content = fs::read_to_string(&source_desc)
+            .map_err(|e| format!("failed to read DESCRIPTION from source cache for {name}: {e}"))?;
         return parse_description_file(&content)
             .ok_or_else(|| format!("failed to parse DESCRIPTION from source cache for {name}"));
     }
