@@ -297,8 +297,8 @@ pub enum RepositoryDatabaseErrorKind {
 mod test {
     use std::fs;
 
-    use crate::package::NeedsEntry;
     use crate::RepositoryDatabase;
+    use crate::package::NeedsEntry;
 
     #[test]
     fn test_r_universe_api_parse() {
