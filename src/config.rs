@@ -528,24 +528,6 @@ impl Config {
             }
         }
 
-        if let Some(base_url) = self.project.git_shorthand_base_url.as_deref() {
-            let base_url = base_url.trim();
-            if base_url.is_empty() {
-                errors.push("`project.git_shorthand_base_url` cannot be empty.".to_string());
-            } else {
-                let probe_url = if base_url.ends_with(':') {
-                    format!("{base_url}owner/repo")
-                } else {
-                    format!("{}/owner/repo", base_url.trim_end_matches('/'))
-                };
-                if let Err(e) = GitUrl::try_from(probe_url.as_str()) {
-                    errors.push(format!(
-                        "Invalid `project.git_shorthand_base_url` `{base_url}`: {e}"
-                    ));
-                }
-            }
-        }
-
         if !errors.is_empty() {
             return Err(ConfigLoadError {
                 path: path.into(),

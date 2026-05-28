@@ -5,6 +5,7 @@ use crate::package::{Dependency, NeedsEntry, Package};
 use crate::{Version, VersionRequirement};
 use regex::Regex;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -16,28 +17,26 @@ static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwra
 /// Parses the comma-separated value of a `Config/Needs/*` field into a list of entries.
 /// Returns `None` if the value is empty or contains only whitespace.
 pub(crate) fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
-    // Parses one token from a `Config/Needs/*` value into a `NeedsEntry`.
-    // Tokens containing `/` or `::` are treated as remote shorthands (e.g. `tidyverse/tidytemplate`);
-    // all others are plain package names, optionally with a version requirement.
-    let parse_needs_entry = |token: &str| -> NeedsEntry {
-        let token = token.trim();
-        if token.contains('/') || token.contains("::") {
-            let (name, remote) = parse_remote(token);
-            let pkg_name = name.unwrap_or_else(|| token.to_string());
-            NeedsEntry::Remote(pkg_name, remote)
-        } else {
-            let dep = parse_dependencies(token)
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| Dependency::Simple(token.to_string()));
-            NeedsEntry::Package(dep)
-        }
-    };
-
     value
         .split(',')
         .filter(|t| !t.trim().is_empty())
-        .map(parse_needs_entry)
+        .map(|token| {
+            // Parses one token from a `Config/Needs/*` value into a `NeedsEntry`.
+            // Tokens containing `/` or `::` are treated as remote shorthands (e.g. `tidyverse/tidytemplate`);
+            // all others are plain package names, optionally with a version requirement.
+            let token = token.trim();
+            if token.contains('/') || token.contains("::") {
+                let (name, remote) = parse_remote(token);
+                let pkg_name = name.unwrap_or_else(|| token.to_string());
+                NeedsEntry::Remote(pkg_name, remote)
+            } else {
+                let dep = parse_dependencies(token)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| Dependency::Simple(token.to_string()));
+                NeedsEntry::Package(dep)
+            }
+        })
         .collect()
 }
 
@@ -138,34 +137,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             }
         }
 
-        // Enrich needs entries: if a package appears in Config/Needs/* without a version
-        // requirement but has one in Suggests, promote it to Pinned using that requirement.
-        let suggests_versions: HashMap<&str, &VersionRequirement> = package
-            .suggests
-            .iter()
-            .filter_map(|dep| match dep {
-                Dependency::Pinned { name, requirement } => Some((name.as_str(), requirement)),
-                _ => None,
-            })
-            .collect();
-
-        for entries in package.needs.values_mut() {
-            for entry in entries.iter_mut() {
-                let new_entry = if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry {
-                    suggests_versions.get(name.as_str()).map(|req| {
-                        NeedsEntry::Package(Dependency::Pinned {
-                            name: name.clone(),
-                            requirement: (*req).clone(),
-                        })
-                    })
-                } else {
-                    None
-                };
-                if let Some(new) = new_entry {
-                    *entry = new;
-                }
-            }
-        }
+        enrich_needs(&mut package);
 
         package
     };
@@ -183,6 +155,36 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     }
 
     packages
+}
+
+/// Enrich needs entries: if a package appears in Config/Needs/* without a version
+/// requirement but has one in Suggests, promote it to Pinned using that requirement.
+fn enrich_needs(pkg: &mut Package) {
+    if pkg.needs.is_empty() {
+        return;
+    }
+
+    let suggests_versions: HashMap<&str, &VersionRequirement> = pkg
+        .suggests
+        .iter()
+        .filter_map(|dep| match dep {
+            Dependency::Pinned { name, requirement } => Some((name.as_str(), requirement)),
+            _ => None,
+        })
+        .collect();
+
+    for entries in pkg.needs.values_mut() {
+        for entry in entries.iter_mut() {
+            if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry {
+                if let Some(&req) = suggests_versions.get(name.as_str()) {
+                    *entry = NeedsEntry::Package(Dependency::Pinned {
+                        name: name.clone(),
+                        requirement: req.clone(),
+                    });
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

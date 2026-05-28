@@ -749,8 +749,6 @@ mod tests {
         )]);
         let pkg = make_locked_package(needs);
         let table = pkg.as_toml_table();
-        let doc = toml_edit::DocumentMut::new();
-        let _ = doc; // unused, just verify as_toml_table doesn't panic
         let s = table.to_string();
         assert!(
             s.contains("needs = { website = [\"knitr\", \"rmarkdown\"] }"),
