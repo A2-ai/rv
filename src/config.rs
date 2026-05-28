@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 use crate::SystemInfo;
 use crate::consts::LOCKFILE_NAME;
+use crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version, serialize_version};
@@ -400,6 +401,10 @@ pub(crate) struct Project {
     /// Packages listed here will be installed without those flags.
     #[serde(default)]
     no_strip: Vec<String>,
+    /// Base URL used by `rv add <owner>/<repo>` shorthand.
+    /// Defaults to https://github.com when not specified.
+    #[serde(default)]
+    git_shorthand_base_url: Option<String>,
 }
 
 // That's the way to do it with serde :/
@@ -489,7 +494,9 @@ impl Config {
                 } => match (tag.is_some(), branch.is_some(), commit.is_some()) {
                     (true, false, false) | (false, true, false) | (false, false, true) => (),
                     _ => {
-                        errors.push(format!("A git dependency `{git}` requires ons and only one of tag/branch/commit set. "));
+                        errors.push(format!(
+                            "A git dependency `{git}` requires one and only one of tag/branch/commit set."
+                        ));
                     }
                 },
                 _ => (),
@@ -500,6 +507,42 @@ impl Config {
                     "Dependency `{}` specifies both `needs` and `install_all_needs = true`. Use one or the other.",
                     d.name()
                 ));
+            }
+        }
+
+        if let Some(base_url) = self.project.git_shorthand_base_url.as_deref() {
+            let base_url = base_url.trim();
+            if base_url.is_empty() {
+                errors.push("`project.git_shorthand_base_url` cannot be empty.".to_string());
+            } else {
+                let probe_url = if base_url.ends_with(':') {
+                    format!("{base_url}owner/repo")
+                } else {
+                    format!("{}/owner/repo", base_url.trim_end_matches('/'))
+                };
+                if let Err(e) = GitUrl::try_from(probe_url.as_str()) {
+                    errors.push(format!(
+                        "Invalid `project.git_shorthand_base_url` `{base_url}`: {e}"
+                    ));
+                }
+            }
+        }
+
+        if let Some(base_url) = self.project.git_shorthand_base_url.as_deref() {
+            let base_url = base_url.trim();
+            if base_url.is_empty() {
+                errors.push("`project.git_shorthand_base_url` cannot be empty.".to_string());
+            } else {
+                let probe_url = if base_url.ends_with(':') {
+                    format!("{base_url}owner/repo")
+                } else {
+                    format!("{}/owner/repo", base_url.trim_end_matches('/'))
+                };
+                if let Err(e) = GitUrl::try_from(probe_url.as_str()) {
+                    errors.push(format!(
+                        "Invalid `project.git_shorthand_base_url` `{base_url}`: {e}"
+                    ));
+                }
             }
         }
 
@@ -580,6 +623,13 @@ impl Config {
 
     pub fn no_strip(&self) -> &[String] {
         &self.project.no_strip
+    }
+
+    pub fn git_shorthand_base_url(&self) -> &str {
+        self.project
+            .git_shorthand_base_url
+            .as_deref()
+            .unwrap_or(DEFAULT_GIT_SHORTHAND_BASE_URL)
     }
 }
 
@@ -677,6 +727,53 @@ repositories = []
         assert_eq!(
             config.r_version().original,
             deserialized.r_version().original
+        );
+    }
+
+    #[test]
+    fn git_shorthand_base_url_defaults_and_overrides() {
+        let default_toml = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+"#;
+        let default_config = Config::from_str(default_toml).unwrap();
+        assert_eq!(
+            default_config.git_shorthand_base_url(),
+            crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL
+        );
+
+        let custom_toml = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+git_shorthand_base_url = "https://git.example.com/scm"
+"#;
+        let custom_config = Config::from_str(custom_toml).unwrap();
+        assert_eq!(
+            custom_config.git_shorthand_base_url(),
+            "https://git.example.com/scm"
+        );
+    }
+
+    #[test]
+    fn invalid_git_shorthand_base_url_errors() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+git_shorthand_base_url = "git.example.com"
+"#;
+        let err = Config::from_str(toml_str).unwrap_err();
+        assert!(
+            err.source
+                .to_string()
+                .contains("Invalid `project.git_shorthand_base_url`"),
+            "unexpected error: {}",
+            err.source
         );
     }
 

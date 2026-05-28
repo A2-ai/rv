@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 
 use std::fs;
 use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
@@ -6,7 +7,12 @@ use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 #[cfg(feature = "cli")]
 use clap::Parser;
 
-use crate::{Config, config::ConfigLoadError};
+use crate::git::{self, CommandExecutor, GitExecutor, GitReference, GitRemote};
+use crate::package::parse_description_file;
+use crate::{Config, config::ConfigLoadError, git::url::GitUrl};
+
+pub const DEFAULT_GIT_SHORTHAND_BASE_URL: &str = "https://github.com";
+const DEFAULT_GIT_HEAD_REFERENCE: &str = "HEAD";
 
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "cli", derive(Parser))]
@@ -41,6 +47,9 @@ pub struct AddOptions {
     /// Git branch
     #[cfg_attr(feature = "cli", clap(long, requires = "git", conflicts_with_all = ["commit", "tag"]))]
     pub branch: Option<String>,
+    #[cfg_attr(feature = "cli", clap(skip))]
+    /// Generic git reference (branch/tag/HEAD) used internally for shorthand specs
+    pub reference: Option<String>,
     #[cfg_attr(feature = "cli", clap(long, requires = "git"))]
     /// Subdirectory within git repository
     pub directory: Option<String>,
@@ -63,9 +72,20 @@ impl AddOptions {
             || self.url.is_some()
     }
 
+    pub fn has_source_options(&self) -> bool {
+        self.repository.is_some() || self.git.is_some() || self.path.is_some() || self.url.is_some()
+    }
+
     pub fn is_empty(&self) -> bool {
         self == &Default::default()
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedAddPackage {
+    /// `Some` for a bare package name, `None` for a git shorthand
+    pub name: Option<String>,
+    pub options: AddOptions,
 }
 
 pub fn read_and_verify_config(
@@ -81,11 +101,183 @@ pub fn read_and_verify_config(
     Ok(config_content.parse::<DocumentMut>().unwrap()) // Verify config was valid toml above
 }
 
+pub fn parse_add_package_spec(
+    package_spec: &str,
+    git_shorthand_base_url: &str,
+) -> Result<ParsedAddPackage, String> {
+    if looks_like_url_or_path(package_spec) {
+        return Err(format!(
+            "`{package_spec}` cannot be used as a positional argument. Use `--git` for git repositories, `--url` for archives, or `--path` for local directories."
+        ));
+    }
+
+    if !looks_like_repo_spec(package_spec) {
+        return Ok(ParsedAddPackage {
+            name: Some(package_spec.to_string()),
+            options: AddOptions::default(),
+        });
+    }
+
+    let (source_with_optional_directory, reference_part) = split_source_and_reference(package_spec);
+
+    let (source, reference, directory) = if let Some(reference_part) = reference_part {
+        let (reference, directory) = parse_reference_and_directory(reference_part.as_str())?;
+        (source_with_optional_directory, Some(reference), directory)
+    } else {
+        let (source, directory) = split_source_and_directory(source_with_optional_directory)?;
+        (source, None, directory)
+    };
+
+    let git_url = resolve_shorthand_git_url(git_shorthand_base_url, source.as_str())?;
+
+    GitUrl::try_from(git_url.as_str())
+        .map_err(|e| format!("Invalid git URL `{git_url}` in spec `{package_spec}`: {e}"))?;
+
+    let mut options = AddOptions {
+        git: Some(git_url),
+        directory,
+        ..Default::default()
+    };
+
+    match reference {
+        Some(ParsedReference::Commit(reference)) => options.commit = Some(reference),
+        Some(ParsedReference::Tag(reference)) => options.tag = Some(reference),
+        Some(ParsedReference::Branch(reference)) => options.branch = Some(reference),
+        Some(ParsedReference::Unknown(reference)) => options.reference = Some(reference),
+        None => options.reference = Some(DEFAULT_GIT_HEAD_REFERENCE.to_string()),
+    }
+
+    Ok(ParsedAddPackage {
+        name: None,
+        options,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ParsedReference {
+    Branch(String),
+    Tag(String),
+    Commit(String),
+    Unknown(String),
+}
+
+fn looks_like_url_or_path(package_spec: &str) -> bool {
+    package_spec.contains("://")
+        || package_spec.starts_with("git@")
+        || package_spec.starts_with("ssh@")
+        || package_spec.starts_with("./")
+        || package_spec.starts_with("../")
+        || package_spec.starts_with('/')
+        || package_spec.starts_with("~/")
+}
+
+fn looks_like_repo_spec(package_spec: &str) -> bool {
+    !looks_like_url_or_path(package_spec) && package_spec.contains('/')
+}
+
+fn split_source_and_reference(package_spec: &str) -> (String, Option<String>) {
+    if let Some((source, reference)) = package_spec.split_once('@') {
+        return (source.to_string(), Some(reference.to_string()));
+    }
+    (package_spec.to_string(), None)
+}
+
+fn split_source_and_directory(source: String) -> Result<(String, Option<String>), String> {
+    if let Some(split_idx) = source.rfind(':') {
+        let last_slash = source.rfind('/');
+        if last_slash.is_some() && split_idx > last_slash.unwrap() {
+            let directory = source[split_idx + 1..].trim();
+            if directory.is_empty() {
+                return Err(format!("Invalid repository subdirectory in `{source}`"));
+            }
+            return Ok((source[..split_idx].to_string(), Some(directory.to_string())));
+        }
+    }
+
+    Ok((source, None))
+}
+
+fn parse_reference_and_directory(
+    reference_part: &str,
+) -> Result<(ParsedReference, Option<String>), String> {
+    if reference_part.is_empty() {
+        return Err("Missing git reference after `@`".to_string());
+    }
+
+    if let Some(raw_ref) = reference_part.strip_prefix("branch:") {
+        let (reference, directory) = split_reference_and_directory(raw_ref)?;
+        return Ok((ParsedReference::Branch(reference), directory));
+    }
+
+    if let Some(raw_ref) = reference_part.strip_prefix("tag:") {
+        let (reference, directory) = split_reference_and_directory(raw_ref)?;
+        return Ok((ParsedReference::Tag(reference), directory));
+    }
+
+    if let Some(raw_ref) = reference_part.strip_prefix("commit:") {
+        let (reference, directory) = split_reference_and_directory(raw_ref)?;
+        if !looks_like_commit_sha(reference.as_str()) {
+            return Err(format!(
+                "Invalid commit SHA `{reference}` in `@commit:<sha>` reference"
+            ));
+        }
+        return Ok((ParsedReference::Commit(reference), directory));
+    }
+
+    let (reference, directory) = split_reference_and_directory(reference_part)?;
+    if looks_like_commit_sha(reference.as_str()) {
+        Ok((ParsedReference::Commit(reference), directory))
+    } else {
+        Ok((ParsedReference::Unknown(reference), directory))
+    }
+}
+
+fn split_reference_and_directory(input: &str) -> Result<(String, Option<String>), String> {
+    let (reference, directory) = if let Some((reference, directory)) = input.split_once(':') {
+        (reference.trim(), Some(directory.trim().to_string()))
+    } else {
+        (input.trim(), None)
+    };
+
+    if reference.is_empty() {
+        return Err(format!("Invalid empty git reference in `{input}`"));
+    }
+
+    if let Some(directory) = directory {
+        if directory.is_empty() {
+            return Err(format!("Invalid repository subdirectory in `{input}`"));
+        }
+        Ok((reference.to_string(), Some(directory)))
+    } else {
+        Ok((reference.to_string(), None))
+    }
+}
+
+fn looks_like_commit_sha(reference: &str) -> bool {
+    (7..=40).contains(&reference.len()) && reference.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn resolve_shorthand_git_url(base_url: &str, source: &str) -> Result<String, String> {
+    let trimmed_base = base_url.trim();
+    if trimmed_base.is_empty() {
+        return Err("Git shorthand base URL cannot be empty".to_string());
+    }
+
+    let source = source.trim().trim_start_matches('/');
+    if source.is_empty() {
+        return Err("Git shorthand source cannot be empty".to_string());
+    }
+
+    Ok(format!("{}/{}", trimmed_base.trim_end_matches('/'), source))
+}
+
+/// Adds the given packages to the dependencies array, skipping any already present.
+/// Returns the names of packages actually appended (in input order).
 pub fn add_packages(
     config_doc: &mut DocumentMut,
     packages: Vec<String>,
-    options: AddOptions,
-) -> Result<(), DependencyEditError> {
+    mut options: AddOptions,
+) -> Result<Vec<String>, DependencyEditError> {
     // get the dependencies array
     let config_deps = get_mut_array(config_doc);
 
@@ -100,6 +292,12 @@ pub fn add_packages(
         .map(|s| s.to_string()) // Need to allocate so values are not a reference to a mut
         .collect::<Vec<_>>();
 
+    resolve_add_options_reference(&mut options).map_err(|e| DependencyEditError {
+        path: Path::new(".").into(),
+        source: Box::new(DependencyEditErrorKind::Reference(e)),
+    })?;
+
+    let mut added = Vec::new();
     // Determine if the dep to add is in the config, if not add it
     for package_name in packages {
         if !config_dep_names.contains(&package_name) {
@@ -109,6 +307,7 @@ pub fn add_packages(
             if let Some(last) = config_deps.iter_mut().last() {
                 last.decor_mut().set_prefix("\n    ");
             }
+            added.push(package_name);
         }
     }
 
@@ -116,7 +315,7 @@ pub fn add_packages(
     config_deps.set_trailing("\n");
     config_deps.set_trailing_comma(true);
 
-    Ok(())
+    Ok(added)
 }
 
 fn create_dependency_value(
@@ -211,13 +410,15 @@ fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
     deps
 }
 
+/// Removes the given packages from the dependencies array.
+/// Returns the names of packages actually removed (in the order they appeared in the config).
 pub fn remove_packages(
     config_doc: &mut DocumentMut,
     packages: Vec<String>,
-) -> Result<(), DependencyEditError> {
+) -> Result<Vec<String>, DependencyEditError> {
     let config_deps = get_mut_array(config_doc);
 
-    // Remove packages that match the names provided
+    let mut removed = Vec::new();
     config_deps.retain(|v| {
         let dep_name = match v {
             Value::String(s) => s.value().as_str(),
@@ -225,15 +426,154 @@ pub fn remove_packages(
             _ => "",
         };
 
-        // Keep the element if it doesn't match any package to remove
-        !packages.iter().any(|p| p.as_str() == dep_name)
+        if packages.iter().any(|p| p.as_str() == dep_name) {
+            removed.push(dep_name.to_string());
+            false
+        } else {
+            true
+        }
     });
 
     // Set a trailing new line and comma for the last element for proper formatting
     config_deps.set_trailing("\n");
     config_deps.set_trailing_comma(true);
 
-    Ok(())
+    Ok(removed)
+}
+
+pub fn resolve_add_options_reference(
+    options: &mut AddOptions,
+) -> Result<Option<ResolvedGitRef>, String> {
+    resolve_add_options_reference_with_executor(options, &GitExecutor {})
+}
+
+pub fn resolve_add_options_reference_with_executor(
+    options: &mut AddOptions,
+    git_exec: &impl CommandExecutor,
+) -> Result<Option<ResolvedGitRef>, String> {
+    let Some(git_url) = options.git.clone() else {
+        return Ok(None);
+    };
+
+    if let Some(c) = &options.commit {
+        return Ok(Some(ResolvedGitRef::Commit(c.clone())));
+    }
+    if let Some(t) = &options.tag {
+        return Ok(Some(ResolvedGitRef::Tag(t.clone())));
+    }
+    if let Some(b) = &options.branch {
+        return Ok(Some(ResolvedGitRef::Branch(b.clone())));
+    }
+
+    let raw_ref = options
+        .reference
+        .take()
+        .unwrap_or_else(|| DEFAULT_GIT_HEAD_REFERENCE.to_string());
+
+    let resolved = resolve_git_reference(git_exec, git_url.as_str(), raw_ref.as_str())?;
+    match &resolved {
+        ResolvedGitRef::Branch(branch) => options.branch = Some(branch.clone()),
+        ResolvedGitRef::Tag(tag) => options.tag = Some(tag.clone()),
+        ResolvedGitRef::Commit(_) => {}
+    }
+    Ok(Some(resolved))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedGitRef {
+    Branch(String),
+    Tag(String),
+    Commit(String),
+}
+
+impl ResolvedGitRef {
+    pub fn as_git_reference(&self) -> GitReference<'_> {
+        match self {
+            Self::Branch(s) => GitReference::Branch(s),
+            Self::Tag(s) => GitReference::Tag(s),
+            Self::Commit(s) => GitReference::Commit(s),
+        }
+    }
+}
+
+/// Sparse-checks out a `DESCRIPTION` file from a git dep into the cache and returns the package name
+/// declared in it.
+pub fn fetch_package_name_from_description(
+    git_url: &str,
+    directory: Option<&str>,
+    reference: &ResolvedGitRef,
+    cache: &crate::cache::Cache,
+    executor: impl CommandExecutor + Clone + 'static,
+) -> Result<String, String> {
+    let clone_path = cache.local().get_git_clone_path(git_url);
+
+    let mut remote = GitRemote::new(git_url);
+    if let Some(d) = directory {
+        remote.set_directory(d);
+    }
+
+    let (_, description_content) = remote
+        .sparse_checkout_for_description(clone_path, &reference.as_git_reference(), executor)
+        .map_err(|e| format!("Failed to fetch DESCRIPTION from `{git_url}`: {e}"))?;
+
+    let package = parse_description_file(&description_content).ok_or_else(|| {
+        format!("DESCRIPTION file from `{git_url}` is not valid R package metadata")
+    })?;
+
+    Ok(package.name)
+}
+
+fn resolve_git_reference(
+    git_exec: &impl CommandExecutor,
+    git_url: &str,
+    raw_ref: &str,
+) -> Result<ResolvedGitRef, String> {
+    if raw_ref == "HEAD" {
+        let branch =
+            git::resolve_default_branch_for_url(git_exec, git_url).map_err(|e| e.to_string())?;
+        return Ok(ResolvedGitRef::Branch(branch));
+    }
+
+    if let Some(branch_name) = raw_ref.strip_prefix("refs/heads/") {
+        return Ok(ResolvedGitRef::Branch(branch_name.to_string()));
+    }
+
+    if let Some(tag_name) = raw_ref.strip_prefix("refs/tags/") {
+        return Ok(ResolvedGitRef::Tag(tag_name.to_string()));
+    }
+
+    let is_branch = git_ls_remote_has_ref(git_exec, git_url, "--heads", raw_ref)?;
+    let is_tag = git_ls_remote_has_ref(git_exec, git_url, "--tags", raw_ref)?;
+
+    match (is_branch, is_tag) {
+        (true, false) => Ok(ResolvedGitRef::Branch(raw_ref.to_string())),
+        (false, true) => Ok(ResolvedGitRef::Tag(raw_ref.to_string())),
+        (false, false) => Err(format!(
+            "Could not resolve git ref `{raw_ref}` for `{git_url}`. Use `@branch:` or `@tag:` to disambiguate."
+        )),
+        (true, true) => Err(format!(
+            "Ambiguous git ref `{raw_ref}` for `{git_url}` (both branch and tag). Use `@branch:` or `@tag:`."
+        )),
+    }
+}
+
+fn git_ls_remote_has_ref(
+    git_exec: &impl CommandExecutor,
+    git_url: &str,
+    kind: &str,
+    raw_ref: &str,
+) -> Result<bool, String> {
+    let output = git_exec
+        .execute(
+            Command::new("git")
+                .arg("ls-remote")
+                .arg(kind)
+                .arg(git_url)
+                .arg(raw_ref),
+        )
+        .map_err(|e| format!("Failed to resolve git ref `{raw_ref}` for `{git_url}`: {e}"))?;
+
+    Ok(!output.trim().is_empty())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -250,11 +590,13 @@ pub enum DependencyEditErrorKind {
     Io(#[from] std::io::Error),
     Parse(#[from] toml_edit::TomlError),
     ConfigLoad(#[from] ConfigLoadError),
+    #[error("failed to resolve git reference: {0}")]
+    Reference(String),
 }
 
 #[cfg(test)]
 mod tests {
-    use super::AddOptions;
+    use super::{AddOptions, DEFAULT_GIT_SHORTHAND_BASE_URL, parse_add_package_spec};
     use crate::{add_packages, read_and_verify_config, remove_packages};
 
     const BASELINE_ADD_CONFIG: &str = "src/tests/valid_config/baseline_for_add.toml";
@@ -461,6 +803,91 @@ mod tests {
         )
         .unwrap();
         insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn parse_simple_package_spec() {
+        let parsed = parse_add_package_spec("dplyr", DEFAULT_GIT_SHORTHAND_BASE_URL).unwrap();
+        assert_eq!(parsed.name.as_deref(), Some("dplyr"));
+        assert!(parsed.options.is_empty());
+    }
+
+    #[test]
+    fn parse_owner_repo_defaults_to_head_reference() {
+        let parsed = parse_add_package_spec("r-lib/cli", DEFAULT_GIT_SHORTHAND_BASE_URL).unwrap();
+        assert_eq!(parsed.name, None);
+        assert_eq!(
+            parsed.options.git.as_deref(),
+            Some("https://github.com/r-lib/cli")
+        );
+        assert_eq!(parsed.options.reference.as_deref(), Some("HEAD"));
+        assert_eq!(parsed.options.directory, None);
+    }
+
+    #[test]
+    fn parse_owner_repo_with_untyped_reference() {
+        let parsed =
+            parse_add_package_spec("r-lib/cli@v3.6.2", DEFAULT_GIT_SHORTHAND_BASE_URL).unwrap();
+        assert_eq!(parsed.name, None);
+        assert_eq!(parsed.options.reference.as_deref(), Some("v3.6.2"));
+    }
+
+    #[test]
+    fn parse_owner_repo_with_typed_reference_and_directory() {
+        let parsed = parse_add_package_spec(
+            "r-lib/usethis@tag:v2.2.3:r-package",
+            DEFAULT_GIT_SHORTHAND_BASE_URL,
+        )
+        .unwrap();
+        assert_eq!(parsed.name, None);
+        assert_eq!(parsed.options.tag.as_deref(), Some("v2.2.3"));
+        assert_eq!(parsed.options.directory.as_deref(), Some("r-package"));
+    }
+
+    #[test]
+    fn parse_owner_repo_with_commit_sha() {
+        let parsed =
+            parse_add_package_spec("r-lib/rlang@9a8c5d2", DEFAULT_GIT_SHORTHAND_BASE_URL).unwrap();
+        assert_eq!(parsed.name, None);
+        assert_eq!(parsed.options.commit.as_deref(), Some("9a8c5d2"));
+    }
+
+    #[test]
+    fn parse_https_url_rejected_as_positional() {
+        let err = parse_add_package_spec(
+            "https://github.com/r-lib/cli.git",
+            DEFAULT_GIT_SHORTHAND_BASE_URL,
+        )
+        .unwrap_err();
+        assert!(err.contains("--git"), "error should mention --git: {err}");
+    }
+
+    #[test]
+    fn parse_ssh_url_rejected_as_positional() {
+        let err = parse_add_package_spec(
+            "git@github.com:r-lib/cli.git",
+            DEFAULT_GIT_SHORTHAND_BASE_URL,
+        )
+        .unwrap_err();
+        assert!(err.contains("--git"), "error should mention --git: {err}");
+    }
+
+    #[test]
+    fn parse_local_path_rejected_as_positional() {
+        let err =
+            parse_add_package_spec("./local/pkg", DEFAULT_GIT_SHORTHAND_BASE_URL).unwrap_err();
+        assert!(err.contains("--path"), "error should mention --path: {err}");
+    }
+
+    #[test]
+    fn parse_owner_repo_uses_custom_git_base_url() {
+        let parsed =
+            parse_add_package_spec("corp/team-pkg", "https://git.example.com/scm").unwrap();
+        assert_eq!(parsed.name, None);
+        assert_eq!(
+            parsed.options.git.as_deref(),
+            Some("https://git.example.com/scm/corp/team-pkg")
+        );
     }
 
     // Comprehensive tests - realistic combinations

@@ -17,9 +17,10 @@ use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
 use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
 use rv::{
-    CacheInfo, Config, ProjectSummary, RepositoryAction, RepositoryMatcher, RepositoryPositioning,
-    RepositoryUpdates, Version, activate, add_packages, deactivate, execute_repository_action,
-    read_and_verify_config, system_req,
+    CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
+    RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
+    execute_repository_action, parse_add_package_spec, read_and_verify_config,
+    resolve_add_options_reference_with_executor, system_req,
 };
 
 /// rv, the R package manager
@@ -77,9 +78,14 @@ pub enum Command {
     Sync {
         #[clap(long)]
         save_install_logs_in: Option<PathBuf>,
+        /// Fail if the lockfile is missing or out of sync with the config.
+        /// Intended for CI and reproducible installs.
+        #[clap(long)]
+        locked: bool,
     },
     /// Add packages to the project and sync
     Add {
+        /// Package names or `owner/repo[@ref][:subdir]` shorthands for git repositories
         #[clap(value_parser, required = true)]
         packages: Vec<String>,
         #[clap(long)]
@@ -116,6 +122,10 @@ pub enum Command {
         /// The command will not error even if this R version is not found
         #[clap(long)]
         r_version: Option<Version>,
+        /// Fail if the lockfile is missing or out of sync with the config.
+        /// Intended for CI and reproducible installs.
+        #[clap(long)]
+        locked: bool,
     },
     /// Provide a summary about the project status
     Summary {
@@ -325,6 +335,46 @@ pub enum ExportSubcommand {
     },
 }
 
+fn print_add_summary(output_format: &OutputFormat, added: &[String], dry_run: bool) {
+    if output_format.is_json() {
+        return;
+    }
+    if added.is_empty() {
+        println!("All packages already in rproject.toml. Nothing to add.");
+        return;
+    }
+    let verb = if dry_run { "Would add" } else { "Added" };
+    let noun = if added.len() == 1 {
+        "package"
+    } else {
+        "packages"
+    };
+    println!("{} {} {} to rproject.toml:", verb, added.len(), noun);
+    for name in added {
+        println!("  + {name}");
+    }
+}
+
+fn print_remove_summary(output_format: &OutputFormat, removed: &[String], dry_run: bool) {
+    if output_format.is_json() {
+        return;
+    }
+    if removed.is_empty() {
+        println!("No matching packages in rproject.toml. Nothing to remove.");
+        return;
+    }
+    let verb = if dry_run { "Would remove" } else { "Removed" };
+    let noun = if removed.len() == 1 {
+        "package"
+    } else {
+        "packages"
+    };
+    println!("{} {} {} from rproject.toml:", verb, removed.len(), noun);
+    for name in removed {
+        println!("  - {name}");
+    }
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -489,6 +539,7 @@ fn try_main() -> Result<()> {
         }
         Command::Sync {
             save_install_logs_in,
+            locked,
         } => {
             let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
@@ -504,6 +555,7 @@ fn try_main() -> Result<()> {
                 dry_run: false,
                 output_format: Some(output_format),
                 save_install_logs_in,
+                locked,
                 ..Default::default()
             }
             .run(&context, resolve_mode)?;
@@ -541,16 +593,26 @@ fn try_main() -> Result<()> {
 
             // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
-            let config = Config::from_file(&cli.config_file)?;
+
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
+                .map_err(|e| anyhow!("{e}"))?;
+            if !log_enabled {
+                context.show_progress_bar();
+            }
 
             // Validate repository alias exists if specified
             if let Some(ref repo_alias) = add_options.repository {
-                let repo_exists = config.repositories().iter().any(|r| r.alias == *repo_alias);
+                let repo_exists = context
+                    .config
+                    .repositories()
+                    .iter()
+                    .any(|r| r.alias == *repo_alias);
                 if !repo_exists {
                     return Err(anyhow::anyhow!(
                         "Repository alias '{}' not found in config. Available repositories: {}",
                         repo_alias,
-                        config
+                        context
+                            .config
                             .repositories()
                             .iter()
                             .map(|r| r.alias.as_str())
@@ -560,41 +622,94 @@ fn try_main() -> Result<()> {
                 }
             }
 
-            add_packages(&mut doc, packages, add_options)?;
+            // Parse shorthand git repo specs unless an explicit source option is provided.
+            let mut added = Vec::new();
+            if !add_options.has_source_options() {
+                for package in packages {
+                    let parsed = parse_add_package_spec(
+                        package.as_str(),
+                        context.config.git_shorthand_base_url(),
+                    )
+                    .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
+
+                    if add_options.force_source && parsed.options.git.is_some() {
+                        return Err(anyhow!(
+                            "--force-source cannot be used with the `{package}` git shorthand. --force-source only applies to packages from a configured repository."
+                        ));
+                    }
+
+                    let mut options = parsed.options;
+                    options.install_suggestions = add_options.install_suggestions;
+                    options.dependencies_only = add_options.dependencies_only;
+                    options.force_source = add_options.force_source;
+                    let resolved_ref =
+                        resolve_add_options_reference_with_executor(&mut options, &GitExecutor {})
+                            .map_err(|e| anyhow!("Invalid package spec `{package}`: {e}"))?;
+
+                    let final_name = match (parsed.name, resolved_ref, options.git.as_deref()) {
+                        (None, Some(ref_), Some(git_url)) => {
+                            rv::fetch_package_name_from_description(
+                                git_url,
+                                options.directory.as_deref(),
+                                &ref_,
+                                &context.cache,
+                                GitExecutor {},
+                            )
+                            .map_err(|e| anyhow!("Failed to add `{package}`: {e}"))?
+                        }
+                        (Some(name), _, _) => name,
+                        _ => unreachable!(
+                            "parser invariant: git-spec → name=None+git=Some, simple → name=Some"
+                        ),
+                    };
+                    added.extend(add_packages(&mut doc, vec![final_name], options)?);
+                }
+            } else {
+                let mut resolved_options = add_options.clone();
+                let _ = resolve_add_options_reference_with_executor(
+                    &mut resolved_options,
+                    &GitExecutor {},
+                )
+                .map_err(|e| anyhow!("Invalid package spec: {e}"))?;
+                added.extend(add_packages(&mut doc, packages, resolved_options)?);
+            }
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
             }
+            print_add_summary(&output_format, &added, dry_run);
+            let updated_config_toml = doc.to_string();
             // if no sync, exit early
             if no_sync {
+                // no_sync means we should persist config edits immediately
+                if !dry_run {
+                    write(&cli.config_file, &updated_config_toml)?;
+                }
                 if output_format.is_json() {
                     // Nothing to output for JSON format here since we didn't sync anything
                     println!("{{}}");
-                } else {
-                    println!("Packages successfully added");
                 }
                 return Ok(());
             }
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
 
-            if !log_enabled {
-                context.show_progress_bar();
-            }
-            // if dry run, the config won't have been edited to reflect the added changes so must be added
-            if dry_run {
-                context.config = doc.to_string().parse::<Config>()?;
-            }
+            // Keep config edits in-memory during sync; persist only after successful sync.
+            context.config = updated_config_toml.parse::<Config>()?;
             let resolve_mode = ResolveMode::Default;
             context
                 .load_for_resolve_mode(resolve_mode)
                 .map_err(|e| anyhow!("{e}"))?;
+            if !output_format.is_json() {
+                println!("\nResolving dependencies...");
+            }
             SyncHelper {
                 dry_run,
                 output_format: Some(output_format),
                 ..Default::default()
             }
             .run(&context, resolve_mode)?;
+            if !dry_run {
+                write(&cli.config_file, &updated_config_toml)?;
+            }
         }
         Command::Remove {
             packages,
@@ -606,19 +721,18 @@ fn try_main() -> Result<()> {
             // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
 
-            remove_packages(&mut doc, packages)?;
+            let removed = remove_packages(&mut doc, packages)?;
 
             // write the update if not dry run
             if !dry_run {
                 write(&cli.config_file, doc.to_string())?;
             }
+            print_remove_summary(&output_format, &removed, dry_run);
 
             // if no sync, exit early
             if no_sync {
                 if output_format.is_json() {
                     println!("{{}}");
-                } else {
-                    println!("Packages successfully removed");
                 }
                 return Ok(());
             }
@@ -639,6 +753,9 @@ fn try_main() -> Result<()> {
             context
                 .load_for_resolve_mode(resolve_mode)
                 .map_err(|e| anyhow!("{e}"))?;
+            if !output_format.is_json() {
+                println!("\nResolving dependencies...");
+            }
             SyncHelper {
                 dry_run,
                 output_format: Some(output_format),
@@ -664,7 +781,14 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Plan { upgrade, r_version } => {
+        Command::Plan {
+            upgrade,
+            r_version,
+            locked,
+        } => {
+            if locked && upgrade {
+                return Err(anyhow!("--locked and --upgrade are mutually exclusive"));
+            }
             let upgrade = if upgrade || r_version.is_some() {
                 ResolveMode::FullUpgrade
             } else {
@@ -683,6 +807,7 @@ fn try_main() -> Result<()> {
             SyncHelper {
                 dry_run: true,
                 output_format: Some(output_format),
+                locked,
                 ..Default::default()
             }
             .run(&context, upgrade)?;
