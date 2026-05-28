@@ -1,0 +1,16 @@
+[project]
+name = "Config/Needs test"
+description = "Testing Config/Needs/* on custom package with a remote package need and overriding"
+r_version = "4.5"
+
+repositories = [
+    { alias = "rv.needs.pkgA", url = "https://a2-ai.github.io/rv.needs.pkgA/0.1.0" },
+    { alias = "rv-test-repo", url = "https://a2-ai.github.io/rv-test-repo/repo2" },
+    { alias = "PPM", url = "https://packagemanager.posit.co/cran/latest" },
+]
+
+dependencies = [
+    { name = "rv.needs.pkgA", needs = [ "remote_pkg" ] },
+]
+
+prefer_repositories_for = [ "rv.git.pkgA" ]
