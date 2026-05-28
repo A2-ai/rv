@@ -86,7 +86,10 @@ impl Context {
         r_command_lookup: RCommandLookup,
         cache_dir: Option<&Path>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let config = Config::from_file(config_file)?;
+        let mut config = Config::from_file(config_file)?;
+        if let Ok(p) = std::env::var(crate::consts::LIBRARY_DIR_ENV_VAR_NAME) {
+            config.set_library(&p);
+        }
 
         // This can only be set to false if the user passed a r_version to rv plan
         let mut r_version_found = true;
@@ -137,9 +140,7 @@ impl Context {
             None
         };
 
-        let mut library = if let Ok(p) = std::env::var(crate::consts::LIBRARY_DIR_ENV_VAR_NAME) {
-            Library::new_custom(&project_dir, PathBuf::from(p))
-        } else if let Some(p) = config.library() {
+        let mut library = if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
         } else {
             Library::new(&project_dir, cache.system_info(), r_version.major_minor())
