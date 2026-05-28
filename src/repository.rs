@@ -4,7 +4,9 @@ use std::path::Path;
 
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::git::url::GitUrl;
-use crate::package::{Dependency, Package, PackageType, deserialize_version, parse_package_file};
+use crate::package::{
+    Dependency, Package, PackageType, deserialize_version, parse_needs_entries, parse_package_file,
+};
 use crate::package::{Version, VersionRequirement, parse_remote};
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -158,6 +160,8 @@ struct RUniversePackage {
     remote_url: GitUrl,
     remote_sha: String,
     remote_subdir: Option<String>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -243,7 +247,20 @@ impl From<RUniversePackage> for Package {
             remote_sha: Some(pkg.remote_sha),
             remote_subdir: pkg.remote_subdir,
             built: None,
-            needs: HashMap::new(),
+            needs: pkg
+                .extra
+                .iter()
+                .filter_map(|(key, val)| {
+                    let need_key = key.strip_prefix("Config/Needs/")?;
+                    let value_str = val.as_str()?;
+                    let entries = parse_needs_entries(value_str);
+                    if entries.is_empty() {
+                        None
+                    } else {
+                        Some((need_key.to_string(), entries))
+                    }
+                })
+                .collect(),
         }
     }
 }
@@ -280,6 +297,7 @@ pub enum RepositoryDatabaseErrorKind {
 mod test {
     use std::fs;
 
+    use crate::package::NeedsEntry;
     use crate::RepositoryDatabase;
 
     #[test]
@@ -338,5 +356,18 @@ mod test {
                 );
             }
         }
+
+        // ghqc has Config/Needs/website: sessioninfo in the r-universe API fixture
+        let ghqc = runiverse_pkgs
+            .get("ghqc")
+            .and_then(|v| v.first())
+            .expect("ghqc package present");
+        let website_needs = ghqc.needs.get("website").expect("website needs populated");
+        assert_eq!(website_needs.len(), 1);
+        assert!(
+            matches!(&website_needs[0], NeedsEntry::Package(dep) if dep.name() == "sessioninfo"),
+            "expected NeedsEntry::Package(sessioninfo), got {:?}",
+            website_needs[0]
+        );
     }
 }

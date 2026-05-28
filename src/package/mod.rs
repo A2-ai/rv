@@ -13,7 +13,7 @@ mod version;
 use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
-pub use parser::{parse_dependencies, parse_package_file};
+pub use parser::{parse_dependencies, parse_needs_entries, parse_package_file};
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
 

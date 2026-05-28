@@ -16,7 +16,7 @@ static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwra
 
 /// Parses the comma-separated value of a `Config/Needs/*` field into a list of entries.
 /// Returns `None` if the value is empty or contains only whitespace.
-pub(crate) fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
+pub fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
     value
         .split(',')
         .filter(|t| !t.trim().is_empty())
