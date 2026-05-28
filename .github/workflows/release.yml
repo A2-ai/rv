@@ -1,196 +1,39 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags: ["v*.*.*"]
 
-env:
-  # Cross-compilation for aarch64 requires a different linker
-  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-  # Add linker and CC for musl target
-  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
-  CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
-
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+  packages: write
 
 jobs:
-  Release-Build:
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    strategy:
-      matrix:
-        target:
-          - aarch64-unknown-linux-gnu
-          - x86_64-pc-windows-msvc
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-        rustup_toolchain: [stable]
-        include:
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-          - os: macos-14
-            target: x86_64-apple-darwin
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-musl
+  check-version:
+    runs-on: ubuntu-latest
+    name: Check version
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rustup_toolchain }}
-
-      - name: Install Rust crosscompile tools
-        if: ${{ contains(matrix.target, 'aarch64-unknown-linux-gnu') }}
+      - name: Check version matches tag
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y make g++ libssl-dev gcc-aarch64-linux-gnu
-          rustup target add aarch64-unknown-linux-gnu
-
-      - name: Install Rust crosscompile tools (musl)
-        if: ${{ contains(matrix.target, 'musl') }}
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y musl-tools musl-dev
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-musl" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
+          TAG_VERSION="${{ github.ref_name }}"
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [ "$TAG_VERSION" != "v$CARGO_VERSION" ]; then
+            echo "Version mismatch: tag=$TAG_VERSION, Cargo.toml=v$CARGO_VERSION"
+            exit 1
           fi
-          rustup target add ${{ matrix.target }}
+          echo "Version check passed: $TAG_VERSION"
 
-      - name: Install Rust crosscompile target (macOS Intel)
-        if: ${{ matrix.target == 'x86_64-apple-darwin' }}
-        run: rustup target add x86_64-apple-darwin
-
-      - name: Cargo build
-        run: cargo build --features=cli --release --target ${{ matrix.target }}
-
-      - name: Check that rv version matches the tag
-        run: python .github/scripts/tag_check.py "${{  github.ref_name }}"
-
-      - name: Archive (UNIX)
-        run: |
-          mkdir -p artifacts
-          cp -av target/${{ matrix.target }}/release/rv .
-          tar -czf ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.tar.gz rv
-        if: ${{ ! startsWith(matrix.os, 'windows') }}
-
-      - name: Archive (Windows)
-        run: |
-          mkdir -p artifacts
-          cp target/${{ matrix.target }}/release/rv.exe .
-          Compress-Archive rv.exe ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.zip
-        if: ${{ startsWith(matrix.os, 'windows') }}
-
-      - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v1
-        continue-on-error: true
-        with:
-          subject-path: ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.*
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}
-          path: ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.*
-          if-no-files-found: error
-          retention-days: 7
-
-  Release-Build-AlmaLinux:
-    runs-on: ubuntu-22.04
-    container:
-      image: almalinux:8
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    steps:
-      - name: Install build dependencies
-        run: dnf install -y gcc gcc-c++ make git curl tar gzip
-
-      - name: Install Python (for version check)
-        run: dnf install -y python3
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          . "$HOME/.cargo/env"
-          rustup target add x86_64-unknown-linux-gnu
-
-      - name: Cargo build
-        run: |
-          . "$HOME/.cargo/env"
-          cargo build --features=cli --release --target x86_64-unknown-linux-gnu
-
-      - name: Check that rv version matches the tag
-        run: |
-          . "$HOME/.cargo/env"
-          python3 .github/scripts/tag_check.py "${{ github.ref_name }}"
-
-      - name: Archive
-        run: |
-          cp -av target/x86_64-unknown-linux-gnu/release/rv .
-          tar -czf ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz rv
-
-      - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v1
-        continue-on-error: true
-        with:
-          subject-path: ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu
-          path: ${{ github.event.repository.name }}-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-
-  Release:
-    needs: [Release-Build, Release-Build-AlmaLinux]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-
-    steps:
-      - name: Ensure artifacts dir exists
-        run: mkdir -p artifacts
-
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Release
-        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
-        with:
-          name: ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          body: |
-            Welcome to this new release of rv ${{ github.ref_name }}!
-
-            All artifacts are signed with this repos identity using Sigstore.
-            You can verify the signatures using the `GitHub` CLI.
-
-            ```shell
-            gh attestation verify --owner ${{ github.repository_owner }} <my-artifact>
-            ```
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: ${{ contains(github.ref, '-pre') }}
-          files: artifacts/*
+  build:
+    name: Build
+    needs: check-version
+    uses: ./.github/workflows/build.yaml
+    with:
+      release: true
+    secrets:
+      GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+      TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_PRIVATE_TAP_GITHUB_TOKEN }}

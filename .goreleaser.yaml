@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
+
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+pro: true
+
+before:
+  hooks:
+    - rustup default stable
+    - cargo install --locked cargo-zigbuild
+    - cargo fetch --locked
+
+builds:
+  - id: default
+    builder: rust
+    tool: .github/scripts/cargo-zigbuild-glibc228.sh
+    flags:
+      - --release
+      - --features=cli
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+
+  - id: windows
+    builder: rust
+    # Use native cargo build for MSVC targets to avoid zig linker flag incompatibilities on Windows runners.
+    command: build
+    flags:
+      - --release
+      - --features=cli
+    targets:
+      - x86_64-pc-windows-msvc
+
+  # Homebrew cask does not support multiple targets per OS/arch combo, so we need to split those out here
+  - id: musl
+    builder: rust
+    flags:
+      - --release
+      - --features=cli
+    targets:
+      - x86_64-unknown-linux-musl
+      - aarch64-unknown-linux-musl
+
+archives:
+  - ids:
+      - default
+      - windows
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if contains .Target "musl" }}_musl{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+  - id: musl
+    ids:
+      - musl
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if contains .Target "musl" }}_musl{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  prerelease: auto
+
+homebrew_casks:
+  - ids:
+      - default
+    repository:
+      owner: A2-ai
+      name: homebrew-tap
