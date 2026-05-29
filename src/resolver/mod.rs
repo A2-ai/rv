@@ -1,4 +1,5 @@
 use crate::VersionRequirement;
+use crate::resolver::needs::extend_queue_with_needs;
 use crate::{CommandExecutor, ConfigDependency, Lockfile, RepositoryDatabase, Version};
 
 use fs_err as fs;
@@ -9,6 +10,7 @@ use std::str::FromStr;
 use url::Url;
 
 mod dependency;
+mod needs;
 mod result;
 mod sat;
 
@@ -19,169 +21,12 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    NeedsEntry, Package, PackageRemote, PackageType, is_binary_package, parse_description_file,
+    Package, PackageRemote, PackageType, fetch_repo_pkg, is_binary_package, parse_description_file,
     parse_description_file_in_folder,
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
 pub use result::Resolution;
-
-/// Fetches the DESCRIPTION for a repository-sourced package to read Config/Needs/* fields.
-/// Lookup order: binary cache → source cache → download source tarball to source cache.
-fn read_repo_description_for_needs(
-    name: &str,
-    version: &str,
-    repository: &Url,
-    cache: &Cache,
-    http_downloader: &impl HttpDownload,
-) -> Result<Package, String> {
-    let source = Source::Repository {
-        repository: repository.clone(),
-    };
-    let paths = cache
-        .local()
-        .get_package_paths(&source, Some(name), Some(version));
-
-    // 1. Binary already in cache: read DESCRIPTION from extracted binary directory
-    let binary_desc = paths.binary.join(name).join("DESCRIPTION");
-    if binary_desc.exists() {
-        let content = fs::read_to_string(&binary_desc)
-            .map_err(|e| format!("failed to read DESCRIPTION from binary cache for {name}: {e}"))?;
-        return parse_description_file(&content)
-            .ok_or_else(|| format!("failed to parse DESCRIPTION from binary cache for {name}"));
-    }
-
-    // 2. Source already extracted in cache
-    let source_desc = paths.source.join(name).join("DESCRIPTION");
-    if source_desc.exists() {
-        let content = fs::read_to_string(&source_desc)
-            .map_err(|e| format!("failed to read DESCRIPTION from source cache for {name}: {e}"))?;
-        return parse_description_file(&content)
-            .ok_or_else(|| format!("failed to parse DESCRIPTION from source cache for {name}"));
-    }
-
-    // 3. Download source tarball and extract to source cache path
-    let tarball_url_str = format!(
-        "{}/src/contrib/{}_{}.tar.gz",
-        repository.as_str().trim_end_matches('/'),
-        name,
-        version
-    );
-    let tarball_url = Url::parse(&tarball_url_str)
-        .map_err(|e| format!("failed to construct tarball URL for {name}: {e}"))?;
-    let (dir, _sha) = http_downloader
-        .download_and_untar(&tarball_url, &paths.source, true, None)
-        .map_err(|e| {
-            format!("failed to download source tarball for {name} from {tarball_url}: {e}")
-        })?;
-
-    let install_path = dir.unwrap_or_else(|| paths.source.clone());
-    parse_description_file_in_folder(&install_path)
-        .map_err(|e| format!("failed to parse DESCRIPTION for {name} from downloaded tarball: {e}"))
-}
-
-/// Fetches Config/Needs/* entries for `resolved_dep` if requested by `item`, then filters to
-/// only the requested keys. Returns `Err` if the DESCRIPTION cannot be fetched/parsed, or if
-/// any requested need key is absent from the DESCRIPTION.
-fn enrich_and_filter_needs(
-    item: &QueueItem<'_>,
-    resolved_dep: &mut ResolvedDependency<'_>,
-    cache: &Cache,
-    http_download: &impl HttpDownload,
-) -> Result<(), String> {
-    if item.needs.is_empty() && !item.install_all_needs {
-        return Ok(());
-    }
-
-    let needs_fetch = item.install_all_needs
-        || item
-            .needs
-            .iter()
-            .any(|k| !resolved_dep.needs.contains_key(k));
-
-    if needs_fetch {
-        if let Source::Repository { ref repository } = resolved_dep.source {
-            let pkg = read_repo_description_for_needs(
-                resolved_dep.name.as_ref(),
-                resolved_dep.version.original.as_str(),
-                repository,
-                cache,
-                http_download,
-            )?;
-            for (k, v) in pkg.needs {
-                resolved_dep.needs.entry(k).or_insert(v);
-            }
-        }
-    }
-
-    if !item.install_all_needs {
-        resolved_dep.needs.retain(|k, _| item.needs.contains(k));
-        let missing: Vec<_> = item
-            .needs
-            .iter()
-            .filter(|k| !resolved_dep.needs.contains_key(k.as_str()))
-            .cloned()
-            .collect();
-        if !missing.is_empty() {
-            return Err(format!(
-                "Config/Needs key(s) not found in DESCRIPTION: {}",
-                missing.join(", ")
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-/// Generates queue items for Config/Needs/* entries from a resolved dependency.
-fn build_needs_queue_items<'d>(
-    item: &QueueItem<'d>,
-    resolved_dep: &ResolvedDependency<'d>,
-) -> Vec<QueueItem<'d>> {
-    if !item.install_all_needs && item.needs.is_empty() {
-        return vec![];
-    }
-    if resolved_dep.needs.is_empty() {
-        log::debug!(
-            "No Config/Needs/* data available for {} (likely from lockfile without fresh DESCRIPTION fetch)",
-            resolved_dep.name
-        );
-        return vec![];
-    }
-
-    let entries: Vec<&NeedsEntry> = if item.install_all_needs {
-        resolved_dep.needs.values().flatten().collect()
-    } else {
-        item.needs
-            .iter()
-            .filter_map(|k| resolved_dep.needs.get(k))
-            .flatten()
-            .collect()
-    };
-
-    entries
-        .into_iter()
-        .map(|entry| match entry {
-            NeedsEntry::Package(dep) => {
-                let mut i = QueueItem::name_and_parent_only(
-                    Cow::Owned(dep.name().to_string()),
-                    resolved_dep.name.clone(),
-                );
-                i.version_requirement = dep.version_requirement().map(|r| Cow::Owned(r.clone()));
-                i
-            }
-            NeedsEntry::Remote(pkg_name, remote) => {
-                let mut i = QueueItem::name_and_parent_only(
-                    Cow::Owned(pkg_name.clone()),
-                    resolved_dep.name.clone(),
-                );
-                i.remote = Some(remote.clone());
-                i.from_needs_remote = true;
-                i
-            }
-        })
-        .collect()
-}
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct QueueItem<'d> {
@@ -639,58 +484,6 @@ impl<'d> Resolver<'d> {
         }
     }
 
-    /// Resolves a package that originates from a `Config/Needs/*` remote shorthand.
-    ///
-    /// Unlike a user-pinned git dep, a needs remote is a declaration of where the package
-    /// *comes from*, not a requirement to fetch it from git. If the package name is listed in
-    /// `prefer_repositories_for`, repos are tried first; git is used as a fallback (or primary
-    /// if not preferred).
-    fn resolve_needs_remote<E: CommandExecutor + Clone + 'static>(
-        &self,
-        item: &QueueItem<'d>,
-        prefer_repositories_for: &[String],
-        cache: &'d Cache,
-        git_exec: &'d E,
-    ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
-        let prefer_repo = prefer_repositories_for
-            .iter()
-            .any(|s| s == item.name.as_ref());
-
-        if prefer_repo {
-            if let Some(found) = self.repositories_lookup(item, cache) {
-                return Some(found);
-            }
-            log::debug!(
-                "{} not found in repositories, falling back to needs remote git source",
-                item.name
-            );
-        }
-
-        if let Some(PackageRemote::Git {
-            url,
-            reference,
-            directory,
-            ..
-        }) = &item.remote
-        {
-            let git_ref = reference
-                .as_deref()
-                .map(GitReference::Unknown)
-                .unwrap_or(GitReference::Unknown("HEAD"));
-            match self.git_lookup(item, url, directory.as_deref(), git_ref, git_exec, cache) {
-                Ok((mut resolved_dep, items)) => {
-                    resolved_dep.from_remote = true;
-                    return Some((resolved_dep, items));
-                }
-                Err(e) => {
-                    log::debug!("Git lookup failed for needs remote {}: {e}", item.name);
-                }
-            }
-        }
-
-        None
-    }
-
     /// Tries to find all dependencies from the repos, as well as their installation status
     pub fn resolve(
         &self,
@@ -759,7 +552,12 @@ impl<'d> Resolver<'d> {
                             .entry(resolved_dep.name.to_string())
                             .or_default()
                             .insert(item.version_requirement.clone());
-                        queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                        extend_queue_with_needs(
+                            &item,
+                            &resolved_dep,
+                            &mut queue,
+                            &mut result.failed,
+                        );
                         result.add_found(resolved_dep);
                         queue.extend(items);
                         continue;
@@ -777,15 +575,31 @@ impl<'d> Resolver<'d> {
                     .entry(resolved_dep.name.to_string())
                     .or_default()
                     .insert(item.version_requirement.clone());
-                if let Err(e) =
-                    enrich_and_filter_needs(&item, &mut resolved_dep, cache, http_download)
+                if (item.install_all_needs || !item.needs.is_empty())
+                    && resolved_dep.needs.is_empty()
                 {
-                    result
-                        .failed
-                        .push(UnresolvedDependency::from_item(&item).with_error(e));
-                    continue;
+                    match fetch_repo_pkg(
+                        &resolved_dep.name,
+                        &resolved_dep.version.to_string(),
+                        &resolved_dep.source,
+                        cache,
+                        http_download,
+                    ) {
+                        Ok(pkg) => {
+                            if let Some(p) = pkg {
+                                resolved_dep.needs = p.needs;
+                            }
+                        }
+                        Err(e) => {
+                            result.failed.push(
+                                UnresolvedDependency::from_item(&item).with_error(e.to_string()),
+                            );
+                            continue;
+                        }
+                    }
                 }
-                queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                extend_queue_with_needs(&item, &resolved_dep, &mut queue, &mut result.failed);
+
                 result.add_found(resolved_dep);
                 queue.extend(items);
                 continue;
@@ -812,29 +626,14 @@ impl<'d> Resolver<'d> {
                 .or_default()
                 .insert(item.version_requirement.clone());
 
-            // Needs remotes (Config/Needs/* shorthands like "org/pkg") get their own resolution
-            // path: repo-first if preferred, git as fallback. They are need declarations, not
-            // pinned sources, so they never flow through the standard remote override logic.
-            if item.from_needs_remote {
-                match self.resolve_needs_remote(&item, prefer_repositories_for, cache, git_exec) {
-                    Some((resolved_dep, items)) => {
-                        queue.extend(build_needs_queue_items(&item, &resolved_dep));
-                        result.add_found(resolved_dep);
-                        queue.extend(items);
-                    }
-                    None => {
-                        result.failed.push(UnresolvedDependency::from_item(&item));
-                    }
-                }
-                continue;
-            }
-
             // But first, we check if the item has a remote and use that instead
             // We will keep the remote result around _if_ the item has a version requirement and is in
-            // override list so we can check in the repo before pushing the remote version
+            // override list so we can check in the repo before pushing the remote version.
+            // Override also allowable for remotes listed in Config/Needs/* since it is a declaration of intent as well as source.
             let mut remote_result = None;
+
             // .contains would need to allocate, so using iter().any() instead
-            let can_be_overridden = item.version_requirement.is_some()
+            let can_be_overridden = (item.version_requirement.is_some() || item.from_needs_remote)
                 && prefer_repositories_for
                     .iter()
                     .any(|s| s == item.name.as_ref());
@@ -867,7 +666,12 @@ impl<'d> Resolver<'d> {
                                 if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
                                 } else {
-                                    queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                                    extend_queue_with_needs(
+                                        &item,
+                                        &resolved_dep,
+                                        &mut queue,
+                                        &mut result.failed,
+                                    );
                                     result.add_found(resolved_dep);
                                     queue.extend(items);
                                 }
@@ -905,21 +709,45 @@ impl<'d> Resolver<'d> {
                     }
                     if let Some((mut resolved_dep, items)) = self.repositories_lookup(&item, cache)
                     {
-                        if let Err(e) =
-                            enrich_and_filter_needs(&item, &mut resolved_dep, cache, http_download)
-                        {
-                            result
-                                .failed
-                                .push(UnresolvedDependency::from_item(&item).with_error(e));
-                            continue;
+                        if item.install_all_needs || !item.needs.is_empty() {
+                            match fetch_repo_pkg(
+                                &resolved_dep.name,
+                                &resolved_dep.version.to_string(),
+                                &resolved_dep.source,
+                                cache,
+                                http_download,
+                            ) {
+                                Ok(pkg) => {
+                                    if let Some(p) = pkg {
+                                        resolved_dep.needs = p.needs;
+                                    }
+                                }
+                                Err(e) => {
+                                    result.failed.push(
+                                        UnresolvedDependency::from_item(&item)
+                                            .with_error(e.to_string()),
+                                    );
+                                    continue;
+                                }
+                            }
                         }
-                        queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                        extend_queue_with_needs(
+                            &item,
+                            &resolved_dep,
+                            &mut queue,
+                            &mut result.failed,
+                        );
                         result.add_found(resolved_dep);
                         queue.extend(items);
                     } else {
                         // Fallback to the remote result otherwise
                         if let Some((resolved_dep, items)) = remote_result {
-                            queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                            extend_queue_with_needs(
+                                &item,
+                                &resolved_dep,
+                                &mut queue,
+                                &mut result.failed,
+                            );
                             result.add_found(resolved_dep);
                             queue.extend(items);
                         } else {
@@ -931,7 +759,12 @@ impl<'d> Resolver<'d> {
                 Some(ConfigDependency::Url { url, .. }) => {
                     match self.url_lookup(&item, url, cache, http_download) {
                         Ok((resolved_dep, items)) => {
-                            queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                            extend_queue_with_needs(
+                                &item,
+                                &resolved_dep,
+                                &mut queue,
+                                &mut result.failed,
+                            );
                             result.add_found(resolved_dep);
                             queue.extend(items);
                         }
@@ -972,7 +805,12 @@ impl<'d> Resolver<'d> {
                         cache,
                     ) {
                         Ok((resolved_dep, items)) => {
-                            queue.extend(build_needs_queue_items(&item, &resolved_dep));
+                            extend_queue_with_needs(
+                                &item,
+                                &resolved_dep,
+                                &mut queue,
+                                &mut result.failed,
+                            );
                             result.add_found(resolved_dep);
                             queue.extend(items);
                         }
