@@ -344,7 +344,7 @@ where
 /// Custom deserializer for needs from TOML lockfile format.
 /// Handles `needs = {website = ["knitr", "rmarkdown"]}` where inner arrays can contain
 /// either "simple_string" or { name = "pkg", requirement = "(>= 1.0)" } entries.
-fn deserialize_needs<'de, D>(deserializer: D) -> Result<HashMap<String, Vec<Dependency>>, D::Error>
+fn deserialize_needs<'de, D>(deserializer: D) -> Result<Vec<(String, Vec<Dependency>)>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -356,7 +356,8 @@ where
     }
 
     let map: HashMap<String, Vec<TomlDependency>> = HashMap::deserialize(deserializer)?;
-    map.into_iter()
+    let mut res = map
+        .into_iter()
         .map(|(key, deps)| {
             let resolved = deps
                 .into_iter()
@@ -374,7 +375,9 @@ where
                 .collect::<Result<Vec<_>, _>>()?;
             Ok((key, resolved))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    res.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -392,7 +395,7 @@ pub struct LockedPackage {
     /// Config/Needs/* entries, keyed by need key (e.g. "website").
     /// Only populated when the user specified `needs = [...]` or `install_all_needs = true`.
     #[serde(default, deserialize_with = "deserialize_needs")]
-    pub needs: HashMap<String, Vec<Dependency>>,
+    pub needs: Vec<(String, Vec<Dependency>)>,
 }
 
 impl LockedPackage {
@@ -455,12 +458,9 @@ impl LockedPackage {
         }
         if !self.needs.is_empty() {
             let mut needs_table = InlineTable::new();
-            let mut sorted_keys: Vec<_> = self.needs.keys().collect();
-            sorted_keys.sort();
-            for key in sorted_keys {
-                let deps = &self.needs[key];
+            for (need, deps) in &self.needs {
                 let arr: Array = deps.iter().map(|d| d.as_toml_value()).collect();
-                needs_table.insert(key, Value::Array(arr));
+                needs_table.insert(need, Value::Array(arr));
             }
             table.insert("needs", Item::Value(Value::InlineTable(needs_table)));
         }
@@ -481,7 +481,7 @@ impl LockedPackage {
         // install_all_needs is handled in the resolver (always re-fetches); we don't validate
         // "all" here since we can't know what "all" means without the DESCRIPTION.
         for key in dep.needs() {
-            if !self.needs.contains_key(key) {
+            if !self.needs.iter().any(|(need, _)| key == need) {
                 return false;
             }
         }
@@ -723,7 +723,7 @@ mod tests {
     use super::*;
     use url::Url;
 
-    fn make_locked_package(needs: HashMap<String, Vec<Dependency>>) -> LockedPackage {
+    fn make_locked_package(needs: Vec<(String, Vec<Dependency>)>) -> LockedPackage {
         LockedPackage {
             name: "testpkg".to_string(),
             version: "1.0.0".to_string(),
@@ -740,13 +740,13 @@ mod tests {
 
     #[test]
     fn needs_serializes_to_inline_toml() {
-        let needs = HashMap::from([(
+        let needs = vec![(
             "website".to_string(),
             vec![
                 Dependency::Simple("knitr".to_string()),
                 Dependency::Simple("rmarkdown".to_string()),
             ],
-        )]);
+        )];
         let pkg = make_locked_package(needs);
         let table = pkg.as_toml_table();
         let s = table.to_string();
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn needs_round_trips_through_toml() {
-        let needs = HashMap::from([
+        let needs = vec![
             (
                 "website".to_string(),
                 vec![
@@ -770,7 +770,7 @@ mod tests {
                 "coverage".to_string(),
                 vec![Dependency::Simple("covr".to_string())],
             ),
-        ]);
+        ];
         let pkg = make_locked_package(needs.clone());
         let lockfile = Lockfile {
             version: CURRENT_LOCKFILE_VERSION,
@@ -783,15 +783,21 @@ mod tests {
         let parsed_pkg = &parsed.packages[0];
 
         assert_eq!(parsed_pkg.needs.len(), needs.len());
+        let locked_needs = parsed_pkg
+            .needs
+            .iter()
+            .map(|(need, deps)| (need.as_str(), deps.as_slice()))
+            .collect::<HashMap<&str, &[Dependency]>>();
+
         assert_eq!(
-            parsed_pkg.needs["website"],
-            vec![
+            locked_needs["website"],
+            &[
                 Dependency::Simple("knitr".to_string()),
                 Dependency::Simple("rmarkdown".to_string()),
             ]
         );
         assert_eq!(
-            parsed_pkg.needs["coverage"],
+            locked_needs["coverage"],
             vec![Dependency::Simple("covr".to_string())]
         );
     }
@@ -801,7 +807,7 @@ mod tests {
         let repo_urls = HashSet::from(["https://cran.r-project.org/"]);
 
         // LockedPackage with no needs — a config dep requesting "website" should NOT match
-        let pkg = make_locked_package(HashMap::new());
+        let pkg = make_locked_package(Vec::new());
         let dep = ConfigDependency::Detailed {
             name: "testpkg".to_string(),
             repository: None,
@@ -814,10 +820,10 @@ mod tests {
         assert!(!pkg.is_matching(&dep, &repo_urls));
 
         // LockedPackage with "website" needs — should match
-        let pkg_with_needs = make_locked_package(HashMap::from([(
+        let pkg_with_needs = make_locked_package(vec![(
             "website".to_string(),
             vec![Dependency::Simple("knitr".to_string())],
-        )]));
+        )]);
         assert!(pkg_with_needs.is_matching(&dep, &repo_urls));
 
         // Config dep requesting two keys — only one present should NOT match

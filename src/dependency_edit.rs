@@ -7,8 +7,7 @@ use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 #[cfg(feature = "cli")]
 use clap::Parser;
 
-use crate::git::{self, CommandExecutor, GitExecutor, GitReference, GitRemote};
-use crate::package::parse_description_file;
+use crate::git::{self, CommandExecutor, GitExecutor, GitReference};
 use crate::{Config, config::ConfigLoadError, git::url::GitUrl};
 
 pub const DEFAULT_GIT_SHORTHAND_BASE_URL: &str = "https://github.com";
