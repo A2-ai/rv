@@ -5,10 +5,10 @@ repositories = []
 dependencies = [
     { name = "rv_needs_remote_override", git = "https://github.com/test/rv-needs-remote-override", commit = "HEAD", needs = ["website"] }
 ]
-prefer_repositories_for = ["rv.needs.website.pkg"]
+prefer_repositories_for = ["gsm"]
 ---
-Package: rv.needs.website.pkg
-Version: 1.0.0
+Package: gsm
+Version: 2.2.2
 License: MIT
 NeedsCompilation: no
 ---

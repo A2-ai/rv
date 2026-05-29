@@ -1,8 +1,0 @@
----
-source: src/resolver/mod.rs
-assertion_line: 1125
-expression: out
----
-rv_needs_remote_override=1.0.0 (git(url: https://github.com/test/rv-needs-remote-override, sha: somethinglikeasha, directory: None, tag: None, branch: None), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
---- unresolved --- 
-rv.needs.website.pkg [required by: rv_needs_remote_override]: Could not fetch repository https://github.com/some-org/rv.needs.website.pkg (ref: Unknown("HEAD")) DESCRIPTION file not found
