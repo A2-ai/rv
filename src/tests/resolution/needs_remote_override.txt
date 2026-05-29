@@ -1,0 +1,14 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv_needs_remote_override", git = "https://github.com/test/rv-needs-remote-override", commit = "HEAD", needs = ["website"] }
+]
+prefer_repositories_for = ["gsm"]
+---
+Package: gsm
+Version: 2.2.2
+License: MIT
+NeedsCompilation: no
+---

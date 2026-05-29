@@ -1,4 +1,5 @@
 use crate::VersionRequirement;
+use crate::resolver::needs::extend_queue_with_needs;
 use crate::{CommandExecutor, ConfigDependency, Lockfile, RepositoryDatabase, Version};
 
 use fs_err as fs;
@@ -9,6 +10,7 @@ use std::str::FromStr;
 use url::Url;
 
 mod dependency;
+mod needs;
 mod result;
 mod sat;
 
@@ -19,7 +21,7 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    Package, PackageRemote, PackageType, is_binary_package, parse_description_file,
+    Package, PackageRemote, PackageType, fetch_repo_pkg, is_binary_package, parse_description_file,
     parse_description_file_in_folder,
 };
 use crate::utils::create_spinner;
@@ -39,6 +41,14 @@ pub(crate) struct QueueItem<'d> {
     // Only for top level dependencies. Checks whether the config dependency is matching
     // what we have in the lockfile, we have one.
     matching_in_lockfile: Option<bool>,
+    /// Config/Needs/* keys to install (from rproject.toml `needs = [...]`)
+    needs: Vec<String>,
+    /// If true, install all Config/Needs/* entries from the package DESCRIPTION
+    install_all_needs: bool,
+    /// True if this item was created from a Config/Needs/* Remote entry. Allows
+    /// prefer_repositories_for to override the remote even without a version constraint,
+    /// since the remote is a declaration of need rather than a pinned source.
+    from_needs_remote: bool,
 }
 
 impl<'d> QueueItem<'d> {
@@ -181,6 +191,8 @@ impl<'d> Resolver<'d> {
                 sha,
             },
             item.install_suggestions,
+            item.install_all_needs,
+            &item.needs,
             canon_path,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
@@ -403,6 +415,8 @@ impl<'d> Resolver<'d> {
                     &package,
                     source,
                     item.install_suggestions,
+                    item.install_all_needs,
+                    &item.needs,
                     status,
                 );
                 Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
@@ -446,6 +460,8 @@ impl<'d> Resolver<'d> {
                 sha,
             },
             item.install_suggestions,
+            item.install_all_needs,
+            &item.needs,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
@@ -515,6 +531,9 @@ impl<'d> Resolver<'d> {
                     l.get_package(d.name(), Some(d))
                         .map(|p| p.is_matching(d, &self.repo_urls))
                 }),
+                needs: d.needs().to_vec(),
+                install_all_needs: d.install_all_needs(),
+                from_needs_remote: false,
             })
             .collect();
 
@@ -539,6 +558,12 @@ impl<'d> Resolver<'d> {
                             .entry(resolved_dep.name.to_string())
                             .or_default()
                             .insert(item.version_requirement.clone());
+                        extend_queue_with_needs(
+                            &item,
+                            &resolved_dep,
+                            &mut queue,
+                            &mut result.failed,
+                        );
                         result.add_found(resolved_dep);
                         queue.extend(items);
                         continue;
@@ -551,11 +576,41 @@ impl<'d> Resolver<'d> {
             }
 
             // First we look at the lockfile and trust what is inside
-            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
+            if let Some((mut resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
                 processed
                     .entry(resolved_dep.name.to_string())
                     .or_default()
                     .insert(item.version_requirement.clone());
+                if (item.install_all_needs || !item.needs.is_empty())
+                    && resolved_dep.needs.is_empty()
+                {
+                    match fetch_repo_pkg(
+                        &resolved_dep.name,
+                        &resolved_dep.version.to_string(),
+                        &resolved_dep.source,
+                        cache,
+                        http_download,
+                    ) {
+                        Ok(pkg) => {
+                            if let Some(p) = pkg {
+                                let install_deps = p.dependencies_to_install(
+                                    item.install_suggestions,
+                                    item.install_all_needs,
+                                    &item.needs,
+                                );
+                                resolved_dep.needs = install_deps.needs;
+                            }
+                        }
+                        Err(e) => {
+                            result.failed.push(
+                                UnresolvedDependency::from_item(&item).with_error(e.to_string()),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                extend_queue_with_needs(&item, &resolved_dep, &mut queue, &mut result.failed);
+
                 result.add_found(resolved_dep);
                 queue.extend(items);
                 continue;
@@ -584,10 +639,12 @@ impl<'d> Resolver<'d> {
 
             // But first, we check if the item has a remote and use that instead
             // We will keep the remote result around _if_ the item has a version requirement and is in
-            // override list so we can check in the repo before pushing the remote version
+            // override list so we can check in the repo before pushing the remote version.
+            // Override also allowable for remotes listed in Config/Needs/* since it is a declaration of intent as well as source.
             let mut remote_result = None;
+
             // .contains would need to allocate, so using iter().any() instead
-            let can_be_overridden = item.version_requirement.is_some()
+            let can_be_overridden = (item.version_requirement.is_some() || item.from_needs_remote)
                 && prefer_repositories_for
                     .iter()
                     .any(|s| s == item.name.as_ref());
@@ -620,6 +677,12 @@ impl<'d> Resolver<'d> {
                                 if can_be_overridden {
                                     remote_result = Some((resolved_dep, items));
                                 } else {
+                                    extend_queue_with_needs(
+                                        &item,
+                                        &resolved_dep,
+                                        &mut queue,
+                                        &mut result.failed,
+                                    );
                                     result.add_found(resolved_dep);
                                     queue.extend(items);
                                 }
@@ -655,12 +718,52 @@ impl<'d> Resolver<'d> {
                     if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
                         continue;
                     }
-                    if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
+                    if let Some((mut resolved_dep, items)) = self.repositories_lookup(&item, cache)
+                    {
+                        if item.install_all_needs || !item.needs.is_empty() {
+                            match fetch_repo_pkg(
+                                &resolved_dep.name,
+                                &resolved_dep.version.to_string(),
+                                &resolved_dep.source,
+                                cache,
+                                http_download,
+                            ) {
+                                Ok(pkg) => {
+                                    if let Some(p) = pkg {
+                                        let install_deps = p.dependencies_to_install(
+                                            item.install_suggestions,
+                                            item.install_all_needs,
+                                            &item.needs,
+                                        );
+                                        resolved_dep.needs = install_deps.needs;
+                                    }
+                                }
+                                Err(e) => {
+                                    result.failed.push(
+                                        UnresolvedDependency::from_item(&item)
+                                            .with_error(e.to_string()),
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                        extend_queue_with_needs(
+                            &item,
+                            &resolved_dep,
+                            &mut queue,
+                            &mut result.failed,
+                        );
                         result.add_found(resolved_dep);
                         queue.extend(items);
                     } else {
                         // Fallback to the remote result otherwise
                         if let Some((resolved_dep, items)) = remote_result {
+                            extend_queue_with_needs(
+                                &item,
+                                &resolved_dep,
+                                &mut queue,
+                                &mut result.failed,
+                            );
                             result.add_found(resolved_dep);
                             queue.extend(items);
                         } else {
@@ -672,6 +775,12 @@ impl<'d> Resolver<'d> {
                 Some(ConfigDependency::Url { url, .. }) => {
                     match self.url_lookup(&item, url, cache, http_download) {
                         Ok((resolved_dep, items)) => {
+                            extend_queue_with_needs(
+                                &item,
+                                &resolved_dep,
+                                &mut queue,
+                                &mut result.failed,
+                            );
                             result.add_found(resolved_dep);
                             queue.extend(items);
                         }
@@ -712,6 +821,12 @@ impl<'d> Resolver<'d> {
                         cache,
                     ) {
                         Ok((resolved_dep, items)) => {
+                            extend_queue_with_needs(
+                                &item,
+                                &resolved_dep,
+                                &mut queue,
+                                &mut result.failed,
+                            );
                             result.add_found(resolved_dep);
                             queue.extend(items);
                         }
@@ -793,11 +908,31 @@ mod tests {
 
         fn download_and_untar(
             &self,
-            _: &Url,
-            _: impl AsRef<Path>,
+            url: &Url,
+            output_path: impl AsRef<Path>,
             _: bool,
             _: Option<&Path>,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
+            // Serve DESCRIPTION for needs-test repo packages so read_repo_description_for_needs
+            // exercises the HTTP download path without a real network call.
+            // URL pattern: {repo}/src/contrib/{name}_{version}.tar.gz
+            // Serve the DESCRIPTION for rv.needs.A v1.0.0 from repo1.
+            // Its Config/Needs/website lists rv.needs.B, which depends on rv.needs.A >= 2.0,
+            // forcing the resolver to upgrade rv.needs.A from v1.0.0 (repo1) to v2.0.0 (repo2).
+            let needs_packages: &[(&str, &str, &str)] =
+                &[("rv.needs.A", "1.0.0", "Config/Needs/website: rv.needs.B\n")];
+            for (name, version, extra) in needs_packages {
+                let suffix = format!("src/contrib/{}_{}.tar.gz", name, version);
+                if url.as_str().ends_with(&suffix) {
+                    fs::create_dir_all(output_path.as_ref()).unwrap();
+                    fs::write(
+                        output_path.as_ref().join(DESCRIPTION_FILENAME),
+                        format!("Package: {name}\nVersion: {version}\n{extra}"),
+                    )
+                    .unwrap();
+                    return Ok((None, "SOME_SHA".to_string()));
+                }
+            }
             Ok((None, "SOME_SHA".to_string()))
         }
     }
@@ -863,6 +998,15 @@ mod tests {
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
+            ("rv_needs_simple", "https://github.com/test/rv-needs-simple"),
+            (
+                "rv_needs_upgrade",
+                "https://github.com/test/rv-needs-upgrade",
+            ),
+            (
+                "rv_needs_remote_override",
+                "https://github.com/test/rv-needs-remote-override",
+            ),
         ];
 
         for (dep, url) in &remotes {

@@ -1,16 +1,43 @@
 //! Parses the PACKAGES files
 
 use crate::package::remotes::parse_remote;
-use crate::package::{Dependency, Package};
+use crate::package::{Dependency, NeedsEntry, Package};
 use crate::{Version, VersionRequirement};
 use regex::Regex;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
+// [\w/]+ instead of \w+ to capture slash-separated keys like Config/Needs/website
 static PACKAGE_KEY_VAL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^(?P<key>\w+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?m)^(?P<key>[\w/]+):(?P<value>.*(?:\n\s+.*)*)").unwrap());
 static ANY_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+
+/// Parses the comma-separated value of a `Config/Needs/*` field into a list of entries.
+/// Returns `None` if the value is empty or contains only whitespace.
+pub fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
+    value
+        .split(',')
+        .filter(|t| !t.trim().is_empty())
+        .map(|token| {
+            // Parses one token from a `Config/Needs/*` value into a `NeedsEntry`.
+            // Tokens containing `/` or `::` are treated as remote shorthands (e.g. `tidyverse/tidytemplate`);
+            // all others are plain package names, optionally with a version requirement.
+            let token = token.trim();
+            if token.contains('/') || token.contains("::") {
+                let (name, remote) = parse_remote(token);
+                let pkg_name = name.unwrap_or_else(|| token.to_string());
+                NeedsEntry::Remote(pkg_name, remote)
+            } else {
+                let dep = parse_dependencies(token)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| Dependency::Simple(token.to_string()));
+                NeedsEntry::Package(dep)
+            }
+        })
+        .collect()
+}
 
 pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
     let mut res = Vec::new();
@@ -98,9 +125,18 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Built" => package.built = Some(value.to_string()),
                 // Posit uses that, maybe we can parse it?
                 "SystemRequirements" => continue,
+                key if key.starts_with("Config/Needs/") => {
+                    let need_key = key["Config/Needs/".len()..].to_string();
+                    let entries = parse_needs_entries(value);
+                    if !entries.is_empty() {
+                        package.needs.insert(need_key, entries);
+                    }
+                }
                 _ => continue,
             }
         }
+
+        enrich_needs(&mut package);
 
         package
     };
@@ -118,6 +154,36 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     }
 
     packages
+}
+
+/// Enrich needs entries: if a package appears in Config/Needs/* without a version
+/// requirement but has one in Suggests, promote it to Pinned using that requirement.
+fn enrich_needs(pkg: &mut Package) {
+    if pkg.needs.is_empty() {
+        return;
+    }
+
+    let suggests_versions: HashMap<&str, &VersionRequirement> = pkg
+        .suggests
+        .iter()
+        .filter_map(|dep| match dep {
+            Dependency::Pinned { name, requirement } => Some((name.as_str(), requirement)),
+            _ => None,
+        })
+        .collect();
+
+    for entries in pkg.needs.values_mut() {
+        for entry in entries.iter_mut() {
+            if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry {
+                if let Some(&req) = suggests_versions.get(name.as_str()) {
+                    *entry = NeedsEntry::Package(Dependency::Pinned {
+                        name: name.clone(),
+                        requirement: req.clone(),
+                    });
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -234,6 +300,138 @@ NeedsCompilation: no
         assert_eq!(
             packages["shinytest2"][0].linking_to,
             vec![Dependency::Simple("cpp11".to_string())]
+        );
+    }
+
+    #[test]
+    fn parses_config_needs() {
+        let content = r#"
+Package: ggplot2
+Version: 3.5.0
+Imports: scales
+Suggests: testthat
+Config/Needs/website: knitr, rmarkdown, tidyverse/tidytemplate, covr (>= 0.2.0)
+Config/Needs/multi_line: readr,
+    purrr,
+    S7,
+    a2-ai/rv.git.pkgA
+
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["ggplot2"][0];
+
+        // Plain package names come through as Package entries
+        let website = pkg.needs.get("website").expect("website needs");
+        let plain_names: Vec<_> = website
+            .iter()
+            .filter_map(|e| match e {
+                crate::package::NeedsEntry::Package(Dependency::Simple(d)) => Some(d.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(plain_names.contains(&"knitr".to_string()));
+        assert!(plain_names.contains(&"rmarkdown".to_string()));
+
+        // Remote shorthand comes through as Remote entry
+        let remote_count = website
+            .iter()
+            .filter(|e| matches!(e, crate::package::NeedsEntry::Remote(_, _)))
+            .count();
+        assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
+
+        // Version Requirement properly parsed
+        let ver_req_count = website
+            .iter()
+            .filter(|e| matches!(e, NeedsEntry::Package(Dependency::Pinned { .. })))
+            .count();
+        assert_eq!(
+            ver_req_count, 1,
+            "covr (>= 0.2.0) should be a pinned dependency"
+        );
+
+        // Second need key is parsed correctly
+        let multi_line = pkg.needs.get("multi_line").expect("multi_line needs");
+        let names = multi_line
+            .iter()
+            .map(|e| match e {
+                NeedsEntry::Package(d) => d.name(),
+                NeedsEntry::Remote(n, _) => n.as_str(),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(&names, &["readr", "purrr", "S7", "rv.git.pkgA"]);
+    }
+
+    #[test]
+    fn needs_entries_inherit_version_from_suggests() {
+        // Packages listed in Config/Needs/* without a version requirement should pick up
+        // the version constraint from Suggests when one exists there.
+        let content = r#"
+Package: bit64
+Version: 4.8.99
+Suggests:
+    patrick (>= 0.3.0),
+    testthat (>= 3.3.0),
+    withr
+Config/Needs/development: patrick, testthat
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["bit64"][0];
+        let dev = pkg.needs.get("development").expect("development needs");
+        assert_eq!(dev.len(), 2);
+
+        let patrick = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "patrick" => Some(d),
+            _ => None,
+        });
+        let patrick = patrick.expect("patrick entry");
+        assert_eq!(
+            patrick.version_requirement().unwrap().to_string(),
+            "(>= 0.3.0)",
+            "patrick should inherit version requirement from Suggests"
+        );
+
+        let testthat = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
+            _ => None,
+        });
+        let testthat = testthat.expect("testthat entry");
+        assert_eq!(
+            testthat.version_requirement().unwrap().to_string(),
+            "(>= 3.3.0)",
+            "testthat should inherit version requirement from Suggests"
+        );
+
+        // withr is in Suggests without a version — should not appear in needs at all
+        let withr = dev.iter().find(|e| match e {
+            NeedsEntry::Package(d) => d.name() == "withr",
+            _ => false,
+        });
+        assert!(withr.is_none(), "withr is not in Config/Needs/development");
+    }
+
+    #[test]
+    fn needs_explicit_version_not_overridden_by_suggests() {
+        // A version requirement already present in Config/Needs/* must not be replaced.
+        let content = r#"
+Package: mypkg
+Version: 1.0.0
+Suggests: testthat (>= 3.3.0)
+Config/Needs/development: testthat (>= 2.0.0)
+
+"#;
+        let packages = parse_package_file(content);
+        let pkg = &packages["mypkg"][0];
+        let dev = pkg.needs.get("development").expect("development needs");
+        let testthat = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
+            _ => None,
+        });
+        assert_eq!(
+            testthat.unwrap().version_requirement().unwrap().to_string(),
+            "(>= 2.0.0)",
+            "explicit needs version should not be overridden by Suggests"
         );
     }
 }

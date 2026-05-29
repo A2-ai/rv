@@ -1,5 +1,6 @@
+use crate::package::NeedsEntry;
 use crate::resolver::sat::DependencySolver;
-use crate::{ResolvedDependency, UnresolvedDependency};
+use crate::{Dependency, ResolvedDependency, UnresolvedDependency};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -87,6 +88,12 @@ impl<'d> Resolution<'d> {
             for dep in deps {
                 if let Some(req) = dep.version_requirement() {
                     solver.add_requirement(dep.name(), req, &package.name);
+                }
+            }
+
+            for entry in package.needs.values().flatten() {
+                if let NeedsEntry::Package(Dependency::Pinned { name, requirement }) = entry {
+                    solver.add_requirement(name, requirement, &package.name);
                 }
             }
         }
