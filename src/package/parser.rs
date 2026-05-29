@@ -5,7 +5,6 @@ use crate::package::{Dependency, NeedsEntry, Package};
 use crate::{Version, VersionRequirement};
 use regex::Regex;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -311,8 +310,12 @@ Package: ggplot2
 Version: 3.5.0
 Imports: scales
 Suggests: testthat
-Config/Needs/website: knitr, rmarkdown, tidyverse/tidytemplate
-Config/Needs/coverage: covr
+Config/Needs/website: knitr, rmarkdown, tidyverse/tidytemplate, covr (>= 0.2.0)
+Config/Needs/multi_line: readr,
+    purrr,
+    S7,
+    a2-ai/rv.git.pkgA
+
 
 "#;
         let packages = parse_package_file(content);
@@ -323,7 +326,7 @@ Config/Needs/coverage: covr
         let plain_names: Vec<_> = website
             .iter()
             .filter_map(|e| match e {
-                crate::package::NeedsEntry::Package(d) => Some(d.name().to_string()),
+                crate::package::NeedsEntry::Package(Dependency::Simple(d)) => Some(d.clone()),
                 _ => None,
             })
             .collect();
@@ -337,40 +340,26 @@ Config/Needs/coverage: covr
             .count();
         assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
 
-        // Second need key is parsed correctly
-        let coverage = pkg.needs.get("coverage").expect("coverage needs");
-        assert_eq!(coverage.len(), 1);
-    }
-
-    #[test]
-    fn parses_config_needs_multiline() {
-        let content = r#"
-Package: ggplot2
-Version: 3.5.0
-Config/Needs/website: knitr,
-    rmarkdown,
-    tidyverse/tidytemplate
-
-"#;
-        let packages = parse_package_file(content);
-        let pkg = &packages["ggplot2"][0];
-        let website = pkg.needs.get("website").expect("website needs");
-
-        let plain_names: Vec<_> = website
+        // Version Requirement properly parsed
+        let ver_req_count = website
             .iter()
-            .filter_map(|e| match e {
-                crate::package::NeedsEntry::Package(d) => Some(d.name().to_string()),
-                _ => None,
-            })
-            .collect();
-        assert!(plain_names.contains(&"knitr".to_string()));
-        assert!(plain_names.contains(&"rmarkdown".to_string()));
-
-        let remote_count = website
-            .iter()
-            .filter(|e| matches!(e, crate::package::NeedsEntry::Remote(_, _)))
+            .filter(|e| matches!(e, NeedsEntry::Package(Dependency::Pinned { .. })))
             .count();
-        assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
+        assert_eq!(
+            ver_req_count, 1,
+            "covr (>= 0.2.0) should be a pinned dependency"
+        );
+
+        // Second need key is parsed correctly
+        let multi_line = pkg.needs.get("multi_line").expect("multi_line needs");
+        let names = multi_line
+            .iter()
+            .map(|e| match e {
+                NeedsEntry::Package(d) => d.name(),
+                NeedsEntry::Remote(n, _) => n.as_str(),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(&names, &["readr", "purrr", "S7", "rv.git.pkgA"]);
     }
 
     #[test]
@@ -443,44 +432,6 @@ Config/Needs/development: testthat (>= 2.0.0)
             testthat.unwrap().version_requirement().unwrap().to_string(),
             "(>= 2.0.0)",
             "explicit needs version should not be overridden by Suggests"
-        );
-    }
-
-    #[test]
-    fn parses_config_needs_version_constraints() {
-        let content = r#"
-Package: ggplot2
-Version: 3.5.0
-Config/Needs/website: knitr (>= 1.20), rmarkdown
-
-"#;
-        let packages = parse_package_file(content);
-        let pkg = &packages["ggplot2"][0];
-        let website = pkg.needs.get("website").expect("website needs");
-        assert_eq!(website.len(), 2);
-
-        let pinned = website.iter().find_map(|e| match e {
-            crate::package::NeedsEntry::Package(d @ crate::package::Dependency::Pinned { .. }) => {
-                Some(d)
-            }
-            _ => None,
-        });
-        let pinned = pinned.expect("knitr should be a pinned dependency");
-        assert_eq!(pinned.name(), "knitr");
-        assert_eq!(
-            pinned.version_requirement().unwrap().to_string(),
-            "(>= 1.20)"
-        );
-
-        let plain = website.iter().find_map(|e| match e {
-            crate::package::NeedsEntry::Package(d @ crate::package::Dependency::Simple(_)) => {
-                Some(d)
-            }
-            _ => None,
-        });
-        assert_eq!(
-            plain.expect("rmarkdown should be Simple").name(),
-            "rmarkdown"
         );
     }
 }
