@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
+use std::{collections::HashMap, ops::Not};
 use toml_edit::{InlineTable, Value};
 
 mod builtin;
@@ -120,6 +120,7 @@ pub struct Package {
 pub struct InstallationDependencies<'a> {
     pub(crate) direct: Vec<&'a Dependency>,
     pub(crate) suggests: Vec<&'a Dependency>,
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 impl Package {
@@ -132,10 +133,12 @@ impl Package {
         }
     }
 
-    pub fn dependencies_to_install(
-        &self,
+    pub fn dependencies_to_install<'a>(
+        &'a self,
         install_suggestions: bool,
-    ) -> InstallationDependencies<'_> {
+        install_all_needs: bool,
+        needs: &[String],
+    ) -> InstallationDependencies<'a> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -157,12 +160,44 @@ impl Package {
             Vec::new()
         };
 
+        let needs_converter = |iter: (&String, &Vec<NeedsEntry>)| -> (String, Vec<NeedsEntry>) {
+            (
+                iter.0.clone(),
+                iter.1
+                    .iter()
+                    .filter_map(|entry| {
+                        if let NeedsEntry::Package(p) = entry {
+                            BASE_PACKAGES
+                                .contains(&p.name())
+                                .not()
+                                .then_some(entry.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        let needs = if install_all_needs {
+            self.needs.iter().map(needs_converter).collect()
+        } else if !needs.is_empty() {
+            self.needs
+                .iter()
+                .filter(|(need, _)| needs.contains(need))
+                .map(needs_converter)
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
         InstallationDependencies {
             direct: out
                 .into_iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
                 .collect(),
             suggests,
+            needs,
         }
     }
 }

@@ -191,6 +191,8 @@ impl<'d> Resolver<'d> {
                 sha,
             },
             item.install_suggestions,
+            item.install_all_needs,
+            &item.needs,
             canon_path,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
@@ -413,6 +415,8 @@ impl<'d> Resolver<'d> {
                     &package,
                     source,
                     item.install_suggestions,
+                    item.install_all_needs,
+                    &item.needs,
                     status,
                 );
                 Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
@@ -456,6 +460,8 @@ impl<'d> Resolver<'d> {
                 sha,
             },
             item.install_suggestions,
+            item.install_all_needs,
+            &item.needs,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
@@ -587,7 +593,12 @@ impl<'d> Resolver<'d> {
                     ) {
                         Ok(pkg) => {
                             if let Some(p) = pkg {
-                                resolved_dep.needs = p.needs;
+                                let install_deps = p.dependencies_to_install(
+                                    item.install_suggestions,
+                                    item.install_all_needs,
+                                    &item.needs,
+                                );
+                                resolved_dep.needs = install_deps.needs;
                             }
                         }
                         Err(e) => {
@@ -719,7 +730,12 @@ impl<'d> Resolver<'d> {
                             ) {
                                 Ok(pkg) => {
                                     if let Some(p) = pkg {
-                                        resolved_dep.needs = p.needs;
+                                        let install_deps = p.dependencies_to_install(
+                                            item.install_suggestions,
+                                            item.install_all_needs,
+                                            &item.needs,
+                                        );
+                                        resolved_dep.needs = install_deps.needs;
                                     }
                                 }
                                 Err(e) => {
