@@ -1,6 +1,7 @@
 Package: rv_needs_simple
 Version: 1.0.0
 Depends: R (>= 3.6)
+Suggests: rmarkdown (>= 2.25)
 Config/Needs/website: knitr, rmarkdown
 License: MIT
 NeedsCompilation: no

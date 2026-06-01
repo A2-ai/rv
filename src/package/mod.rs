@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
-use std::{collections::HashMap, ops::Not};
 use toml_edit::{InlineTable, Value};
 
 mod builtin;
@@ -161,16 +161,42 @@ impl Package {
             Vec::new()
         };
 
+        let suggests_req_map = self
+            .suggests
+            .iter()
+            .filter_map(|d| {
+                if let Dependency::Pinned { name, requirement } = d {
+                    Some((name.as_str(), requirement))
+                } else {
+                    None
+                }
+            })
+            .collect::<HashMap<_, _>>();
+
         let needs_converter = |iter: (&String, &Vec<NeedsEntry>)| -> (String, Vec<NeedsEntry>) {
             (
                 iter.0.clone(),
                 iter.1
                     .iter()
                     .filter_map(|entry| match entry {
-                        NeedsEntry::Package(p) => BASE_PACKAGES
-                            .contains(&p.name())
-                            .not()
-                            .then_some(entry.clone()),
+                        NeedsEntry::Package(p) => {
+                            if BASE_PACKAGES.contains(&p.name()) {
+                                return None;
+                            }
+
+                            // Enrich needs entries: if a package appears in Config/Needs/* without a version
+                            // requirement but has one in Suggests, promote it to Pinned using that requirement.
+                            if let Dependency::Simple(name) = p
+                                && let Some(&req) = suggests_req_map.get(name.as_str())
+                            {
+                                Some(NeedsEntry::Package(Dependency::Pinned {
+                                    name: name.clone(),
+                                    requirement: req.clone(),
+                                }))
+                            } else {
+                                Some(entry.clone())
+                            }
+                        }
                         NeedsEntry::Remote(_, _) => Some(entry.clone()),
                     })
                     .collect::<Vec<_>>(),

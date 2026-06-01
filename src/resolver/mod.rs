@@ -105,10 +105,7 @@ fn prepare_deps(
 
     for entry in deps.needs.into_iter().flat_map(|(_, e)| e) {
         let item = match entry {
-            NeedsEntry::Package(d) => {
-                let mut i = dep_to_item(d);
-                i
-            }
+            NeedsEntry::Package(d) => dep_to_item(d),
             NeedsEntry::Remote(pkg_name, remote) => {
                 let mut i =
                     QueueItem::name_and_parent_only(Cow::Owned(pkg_name), resolved.name.clone());

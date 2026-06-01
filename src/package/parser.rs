@@ -136,8 +136,6 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             }
         }
 
-        enrich_needs(&mut package);
-
         package
     };
 
@@ -154,36 +152,6 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     }
 
     packages
-}
-
-/// Enrich needs entries: if a package appears in Config/Needs/* without a version
-/// requirement but has one in Suggests, promote it to Pinned using that requirement.
-fn enrich_needs(pkg: &mut Package) {
-    if pkg.needs.is_empty() {
-        return;
-    }
-
-    let suggests_versions: HashMap<&str, &VersionRequirement> = pkg
-        .suggests
-        .iter()
-        .filter_map(|dep| match dep {
-            Dependency::Pinned { name, requirement } => Some((name.as_str(), requirement)),
-            _ => None,
-        })
-        .collect();
-
-    for entries in pkg.needs.values_mut() {
-        for entry in entries.iter_mut() {
-            if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry
-                && let Some(&req) = suggests_versions.get(name.as_str())
-            {
-                *entry = NeedsEntry::Package(Dependency::Pinned {
-                    name: name.clone(),
-                    requirement: req.clone(),
-                });
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -333,8 +301,15 @@ Config/Needs/dev: testthat (>= 2.0.0)
                 _ => None,
             })
             .collect();
-        assert!(plain_names.contains(&"knitr".to_string()));
-        assert!(plain_names.contains(&"rmarkdown".to_string()));
+        assert_eq!(
+            plain_names,
+            vec![
+                "knitr".to_string(),
+                "rmarkdown".to_string(),
+                // testthat does not inherit Suggests requirement in parser
+                "testthat".to_string()
+            ]
+        );
 
         // Remote shorthand comes through as Remote entry
         let remote_count = website
@@ -348,25 +323,7 @@ Config/Needs/dev: testthat (>= 2.0.0)
             .iter()
             .filter(|e| matches!(e, NeedsEntry::Package(Dependency::Pinned { .. })))
             .count();
-        assert_eq!(
-            ver_req_count, 2,
-            "covr (>= 0.2.0) and testthat (inherited from Suggests) should be pinned"
-        );
-
-        // testthat listed without version in Config/Needs/* should inherit from Suggests
-        let testthat_website = website.iter().find_map(|e| match e {
-            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
-            _ => None,
-        });
-        assert_eq!(
-            testthat_website
-                .unwrap()
-                .version_requirement()
-                .unwrap()
-                .to_string(),
-            "(>= 3.3.0)",
-            "testthat should inherit version requirement from Suggests"
-        );
+        assert_eq!(ver_req_count, 1, "covr (>= 0.2.0) should be pinned");
 
         // withr is in Suggests but not in any Config/Needs/* key — should be absent
         let withr_in_website = website
