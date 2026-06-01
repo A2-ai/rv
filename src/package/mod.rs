@@ -133,8 +133,8 @@ impl Package {
         }
     }
 
-    pub fn dependencies_to_install<'a>(
-        &'a self,
+    pub fn dependencies_to_install(
+        &self,
         install_suggestions: bool,
         install_all_needs: bool,
         needs: &[String],
