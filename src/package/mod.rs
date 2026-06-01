@@ -238,6 +238,52 @@ impl Package {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn needs_version_promoted_from_suggests_when_not_installing_suggestions() {
+        let mut pkg = Package {
+            name: "mypkg".to_string(),
+            suggests: vec![Dependency::Pinned {
+                name: "rmarkdown".to_string(),
+                requirement: VersionRequirement::from_str("(>= 2.26)").unwrap(),
+            }],
+            ..Default::default()
+        };
+        pkg.needs.insert(
+            "website".to_string(),
+            vec![
+                NeedsEntry::Package(Dependency::Simple("knitr".to_string())),
+                NeedsEntry::Package(Dependency::Simple("rmarkdown".to_string())),
+            ],
+        );
+
+        let deps = pkg
+            .dependencies_to_install(false, false, &["website".to_string()])
+            .unwrap();
+
+        let rmarkdown_entry = deps
+            .needs
+            .get("website")
+            .unwrap()
+            .iter()
+            .find_map(|e| match e {
+                NeedsEntry::Package(d) if d.name() == "rmarkdown" => Some(d),
+                _ => None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            rmarkdown_entry.version_requirement().unwrap().to_string(),
+            "(>= 2.26)",
+            "rmarkdown should be promoted from Suggests even when install_suggestions=false"
+        );
+    }
+}
+
 /// Returns whether this folder contains compiled R files
 /// Error only occurs if the DESCRIPTION file cannot be parsed
 pub fn is_binary_package(

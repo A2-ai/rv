@@ -454,7 +454,9 @@ impl LockedPackage {
         }
         if !self.needs.is_empty() {
             let mut needs_table = InlineTable::new();
-            for (need, deps) in &self.needs {
+            let mut sorted_needs = self.needs.iter().collect::<Vec<_>>();
+            sorted_needs.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (need, deps) in sorted_needs {
                 let arr: Array = deps.iter().map(|d| d.as_toml_value()).collect();
                 needs_table.insert(need, Value::Array(arr));
             }
