@@ -424,12 +424,8 @@ impl LockedPackage {
             source: dep.source,
             path: dep.path.map(|p| p.into_owned()),
             force_source: dep.force_source,
-            dependencies: dep
-                .dependencies
-                .into_iter()
-                .map(|x| x.into_owned())
-                .collect(),
-            suggests: dep.suggests.into_iter().map(|x| x.into_owned()).collect(),
+            dependencies: dep.dependencies,
+            suggests: dep.suggests,
             needs,
         }
     }
@@ -493,6 +489,10 @@ impl LockedPackage {
         }
 
         true
+    }
+
+    pub(crate) fn need_deps(&self) -> Vec<&Dependency> {
+        self.needs.iter().flat_map(|(_, d)| d).collect()
     }
 }
 

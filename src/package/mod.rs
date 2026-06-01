@@ -14,7 +14,7 @@ mod version;
 use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
-pub use fetch::{FetchDescription, fetch_repo_pkg};
+pub use fetch::FetchDescription;
 pub use parser::{parse_dependencies, parse_needs_entries, parse_package_file};
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
@@ -117,9 +117,9 @@ pub struct Package {
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct InstallationDependencies<'a> {
-    pub(crate) direct: Vec<&'a Dependency>,
-    pub(crate) suggests: Vec<&'a Dependency>,
+pub struct InstallationDependencies {
+    pub(crate) direct: Vec<Dependency>,
+    pub(crate) suggests: Vec<Dependency>,
     pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
@@ -138,7 +138,7 @@ impl Package {
         install_suggestions: bool,
         install_all_needs: bool,
         needs: &[String],
-    ) -> InstallationDependencies<'a> {
+    ) -> Result<InstallationDependencies, Box<dyn std::error::Error>> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -155,6 +155,7 @@ impl Package {
             self.suggests
                 .iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .cloned()
                 .collect()
         } else {
             Vec::new()
@@ -165,15 +166,12 @@ impl Package {
                 iter.0.clone(),
                 iter.1
                     .iter()
-                    .filter_map(|entry| {
-                        if let NeedsEntry::Package(p) = entry {
-                            BASE_PACKAGES
-                                .contains(&p.name())
-                                .not()
-                                .then_some(entry.clone())
-                        } else {
-                            None
-                        }
+                    .filter_map(|entry| match entry {
+                        NeedsEntry::Package(p) => BASE_PACKAGES
+                            .contains(&p.name())
+                            .not()
+                            .then_some(entry.clone()),
+                        NeedsEntry::Remote(_, _) => Some(entry.clone()),
                     })
                     .collect::<Vec<_>>(),
             )
@@ -182,6 +180,17 @@ impl Package {
         let needs = if install_all_needs {
             self.needs.iter().map(needs_converter).collect()
         } else if !needs.is_empty() {
+            let mut declared_needs = needs.to_vec();
+            declared_needs.retain(|need| !self.needs.contains_key(need));
+            if !declared_needs.is_empty() {
+                return Err(format!(
+                    "{} declares need(s) `[{}]` which are not found in the package",
+                    self.name,
+                    declared_needs.join(", ")
+                )
+                .into());
+            }
+
             self.needs
                 .iter()
                 .filter(|(need, _)| needs.contains(need))
@@ -191,14 +200,15 @@ impl Package {
             HashMap::new()
         };
 
-        InstallationDependencies {
+        Ok(InstallationDependencies {
             direct: out
                 .into_iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .cloned()
                 .collect(),
             suggests,
             needs,
-        }
+        })
     }
 }
 

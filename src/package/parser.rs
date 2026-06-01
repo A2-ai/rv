@@ -174,13 +174,13 @@ fn enrich_needs(pkg: &mut Package) {
 
     for entries in pkg.needs.values_mut() {
         for entry in entries.iter_mut() {
-            if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry {
-                if let Some(&req) = suggests_versions.get(name.as_str()) {
-                    *entry = NeedsEntry::Package(Dependency::Pinned {
-                        name: name.clone(),
-                        requirement: req.clone(),
-                    });
-                }
+            if let NeedsEntry::Package(Dependency::Simple(name)) = &*entry
+                && let Some(&req) = suggests_versions.get(name.as_str())
+            {
+                *entry = NeedsEntry::Package(Dependency::Pinned {
+                    name: name.clone(),
+                    requirement: req.clone(),
+                });
             }
         }
     }
@@ -309,12 +309,15 @@ NeedsCompilation: no
 Package: ggplot2
 Version: 3.5.0
 Imports: scales
-Suggests: testthat
-Config/Needs/website: knitr, rmarkdown, tidyverse/tidytemplate, covr (>= 0.2.0)
+Suggests:
+    testthat (>= 3.3.0),
+    withr
+Config/Needs/website: knitr, rmarkdown, tidyverse/tidytemplate, covr (>= 0.2.0), testthat
 Config/Needs/multi_line: readr,
     purrr,
     S7,
     a2-ai/rv.git.pkgA
+Config/Needs/dev: testthat (>= 2.0.0)
 
 
 "#;
@@ -340,14 +343,54 @@ Config/Needs/multi_line: readr,
             .count();
         assert_eq!(remote_count, 1, "tidyverse/tidytemplate should be a Remote");
 
-        // Version Requirement properly parsed
+        // Version requirement explicitly set in Config/Needs/* is preserved
         let ver_req_count = website
             .iter()
             .filter(|e| matches!(e, NeedsEntry::Package(Dependency::Pinned { .. })))
             .count();
         assert_eq!(
-            ver_req_count, 1,
-            "covr (>= 0.2.0) should be a pinned dependency"
+            ver_req_count, 2,
+            "covr (>= 0.2.0) and testthat (inherited from Suggests) should be pinned"
+        );
+
+        // testthat listed without version in Config/Needs/* should inherit from Suggests
+        let testthat_website = website.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
+            _ => None,
+        });
+        assert_eq!(
+            testthat_website
+                .unwrap()
+                .version_requirement()
+                .unwrap()
+                .to_string(),
+            "(>= 3.3.0)",
+            "testthat should inherit version requirement from Suggests"
+        );
+
+        // withr is in Suggests but not in any Config/Needs/* key — should be absent
+        let withr_in_website = website
+            .iter()
+            .any(|e| matches!(e, NeedsEntry::Package(d) if d.name() == "withr"));
+        assert!(
+            !withr_in_website,
+            "withr not listed in Config/Needs/website"
+        );
+
+        // Explicit version in Config/Needs/* takes priority over Suggests version
+        let dev = pkg.needs.get("dev").expect("dev needs");
+        let testthat_dev = dev.iter().find_map(|e| match e {
+            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
+            _ => None,
+        });
+        assert_eq!(
+            testthat_dev
+                .unwrap()
+                .version_requirement()
+                .unwrap()
+                .to_string(),
+            "(>= 2.0.0)",
+            "explicit needs version should not be overridden by Suggests"
         );
 
         // Second need key is parsed correctly
@@ -360,78 +403,5 @@ Config/Needs/multi_line: readr,
             })
             .collect::<Vec<_>>();
         assert_eq!(&names, &["readr", "purrr", "S7", "rv.git.pkgA"]);
-    }
-
-    #[test]
-    fn needs_entries_inherit_version_from_suggests() {
-        // Packages listed in Config/Needs/* without a version requirement should pick up
-        // the version constraint from Suggests when one exists there.
-        let content = r#"
-Package: bit64
-Version: 4.8.99
-Suggests:
-    patrick (>= 0.3.0),
-    testthat (>= 3.3.0),
-    withr
-Config/Needs/development: patrick, testthat
-
-"#;
-        let packages = parse_package_file(content);
-        let pkg = &packages["bit64"][0];
-        let dev = pkg.needs.get("development").expect("development needs");
-        assert_eq!(dev.len(), 2);
-
-        let patrick = dev.iter().find_map(|e| match e {
-            NeedsEntry::Package(d) if d.name() == "patrick" => Some(d),
-            _ => None,
-        });
-        let patrick = patrick.expect("patrick entry");
-        assert_eq!(
-            patrick.version_requirement().unwrap().to_string(),
-            "(>= 0.3.0)",
-            "patrick should inherit version requirement from Suggests"
-        );
-
-        let testthat = dev.iter().find_map(|e| match e {
-            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
-            _ => None,
-        });
-        let testthat = testthat.expect("testthat entry");
-        assert_eq!(
-            testthat.version_requirement().unwrap().to_string(),
-            "(>= 3.3.0)",
-            "testthat should inherit version requirement from Suggests"
-        );
-
-        // withr is in Suggests without a version — should not appear in needs at all
-        let withr = dev.iter().find(|e| match e {
-            NeedsEntry::Package(d) => d.name() == "withr",
-            _ => false,
-        });
-        assert!(withr.is_none(), "withr is not in Config/Needs/development");
-    }
-
-    #[test]
-    fn needs_explicit_version_not_overridden_by_suggests() {
-        // A version requirement already present in Config/Needs/* must not be replaced.
-        let content = r#"
-Package: mypkg
-Version: 1.0.0
-Suggests: testthat (>= 3.3.0)
-Config/Needs/development: testthat (>= 2.0.0)
-
-"#;
-        let packages = parse_package_file(content);
-        let pkg = &packages["mypkg"][0];
-        let dev = pkg.needs.get("development").expect("development needs");
-        let testthat = dev.iter().find_map(|e| match e {
-            NeedsEntry::Package(d) if d.name() == "testthat" => Some(d),
-            _ => None,
-        });
-        assert_eq!(
-            testthat.unwrap().version_requirement().unwrap().to_string(),
-            "(>= 2.0.0)",
-            "explicit needs version should not be overridden by Suggests"
-        );
     }
 }

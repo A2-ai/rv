@@ -1,9 +1,7 @@
-use std::error::Error;
-
 use url::Url;
 
 use crate::{
-    Cache, CommandExecutor, GitExecutor, HttpDownload, ResolvedGitRef, Source,
+    Cache, CommandExecutor, HttpDownload, ResolvedGitRef, Source,
     git::GitRemote,
     package::{Package, parse_description_file, parse_description_file_in_folder},
 };
@@ -31,14 +29,14 @@ impl<'a, H: HttpDownload, E: CommandExecutor + Clone + 'static> FetchDescription
         // executor: impl CommandExecutor + Clone + 'static,
     ) -> Result<Package, String> {
         match self {
-            Self::Repository {
+            &Self::Repository {
                 name,
                 version,
                 repository,
                 downloader,
             } => {
                 let source = Source::Repository {
-                    repository: (*repository).clone(),
+                    repository: repository.clone(),
                 };
                 let pkg_paths = cache
                     .local()
@@ -97,25 +95,4 @@ impl<'a, H: HttpDownload, E: CommandExecutor + Clone + 'static> FetchDescription
             }
         }
     }
-}
-
-pub fn fetch_repo_pkg(
-    name: &str,
-    version: &str,
-    source: &Source,
-    cache: &Cache,
-    downloader: &impl HttpDownload,
-) -> Result<Option<Package>, Box<dyn Error>> {
-    let fetcher: FetchDescription<'_, _, GitExecutor> = match source {
-        Source::Repository { repository } => FetchDescription::Repository {
-            name,
-            version,
-            repository,
-            downloader,
-        },
-        _ => return Ok(None),
-    };
-
-    let pkg = fetcher.fetch(cache)?;
-    Ok(Some(pkg))
 }
