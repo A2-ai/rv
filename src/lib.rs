@@ -8,7 +8,7 @@ mod configure;
 pub mod consts;
 mod context;
 mod dependency_edit;
-mod events;
+pub mod events;
 mod format;
 mod fs;
 mod git;
