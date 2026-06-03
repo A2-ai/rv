@@ -38,9 +38,11 @@ impl<'a, H: HttpDownload, E: CommandExecutor + Clone + 'static> FetchPackage<'a,
                 let pkg_paths = cache
                     .local()
                     .get_package_paths(&source, Some(name), Some(version));
-                if let Ok(pkg) = parse_description_file_in_folder(&pkg_paths.binary)
-                    .or(parse_description_file_in_folder(&pkg_paths.source))
-                {
+
+                if let Ok(pkg) = parse_description_file_in_folder(&pkg_paths.binary) {
+                    return Ok(pkg);
+                }
+                if let Ok(pkg) = parse_description_file_in_folder(&pkg_paths.source) {
                     return Ok(pkg);
                 }
 
