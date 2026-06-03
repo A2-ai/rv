@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs::File;
 use std::io::Write;
@@ -11,7 +11,7 @@ use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
 use crate::git::url::GitUrl;
-use crate::package::{Dependency, VersionRequirement};
+use crate::package::{Dependency, NeedsEntry, VersionRequirement};
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
 const CURRENT_LOCKFILE_VERSION: i64 = 2;
@@ -341,6 +341,45 @@ where
         .collect()
 }
 
+/// Custom deserializer for needs from TOML lockfile format.
+/// Handles `needs = {website = ["knitr", "rmarkdown"]}` where inner arrays can contain
+/// either "simple_string" or { name = "pkg", requirement = "(>= 1.0)" } entries.
+fn deserialize_needs<'de, D>(deserializer: D) -> Result<Vec<(String, Vec<Dependency>)>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TomlDependency {
+        Simple(String),
+        Pinned { name: String, requirement: String },
+    }
+
+    let map: HashMap<String, Vec<TomlDependency>> = HashMap::deserialize(deserializer)?;
+    let mut res = map
+        .into_iter()
+        .map(|(key, deps)| {
+            let resolved = deps
+                .into_iter()
+                .map(|d| match d {
+                    TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
+                    TomlDependency::Pinned { name, requirement } => {
+                        let req: VersionRequirement =
+                            requirement.parse().map_err(serde::de::Error::custom)?;
+                        Ok(Dependency::Pinned {
+                            name,
+                            requirement: req,
+                        })
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((key, resolved))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    res.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(res)
+}
+
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LockedPackage {
     pub name: String,
@@ -353,6 +392,9 @@ pub struct LockedPackage {
     /// Only filled if the package had install_suggests=True in the config file
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     pub suggests: Vec<Dependency>,
+    /// Only filled with the needs required by the package
+    #[serde(default, deserialize_with = "deserialize_needs")]
+    pub needs: Vec<(String, Vec<Dependency>)>,
 }
 
 impl LockedPackage {
@@ -369,6 +411,23 @@ impl LockedPackage {
                 .map(|x| x.into_owned())
                 .collect(),
             suggests: dep.suggests.into_iter().map(|x| x.into_owned()).collect(),
+            needs: dep
+                .needs
+                .into_iter()
+                .map(|(key, entries)| {
+                    let deps = entries
+                        .into_iter()
+                        .map(|e| match e {
+                            NeedsEntry::Package(d) => d,
+                            // Remote shorthands (e.g. tidyverse/tidytemplate) are stored by package
+                            // name only. The resolved package is separately locked as its own entry
+                            // with its full source (git/repo), so the remote URL is not needed here.
+                            NeedsEntry::Remote(name, _) => Dependency::Simple(name),
+                        })
+                        .collect();
+                    (key, deps)
+                })
+                .collect(),
         }
     }
 
@@ -414,6 +473,14 @@ impl LockedPackage {
         }
 
         true
+    }
+
+    pub(crate) fn needs_deps(&self, needs: &[String]) -> Vec<&Dependency> {
+        self.needs
+            .iter()
+            .filter(|(need, _)| needs.contains(need))
+            .flat_map(|(_, d)| d)
+            .collect()
     }
 }
 
