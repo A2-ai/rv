@@ -74,9 +74,21 @@ impl Repository {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct DependencyCommonOptions {
+    #[serde(default)]
+    pub install_suggestions: bool,
+    #[serde(default)]
+    pub dependencies_only: bool,
+    #[serde(default)]
+    pub install_all_needs: bool,
+    #[serde(default)]
+    pub needs: Vec<String>,
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-#[serde(deny_unknown_fields)]
 pub enum ConfigDependency {
     Simple(String),
     Git {
@@ -87,36 +99,28 @@ pub enum ConfigDependency {
         branch: Option<String>,
         directory: Option<String>,
         name: String,
-        #[serde(default)]
-        install_suggestions: bool,
-        #[serde(default)]
-        dependencies_only: bool,
+        #[serde(flatten)]
+        options: DependencyCommonOptions,
     },
     Local {
         path: PathBuf,
         name: String,
-        #[serde(default)]
-        install_suggestions: bool,
-        #[serde(default)]
-        dependencies_only: bool,
+        #[serde(flatten)]
+        options: DependencyCommonOptions,
     },
     Url {
         url: HttpUrl,
         name: String,
-        #[serde(default)]
-        install_suggestions: bool,
-        #[serde(default)]
-        dependencies_only: bool,
+        #[serde(flatten)]
+        options: DependencyCommonOptions,
     },
     Detailed {
         name: String,
         repository: Option<String>,
         #[serde(default)]
-        install_suggestions: bool,
-        #[serde(default)]
         force_source: Option<bool>,
-        #[serde(default)]
-        dependencies_only: bool,
+        #[serde(flatten)]
+        options: DependencyCommonOptions,
     },
 }
 
@@ -154,18 +158,10 @@ impl ConfigDependency {
 
     pub fn dependencies_only(&self) -> bool {
         match self {
-            ConfigDependency::Git {
-                dependencies_only, ..
-            } => *dependencies_only,
-            ConfigDependency::Local {
-                dependencies_only, ..
-            } => *dependencies_only,
-            ConfigDependency::Url {
-                dependencies_only, ..
-            } => *dependencies_only,
-            ConfigDependency::Detailed {
-                dependencies_only, ..
-            } => *dependencies_only,
+            ConfigDependency::Git { options, .. }
+            | ConfigDependency::Local { options, .. }
+            | ConfigDependency::Url { options, .. }
+            | ConfigDependency::Detailed { options, .. } => options.dependencies_only,
             ConfigDependency::Simple(_) => false,
         }
     }
@@ -192,22 +188,30 @@ impl ConfigDependency {
     pub fn install_suggestions(&self) -> bool {
         match self {
             ConfigDependency::Simple(_) => false,
-            ConfigDependency::Detailed {
-                install_suggestions,
-                ..
-            }
-            | ConfigDependency::Url {
-                install_suggestions,
-                ..
-            }
-            | ConfigDependency::Local {
-                install_suggestions,
-                ..
-            }
-            | ConfigDependency::Git {
-                install_suggestions,
-                ..
-            } => *install_suggestions,
+            ConfigDependency::Detailed { options, .. }
+            | ConfigDependency::Url { options, .. }
+            | ConfigDependency::Local { options, .. }
+            | ConfigDependency::Git { options, .. } => options.install_suggestions,
+        }
+    }
+
+    pub fn install_all_needs(&self) -> bool {
+        match self {
+            ConfigDependency::Simple(_) => false,
+            ConfigDependency::Detailed { options, .. }
+            | ConfigDependency::Url { options, .. }
+            | ConfigDependency::Local { options, .. }
+            | ConfigDependency::Git { options, .. } => options.install_all_needs,
+        }
+    }
+
+    pub fn needs(&self) -> &[String] {
+        match self {
+            ConfigDependency::Simple(_) => &[],
+            ConfigDependency::Detailed { options, .. }
+            | ConfigDependency::Url { options, .. }
+            | ConfigDependency::Local { options, .. }
+            | ConfigDependency::Git { options, .. } => &options.needs,
         }
     }
 }

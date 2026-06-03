@@ -65,11 +65,11 @@ impl<'d> QueueItem<'d> {
     }
 }
 
-fn prepare_deps<'a>(
-    resolved: ResolvedDependency<'a>,
+fn prepare_deps(
+    resolved: ResolvedDependency,
     deps: InstallationDependencies,
     matching_in_lockfile: Option<bool>,
-) -> (ResolvedDependency<'a>, Vec<QueueItem<'a>>) {
+) -> (ResolvedDependency, Vec<QueueItem>) {
     let dep_to_item = |dep: Dependency| -> QueueItem {
         let mut i = QueueItem::name_and_parent_only(
             Cow::Owned(dep.name().to_string()),
@@ -110,37 +110,6 @@ fn prepare_deps<'a>(
     }
 
     (resolved, items)
-}
-
-// Macro to go around borrow errors we would get with a normal fn
-macro_rules! prepare_deps {
-    ($resolved:expr, $deps:expr, $matching_in_lockfile:expr) => {{
-        let mut items = $deps
-            .direct
-            .into_iter()
-            .chain($deps.suggests)
-            .map(|p| {
-                let mut i = QueueItem::name_and_parent_only(
-                    Cow::Owned(p.name().to_string()),
-                    $resolved.name.clone(),
-                );
-
-                i.version_requirement = p.version_requirement().map(|x| Cow::Owned(x.clone()));
-                i.matching_in_lockfile = $matching_in_lockfile;
-
-                for (pkg_name, remote) in $resolved.remotes.values() {
-                    if let Some(n) = pkg_name {
-                        if p.name() == n.as_str() {
-                            i.remote = Some(remote.clone());
-                        }
-                    }
-                }
-                i
-            })
-            .collect();
-
-        ($resolved, items)
-    }};
 }
 
 #[derive(Debug, PartialEq)]
@@ -609,7 +578,7 @@ impl<'d> Resolver<'d> {
                 if req.is_satisfied(&package.version) {
                     let (resolved_dep, deps) =
                         ResolvedDependency::from_builtin_package(package, item.install_suggestions);
-                    Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+                    Some(prepare_deps(resolved_dep, deps, item.matching_in_lockfile))
                 } else {
                     None
                 }
@@ -674,8 +643,8 @@ impl<'d> Resolver<'d> {
                     l.get_package(d.name(), Some(d))
                         .map(|p| p.is_matching(d, &self.repo_urls))
                 }),
-                install_all_needs: false,
-                needs: &[],
+                install_all_needs: d.install_all_needs(),
+                needs: d.needs(),
                 from_needs_remote: false,
             })
             .collect();
