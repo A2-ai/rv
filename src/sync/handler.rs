@@ -440,19 +440,7 @@ impl<'a> SyncHandler<'a> {
         deps: &[ResolvedDependency],
         r_cmd: &impl RCmd,
     ) -> Result<Vec<SyncChange>, SyncError> {
-        let sync_start = std::time::Instant::now();
-        events::emit(&events::Event::SyncStarted { task: sync_task() });
-        let result = self.handle_impl(deps, r_cmd);
-        events::emit(&events::Event::SyncFinished {
-            task: sync_task(),
-            result: if result.is_ok() {
-                events::TaskResult::Ok
-            } else {
-                events::TaskResult::Failed
-            },
-            time_ms: sync_start.elapsed().as_millis() as u64,
-        });
-        result
+        events::with_task(sync_task(), || self.handle_impl(deps, r_cmd))
     }
 
     fn handle_impl(
@@ -661,9 +649,9 @@ impl<'a> SyncHandler<'a> {
                         }
 
                         installing_clone.lock().unwrap().insert(dep.name.clone());
-                        events::emit(&events::Event::InstallingDep {
+                        let start = std::time::Instant::now();
+                        events::emit(&events::Event::TaskStarted {
                             task: install_task(&dep.name),
-                            result: None,
                         });
                         if !self.dry_run {
                             if self.show_progress_bar {
@@ -689,7 +677,6 @@ impl<'a> SyncHandler<'a> {
                                 }
                             }
                         }
-                        let start = std::time::Instant::now();
                         let install_result = if deps_to_copy_clone.contains(dep.name.as_ref()) {
                             self.copy_package(dep)
                         } else {
@@ -763,18 +750,20 @@ impl<'a> SyncHandler<'a> {
                                         .expect("no error");
                                     }
                                 }
-                                events::emit(&events::Event::InstallingDep {
+                                events::emit(&events::Event::TaskFinished {
                                     task: install_task(&dep.name),
-                                    result: Some(events::TaskResult::Ok),
+                                    result: events::TaskResult::Ok,
+                                    time_ms: start.elapsed().as_millis() as u64,
                                 });
                                 if done_sender.send(sync_change).is_err() {
                                     break; // Channel closed
                                 }
                             }
                             Err(e) => {
-                                events::emit(&events::Event::InstallingDep {
+                                events::emit(&events::Event::TaskFinished {
                                     task: install_task(&dep.name),
-                                    result: Some(events::TaskResult::Failed),
+                                    result: events::TaskResult::Failed,
+                                    time_ms: start.elapsed().as_millis() as u64,
                                 });
                                 has_errors_clone.store(true, Ordering::Relaxed);
 

@@ -281,20 +281,7 @@ pub fn load_databases(
                 label: r.alias.clone(),
                 parent: None,
             };
-            events::emit(&events::Event::LoadingDatabases {
-                task: task.clone(),
-                result: None,
-            });
-            let outcome = load_single_database(r, cache);
-            events::emit(&events::Event::LoadingDatabases {
-                task,
-                result: Some(if outcome.is_ok() {
-                    events::TaskResult::Ok
-                } else {
-                    events::TaskResult::Failed
-                }),
-            });
-            let db = outcome?;
+            let db = events::with_task(task, || load_single_database(r, cache))?;
             Ok((db, r.force_source))
         })
         .collect();

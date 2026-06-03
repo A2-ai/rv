@@ -42,24 +42,31 @@ pub enum TaskResult {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    LoadingDatabases {
-        #[serde(flatten)]
-        task: Task,
-        result: Option<TaskResult>,
-    },
-    SyncStarted {
+    TaskStarted {
         #[serde(flatten)]
         task: Task,
     },
-    InstallingDep {
-        #[serde(flatten)]
-        task: Task,
-        result: Option<TaskResult>,
-    },
-    SyncFinished {
+    TaskFinished {
         #[serde(flatten)]
         task: Task,
         result: TaskResult,
         time_ms: u64,
     },
+}
+
+/// Emit `TaskStarted`, run `f`, then emit `TaskFinished` with the result and elapsed time.
+pub fn with_task<T, E>(task: Task, f: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    emit(&Event::TaskStarted { task: task.clone() });
+    let start = std::time::Instant::now();
+    let out = f();
+    emit(&Event::TaskFinished {
+        task,
+        result: if out.is_ok() {
+            TaskResult::Ok
+        } else {
+            TaskResult::Failed
+        },
+        time_ms: start.elapsed().as_millis() as u64,
+    });
+    out
 }
