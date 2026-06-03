@@ -117,9 +117,9 @@ pub struct Package {
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct InstallationDependencies {
-    pub(crate) direct: Vec<Dependency>,
-    pub(crate) suggests: Vec<Dependency>,
+pub struct InstallationDependencies<'d> {
+    pub(crate) direct: Vec<&'d Dependency>,
+    pub(crate) suggests: Vec<&'d Dependency>,
     pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
@@ -138,16 +138,16 @@ impl Package {
         install_suggestions: bool,
         install_all_needs: bool,
         needs: &[String],
-    ) -> Result<InstallationDependencies, Box<dyn std::error::Error>> {
+    ) -> Result<InstallationDependencies<'a>, Box<dyn std::error::Error>> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
-        out.extend(self.depends.iter().cloned());
-        out.extend(self.imports.iter().cloned());
+        out.extend(self.depends.iter());
+        out.extend(self.imports.iter());
 
         // The deps in linkingTo can be listed already in depends
         for dep in &self.linking_to {
             if !out.iter().any(|x| x.name() == dep.name()) {
-                out.push(dep.clone());
+                out.push(dep);
             }
         }
 
@@ -155,7 +155,6 @@ impl Package {
             self.suggests
                 .iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
-                .cloned()
                 .collect()
         } else {
             Vec::new()

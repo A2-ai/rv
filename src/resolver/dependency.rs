@@ -46,6 +46,24 @@ pub struct ResolvedDependency<'d> {
     pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
+/// Builds the resolution `Source` for a package coming from a repository,
+/// distinguishing r-universe (which carries git provenance) from a plain repo.
+fn repository_source(package: &Package, repo_url: &Url) -> Source {
+    match (&package.remote_url, &package.remote_sha) {
+        (Some(git), Some(sha)) if repo_url.to_string().contains("r-universe.dev") => {
+            Source::RUniverse {
+                repository: repo_url.clone(),
+                git: git.clone(),
+                sha: sha.to_string(),
+                directory: package.remote_subdir.clone(),
+            }
+        }
+        _ => Source::Repository {
+            repository: repo_url.clone(),
+        },
+    }
+}
+
 impl<'d> ResolvedDependency<'d> {
     pub fn is_installed(&self) -> bool {
         match self.kind {
@@ -108,8 +126,10 @@ impl<'d> ResolvedDependency<'d> {
         }
     }
 
+    /// The package is already known to the resolver (cached repository database)
+    /// and outlives this call, so we borrow its dependencies directly.
     pub fn from_package_repository(
-        package: Cow<'d, Package>,
+        package: &'d Package,
         repo_url: &Url,
         package_type: PackageType,
         install_suggests: bool,
@@ -117,49 +137,64 @@ impl<'d> ResolvedDependency<'d> {
         needs: &[String],
         force_source: bool,
         cache_status: CacheStatus,
-    ) -> Result<(Self, InstallationDependencies), Box<dyn std::error::Error>> {
+    ) -> Result<(Self, InstallationDependencies<'d>), Box<dyn std::error::Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
-        let source = match (&package.remote_url, &package.remote_sha) {
-            (Some(git), Some(sha)) if repo_url.to_string().contains("r-universe.dev") => {
-                Source::RUniverse {
-                    repository: repo_url.clone(),
-                    git: git.clone(),
-                    sha: sha.to_string(),
-                    directory: package.remote_subdir.clone(),
-                }
-            }
-            _ => Source::Repository {
-                repository: repo_url.clone(),
-            },
-        };
-
-        let (name, version, path) = match package {
-            Cow::Borrowed(pkg) => (
-                Cow::Borrowed(pkg.name.as_str()),
-                Cow::Borrowed(&pkg.version),
-                pkg.path.as_deref().map(Cow::Borrowed),
-            ),
-            Cow::Owned(pkg) => (
-                Cow::Owned(pkg.name),
-                Cow::Owned(pkg.version),
-                pkg.path.map(Cow::Owned),
-            ),
-        };
+        let source = repository_source(package, repo_url);
 
         let res = Self {
-            name,
-            version,
+            name: Cow::Borrowed(&package.name),
+            version: Cow::Borrowed(&package.version),
             source,
-            dependencies: deps.direct.iter().map(|d| Cow::Owned(d.clone())).collect(),
+            dependencies: deps.direct.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            suggests: deps.suggests.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            kind: package_type,
+            force_source,
+            install_suggests,
+            path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
+            from_lockfile: false,
+            cache_status,
+            remotes: HashMap::new(),
+            from_remote: false,
+            local_resolved_path: None,
+            env_vars: HashMap::new(),
+            ignored: false,
+            needs: deps.needs.clone(),
+        };
+
+        Ok((res, deps))
+    }
+
+    /// The package's DESCRIPTION was fetched on-demand during resolution (to read
+    /// Config/Needs/*), so it does not outlive this call and must be owned, same as
+    /// the git/local/url paths. The returned dependencies borrow the fetched package
+    /// and must be consumed before it is dropped (see the `prepare_deps!` macro).
+    pub fn from_repository_fetched<'p>(
+        package: &'p Package,
+        repo_url: &Url,
+        package_type: PackageType,
+        install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
+        force_source: bool,
+        cache_status: CacheStatus,
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn std::error::Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
+        let source = repository_source(package, repo_url);
+
+        let res = Self {
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|d| Cow::Owned(d.clone()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind: package_type,
             force_source,
             install_suggests,
-            path,
+            path: package.path.clone().map(Cow::Owned),
             from_lockfile: false,
             cache_status,
             remotes: HashMap::new(),
@@ -175,22 +210,22 @@ impl<'d> ResolvedDependency<'d> {
 
     /// If we find the package to be a git repo, we will read the DESCRIPTION file during resolution
     /// This means the data will not outlive this struct and needs to be owned
-    pub fn from_git_package(
-        package: &Package,
+    pub fn from_git_package<'p>(
+        package: &'p Package,
         source: Source,
         install_suggests: bool,
         install_all_needs: bool,
         needs: &[String],
         cache_status: CacheStatus,
-    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
 
         let res = Self {
-            dependencies: deps.direct.iter().map(|d| Cow::Owned(d.clone())).collect(),
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|d| Cow::Owned(d.clone()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind: PackageType::Source,
             force_source: true,
@@ -212,21 +247,21 @@ impl<'d> ResolvedDependency<'d> {
         Ok((res, deps))
     }
 
-    pub fn from_local_package(
-        package: &Package,
+    pub fn from_local_package<'p>(
+        package: &'p Package,
         source: Source,
         install_suggests: bool,
         install_all_needs: bool,
         needs: &[String],
         local_resolved_path: PathBuf,
-    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let res = Self {
-            dependencies: deps.direct.iter().map(|d| Cow::Owned(d.clone())).collect(),
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|d| Cow::Owned(d.clone()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind: PackageType::Source,
             force_source: true,
@@ -249,21 +284,21 @@ impl<'d> ResolvedDependency<'d> {
         Ok((res, deps))
     }
 
-    pub fn from_url_package(
-        package: &Package,
+    pub fn from_url_package<'p>(
+        package: &'p Package,
         kind: PackageType,
         source: Source,
         install_suggests: bool,
         install_all_needs: bool,
         needs: &[String],
-    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let res = Self {
-            dependencies: deps.direct.iter().map(|d| Cow::Owned(d.clone())).collect(),
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
                 .iter()
-                .map(|d| Cow::Owned(d.clone()))
+                .map(|&d| Cow::Owned(d.clone()))
                 .collect(),
             kind,
             force_source: false,
@@ -288,7 +323,7 @@ impl<'d> ResolvedDependency<'d> {
     pub fn from_builtin_package(
         package: &'d Package,
         install_suggests: bool,
-    ) -> (Self, InstallationDependencies) {
+    ) -> (Self, InstallationDependencies<'d>) {
         let deps = package
             .dependencies_to_install(install_suggests, false, &[])
             .expect("No needs to cause error");
@@ -297,12 +332,8 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Borrowed(&package.name),
             version: Cow::Borrowed(&package.version),
             source: Source::Builtin { builtin: true },
-            dependencies: deps.direct.iter().map(|d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|d| Cow::Owned(d.clone()))
-                .collect(),
+            dependencies: deps.direct.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            suggests: deps.suggests.iter().map(|d| Cow::Borrowed(*d)).collect(),
             kind: PackageType::Binary,
             force_source: false,
             install_suggests,

@@ -20,8 +20,8 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    InstallationDependencies, NeedsEntry, Package, PackageRemote, PackageType, is_binary_package,
-    parse_description_file, parse_description_file_in_folder,
+    NeedsEntry, Package, PackageRemote, PackageType, is_binary_package, parse_description_file,
+    parse_description_file_in_folder,
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
@@ -65,51 +65,54 @@ impl<'d> QueueItem<'d> {
     }
 }
 
-fn prepare_deps(
-    resolved: ResolvedDependency,
-    deps: InstallationDependencies,
-    matching_in_lockfile: Option<bool>,
-) -> (ResolvedDependency, Vec<QueueItem>) {
-    let dep_to_item = |dep: Dependency| -> QueueItem {
-        let mut i = QueueItem::name_and_parent_only(
-            Cow::Owned(dep.name().to_string()),
-            resolved.name.clone(),
-        );
-        i.version_requirement = dep.version_requirement().map(|v| Cow::Owned(v.clone()));
-        i.matching_in_lockfile = matching_in_lockfile;
-        for (pkg_name, remote) in resolved.remotes.values() {
-            if let Some(n) = pkg_name
-                && dep.name() == n.as_str()
-            {
-                i.remote = Some(remote.clone());
-            }
-        }
-        i
-    };
+// Macro to go around borrow errors we would get with a normal fn
+macro_rules! prepare_deps {
+    ($resolved:expr, $deps:expr, $matching_in_lockfile:expr) => {{
+        let resolved = $resolved;
+        let deps = $deps;
+        let matching_in_lockfile = $matching_in_lockfile;
 
-    let mut items = deps
-        .direct
-        .into_iter()
-        .chain(deps.suggests)
-        .map(dep_to_item)
-        .collect::<Vec<_>>();
-
-    for entry in deps.needs.into_values().flatten() {
-        let item = match entry {
-            NeedsEntry::Package(d) => dep_to_item(d),
-            NeedsEntry::Remote(name, remote) => {
-                let mut i =
-                    QueueItem::name_and_parent_only(Cow::Owned(name), resolved.name.clone());
-                i.remote = Some(remote);
-                i.matching_in_lockfile = matching_in_lockfile;
-                i.from_needs_remote = true;
-                i
+        let dep_to_item = |dep: &Dependency| -> QueueItem {
+            let mut i = QueueItem::name_and_parent_only(
+                Cow::Owned(dep.name().to_string()),
+                resolved.name.clone(),
+            );
+            i.version_requirement = dep.version_requirement().map(|v| Cow::Owned(v.clone()));
+            i.matching_in_lockfile = matching_in_lockfile;
+            for (pkg_name, remote) in resolved.remotes.values() {
+                if let Some(n) = pkg_name
+                    && dep.name() == n.as_str()
+                {
+                    i.remote = Some(remote.clone());
+                }
             }
+            i
         };
-        items.push(item);
-    }
 
-    (resolved, items)
+        let mut items = deps
+            .direct
+            .into_iter()
+            .chain(deps.suggests)
+            .map(dep_to_item)
+            .collect::<Vec<_>>();
+
+        for entry in deps.needs.into_values().flatten() {
+            let item = match entry {
+                NeedsEntry::Package(d) => dep_to_item(&d),
+                NeedsEntry::Remote(name, remote) => {
+                    let mut i =
+                        QueueItem::name_and_parent_only(Cow::Owned(name), resolved.name.clone());
+                    i.remote = Some(remote);
+                    i.matching_in_lockfile = matching_in_lockfile;
+                    i.from_needs_remote = true;
+                    i
+                }
+            };
+            items.push(item);
+        }
+
+        (resolved, items)
+    }};
 }
 
 #[derive(Debug, PartialEq)]
@@ -208,7 +211,7 @@ impl<'d> Resolver<'d> {
             item.needs,
             canon_path,
         )?;
-        Ok(prepare_deps(resolved_dep, deps, item.matching_in_lockfile))
+        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
     fn lockfile_lookup(
@@ -316,7 +319,7 @@ impl<'d> Resolver<'d> {
             return Ok(Some((resolved_dep, items)));
         }
 
-        let (resolved, deps) = match &package.source {
+        match &package.source {
             Source::Git {
                 git,
                 sha,
@@ -336,14 +339,19 @@ impl<'d> Resolver<'d> {
                     executor: git_exec.clone(),
                 };
                 let pkg = fetcher.fetch(cache)?;
-                ResolvedDependency::from_git_package(
+                let (resolved, deps) = ResolvedDependency::from_git_package(
                     &pkg,
                     package.source.clone(),
                     package.install_suggests(),
                     item.install_all_needs,
                     item.needs,
                     installation_status,
-                )?
+                )?;
+                Ok(Some(prepare_deps!(
+                    resolved,
+                    deps,
+                    item.matching_in_lockfile
+                )))
             }
             Source::Repository { repository } => {
                 let fetcher: FetchPackage<'_, _, GitExecutor> = FetchPackage::Repository {
@@ -353,8 +361,8 @@ impl<'d> Resolver<'d> {
                     downloader: http_download,
                 };
                 let pkg = fetcher.fetch(cache)?;
-                ResolvedDependency::from_package_repository(
-                    Cow::Owned(pkg),
+                let (resolved, deps) = ResolvedDependency::from_repository_fetched(
+                    &pkg,
                     repository,
                     kind,
                     package.install_suggests(),
@@ -362,21 +370,21 @@ impl<'d> Resolver<'d> {
                     item.needs,
                     package.force_source,
                     installation_status,
-                )?
+                )?;
+                Ok(Some(prepare_deps!(
+                    resolved,
+                    deps,
+                    item.matching_in_lockfile
+                )))
             }
-            Source::Local { .. } => return self.local_lookup(item).map(Some),
+            Source::Local { .. } => self.local_lookup(item).map(Some),
             Source::Url { .. } => {
                 unreachable!("source.could_have_changed returns always returns true for url source")
             }
             Source::Builtin { .. } => {
                 unreachable!("Matches above and does not need to re-fetch need")
             }
-        };
-        Ok(Some(prepare_deps(
-            resolved,
-            deps,
-            item.matching_in_lockfile,
-        )))
+        }
     }
 
     fn repositories_lookup(
@@ -419,34 +427,51 @@ impl<'d> Resolver<'d> {
                     status = status.mark_as_binary_unavailable();
                 }
 
-                let pkg = if item.install_all_needs || !item.needs.is_empty() {
+                let repo_url = Url::parse(&repo.url).unwrap();
+                if item.install_all_needs || !item.needs.is_empty() {
+                    // Fetch the DESCRIPTION on-demand to read Config/Needs/*. The fetched
+                    // package is a local, so own its deps and consume them inline here.
                     let fetcher: FetchPackage<'_, _, GitExecutor> = FetchPackage::Repository {
                         name: &package.name,
                         version: &package.version.to_string(),
-                        repository: &repo.url.parse().unwrap(),
+                        repository: &repo_url,
                         downloader: http_download,
                     };
-                    Cow::Owned(fetcher.fetch(cache)?)
+                    let pkg = fetcher.fetch(cache)?;
+                    let (resolved_dep, deps) = ResolvedDependency::from_repository_fetched(
+                        &pkg,
+                        &repo_url,
+                        package_type,
+                        item.install_suggestions,
+                        item.install_all_needs,
+                        item.needs,
+                        force_source,
+                        status,
+                    )?;
+                    return Ok(Some(prepare_deps!(
+                        resolved_dep,
+                        deps,
+                        item.matching_in_lockfile
+                    )));
                 } else {
-                    Cow::Borrowed(package)
-                };
-
-                let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
-                    pkg,
-                    &Url::parse(&repo.url).unwrap(),
-                    package_type,
-                    item.install_suggestions,
-                    item.install_all_needs,
-                    item.needs,
-                    force_source,
-                    status,
-                )?;
-
-                return Ok(Some(prepare_deps(
-                    resolved_dep,
-                    deps,
-                    item.matching_in_lockfile,
-                )));
+                    // The package is already in the repository database and outlives
+                    // resolution, so we borrow its deps directly.
+                    let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
+                        package,
+                        &repo_url,
+                        package_type,
+                        item.install_suggestions,
+                        item.install_all_needs,
+                        item.needs,
+                        force_source,
+                        status,
+                    )?;
+                    return Ok(Some(prepare_deps!(
+                        resolved_dep,
+                        deps,
+                        item.matching_in_lockfile
+                    )));
+                }
             }
         }
 
@@ -522,7 +547,7 @@ impl<'d> Resolver<'d> {
                     item.needs,
                     status,
                 )?;
-                Ok(prepare_deps(resolved_dep, deps, item.matching_in_lockfile))
+                Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
             }
             Err(e) => {
                 spinner.finish_and_clear();
@@ -566,7 +591,7 @@ impl<'d> Resolver<'d> {
             item.install_all_needs,
             item.needs,
         )?;
-        Ok(prepare_deps(resolved_dep, deps, item.matching_in_lockfile))
+        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
     fn builtin_lookup(
@@ -578,7 +603,7 @@ impl<'d> Resolver<'d> {
                 if req.is_satisfied(&package.version) {
                     let (resolved_dep, deps) =
                         ResolvedDependency::from_builtin_package(package, item.install_suggestions);
-                    Some(prepare_deps(resolved_dep, deps, item.matching_in_lockfile))
+                    Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
                 } else {
                     None
                 }
@@ -586,7 +611,7 @@ impl<'d> Resolver<'d> {
                 // if there's no version requirement, we are fine with what's builtin
                 let (resolved_dep, deps) =
                     ResolvedDependency::from_builtin_package(package, item.install_suggestions);
-                Some(prepare_deps(resolved_dep, deps, item.matching_in_lockfile))
+                Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
             }
         } else {
             None
