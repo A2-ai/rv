@@ -15,7 +15,7 @@ use rv::cli::{
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
-use rv::{AddOptions, RepositoryOperation as LibRepositoryOperation};
+use rv::{AddOptions, FetchPackage, Http, RepositoryOperation as LibRepositoryOperation};
 use rv::{
     CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
@@ -648,14 +648,16 @@ fn try_main() -> Result<()> {
 
                     let final_name = match (parsed.name, resolved_ref, options.git.as_deref()) {
                         (None, Some(ref_), Some(git_url)) => {
-                            rv::fetch_package_name_from_description(
+                            let fetcher: FetchPackage<'_, Http, _> = FetchPackage::Git {
                                 git_url,
-                                options.directory.as_deref(),
-                                &ref_,
-                                &context.cache,
-                                GitExecutor {},
-                            )
-                            .map_err(|e| anyhow!("Failed to add `{package}`: {e}"))?
+                                reference: &ref_,
+                                directory: options.directory.as_deref(),
+                                executor: GitExecutor,
+                            };
+                            let pkg = fetcher
+                                .fetch(&context.cache)
+                                .map_err(|e| anyhow!("Failed to add `{package}`: {e}"))?;
+                            pkg.name
                         }
                         (Some(name), _, _) => name,
                         _ => unreachable!(
