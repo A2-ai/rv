@@ -129,7 +129,7 @@ mod tests {
             name: Cow::from(name),
             dependencies: dependencies
                 .into_iter()
-                .map(|x| Cow::Owned(Dependency::Simple(x.to_string())))
+                .map(|x| Dependency::Simple(x.to_string()))
                 .collect(),
             suggests: Vec::new(),
             version: Cow::Owned(Version::from_str("0.1.0").unwrap()),
@@ -147,6 +147,7 @@ mod tests {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: HashMap::new(),
         }
     }
 

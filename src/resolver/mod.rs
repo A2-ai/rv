@@ -1,9 +1,13 @@
-use crate::VersionRequirement;
-use crate::{CommandExecutor, ConfigDependency, Lockfile, RepositoryDatabase, Version};
+use crate::{
+    CommandExecutor, ConfigDependency, Dependency, Http, Lockfile, RepositoryDatabase,
+    ResolvedGitRef, Version,
+};
+use crate::{FetchDescription, GitExecutor, VersionRequirement};
 
 use fs_err as fs;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use url::Url;
@@ -19,8 +23,8 @@ use crate::git::{GitReference, GitRemote};
 use crate::http::HttpDownload;
 use crate::lockfile::Source;
 use crate::package::{
-    Package, PackageRemote, PackageType, is_binary_package, parse_description_file,
-    parse_description_file_in_folder,
+    InstallationDependencies, NeedsEntry, Package, PackageRemote, PackageType, is_binary_package,
+    parse_description_file, parse_description_file_in_folder,
 };
 use crate::utils::create_spinner;
 pub use dependency::{ResolvedDependency, UnresolvedDependency};
@@ -39,6 +43,14 @@ pub(crate) struct QueueItem<'d> {
     // Only for top level dependencies. Checks whether the config dependency is matching
     // what we have in the lockfile, we have one.
     matching_in_lockfile: Option<bool>,
+    /// Config/Needs/* keys to install (from rproject.toml `needs = [...]`)
+    needs: Vec<String>,
+    /// If true, install all Config/Needs/* entries from the package DESCRIPTION
+    install_all_needs: bool,
+    /// True if this item was created from a Config/Needs/* Remote entry. Allows
+    /// prefer_repositories_for to override the remote even without a version constraint,
+    /// since the remote is a declaration of need rather than a pinned source.
+    from_needs_remote: bool,
 }
 
 impl<'d> QueueItem<'d> {
@@ -56,37 +68,74 @@ impl<'d> QueueItem<'d> {
             ..Default::default()
         }
     }
+
+    fn has_needs(&self) -> bool {
+        self.install_all_needs || !self.needs.is_empty()
+    }
 }
 
-// Macro to go around borrow errors we would get with a normal fn
-macro_rules! prepare_deps {
-    ($resolved:expr, $deps:expr, $matching_in_lockfile:expr) => {{
-        let items = $deps
-            .direct
-            .into_iter()
-            .chain($deps.suggests)
-            .map(|p| {
-                let mut i = QueueItem::name_and_parent_only(
-                    Cow::Owned(p.name().to_string()),
-                    $resolved.name.clone(),
-                );
+struct ResolutionDependencies<'a> {
+    resolved: ResolvedDependency<'a>,
+    dependencies: Vec<QueueItem<'a>>,
+}
 
-                i.version_requirement = p.version_requirement().map(|x| Cow::Owned(x.clone()));
-                i.matching_in_lockfile = $matching_in_lockfile;
-
-                for (pkg_name, remote) in $resolved.remotes.values() {
-                    if let Some(n) = pkg_name {
-                        if p.name() == n.as_str() {
-                            i.remote = Some(remote.clone());
-                        }
+impl<'a> ResolutionDependencies<'a> {
+    fn prepare(
+        resolved: ResolvedDependency<'a>,
+        deps: InstallationDependencies,
+        matching_in_lockfile: Option<bool>,
+    ) -> Self {
+        let dep_to_item = |dep: Dependency| -> QueueItem {
+            let mut i = QueueItem::name_and_parent_only(
+                Cow::Owned(dep.name().to_string()),
+                resolved.name.clone(),
+            );
+            i.version_requirement = dep.version_requirement().map(|v| Cow::Owned(v.clone()));
+            i.matching_in_lockfile = matching_in_lockfile;
+            for (pkg_name, remote) in resolved.remotes.values() {
+                if let Some(n) = pkg_name {
+                    if dep.name() == n.as_str() {
+                        i.remote = Some(remote.clone())
                     }
                 }
-                i
-            })
-            .collect();
+            }
+            i
+        };
 
-        ($resolved, items)
-    }};
+        let mut dependencies = deps
+            .direct
+            .into_iter()
+            .chain(deps.suggests)
+            .map(dep_to_item)
+            .collect::<Vec<_>>();
+
+        for entry in deps.needs.into_values().flatten() {
+            let item = match entry {
+                NeedsEntry::Package(d) => dep_to_item(d),
+                NeedsEntry::Remote(pkg_name, remote) => {
+                    let mut i = QueueItem::name_and_parent_only(
+                        Cow::Owned(pkg_name),
+                        resolved.name.clone(),
+                    );
+                    i.remote = Some(remote);
+                    i.matching_in_lockfile = matching_in_lockfile;
+                    i.from_needs_remote = true;
+                    i
+                }
+            };
+            dependencies.push(item);
+        }
+
+        Self {
+            resolved,
+            dependencies,
+        }
+    }
+
+    fn insert(self, queue: &mut VecDeque<QueueItem<'a>>, resolution: &mut Resolution<'a>) {
+        queue.extend(self.dependencies);
+        resolution.add_found(self.resolved);
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -140,7 +189,7 @@ impl<'d> Resolver<'d> {
     fn local_lookup(
         &self,
         item: &QueueItem<'d>,
-    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+    ) -> Result<ResolutionDependencies<'d>, Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
         let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
             Ok(canon_path) => canon_path,
@@ -181,88 +230,101 @@ impl<'d> Resolver<'d> {
                 sha,
             },
             item.install_suggestions,
+            item.install_all_needs,
+            &item.needs,
             canon_path,
-        );
-        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+        )?;
+        Ok(ResolutionDependencies::prepare(
+            resolved_dep,
+            deps,
+            item.matching_in_lockfile,
+        ))
     }
 
     fn lockfile_lookup(
         &self,
         item: &QueueItem<'d>,
+        git_exec: &(impl CommandExecutor + Clone + 'static),
+        http_download: &'d impl HttpDownload,
         cache: &'d Cache,
-    ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+    ) -> Result<Option<ResolutionDependencies<'d>>, Box<dyn Error>> {
         // If the dependency is not matching, do not even look at the lockfile
         if let Some(matching) = item.matching_in_lockfile
             && !matching
         {
-            return None;
+            return Ok(None);
         }
 
-        if let Some(package) = self
+        let Some(package) = self
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
+        else {
+            return Ok(None);
+        };
+
+        // For some type of packages we will always refresh directly from the source
+        // eg a branch might have added commits
+        if package.source.could_have_changed() {
+            return Ok(None);
+        }
+
+        if let Some(req) = &item.version_requirement
+            && !req.is_satisfied(&Version::from_str(&package.version).unwrap())
         {
-            // For some type of packages we will always refresh directly from the source
-            // eg a branch might have added commits
-            if package.source.could_have_changed() {
-                return None;
-            }
+            return Ok(None);
+        }
+        let installation_status =
+            cache.get_installation_status(&item.name, &package.version, &package.source);
 
-            if let Some(req) = &item.version_requirement
-                && !req.is_satisfied(&Version::from_str(&package.version).unwrap())
-            {
-                return None;
-            }
+        // We search first in the repo for whether we have source or binary since
+        // we don't record that info in the lockfile
+        let kind = if package.force_source {
+            PackageType::Source
+        } else if let Source::Repository { repository } = &package.source {
+            let repo_url = repository.as_str();
+            let matching_repo = self
+                .repositories
+                .iter()
+                .find(|(repo, _)| repo.url == repo_url);
+            match matching_repo {
+                Some((repo, repo_force_source)) => {
+                    if *repo_force_source {
+                        PackageType::Source
+                    } else {
+                        let version_req =
+                            VersionRequirement::from_str(&format!("(== {})", package.version))
+                                .unwrap();
 
-            let installation_status =
-                cache.get_installation_status(&item.name, &package.version, &package.source);
+                        let has_binary = repo
+                            .find_package(&package.name, Some(&version_req), self.r_version, false)
+                            .is_some_and(|(_, package_type)| package_type == PackageType::Binary);
 
-            // We search first in the repo for whether we have source or binary since
-            // we don't record that info in the lockfile
-            let kind = if package.force_source {
-                PackageType::Source
-            } else if let Source::Repository { repository } = &package.source {
-                let repo_url = repository.as_str();
-                let matching_repo = self
-                    .repositories
-                    .iter()
-                    .find(|(repo, _)| repo.url == repo_url);
-                match matching_repo {
-                    Some((repo, repo_force_source)) => {
-                        if *repo_force_source {
-                            PackageType::Source
+                        if has_binary {
+                            PackageType::Binary
                         } else {
-                            let version_req =
-                                VersionRequirement::from_str(&format!("(== {})", package.version))
-                                    .unwrap();
-
-                            let has_binary = repo
-                                .find_package(
-                                    &package.name,
-                                    Some(&version_req),
-                                    &self.r_version,
-                                    false,
-                                )
-                                .is_some_and(|(_, package_type)| {
-                                    package_type == PackageType::Binary
-                                });
-
-                            if has_binary {
-                                PackageType::Binary
-                            } else {
-                                PackageType::Source
-                            }
+                            PackageType::Source
                         }
                     }
-                    // DBs not found.
-                    // I think it can only happen when someone is changing a repository
-                    // URL in the config file and the one from the lockfile is not found anymore
-                    None => return None,
                 }
-            } else {
-                // url/git/local are probably source packages
-                PackageType::Source
-            };
+                // DBs not found.
+                // I think it can only happen when someone is changing a repository
+                // URL in the config file and the one from the lockfile is not found anymore
+                None => return Ok(None),
+            }
+        } else {
+            // url/git/local are probably source packages
+            PackageType::Source
+        };
+
+        // if all declared needs are found in the lockfile, no need to refetch
+        // always refetch when install_all_needs
+        if (!item.install_all_needs
+            && item
+                .needs
+                .iter()
+                .all(|need| package.needs.iter().any(|(n, _)| need == n)))
+            || matches!(package.source, Source::Builtin { .. })
+        {
             let resolved_dep =
                 ResolvedDependency::from_locked_package(package, installation_status, kind);
 
@@ -270,6 +332,7 @@ impl<'d> Resolver<'d> {
                 .dependencies
                 .iter()
                 .chain(&package.suggests)
+                .chain(package.need_deps())
                 .map(|p| {
                     let mut q =
                         QueueItem::name_and_parent_only(Cow::Borrowed(p.name()), item.name.clone());
@@ -278,17 +341,80 @@ impl<'d> Resolver<'d> {
                 })
                 .collect();
 
-            Some((resolved_dep, items))
-        } else {
-            None
+            return Ok(Some(ResolutionDependencies {
+                resolved: resolved_dep,
+                dependencies: items,
+            }));
         }
+
+        let (resolved_dep, deps) = match &package.source {
+            Source::Git {
+                git,
+                sha,
+                directory,
+                ..
+            }
+            | Source::RUniverse {
+                git,
+                sha,
+                directory,
+                ..
+            } => {
+                let fetcher: FetchDescription<'_, Http, _> = FetchDescription::Git {
+                    git_url: git.url(),
+                    directory: directory.as_deref(),
+                    reference: &ResolvedGitRef::Commit(sha.to_string()),
+                    executor: git_exec.clone(),
+                };
+                let pkg = fetcher.fetch(cache)?;
+                ResolvedDependency::from_git_package(
+                    &pkg,
+                    package.source.clone(),
+                    package.install_suggests(),
+                    item.install_all_needs,
+                    &item.needs,
+                    installation_status,
+                )?
+            }
+            Source::Repository { repository } => {
+                let fetcher: FetchDescription<'_, _, GitExecutor> = FetchDescription::Repository {
+                    name: &package.name,
+                    version: &package.version,
+                    repository,
+                    downloader: http_download,
+                };
+                let pkg = fetcher.fetch(cache)?;
+                ResolvedDependency::from_package_repository(
+                    Cow::Owned(pkg),
+                    repository,
+                    kind,
+                    package.install_suggests(),
+                    item.install_all_needs,
+                    &item.needs,
+                    package.force_source,
+                    installation_status,
+                )?
+            }
+            Source::Local { .. } => return self.local_lookup(item).map(Some),
+            Source::Url { .. } => {
+                unreachable!("source.could_have_changed returns true always and returns early")
+            }
+            Source::Builtin { .. } => unreachable!("Matches above and returns early"),
+        };
+
+        Ok(Some(ResolutionDependencies::prepare(
+            resolved_dep,
+            deps,
+            item.matching_in_lockfile,
+        )))
     }
 
     fn repositories_lookup(
         &self,
         item: &QueueItem<'d>,
+        http_download: &'d impl HttpDownload,
         cache: &'d Cache,
-    ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+    ) -> Result<Option<ResolutionDependencies<'d>>, Box<dyn Error>> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
 
         for (repo, repo_source_only) in self.repositories {
@@ -309,12 +435,15 @@ impl<'d> Resolver<'d> {
                 self.r_version,
                 force_source,
             ) {
+                let repo_url = Url::parse(&repo.url).unwrap();
+                let source = Source::Repository {
+                    repository: repo_url.clone(),
+                };
+
                 let mut status = cache.get_installation_status(
                     &package.name,
                     &package.version.original,
-                    &Source::Repository {
-                        repository: Url::parse(&repo.url).unwrap(),
-                    },
+                    &source,
                 );
 
                 // If we have the binary but not built from source and the user asked from_source
@@ -323,19 +452,39 @@ impl<'d> Resolver<'d> {
                     status = status.mark_as_binary_unavailable();
                 }
 
+                let package = if item.has_needs() {
+                    let fetcher: FetchDescription<'_, _, GitExecutor> =
+                        FetchDescription::Repository {
+                            name: &package.name,
+                            version: &package.version.to_string(),
+                            repository: &repo_url,
+                            downloader: http_download,
+                        };
+                    let pkg = fetcher.fetch(cache)?;
+                    Cow::Owned(pkg)
+                } else {
+                    Cow::Borrowed(package)
+                };
+
                 let (resolved_dep, deps) = ResolvedDependency::from_package_repository(
                     package,
                     &Url::parse(&repo.url).unwrap(),
                     package_type,
                     item.install_suggestions,
+                    item.install_all_needs,
+                    &item.needs,
                     force_source,
                     status,
-                );
-                return Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile));
+                )?;
+                return Ok(Some(ResolutionDependencies::prepare(
+                    resolved_dep,
+                    deps,
+                    item.matching_in_lockfile,
+                )));
             }
         }
 
-        None
+        Ok(None)
     }
 
     fn git_lookup(
@@ -346,7 +495,7 @@ impl<'d> Resolver<'d> {
         git_ref: GitReference,
         git_executor: &'d (impl CommandExecutor + Clone + 'static),
         cache: &'d Cache,
-    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+    ) -> Result<ResolutionDependencies<'d>, Box<dyn Error>> {
         let clone_path = cache.local().get_git_clone_path(repo_url.url());
 
         let mut remote = GitRemote::new(repo_url.url());
@@ -403,9 +552,15 @@ impl<'d> Resolver<'d> {
                     &package,
                     source,
                     item.install_suggestions,
+                    item.install_all_needs,
+                    &item.needs,
                     status,
-                );
-                Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+                )?;
+                Ok(ResolutionDependencies::prepare(
+                    resolved_dep,
+                    deps,
+                    item.matching_in_lockfile,
+                ))
             }
             Err(e) => {
                 spinner.finish_and_clear();
@@ -420,7 +575,7 @@ impl<'d> Resolver<'d> {
         url: &Url,
         cache: &'d Cache,
         http_downloader: &'d impl HttpDownload,
-    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+    ) -> Result<ResolutionDependencies<'d>, Box<dyn Error>> {
         let out_path = cache.local().get_url_download_path(url);
         let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
 
@@ -446,20 +601,27 @@ impl<'d> Resolver<'d> {
                 sha,
             },
             item.install_suggestions,
-        );
-        Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+            item.install_all_needs,
+            &item.needs,
+        )?;
+        Ok(ResolutionDependencies::prepare(
+            resolved_dep,
+            deps,
+            item.matching_in_lockfile,
+        ))
     }
 
-    fn builtin_lookup(
-        &self,
-        item: &QueueItem<'d>,
-    ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
+    fn builtin_lookup(&self, item: &QueueItem<'d>) -> Option<ResolutionDependencies<'d>> {
         if let Some(package) = self.builtin_packages.get(item.name.as_ref()) {
             if let Some(ref req) = item.version_requirement {
                 if req.is_satisfied(&package.version) {
                     let (resolved_dep, deps) =
                         ResolvedDependency::from_builtin_package(package, item.install_suggestions);
-                    Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+                    Some(ResolutionDependencies::prepare(
+                        resolved_dep,
+                        deps,
+                        item.matching_in_lockfile,
+                    ))
                 } else {
                     None
                 }
@@ -467,7 +629,11 @@ impl<'d> Resolver<'d> {
                 // if there's no version requirement, we are fine with what's builtin
                 let (resolved_dep, deps) =
                     ResolvedDependency::from_builtin_package(package, item.install_suggestions);
-                Some(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
+                Some(ResolutionDependencies::prepare(
+                    resolved_dep,
+                    deps,
+                    item.matching_in_lockfile,
+                ))
             }
         } else {
             None
@@ -515,6 +681,9 @@ impl<'d> Resolver<'d> {
                     l.get_package(d.name(), Some(d))
                         .map(|p| p.is_matching(d, &self.repo_urls))
                 }),
+                needs: d.needs().to_vec(),
+                install_all_needs: d.install_all_needs(),
+                from_needs_remote: false,
             })
             .collect();
 
@@ -534,13 +703,12 @@ impl<'d> Resolver<'d> {
             // If we have a local path, we don't need to check anything at all, just the actual path
             if item.local_path.is_some() {
                 match self.local_lookup(&item) {
-                    Ok((resolved_dep, items)) => {
+                    Ok(r) => {
                         processed
-                            .entry(resolved_dep.name.to_string())
+                            .entry(r.resolved.name.to_string())
                             .or_default()
                             .insert(item.version_requirement.clone());
-                        result.add_found(resolved_dep);
-                        queue.extend(items);
+                        r.insert(&mut queue, &mut result);
                         continue;
                     }
                     Err(e) => result
@@ -551,27 +719,38 @@ impl<'d> Resolver<'d> {
             }
 
             // First we look at the lockfile and trust what is inside
-            if let Some((resolved_dep, items)) = self.lockfile_lookup(&item, cache) {
-                processed
-                    .entry(resolved_dep.name.to_string())
-                    .or_default()
-                    .insert(item.version_requirement.clone());
-                result.add_found(resolved_dep);
-                queue.extend(items);
-                continue;
+            match self.lockfile_lookup(&item, git_exec, http_download, cache) {
+                Ok(Some(r)) => {
+                    processed
+                        .entry(r.resolved.name.to_string())
+                        .or_default()
+                        .insert(item.version_requirement.clone());
+                    r.insert(&mut queue, &mut result);
+                    continue;
+                }
+                Ok(None) => (),
+                Err(e) => {
+                    processed
+                        .entry(item.name.to_string())
+                        .or_default()
+                        .insert(item.version_requirement.clone());
+                    result
+                        .failed
+                        .push(UnresolvedDependency::from_item(&item).with_error(e.to_string()));
+                    continue;
+                }
             }
 
             // Then let's check if it's a builtin package if the R version is matching if the package
             // is not listed from a specific repo
             if !item.has_required_repo()
-                && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
+                && let Some(r) = self.builtin_lookup(&item)
             {
                 processed
-                    .entry(resolved_dep.name.to_string())
+                    .entry(r.resolved.name.to_string())
                     .or_default()
                     .insert(item.version_requirement.clone());
-                result.add_found(resolved_dep);
-                queue.extend(items);
+                r.insert(&mut queue, &mut result);
                 continue;
             }
 
@@ -584,10 +763,12 @@ impl<'d> Resolver<'d> {
 
             // But first, we check if the item has a remote and use that instead
             // We will keep the remote result around _if_ the item has a version requirement and is in
-            // override list so we can check in the repo before pushing the remote version
+            // override list so we can check in the repo before pushing the remote version.
+            // Override also allowable for remotes listed in Config/Needs/* since it is a declaration of intent as well as source.
             let mut remote_result = None;
+
             // .contains would need to allocate, so using iter().any() instead
-            let can_be_overridden = item.version_requirement.is_some()
+            let can_be_overridden = (item.version_requirement.is_some() || item.from_needs_remote)
                 && prefer_repositories_for
                     .iter()
                     .any(|s| s == item.name.as_ref());
@@ -614,14 +795,13 @@ impl<'d> Resolver<'d> {
                             git_exec,
                             cache,
                         ) {
-                            Ok((mut resolved_dep, items)) => {
+                            Ok(mut r) => {
                                 // TODO: do we want to keep track of the remote string?
-                                resolved_dep.from_remote = true;
+                                r.resolved.from_remote = true;
                                 if can_be_overridden {
-                                    remote_result = Some((resolved_dep, items));
+                                    remote_result = Some(r);
                                 } else {
-                                    result.add_found(resolved_dep);
-                                    queue.extend(items);
+                                    r.insert(&mut queue, &mut result);
                                 }
                             }
                             Err(e) => {
@@ -655,25 +835,30 @@ impl<'d> Resolver<'d> {
                     if item.version_requirement.is_none() && result.found_in_repo(&item.name) {
                         continue;
                     }
-                    if let Some((resolved_dep, items)) = self.repositories_lookup(&item, cache) {
-                        result.add_found(resolved_dep);
-                        queue.extend(items);
-                    } else {
-                        // Fallback to the remote result otherwise
-                        if let Some((resolved_dep, items)) = remote_result {
-                            result.add_found(resolved_dep);
-                            queue.extend(items);
-                        } else {
-                            log::debug!("Didn't find {}", item.name);
-                            result.failed.push(UnresolvedDependency::from_item(&item));
+                    match self.repositories_lookup(&item, http_download, cache) {
+                        Ok(Some(r)) => {
+                            r.insert(&mut queue, &mut result);
+                        }
+                        Ok(None) => {
+                            if let Some(r) = remote_result {
+                                r.insert(&mut queue, &mut result);
+                            } else {
+                                log::debug!("Didn't find {}", item.name);
+                                result.failed.push(UnresolvedDependency::from_item(&item));
+                            }
+                        }
+                        Err(e) => {
+                            result.failed.push(
+                                UnresolvedDependency::from_item(&item).with_error(e.to_string()),
+                            );
+                            continue;
                         }
                     }
                 }
                 Some(ConfigDependency::Url { url, .. }) => {
                     match self.url_lookup(&item, url, cache, http_download) {
-                        Ok((resolved_dep, items)) => {
-                            result.add_found(resolved_dep);
-                            queue.extend(items);
+                        Ok(r) => {
+                            r.insert(&mut queue, &mut result);
                         }
                         Err(e) => {
                             result.failed.push(
@@ -711,9 +896,8 @@ impl<'d> Resolver<'d> {
                         git_exec,
                         cache,
                     ) {
-                        Ok((resolved_dep, items)) => {
-                            result.add_found(resolved_dep);
-                            queue.extend(items);
+                        Ok(r) => {
+                            r.insert(&mut queue, &mut result);
                         }
                         Err(e) => {
                             result.failed.push(
@@ -793,11 +977,31 @@ mod tests {
 
         fn download_and_untar(
             &self,
-            _: &Url,
-            _: impl AsRef<Path>,
+            url: &Url,
+            output_path: impl AsRef<Path>,
             _: bool,
             _: Option<&Path>,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
+            // Serve DESCRIPTION for needs-test repo packages so read_repo_description_for_needs
+            // exercises the HTTP download path without a real network call.
+            // URL pattern: {repo}/src/contrib/{name}_{version}.tar.gz
+            // Serve the DESCRIPTION for rv.needs.A v1.0.0 from repo1.
+            // Its Config/Needs/website lists rv.needs.B, which depends on rv.needs.A >= 2.0,
+            // forcing the resolver to upgrade rv.needs.A from v1.0.0 (repo1) to v2.0.0 (repo2).
+            let needs_packages: &[(&str, &str, &str)] =
+                &[("rv.needs.A", "1.0.0", "Config/Needs/website: rv.needs.B\n")];
+            for (name, version, extra) in needs_packages {
+                let suffix = format!("src/contrib/{}_{}.tar.gz", name, version);
+                if url.as_str().ends_with(&suffix) {
+                    fs::create_dir_all(output_path.as_ref()).unwrap();
+                    fs::write(
+                        output_path.as_ref().join(DESCRIPTION_FILENAME),
+                        format!("Package: {name}\nVersion: {version}\n{extra}"),
+                    )
+                    .unwrap();
+                    return Ok((None, "SOME_SHA".to_string()));
+                }
+            }
             Ok((None, "SOME_SHA".to_string()))
         }
     }
@@ -863,6 +1067,15 @@ mod tests {
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
+            ("rv_needs_simple", "https://github.com/test/rv-needs-simple"),
+            (
+                "rv_needs_upgrade",
+                "https://github.com/test/rv-needs-upgrade",
+            ),
+            (
+                "rv_needs_remote_override",
+                "https://github.com/test/rv-needs-remote-override",
+            ),
         ];
 
         for (dep, url) in &remotes {

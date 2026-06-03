@@ -1,0 +1,31 @@
+# rv_needs_simple is already locked with website needs.
+# On re-sync, needs packages (knitr, rmarkdown) must still be enqueued
+# from the lockfile fast-path — not just the direct dep.
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv_needs_simple", git = "https://github.com/test/rv-needs-simple", commit = "somethinglikeasha", needs = ["website"] }
+]
+---
+Package: knitr
+Version: 1.45
+License: MIT
+NeedsCompilation: no
+
+Package: rmarkdown
+Version: 2.25
+License: MIT
+NeedsCompilation: no
+---
+version = 2
+r_version = "4.4"
+
+[[packages]]
+name = "rv_needs_simple"
+version = "1.0.0"
+source = { git = "https://github.com/test/rv-needs-simple", sha = "somethinglikeasha" }
+force_source = true
+dependencies = []
+needs = { website = ["knitr", "rmarkdown"] }

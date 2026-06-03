@@ -1,0 +1,6 @@
+Package: rv_needs_upgrade
+Version: 1.0.0
+Depends: rv.pkgC
+Config/Needs/website: rv.pkgD
+License: MIT
+NeedsCompilation: no

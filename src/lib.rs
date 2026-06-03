@@ -38,9 +38,8 @@ pub use configure::{
 };
 pub use context::{Context, RCommandLookup, ResolveMode};
 pub use dependency_edit::{
-    AddOptions, ResolvedGitRef, add_packages, fetch_package_name_from_description,
-    parse_add_package_spec, read_and_verify_config, remove_packages,
-    resolve_add_options_reference_with_executor,
+    AddOptions, ResolvedGitRef, add_packages, parse_add_package_spec, read_and_verify_config,
+    remove_packages, resolve_add_options_reference_with_executor,
 };
 pub use format::format_document;
 pub use fs::is_network_fs;
@@ -48,7 +47,9 @@ pub use git::{CommandExecutor, GitExecutor, GitRepository};
 pub use http::{Http, HttpDownload};
 pub use library::Library;
 pub use lockfile::{LockedPackage, Lockfile, Source};
-pub use package::{Dependency, Operator, Version, VersionRequirement, is_binary_package};
+pub use package::{
+    Dependency, FetchDescription, Operator, Version, VersionRequirement, is_binary_package,
+};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::RCmd;
 pub use r_finder::RInstall;

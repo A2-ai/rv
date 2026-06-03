@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -8,7 +9,9 @@ use url::Url;
 
 use crate::cache::CacheStatus;
 use crate::lockfile::{LockedPackage, Source};
-use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
+use crate::package::{
+    Dependency, InstallationDependencies, NeedsEntry, Package, PackageRemote, PackageType,
+};
 use crate::resolver::QueueItem;
 use crate::{Version, VersionRequirement};
 
@@ -20,8 +23,8 @@ pub struct ResolvedDependency<'d> {
     pub name: Cow<'d, str>,
     pub version: Cow<'d, Version>,
     pub source: Source,
-    pub(crate) dependencies: Vec<Cow<'d, Dependency>>,
-    pub(crate) suggests: Vec<Cow<'d, Dependency>>,
+    pub(crate) dependencies: Vec<Dependency>,
+    pub(crate) suggests: Vec<Dependency>,
     pub(crate) force_source: bool,
     pub(crate) install_suggests: bool,
     pub(crate) kind: PackageType,
@@ -39,6 +42,10 @@ pub struct ResolvedDependency<'d> {
     /// { name = "dplyr", dependencies_only = true } in your rproject.toml
     /// in which case we want to keep track of it but not write it anywhere
     pub(crate) ignored: bool,
+    /// Parsed Config/Needs/* from the package DESCRIPTION.
+    /// Populated for git/local/url sources during resolution; empty for repo sources
+    /// (fetched on demand from cache when needed).
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -74,8 +81,8 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Borrowed(&package.name),
             version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
             source: package.source.clone(),
-            dependencies: package.dependencies.iter().map(Cow::Borrowed).collect(),
-            suggests: package.suggests.iter().map(Cow::Borrowed).collect(),
+            dependencies: package.dependencies.clone(),
+            suggests: package.suggests.clone(),
             kind,
             force_source: package.force_source,
             install_suggests: package.install_suggests(),
@@ -88,18 +95,31 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: package
+                .needs
+                .iter()
+                .map(|(key, deps)| {
+                    let entries = deps
+                        .iter()
+                        .map(|d| NeedsEntry::Package(d.clone()))
+                        .collect();
+                    (key.clone(), entries)
+                })
+                .collect(),
         }
     }
 
     pub fn from_package_repository(
-        package: &'d Package,
+        package: Cow<'d, Package>,
         repo_url: &Url,
         package_type: PackageType,
         install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
         force_source: bool,
         cache_status: CacheStatus,
-    ) -> (Self, InstallationDependencies<'d>) {
-        let deps = package.dependencies_to_install(install_suggests);
+    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let source = match (&package.remote_url, &package.remote_sha) {
             (Some(git), Some(sha)) if repo_url.to_string().contains("r-universe.dev") => {
                 Source::RUniverse {
@@ -113,17 +133,29 @@ impl<'d> ResolvedDependency<'d> {
                 repository: repo_url.clone(),
             },
         };
+        let (name, version, path) = match package {
+            Cow::Borrowed(p) => (
+                Cow::Borrowed(p.name.as_str()),
+                Cow::Borrowed(&p.version),
+                p.path.as_ref().map(|p| Cow::Borrowed(p.as_str())),
+            ),
+            Cow::Owned(p) => (
+                Cow::Owned(p.name),
+                Cow::Owned(p.version),
+                p.path.map(Cow::Owned),
+            ),
+        };
 
         let res = Self {
-            name: Cow::Borrowed(&package.name),
-            version: Cow::Borrowed(&package.version),
+            name,
+            version,
             source,
-            dependencies: deps.direct.iter().map(|d| Cow::Borrowed(*d)).collect(),
-            suggests: deps.suggests.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            dependencies: deps.direct.clone(),
+            suggests: deps.suggests.clone(),
             kind: package_type,
             force_source,
             install_suggests,
-            path: package.path.as_ref().map(|x| Cow::Borrowed(x.as_str())),
+            path,
             from_lockfile: false,
             cache_status,
             remotes: HashMap::new(),
@@ -131,9 +163,10 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: deps.needs.clone(), // PACKAGES files don't include Config/Needs/*; fetched on demand
         };
 
-        (res, deps)
+        Ok((res, deps))
     }
 
     /// If we find the package to be a git repo, we will read the DESCRIPTION file during resolution
@@ -142,17 +175,15 @@ impl<'d> ResolvedDependency<'d> {
         package: &Package,
         source: Source,
         install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
         cache_status: CacheStatus,
-    ) -> (Self, InstallationDependencies<'_>) {
-        let deps = package.dependencies_to_install(install_suggests);
+    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
 
         let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
+            dependencies: deps.direct.clone(),
+            suggests: deps.suggests.clone(),
             kind: PackageType::Source,
             force_source: true,
             path: None,
@@ -167,25 +198,24 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: deps.needs.clone(),
         };
 
-        (res, deps)
+        Ok((res, deps))
     }
 
     pub fn from_local_package(
         package: &Package,
         source: Source,
         install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
         local_resolved_path: PathBuf,
-    ) -> (Self, InstallationDependencies<'_>) {
-        let deps = package.dependencies_to_install(install_suggests);
+    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
+            dependencies: deps.direct.clone(),
+            suggests: deps.suggests.clone(),
             kind: PackageType::Source,
             force_source: true,
             path: None,
@@ -201,9 +231,10 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: Some(local_resolved_path),
             env_vars: HashMap::new(),
             ignored: false,
+            needs: deps.needs.clone(),
         };
 
-        (res, deps)
+        Ok((res, deps))
     }
 
     pub fn from_url_package(
@@ -211,15 +242,13 @@ impl<'d> ResolvedDependency<'d> {
         kind: PackageType,
         source: Source,
         install_suggests: bool,
-    ) -> (Self, InstallationDependencies<'_>) {
-        let deps = package.dependencies_to_install(install_suggests);
+        install_all_needs: bool,
+        needs: &[String],
+    ) -> Result<(Self, InstallationDependencies), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
+            dependencies: deps.direct.clone(),
+            suggests: deps.suggests.clone(),
             kind,
             force_source: false,
             path: None,
@@ -234,23 +263,26 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: deps.needs.clone(),
         };
 
-        (res, deps)
+        Ok((res, deps))
     }
 
     pub fn from_builtin_package(
         package: &'d Package,
         install_suggests: bool,
-    ) -> (Self, InstallationDependencies<'d>) {
-        let deps = package.dependencies_to_install(install_suggests);
+    ) -> (Self, InstallationDependencies) {
+        let deps = package
+            .dependencies_to_install(install_suggests, false, &[])
+            .expect("No Config/Needs specified to allow error");
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
             version: Cow::Borrowed(&package.version),
             source: Source::Builtin { builtin: true },
-            dependencies: deps.direct.iter().map(|d| Cow::Borrowed(*d)).collect(),
-            suggests: deps.suggests.iter().map(|d| Cow::Borrowed(*d)).collect(),
+            dependencies: deps.direct.clone(),
+            suggests: deps.suggests.clone(),
             kind: PackageType::Binary,
             force_source: false,
             install_suggests,
@@ -262,6 +294,7 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: HashMap::new(),
         };
 
         (res, deps)

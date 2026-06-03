@@ -1,0 +1,7 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+rv_needs_upgrade=1.0.0 (git(url: https://github.com/test/rv-needs-upgrade, sha: somethinglikeasha, directory: None, tag: None, branch: None), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
+rv.pkgD=1.0.0 (repository(url: http://cran/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
+rv.pkgC=2.0.0 (repository(url: http://cran/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])

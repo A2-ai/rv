@@ -7,8 +7,7 @@ use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 #[cfg(feature = "cli")]
 use clap::Parser;
 
-use crate::git::{self, CommandExecutor, GitExecutor, GitReference, GitRemote};
-use crate::package::parse_description_file;
+use crate::git::{self, CommandExecutor, GitExecutor, GitReference};
 use crate::{Config, config::ConfigLoadError, git::url::GitUrl};
 
 pub const DEFAULT_GIT_SHORTHAND_BASE_URL: &str = "https://github.com";
@@ -29,6 +28,12 @@ pub struct AddOptions {
     /// Install only the dependencies, not the package itself
     #[cfg_attr(feature = "cli", clap(long))]
     pub dependencies_only: bool,
+    /// Specify specific needs from Config/Needs/*
+    #[cfg_attr(feature = "cli", clap(long, value_delimiter = ','))]
+    pub needs: Vec<String>,
+    /// Install all needs from Config/Needs/*
+    #[cfg_attr(feature = "cli", clap(long, conflicts_with = "needs"))]
+    pub install_all_needs: bool,
     /// Git repository URL (https or ssh)
     #[cfg_attr(feature = "cli", clap(long, conflicts_with_all = ["repository", "path", "url"]))]
     pub git: Option<String>,
@@ -372,6 +377,18 @@ fn add_common_options(table: &mut InlineTable, options: &AddOptions) {
     if options.dependencies_only {
         table.insert("dependencies_only", Value::from(true));
     }
+
+    if options.install_all_needs {
+        table.insert("install_all_needs", Value::from(true));
+    }
+
+    if !options.needs.is_empty() {
+        let mut array = Array::new();
+        for need in &options.needs {
+            array.push(Value::from(need));
+        }
+        table.insert("needs", Value::Array(array));
+    }
 }
 
 fn get_mut_array(doc: &mut DocumentMut) -> &mut Array {
@@ -476,33 +493,6 @@ impl ResolvedGitRef {
             Self::Commit(s) => GitReference::Commit(s),
         }
     }
-}
-
-/// Sparse-checks out a `DESCRIPTION` file from a git dep into the cache and returns the package name
-/// declared in it.
-pub fn fetch_package_name_from_description(
-    git_url: &str,
-    directory: Option<&str>,
-    reference: &ResolvedGitRef,
-    cache: &crate::cache::Cache,
-    executor: impl CommandExecutor + Clone + 'static,
-) -> Result<String, String> {
-    let clone_path = cache.local().get_git_clone_path(git_url);
-
-    let mut remote = GitRemote::new(git_url);
-    if let Some(d) = directory {
-        remote.set_directory(d);
-    }
-
-    let (_, description_content) = remote
-        .sparse_checkout_for_description(clone_path, &reference.as_git_reference(), executor)
-        .map_err(|e| format!("Failed to fetch DESCRIPTION from `{git_url}`: {e}"))?;
-
-    let package = parse_description_file(&description_content).ok_or_else(|| {
-        format!("DESCRIPTION file from `{git_url}` is not valid R package metadata")
-    })?;
-
-    Ok(package.name)
 }
 
 fn resolve_git_reference(
@@ -733,6 +723,35 @@ mod tests {
             vec!["mypkg".to_string()],
             AddOptions {
                 path: Some("../local/package".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+
+    #[test]
+    fn add_needs() {
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                needs: vec!["test".to_string(), "needs".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        insta::assert_snapshot!(doc.to_string());
+    }
+    #[test]
+    fn add_install_all_needs() {
+        let mut doc = read_and_verify_config(BASELINE_ADD_CONFIG).unwrap();
+        add_packages(
+            &mut doc,
+            vec!["mypkg".to_string()],
+            AddOptions {
+                install_all_needs: true,
                 ..Default::default()
             },
         )

@@ -6,6 +6,7 @@ use toml_edit::{InlineTable, Value};
 
 mod builtin;
 mod description;
+mod fetch;
 mod parser;
 mod remotes;
 mod version;
@@ -13,9 +14,19 @@ mod version;
 use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
-pub use parser::{parse_dependencies, parse_package_file};
+pub use fetch::FetchDescription;
+pub use parser::{parse_dependencies, parse_needs_entries, parse_package_file};
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
+
+/// Represents a single entry in a `Config/Needs/*` field.
+/// Entries are either plain package names (possibly with a version requirement)
+/// or remote shorthands like `tidyverse/tidytemplate`.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum NeedsEntry {
+    Package(Dependency),
+    Remote(String, PackageRemote),
+}
 
 pub(crate) use remotes::parse_remote;
 
@@ -76,7 +87,7 @@ impl Dependency {
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Package {
-    pub(crate) name: String,
+    pub name: String,
     pub(crate) version: Version,
     pub(crate) r_requirement: Option<VersionRequirement>,
     pub(crate) depends: Vec<Dependency>,
@@ -100,12 +111,16 @@ pub struct Package {
     // The built field only exists when a package is a binary
     // https://rstudio.github.io/r-manuals/r-ints/Package-Structure.html
     pub(crate) built: Option<String>,
+    // Parsed Config/Needs/* fields: need-key → list of entries (plain pkgs or remote shorthands)
+    #[serde(default)]
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct InstallationDependencies<'a> {
-    pub(crate) direct: Vec<&'a Dependency>,
-    pub(crate) suggests: Vec<&'a Dependency>,
+pub struct InstallationDependencies {
+    pub(crate) direct: Vec<Dependency>,
+    pub(crate) suggests: Vec<Dependency>,
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 impl Package {
@@ -121,7 +136,9 @@ impl Package {
     pub fn dependencies_to_install(
         &self,
         install_suggestions: bool,
-    ) -> InstallationDependencies<'_> {
+        install_all_needs: bool,
+        needs: &[String],
+    ) -> Result<InstallationDependencies, Box<dyn std::error::Error>> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -138,18 +155,132 @@ impl Package {
             self.suggests
                 .iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .cloned()
                 .collect()
         } else {
             Vec::new()
         };
 
-        InstallationDependencies {
+        let suggests_req_map = self
+            .suggests
+            .iter()
+            .filter_map(|d| {
+                if let Dependency::Pinned { name, requirement } = d {
+                    Some((name.as_str(), requirement))
+                } else {
+                    None
+                }
+            })
+            .collect::<HashMap<_, _>>();
+
+        let needs_converter = |iter: (&String, &Vec<NeedsEntry>)| -> (String, Vec<NeedsEntry>) {
+            (
+                iter.0.clone(),
+                iter.1
+                    .iter()
+                    .filter_map(|entry| match entry {
+                        NeedsEntry::Package(p) => {
+                            if BASE_PACKAGES.contains(&p.name()) {
+                                return None;
+                            }
+
+                            // Enrich needs entries: if a package appears in Config/Needs/* without a version
+                            // requirement but has one in Suggests, promote it to Pinned using that requirement.
+                            if let Dependency::Simple(name) = p
+                                && let Some(&req) = suggests_req_map.get(name.as_str())
+                            {
+                                Some(NeedsEntry::Package(Dependency::Pinned {
+                                    name: name.clone(),
+                                    requirement: req.clone(),
+                                }))
+                            } else {
+                                Some(entry.clone())
+                            }
+                        }
+                        NeedsEntry::Remote(_, _) => Some(entry.clone()),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        let needs = if install_all_needs {
+            self.needs.iter().map(needs_converter).collect()
+        } else if !needs.is_empty() {
+            let mut declared_needs = needs.to_vec();
+            declared_needs.retain(|need| !self.needs.contains_key(need));
+            if !declared_needs.is_empty() {
+                return Err(format!(
+                    "{} declares need(s) `[{}]` which are not found in the package",
+                    self.name,
+                    declared_needs.join(", ")
+                )
+                .into());
+            }
+
+            self.needs
+                .iter()
+                .filter(|(need, _)| needs.contains(need))
+                .map(needs_converter)
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
+        Ok(InstallationDependencies {
             direct: out
                 .into_iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
+                .cloned()
                 .collect(),
             suggests,
-        }
+            needs,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn needs_version_promoted_from_suggests_when_not_installing_suggestions() {
+        let mut pkg = Package {
+            name: "mypkg".to_string(),
+            suggests: vec![Dependency::Pinned {
+                name: "rmarkdown".to_string(),
+                requirement: VersionRequirement::from_str("(>= 2.26)").unwrap(),
+            }],
+            ..Default::default()
+        };
+        pkg.needs.insert(
+            "website".to_string(),
+            vec![
+                NeedsEntry::Package(Dependency::Simple("knitr".to_string())),
+                NeedsEntry::Package(Dependency::Simple("rmarkdown".to_string())),
+            ],
+        );
+
+        let deps = pkg
+            .dependencies_to_install(false, false, &["website".to_string()])
+            .unwrap();
+
+        let rmarkdown_entry = deps
+            .needs
+            .get("website")
+            .unwrap()
+            .iter()
+            .find_map(|e| match e {
+                NeedsEntry::Package(d) if d.name() == "rmarkdown" => Some(d),
+                _ => None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            rmarkdown_entry.version_requirement().unwrap().to_string(),
+            "(>= 2.26)",
+            "rmarkdown should be promoted from Suggests even when install_suggestions=false"
+        );
     }
 }
 
