@@ -7,8 +7,7 @@ use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Value};
 #[cfg(feature = "cli")]
 use clap::Parser;
 
-use crate::git::{self, CommandExecutor, GitExecutor, GitReference, GitRemote};
-use crate::package::parse_description_file;
+use crate::git::{self, CommandExecutor, GitExecutor, GitReference};
 use crate::{Config, config::ConfigLoadError, git::url::GitUrl};
 
 pub const DEFAULT_GIT_SHORTHAND_BASE_URL: &str = "https://github.com";
@@ -476,33 +475,6 @@ impl ResolvedGitRef {
             Self::Commit(s) => GitReference::Commit(s),
         }
     }
-}
-
-/// Sparse-checks out a `DESCRIPTION` file from a git dep into the cache and returns the package name
-/// declared in it.
-pub fn fetch_package_name_from_description(
-    git_url: &str,
-    directory: Option<&str>,
-    reference: &ResolvedGitRef,
-    cache: &crate::cache::Cache,
-    executor: impl CommandExecutor + Clone + 'static,
-) -> Result<String, String> {
-    let clone_path = cache.local().get_git_clone_path(git_url);
-
-    let mut remote = GitRemote::new(git_url);
-    if let Some(d) = directory {
-        remote.set_directory(d);
-    }
-
-    let (_, description_content) = remote
-        .sparse_checkout_for_description(clone_path, &reference.as_git_reference(), executor)
-        .map_err(|e| format!("Failed to fetch DESCRIPTION from `{git_url}`: {e}"))?;
-
-    let package = parse_description_file(&description_content).ok_or_else(|| {
-        format!("DESCRIPTION file from `{git_url}` is not valid R package metadata")
-    })?;
-
-    Ok(package.name)
 }
 
 fn resolve_git_reference(

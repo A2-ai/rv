@@ -6,6 +6,7 @@ use toml_edit::{InlineTable, Value};
 
 mod builtin;
 mod description;
+mod fetch;
 mod parser;
 mod remotes;
 mod version;
@@ -13,6 +14,7 @@ mod version;
 use crate::{consts::BASE_PACKAGES, git::url::GitUrl};
 pub use builtin::{BuiltinPackages, get_builtin_versions_from_library};
 pub use description::{parse_description_file, parse_description_file_in_folder, parse_version};
+pub use fetch::FetchPackage;
 pub use parser::{parse_dependencies, parse_needs_entries, parse_package_file};
 pub use remotes::PackageRemote;
 pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
@@ -85,7 +87,7 @@ pub enum NeedsEntry {
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Package {
-    pub(crate) name: String,
+    pub name: String,
     pub(crate) version: Version,
     pub(crate) r_requirement: Option<VersionRequirement>,
     pub(crate) depends: Vec<Dependency>,
