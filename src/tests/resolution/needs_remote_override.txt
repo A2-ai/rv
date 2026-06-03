@@ -1,0 +1,14 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv.needs.remote", git = "https://github.com/test/rv.needs.remote", commit = "HEAD", needs = ["website"] }
+]
+prefer_repositories_for = ["gsm"]
+---
+Package: gsm
+Version: 2.2.2
+License: MIT
+NeedsCompilation: no
+---

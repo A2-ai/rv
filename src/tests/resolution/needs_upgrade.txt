@@ -1,0 +1,13 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv.needs.A", needs = ["website"] }
+]
+---
+repos = [
+    {name = "needs-complex-repo1", source = "needs-repo1", force_source = false},
+    {name = "needs-complex-repo2", source = "needs-repo2", force_source = false}
+]
+---

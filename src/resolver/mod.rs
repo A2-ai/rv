@@ -974,11 +974,37 @@ mod tests {
 
         fn download_and_untar(
             &self,
-            _: &Url,
-            _: impl AsRef<Path>,
+            url: &Url,
+            output_path: impl AsRef<Path>,
             _: bool,
             _: Option<&Path>,
         ) -> Result<(Option<PathBuf>, String), HttpError> {
+            // Serve DESCRIPTION for needs-test repo packages so read_repo_description_for_needs
+            // exercises the HTTP download path without a real network call.
+            // URL pattern: {repo}/src/contrib/{name}_{version}.tar.gz
+            // Serve the DESCRIPTION for rv.needs.A v1.0.0 from repo1.
+            // Its Config/Needs/website lists rv.needs.B, which depends on rv.needs.A >= 2.0,
+            // forcing the resolver to upgrade rv.needs.A from v1.0.0 (repo1) to v2.0.0 (repo2).
+            let needs_packages: &[(&str, &str, &str)] = &[
+                ("rv.needs.A", "1.0.0", "Config/Needs/website: rv.needs.B\n"),
+                (
+                    "rv.needs.A",
+                    "2.0.0",
+                    "Config/Needs/website: rv.needs.B (>= 2.0.0)\n",
+                ),
+            ];
+            for (name, version, extra) in needs_packages {
+                let suffix = format!("src/contrib/{}_{}.tar.gz", name, version);
+                if url.as_str().ends_with(&suffix) {
+                    fs::create_dir_all(output_path.as_ref()).unwrap();
+                    fs::write(
+                        output_path.as_ref().join(DESCRIPTION_FILENAME),
+                        format!("Package: {name}\nVersion: {version}\n{extra}"),
+                    )
+                    .unwrap();
+                    return Ok((None, "SOME_SHA".to_string()));
+                }
+            }
             Ok((None, "SOME_SHA".to_string()))
         }
     }
@@ -1044,6 +1070,7 @@ mod tests {
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
+            ("rv.needs.remote", "https://github.com/test/rv.needs.remote"),
         ];
 
         for (dep, url) in &remotes {

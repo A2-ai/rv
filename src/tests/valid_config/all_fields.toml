@@ -23,5 +23,7 @@ dependencies = [
     { name = "some-package", git = "https://github.com/A2-ai/scicalc", tag = "v0.1.1", install_suggestions = true },
     { name = "some-package", git = "https://github.com/A2-ai/scicalc", commit = "bc50e550e432c3c620714f30dd59115801f89995", install_suggestions = true },
     { name = "some-package", git = "git@github.com:username/repo.git", commit = "bc50e550e432c3c620714f30dd59115801f89995", install_suggestions = true },
+    { name = "some-package", repository = "mpn", needs = ["website"] },
+    { name = "some-package", install_all_needs = true },
 ]
 
