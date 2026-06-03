@@ -208,6 +208,10 @@ pub enum Command {
     /// Run an Rscript command with the project library paths configured
     #[clap(trailing_var_arg = true)]
     Run {
+        /// Do not sync the project library before running the command
+        /// This needs to be the first flag if set
+        #[clap(long)]
+        no_sync: bool,
         #[clap(allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -1077,9 +1081,25 @@ fn try_main() -> Result<()> {
             println!("{}", output);
         }
 
-        Command::Run { args } => {
-            let context = Context::new(&cli.config_file, RCommandLookup::Strict)
+        Command::Run { no_sync, args } => {
+            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
+
+            if !no_sync {
+                if !log_enabled {
+                    context.show_progress_bar();
+                }
+                let resolve_mode = ResolveMode::Default;
+                context
+                    .load_for_resolve_mode(resolve_mode)
+                    .map_err(|e| anyhow!("{e}"))?;
+                SyncHelper {
+                    dry_run: false,
+                    ..Default::default()
+                }
+                .run(&context, resolve_mode)?;
+            }
+
             let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
             std::process::exit(code);
         }
