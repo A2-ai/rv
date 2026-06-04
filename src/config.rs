@@ -501,6 +501,12 @@ impl Config {
                 },
                 _ => (),
             }
+            if d.install_all_needs() && !d.needs().is_empty() {
+                errors.push(format!(
+                    "Dependency {} cannot specify both `install_all_needs` and `needs = [...]`",
+                    d.name()
+                ));
+            }
         }
 
         if let Some(base_url) = self.project.git_shorthand_base_url.as_deref() {
