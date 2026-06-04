@@ -32,6 +32,26 @@ pub struct Task {
     pub parent: Option<String>,
 }
 
+impl Task {
+    /// A task with no parent
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Task {
+        Task {
+            id: id.into(),
+            label: label.into(),
+            parent: None,
+        }
+    }
+
+    /// A task nested under `self`. Its id is `self.id` plus `:suffix`
+    pub fn child(&self, suffix: &str, label: impl Into<String>) -> Task {
+        Task {
+            id: format!("{}:{suffix}", self.id),
+            label: label.into(),
+            parent: Some(self.id.clone()),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskResult {

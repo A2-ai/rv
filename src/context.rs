@@ -276,11 +276,7 @@ pub fn load_databases(
 
     let results: Vec<Result<_, Box<dyn Error + Send + Sync>>> = iter
         .map(|r| {
-            let task = events::Task {
-                id: format!("db:{}", r.alias),
-                label: r.alias.clone(),
-                parent: None,
-            };
+            let task = events::Task::new(format!("db:{}", r.alias), r.alias.clone());
             let db = events::with_task(task, || load_single_database(r, cache))?;
             Ok((db, r.force_source))
         })

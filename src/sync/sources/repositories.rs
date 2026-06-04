@@ -8,6 +8,7 @@ use url::Url;
 
 use crate::cache::{Cache, InstallationStatus};
 use crate::consts::BUILT_FROM_SOURCE_FILENAME;
+use crate::events;
 use crate::http::Http;
 use crate::package::PackageType;
 use crate::repository_urls::TarballUrls;
@@ -33,16 +34,18 @@ pub(crate) fn install_package(
     let compile_package = || -> Result<(), SyncError> {
         let source_path = local_paths.source.join(pkg.name.as_ref());
         log::debug!("Compiling package from {}", source_path.display());
-        match r_cmd.install(
-            &source_path,
-            Option::<&Path>::None,
-            library_dirs,
-            &local_paths.binary,
-            cancellation.clone(),
-            &pkg.env_vars,
-            configure_args,
-            strip,
-        ) {
+        match events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+            r_cmd.install(
+                &source_path,
+                Option::<&Path>::None,
+                library_dirs,
+                &local_paths.binary,
+                cancellation.clone(),
+                &pkg.env_vars,
+                configure_args,
+                strip,
+            )
+        }) {
             Ok(output) => {
                 // not using the path for the cache
                 let log_path = cache.local().get_build_log_path(

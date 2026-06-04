@@ -13,6 +13,7 @@ use crate::r_cmd::kill_all_r_processes;
 use crate::r_cmd::{RCmdError, RCmdErrorKind};
 use crate::sync::changes::{CacheSource, SyncChange};
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
+use crate::sync::tasks::{install_task, sync_task};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
 use crate::{
@@ -25,22 +26,6 @@ use fs_err as fs;
 use indicatif::{ProgressBar, ProgressStyle};
 #[cfg(not(feature = "cli"))]
 use std::fs;
-
-fn install_task(name: &str) -> events::Task {
-    events::Task {
-        id: format!("sync:{name}"),
-        label: name.to_string(),
-        parent: Some("sync".into()),
-    }
-}
-
-fn sync_task() -> events::Task {
-    events::Task {
-        id: "sync".into(),
-        label: "Syncing".into(),
-        parent: None,
-    }
-}
 
 fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String>> {
     if !cfg!(unix) {
