@@ -3,7 +3,7 @@ name = "test"
 r_version = "4.4"
 repositories = []
 dependencies = [
-    { name = "rv.needs.remote", git = "https://github.com/test/rv.needs.remote", commit = "HEAD", needs = ["website"] }
+    { name = "rv.needs", git = "https://github.com/test/rv.needs", commit = "HEAD", needs = ["remote"] }
 ]
 prefer_repositories_for = ["gsm"]
 ---

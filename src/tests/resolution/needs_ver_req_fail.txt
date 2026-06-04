@@ -1,0 +1,18 @@
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv.needs", git = "https://github.com/test/rv.needs", commit = "HEAD", needs = ["ver_req"] }
+]
+---
+Package: knitr
+Version: 1.45
+License: MIT
+NeedsCompilation: no
+
+Package: rmarkdown
+Version: 2.24
+License: MIT
+NeedsCompilation: no
+---

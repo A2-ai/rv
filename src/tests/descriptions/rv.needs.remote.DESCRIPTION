@@ -1,5 +1,0 @@
-Package: rv.needs.remote
-Version: 1.0.0
-Config/Needs/website: Gilead-BioStats/gsm
-License: MIT
-NeedsCompilation: no

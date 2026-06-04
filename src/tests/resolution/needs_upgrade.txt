@@ -3,11 +3,11 @@ name = "test"
 r_version = "4.4"
 repositories = []
 dependencies = [
-    { name = "rv.needs.A", needs = ["website"] }
+    { name = "needsA", needs = ["website"] }
 ]
 ---
 repos = [
-    {name = "needs-complex-repo1", source = "needs-repo1", force_source = false},
-    {name = "needs-complex-repo2", source = "needs-repo2", force_source = false}
+    {name = "test_repo1", source = "test_repo1", force_source = false},
+    {name = "test_repo2", source = "test_repo2", force_source = false}
 ]
 ---

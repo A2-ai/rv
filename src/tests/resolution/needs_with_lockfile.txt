@@ -1,0 +1,31 @@
+# rv.needs is already locked with lockfile needs.
+# On re-sync, needs packages (knitr, rmarkdown) must still be enqueued
+# from the lockfile fast-path — not just the direct dep.
+[project]
+name = "test"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "rv.needs", git = "https://github.com/test/rv.needs", commit = "somethinglikeasha", needs = ["lockfile"] }
+]
+---
+Package: knitr
+Version: 1.45
+License: MIT
+NeedsCompilation: no
+
+Package: rmarkdown
+Version: 2.25
+License: MIT
+NeedsCompilation: no
+---
+version = 2
+r_version = "4.4"
+
+[[packages]]
+name = "rv.needs"
+version = "1.0.0"
+source = { git = "https://github.com/test/rv.needs", sha = "somethinglikeasha" }
+force_source = true
+dependencies = []
+needs = { lockfile = ["knitr", "rmarkdown"] }

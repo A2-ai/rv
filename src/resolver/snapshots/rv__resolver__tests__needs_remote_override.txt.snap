@@ -1,0 +1,6 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+rv.needs=1.0.0 (git(url: https://github.com/test/rv.needs, sha: somethinglikeasha, directory: None, tag: None, branch: None), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
+gsm=2.2.2 (repository(url: http://cran/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])

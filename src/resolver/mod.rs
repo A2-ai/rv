@@ -985,14 +985,8 @@ mod tests {
             // Serve the DESCRIPTION for rv.needs.A v1.0.0 from repo1.
             // Its Config/Needs/website lists rv.needs.B, which depends on rv.needs.A >= 2.0,
             // forcing the resolver to upgrade rv.needs.A from v1.0.0 (repo1) to v2.0.0 (repo2).
-            let needs_packages: &[(&str, &str, &str)] = &[
-                ("rv.needs.A", "1.0.0", "Config/Needs/website: rv.needs.B\n"),
-                (
-                    "rv.needs.A",
-                    "2.0.0",
-                    "Config/Needs/website: rv.needs.B (>= 2.0.0)\n",
-                ),
-            ];
+            let needs_packages: &[(&str, &str, &str)] =
+                &[("needsA", "1.0.0", "Config/Needs/website: needsB\n")];
             for (name, version, extra) in needs_packages {
                 let suffix = format!("src/contrib/{}_{}.tar.gz", name, version);
                 if url.as_str().ends_with(&suffix) {
@@ -1070,7 +1064,7 @@ mod tests {
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
-            ("rv.needs.remote", "https://github.com/test/rv.needs.remote"),
+            ("rv.needs", "https://github.com/test/rv.needs"),
         ];
 
         for (dep, url) in &remotes {

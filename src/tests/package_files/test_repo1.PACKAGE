@@ -45,3 +45,10 @@ Suggests: suggestsC, survival
 Package: suggestsC
 Version: 1.0.0
 Depends: suggestsB (>= 2.0.0)
+
+Package: needsA
+Version: 1.0.0
+
+Package: needsB
+Version: 1.0.0
+Depends: needsA (>= 2.0.0)

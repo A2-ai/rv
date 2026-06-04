@@ -1,0 +1,7 @@
+Package: rv.needs
+Version: 1.0.0
+Config/Needs/remote: Gilead-BioStats/gsm
+Config/Needs/lockfile: rmarkdown, knitr
+Config/Needs/ver_req: knitr (>= 1.46)
+License: MIT
+NeedsCompilation: no
