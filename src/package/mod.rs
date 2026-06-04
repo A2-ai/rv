@@ -117,9 +117,9 @@ pub struct Package {
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct InstallationDependencies<'d> {
-    pub(crate) direct: Vec<&'d Dependency>,
-    pub(crate) suggests: Vec<&'d Dependency>,
+pub struct InstallationDependencies<'a> {
+    pub(crate) direct: Vec<&'a Dependency>,
+    pub(crate) suggests: Vec<&'a Dependency>,
     pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
@@ -133,12 +133,12 @@ impl Package {
         }
     }
 
-    pub fn dependencies_to_install<'a>(
-        &'a self,
+    pub fn dependencies_to_install<'d>(
+        &'d self,
         install_suggestions: bool,
         install_all_needs: bool,
         needs: &[String],
-    ) -> Result<InstallationDependencies<'a>, Box<dyn std::error::Error>> {
+    ) -> Result<InstallationDependencies<'d>, Box<dyn std::error::Error>> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
