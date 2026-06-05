@@ -4,6 +4,9 @@ Imports: R6
 License: MIT + file LICENSE
 MD5sum: b7f25d09ecab0c56f94f1238ddd604e6
 
+Package: R6
+Version: 2.5.1
+
 Package: rv.git.pkgA
 Version: 0.0.5
 License: MIT + file LICENSE
