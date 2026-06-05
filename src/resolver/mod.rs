@@ -748,7 +748,10 @@ impl<'d> Resolver<'d> {
             }
         }
 
-        result.finalize();
+        // We might get in a situation where something has been resolved but is not actually needed anymore
+        // because the package it was coming from has been replaced by a different version in the resolution.
+        let roots: HashSet<_> = dependencies.iter().map(|d| d.name()).collect();
+        result.finalize(&roots);
         result
     }
 }
