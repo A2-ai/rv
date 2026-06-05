@@ -164,10 +164,7 @@ impl<'d> ResolvedDependency<'d> {
         Ok((res, deps))
     }
 
-    /// The package's DESCRIPTION was fetched on-demand during resolution (to read
-    /// Config/Needs/*), so it does not outlive this call and must be owned, same as
-    /// the git/local/url paths. The returned dependencies borrow the fetched package
-    /// and must be consumed before it is dropped (see the `prepare_deps!` macro).
+    // package had to be fetched and owned
     pub fn from_repository_fetched<'p>(
         package: &'p Package,
         repo_url: &Url,

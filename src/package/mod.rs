@@ -160,17 +160,6 @@ impl Package {
             Vec::new()
         };
 
-        let suggests_req_map = self
-            .suggests
-            .iter()
-            .filter_map(|d| {
-                if let Dependency::Pinned { name, requirement } = d {
-                    Some((name.as_str(), requirement))
-                } else {
-                    None
-                }
-            })
-            .collect::<HashMap<_, _>>();
         let needs_converter = |iter: (&String, &Vec<NeedsEntry>)| -> (String, Vec<NeedsEntry>) {
             (
                 iter.0.clone(),
@@ -185,11 +174,19 @@ impl Package {
 
                                 // Enrich needs entries: if a package appears in Config/Needs/* without a version
                                 // requirement but has one in Suggests, promote it to Pinned using that requirement.
-                                if let Dependency::Simple(name) = p
-                                    && let Some(&req) = suggests_req_map.get(name.as_str())
+                                if let Dependency::Simple(n) = p
+                                    && let Some(req) = self.suggests.iter().find_map(|d| {
+                                        if let Dependency::Pinned { name, requirement } = d
+                                            && name == n
+                                        {
+                                            Some(requirement)
+                                        } else {
+                                            None
+                                        }
+                                    })
                                 {
                                     Some(NeedsEntry::Package(Dependency::Pinned {
-                                        name: name.clone(),
+                                        name: n.clone(),
                                         requirement: req.clone(),
                                     }))
                                 } else {

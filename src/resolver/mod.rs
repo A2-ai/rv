@@ -430,7 +430,7 @@ impl<'d> Resolver<'d> {
                 let repo_url = Url::parse(&repo.url).unwrap();
                 if item.install_all_needs || !item.needs.is_empty() {
                     // Fetch the DESCRIPTION on-demand to read Config/Needs/*. The fetched
-                    // package is a local, so own its deps and consume them inline here.
+                    // package is owned by the fxn, so own its deps and consume them inline here
                     let fetcher: FetchPackage<'_, _, GitExecutor> = FetchPackage::Repository {
                         name: &package.name,
                         version: &package.version.to_string(),
