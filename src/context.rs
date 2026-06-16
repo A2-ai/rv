@@ -356,23 +356,30 @@ fn load_single_database(
         if bytes_read == 0 {
             return Err(format!("File at {source_url} was not found").into());
         }
-        // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-        db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
+        let source_str = std::str::from_utf8(&source_package)
+            .map_err(|e| format!("PACKAGES file at {source_url} is not valid UTF-8: {e}"))?;
+        db.parse_source(source_str);
 
         let mut binary_package = Vec::new();
         // we do not know for certain that the Some return of get_binary_path will be a valid url,
         // but we do know that if it returns None there is not a binary PACKAGES file
         if let Some(url) = binary_url {
             log::debug!("checking for binary packages URL: {url}");
-            let bytes_read = http::download(&url, &mut binary_package, vec![]).unwrap_or(0);
-            // but sometimes we might not have a binary PACKAGES file and that's fine.
-            // We only load binary if we found a file
-            if bytes_read > 0 {
-                // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                db.parse_binary(
-                    unsafe { std::str::from_utf8_unchecked(&binary_package) },
-                    cache.r_version,
-                );
+            match http::download(&url, &mut binary_package, vec![]) {
+                Ok(bytes_read) => {
+                    // but sometimes we might not have a binary PACKAGES file and that's fine.
+                    // We only load binary if we found a file
+                    if bytes_read > 0 {
+                        let binary_str = std::str::from_utf8(&binary_package).map_err(|e| {
+                            format!("binary PACKAGES file at {url} is not valid UTF-8: {e}")
+                        })?;
+                        db.parse_binary(binary_str, cache.r_version);
+                    }
+                }
+                Err(e) if e.is_not_found() => {
+                    log::debug!("No binary PACKAGES file at {url} (404)");
+                }
+                Err(e) => return Err(e.into()),
             }
         } else {
             log::debug!("No binary URL.")
