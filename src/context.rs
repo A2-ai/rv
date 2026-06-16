@@ -192,7 +192,12 @@ impl Context {
             return;
         }
         let pb = create_spinner(self.show_progress_bar, "Loading system requirements...");
-        self.system_dependencies = self.cache.get_system_requirements();
+        match self.cache.get_system_requirements() {
+            Ok(deps) => self.system_dependencies = deps,
+            Err(e) => log::warn!(
+                "Failed to load system requirements; skipping system dependency detection: {e}"
+            ),
+        }
         pb.finish_and_clear();
     }
 
