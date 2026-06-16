@@ -78,6 +78,20 @@ fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String
     out
 }
 
+fn move_package_into_library(staged: &Path, dest: &Path, backup: &Path) -> std::io::Result<()> {
+    if dest.is_dir() {
+        if backup.exists() {
+            fs::remove_dir_all(backup)?;
+        }
+        fs::rename(dest, backup)?;
+        fs::rename(staged, dest)?;
+        fs::remove_dir_all(backup)?;
+    } else {
+        fs::rename(staged, dest)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
     context: &'a Context,
@@ -812,24 +826,37 @@ impl<'a> SyncHandler<'a> {
 
             // Delete the packages that need to be removed from the library
             for (name, notify) in deps_to_remove {
-                if notify {
+                if notify && !staging_path.join(name).is_dir() {
                     let p = self.context.library.path().join(name);
                     log::debug!("Removing {name} from library");
                     fs::remove_dir_all(&p)?;
                 }
             }
 
+            let mut staged = Vec::new();
             for entry in fs::read_dir(&staging_path)? {
                 let entry = entry?;
-                let path = entry.path();
-                let name = path.file_name().unwrap().to_str().unwrap().to_string();
-                if !deps_seen.contains(name.as_str()) {
-                    let out = self.context.library.path().join(&name);
-                    if out.is_dir() {
-                        fs::remove_dir_all(&out)?;
-                    }
-                    fs::rename(&path, &out)?;
+                if !entry.file_type()?.is_dir() {
+                    continue;
                 }
+                let path = entry.path();
+                // not a valid utf-8 name, can be skipped since all packages names should be ascii
+                let Some(name) = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(str::to_string)
+                else {
+                    continue;
+                };
+                if !deps_seen.contains(name.as_str()) {
+                    staged.push((path, name));
+                }
+            }
+
+            for (path, name) in staged {
+                let out = self.context.library.path().join(&name);
+                let backup = staging_path.join(format!(".rvbak-{name}"));
+                move_package_into_library(&path, &out, &backup)?;
             }
 
             // Then delete staging
@@ -845,5 +872,48 @@ impl<'a> SyncHandler<'a> {
         });
 
         Ok(sync_changes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::move_package_into_library;
+    use std::fs;
+    use std::path::Path;
+
+    fn write_pkg(dir: &Path, marker: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("DESCRIPTION"), marker).unwrap();
+    }
+
+    #[test]
+    fn moves_staged_package_into_empty_slot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staged = tmp.path().join("staged");
+        let dest = tmp.path().join("dest");
+        let backup = tmp.path().join("backup");
+        write_pkg(&staged, "new");
+
+        move_package_into_library(&staged, &dest, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
+        assert!(!staged.exists());
+    }
+
+    #[test]
+    fn replaces_existing_package_and_cleans_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staged = tmp.path().join("staged");
+        let dest = tmp.path().join("dest");
+        let backup = tmp.path().join("backup");
+        write_pkg(&staged, "new");
+        write_pkg(&dest, "old");
+        write_pkg(&backup, "stale");
+
+        move_package_into_library(&staged, &dest, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
+        assert!(!staged.exists());
+        assert!(!backup.exists());
     }
 }
