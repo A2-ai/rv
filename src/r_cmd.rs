@@ -335,17 +335,15 @@ impl RCmd for RInstall {
             cancellation,
             RCmdErrorKind::InstallationFailed,
         )
-        .map_err(|e| {
+        .inspect_err(|_| {
             // Clean up destination on failure
-            if destination.is_dir() {
-                if let Err(rm_err) = fs::remove_dir_all(destination) {
+            if destination.is_dir()
+                && let Err(rm_err) = fs::remove_dir_all(destination) {
                     log::error!(
                         "Failed to remove directory `{}` after R CMD INSTALL failed: {rm_err}. Delete this folder manually",
                         destination.display()
                     );
                 }
-            }
-            e
         })?;
 
         // Copy the build tmp dir to the actual destination

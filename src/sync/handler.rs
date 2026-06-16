@@ -677,21 +677,13 @@ impl<'a> SyncHandler<'a> {
                                 let binary_cached =
                                     !is_binary && dep.cache_status.binary_available();
                                 let cache_source = {
-                                    if is_binary {
+                                    if is_binary || binary_cached {
                                         if dep.cache_status.global_binary_available() {
                                             Some(CacheSource::Global)
                                         } else if dep.cache_status.local_binary_available() {
                                             Some(CacheSource::Local)
                                         } else {
                                             None // Downloaded
-                                        }
-                                    } else if binary_cached {
-                                        if dep.cache_status.global_binary_available() {
-                                            Some(CacheSource::Global)
-                                        } else if dep.cache_status.local_binary_available() {
-                                            Some(CacheSource::Local)
-                                        } else {
-                                            None
                                         }
                                     } else {
                                         // Source package without cached binary
