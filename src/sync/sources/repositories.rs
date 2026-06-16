@@ -134,7 +134,7 @@ fn download_package(
     if let Some(binary_url) = &urls.binary
         && pkg_type == &PackageType::Binary
     {
-        if let Ok(pkg_type) = try_download_package(http, binary_url, &local_paths, pkg_name, true) {
+        if let Ok(pkg_type) = try_download_package(http, binary_url, local_paths, pkg_name, true) {
             return Ok(pkg_type);
         } else {
             log::warn!(
@@ -154,7 +154,7 @@ fn download_package(
         && from_lockfile
     {
         if let Ok(pkg_type) =
-            try_download_package(http, binary_archive_url, &local_paths, pkg_name, true)
+            try_download_package(http, binary_archive_url, local_paths, pkg_name, true)
         {
             return Ok(pkg_type);
         } else {
@@ -165,7 +165,7 @@ fn download_package(
     }
 
     // 3. Download Source
-    if let Ok(pkg_type) = try_download_package(http, &urls.source, &local_paths, pkg_name, false) {
+    if let Ok(pkg_type) = try_download_package(http, &urls.source, local_paths, pkg_name, false) {
         return Ok(pkg_type);
     } else {
         log::warn!(
@@ -175,7 +175,7 @@ fn download_package(
     }
 
     // 4. Download source from archive
-    try_download_package(http, &urls.source_archive, &local_paths, pkg_name, false)
+    try_download_package(http, &urls.source_archive, local_paths, pkg_name, false)
 }
 
 fn try_download_package(

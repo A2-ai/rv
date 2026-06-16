@@ -240,7 +240,7 @@ impl<'d> Resolver<'d> {
                                 .find_package(
                                     &package.name,
                                     Some(&version_req),
-                                    &self.r_version,
+                                    self.r_version,
                                     false,
                                 )
                                 .is_some_and(|(_, package_type)| {
