@@ -398,6 +398,8 @@ fn try_main() -> Result<()> {
         .filter(Some("os_info"), log::LevelFilter::Off)
         .init();
 
+    system_req::validate_sysreq_url().map_err(|e| anyhow!("{e}"))?;
+
     match cli.command {
         Command::Init {
             project_directory,

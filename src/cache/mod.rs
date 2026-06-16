@@ -5,6 +5,7 @@ pub mod utils;
 
 use crate::cache::utils::get_global_cache_dir;
 use crate::package::Package;
+use crate::system_req::SysReqError;
 use crate::{RInstall, Source, SystemInfo, Version};
 pub use disk::{DiskCache, PackagePaths};
 pub use info::CacheInfo;
@@ -70,7 +71,7 @@ impl Cache {
     }
 
     /// We don't try to get the global system requirements, it should be on the same OS (hopefully)
-    pub fn get_system_requirements(&self) -> HashMap<String, Vec<String>> {
+    pub fn get_system_requirements(&self) -> Result<HashMap<String, Vec<String>>, SysReqError> {
         self.local.get_system_requirements()
     }
 
