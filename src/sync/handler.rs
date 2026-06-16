@@ -108,9 +108,11 @@ impl<'a> SyncHandler<'a> {
         self.show_progress_bar = true;
     }
 
+    /// Assigning a value <= 0 is a no-op
     pub fn set_max_workers(&mut self, max_workers: usize) {
-        assert!(self.max_workers > 0);
-        self.max_workers = max_workers;
+        if max_workers > 0 {
+            self.max_workers = max_workers;
+        }
     }
 
     pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
