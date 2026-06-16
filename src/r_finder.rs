@@ -129,26 +129,26 @@ fn scan_known_r_locations() -> Vec<RInstall> {
     {
         // rig on macOS uses /Library/Frameworks/R.framework/Versions/
         let root = PathBuf::from("/Library/Frameworks/R.framework/Versions");
-        if root.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&root) {
-                for entry in entries.filter_map(Result::ok) {
-                    let path = entry.path();
-                    // Skip "Current" symlink
-                    if path.is_symlink() {
-                        continue;
-                    }
-                    let header = path.join("Resources").join("include").join("Rversion.h");
-                    if header.exists() {
-                        if let Some((version, is_devel)) = read_version_from_header(&header) {
-                            let bin_path = path.join("Resources").join("bin").join("R");
-                            if bin_path.exists() {
-                                installs.push(RInstall {
-                                    bin_path,
-                                    version,
-                                    is_devel,
-                                });
-                            }
-                        }
+        if root.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&root)
+        {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                // Skip "Current" symlink
+                if path.is_symlink() {
+                    continue;
+                }
+                let header = path.join("Resources").join("include").join("Rversion.h");
+                if header.exists()
+                    && let Some((version, is_devel)) = read_version_from_header(&header)
+                {
+                    let bin_path = path.join("Resources").join("bin").join("R");
+                    if bin_path.exists() {
+                        installs.push(RInstall {
+                            bin_path,
+                            version,
+                            is_devel,
+                        });
                     }
                 }
             }
@@ -156,26 +156,26 @@ fn scan_known_r_locations() -> Vec<RInstall> {
 
         // Homebrew on Apple Silicon uses /opt/homebrew/Cellar/r/
         let homebrew_root = PathBuf::from("/opt/homebrew/Cellar/r");
-        if homebrew_root.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&homebrew_root) {
-                for entry in entries.filter_map(Result::ok) {
-                    let path = entry.path();
-                    let header = path
-                        .join("lib")
-                        .join("R")
-                        .join("include")
-                        .join("Rversion.h");
-                    if header.exists() {
-                        if let Some((version, is_devel)) = read_version_from_header(&header) {
-                            let bin_path = path.join("lib").join("R").join("bin").join("R");
-                            if bin_path.exists() {
-                                installs.push(RInstall {
-                                    bin_path,
-                                    version,
-                                    is_devel,
-                                });
-                            }
-                        }
+        if homebrew_root.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&homebrew_root)
+        {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                let header = path
+                    .join("lib")
+                    .join("R")
+                    .join("include")
+                    .join("Rversion.h");
+                if header.exists()
+                    && let Some((version, is_devel)) = read_version_from_header(&header)
+                {
+                    let bin_path = path.join("lib").join("R").join("bin").join("R");
+                    if bin_path.exists() {
+                        installs.push(RInstall {
+                            bin_path,
+                            version,
+                            is_devel,
+                        });
                     }
                 }
             }
@@ -216,22 +216,22 @@ fn scan_known_r_locations() -> Vec<RInstall> {
     {
         // rig on Windows uses C:\Program Files\R\R-{version}\
         let root = PathBuf::from(r"C:\Program Files\R");
-        if root.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&root) {
-                for entry in entries.filter_map(Result::ok) {
-                    let path = entry.path();
-                    let header = path.join("include").join("Rversion.h");
-                    if header.exists() {
-                        if let Some((version, is_devel)) = read_version_from_header(&header) {
-                            let bin_path = path.join("bin").join("R.exe");
-                            if bin_path.exists() {
-                                installs.push(RInstall {
-                                    bin_path,
-                                    version,
-                                    is_devel,
-                                });
-                            }
-                        }
+        if root.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&root)
+        {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                let header = path.join("include").join("Rversion.h");
+                if header.exists()
+                    && let Some((version, is_devel)) = read_version_from_header(&header)
+                {
+                    let bin_path = path.join("bin").join("R.exe");
+                    if bin_path.exists() {
+                        installs.push(RInstall {
+                            bin_path,
+                            version,
+                            is_devel,
+                        });
                     }
                 }
             }

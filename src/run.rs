@@ -34,21 +34,14 @@ pub fn run(r_bin_path: &Path, library_path: &Path, args: &[String]) -> Result<i3
 }
 
 fn resolve_rscript_path(r_home: &Path, r_bin_path: &Path) -> PathBuf {
-    let rscript = r_home.join("bin").join("Rscript");
+    let mut rscript = r_home.join("bin").join("Rscript");
 
-    #[cfg(not(windows))]
-    let _ = r_bin_path;
-
-    #[cfg(windows)]
-    {
-        let mut rscript = rscript;
+    if cfg!(windows) {
         if let Some(ext) = r_bin_path.extension() {
             rscript.set_extension(ext);
-            return rscript;
+        } else {
+            rscript.set_extension("exe");
         }
-
-        rscript.set_extension("exe");
-        return rscript;
     }
 
     rscript

@@ -57,7 +57,7 @@ jobs:
         if: matrix.target != 'x86_64-unknown-linux-musl'
         run: cargo fmt --check
 
-      - name: check formatting
+      - name: clippy
         if: matrix.target != 'x86_64-unknown-linux-musl'
         run: cargo clippy --all-features --all-targets -- -D warnings
 
