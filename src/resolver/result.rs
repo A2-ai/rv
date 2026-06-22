@@ -159,6 +159,20 @@ impl<'d> Resolution<'d> {
         self.failed.is_empty() && self.req_failures.is_empty()
     }
 
+    /// Print all resolution errors to stderr
+    pub fn print_failures(&self) {
+        eprintln!("Failed to resolve all dependencies");
+
+        for d in &self.failed {
+            eprintln!("    {d}");
+        }
+
+        let req_error_messages = self.req_error_messages();
+        if !req_error_messages.is_empty() {
+            eprintln!("{}", req_error_messages.join("\n"));
+        }
+    }
+
     pub fn req_error_messages(&self) -> Vec<String> {
         self.req_failures
             .iter()

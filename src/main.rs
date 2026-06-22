@@ -701,14 +701,11 @@ fn try_main() -> Result<()> {
                 .map_err(|e| anyhow!("Invalid package spec: {e}"))?;
                 added.extend(add_packages(&mut doc, packages, resolved_options)?);
             }
-            // write the update if not dry run
-            if !dry_run {
-                write(&cli.config_file, doc.to_string())?;
-            }
-            print_add_summary(&output_format, &added, dry_run);
+
             let updated_config_toml = doc.to_string();
             // if no sync, exit early
             if no_sync {
+                print_add_summary(&output_format, &added, dry_run);
                 // no_sync means we should persist config edits immediately
                 if !dry_run {
                     write(&cli.config_file, &updated_config_toml)?;
@@ -726,17 +723,42 @@ fn try_main() -> Result<()> {
             context
                 .load_for_resolve_mode(resolve_mode)
                 .map_err(|e| anyhow!("{e}"))?;
+
             if !output_format.is_json() {
                 println!("\nResolving dependencies...");
             }
-            SyncHelper {
+
+            let sync_helper = SyncHelper {
                 dry_run,
-                output_format: Some(output_format),
+                output_format: Some(output_format.clone()),
+                exit_on_failure: false,
                 ..Default::default()
-            }
-            .run(&context, resolve_mode)?;
-            if !dry_run {
-                write(&cli.config_file, &updated_config_toml)?;
+            };
+
+            let print_aborted = || {
+                eprintln!("---");
+                eprintln!("The rproject.toml hasn't been modified.");
+            };
+
+            match sync_helper.run(&context, resolve_mode) {
+                Ok(resolution) => {
+                    if resolution.is_success() {
+                        print_add_summary(&output_format, &added, dry_run);
+                        if !dry_run {
+                            write(&cli.config_file, &updated_config_toml)?;
+                        }
+                    } else {
+                        resolution.print_failures();
+                        print_aborted();
+                        return Err(anyhow!(
+                            "One or more dependencies could not be resolved."
+                        ));
+                    }
+                }
+                Err(e) => {
+                    print_aborted();
+                    return Err(e);
+                }
             }
         }
         Command::Remove {

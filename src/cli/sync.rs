@@ -68,6 +68,9 @@ impl SyncHelper {
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
         let resolution = resolve_dependencies(context, resolve_mode, self.exit_on_failure);
+        if !resolution.is_success() {
+            return Ok(resolution);
+        }
 
         if self.locked {
             let new_lockfile =
