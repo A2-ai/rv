@@ -750,9 +750,7 @@ fn try_main() -> Result<()> {
                     } else {
                         resolution.print_failures();
                         print_aborted();
-                        return Err(anyhow!(
-                            "One or more dependencies could not be resolved."
-                        ));
+                        return Err(anyhow!("One or more dependencies could not be resolved."));
                     }
                 }
                 Err(e) => {

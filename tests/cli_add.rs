@@ -27,7 +27,7 @@ dependencies = [
 #[ignore]
 fn test_add_failure_is_atomic() {
     let cache = TempDir::new().unwrap();
-    let (temp_dir, config_path) = create_test_project();
+    let (_temp_dir, config_path) = create_test_project();
     let original_config = fs::read_to_string(&config_path).unwrap();
 
     let mut cmd = cargo::cargo_bin_cmd!();
@@ -42,9 +42,6 @@ fn test_add_failure_is_atomic() {
     let output = cmd.output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(
-        stderr.contains("The rproject.toml hasn't been changed"),
-        "expected the no-change message on stderr.\nstderr:\n{stderr}"
-    );
+    assert!(stderr.contains("The rproject.toml hasn't been modified."),);
     assert_eq!(fs::read_to_string(&config_path).unwrap(), original_config,);
 }
