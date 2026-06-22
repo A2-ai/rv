@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
+use crate::events;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 #[cfg(feature = "cli")]
@@ -12,6 +13,7 @@ use crate::r_cmd::kill_all_r_processes;
 use crate::r_cmd::{RCmdError, RCmdErrorKind};
 use crate::sync::changes::{CacheSource, SyncChange};
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
+use crate::sync::tasks::{install_task, sync_task};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
 use crate::{
@@ -439,6 +441,14 @@ impl<'a> SyncHandler<'a> {
         deps: &[ResolvedDependency],
         r_cmd: &impl RCmd,
     ) -> Result<Vec<SyncChange>, SyncError> {
+        events::with_task(sync_task(), || self.handle_impl(deps, r_cmd))
+    }
+
+    fn handle_impl(
+        &self,
+        deps: &[ResolvedDependency],
+        r_cmd: &impl RCmd,
+    ) -> Result<Vec<SyncChange>, SyncError> {
         // Clean up at all times, even with a dry run
         let cancellation = Arc::new(Cancellation::default());
 
@@ -640,6 +650,10 @@ impl<'a> SyncHandler<'a> {
                         }
 
                         installing_clone.lock().unwrap().insert(dep.name.clone());
+                        let start = std::time::Instant::now();
+                        events::emit(&events::Event::TaskStarted {
+                            task: install_task(&dep.name),
+                        });
                         if !self.dry_run {
                             if self.show_progress_bar {
                                 pb_clone.set_message(format!(
@@ -664,7 +678,6 @@ impl<'a> SyncHandler<'a> {
                                 }
                             }
                         }
-                        let start = std::time::Instant::now();
                         let install_result = if deps_to_copy_clone.contains(dep.name.as_ref()) {
                             self.copy_package(dep)
                         } else {
@@ -730,11 +743,21 @@ impl<'a> SyncHandler<'a> {
                                         .expect("no error");
                                     }
                                 }
+                                events::emit(&events::Event::TaskFinished {
+                                    task: install_task(&dep.name),
+                                    result: events::TaskResult::Ok,
+                                    time_ms: start.elapsed().as_millis() as u64,
+                                });
                                 if done_sender.send(sync_change).is_err() {
                                     break; // Channel closed
                                 }
                             }
                             Err(e) => {
+                                events::emit(&events::Event::TaskFinished {
+                                    task: install_task(&dep.name),
+                                    result: events::TaskResult::Failed,
+                                    time_ms: start.elapsed().as_millis() as u64,
+                                });
                                 has_errors_clone.store(true, Ordering::Relaxed);
 
                                 if let SyncErrorKind::RCmdError(RCmdError {

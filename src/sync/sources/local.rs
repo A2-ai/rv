@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::events;
 use crate::fs::{mtime_recursive, untar_archive};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
@@ -84,16 +85,18 @@ pub(crate) fn install_package(
         let source_path = extracted_path.unwrap_or_else(|| tarball_path.clone());
 
         log::debug!("Installing built package from {}", source_path.display());
-        let output = r_cmd.install(
-            &source_path,
-            Option::<&Path>::None,
-            library_dirs,
-            library_dirs.first().unwrap(),
-            cancellation,
-            &pkg.env_vars,
-            configure_args,
-            strip,
-        )?;
+        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+            r_cmd.install(
+                &source_path,
+                Option::<&Path>::None,
+                library_dirs,
+                library_dirs.first().unwrap(),
+                cancellation,
+                &pkg.env_vars,
+                configure_args,
+                strip,
+            )
+        })?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {
@@ -104,16 +107,18 @@ pub(crate) fn install_package(
     } else {
         // Tarball source package: install directly from extracted path
         log::debug!("Installing the local package in {}", actual_path.display());
-        let output = r_cmd.install(
-            &actual_path,
-            Option::<&Path>::None,
-            library_dirs,
-            library_dirs.first().unwrap(),
-            cancellation,
-            &pkg.env_vars,
-            configure_args,
-            strip,
-        )?;
+        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+            r_cmd.install(
+                &actual_path,
+                Option::<&Path>::None,
+                library_dirs,
+                library_dirs.first().unwrap(),
+                cancellation,
+                &pkg.env_vars,
+                configure_args,
+                strip,
+            )
+        })?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {

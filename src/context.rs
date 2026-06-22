@@ -10,6 +10,7 @@ use url::Url;
 
 use crate::cache::Cache;
 use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, STAGING_DIR_NAME};
+use crate::events;
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::r_finder::find_r_install;
@@ -281,7 +282,8 @@ pub fn load_databases(
 
     let results: Vec<Result<_, Box<dyn Error + Send + Sync>>> = iter
         .map(|r| {
-            let db = load_single_database(r, cache)?;
+            let task = events::Task::new(format!("db:{}", r.alias), r.alias.clone());
+            let db = events::with_task(task, || load_single_database(r, cache))?;
             Ok((db, r.force_source))
         })
         .collect();

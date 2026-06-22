@@ -34,6 +34,11 @@ pub struct Cli {
     #[clap(long, global = true)]
     json: bool,
 
+    /// Stream NDJSON progress events to stdout while suppressing any other output.
+    /// Intended for IDE / GUI integration.
+    #[clap(long, global = true, conflicts_with = "json")]
+    emit_events: bool,
+
     /// Path to a config file other than rproject.toml in the current directory
     #[clap(short = 'c', long, default_value = "rproject.toml", global = true)]
     pub config_file: PathBuf,
@@ -387,6 +392,17 @@ fn try_main() -> Result<()> {
         OutputFormat::Plain
     };
     let log_enabled = cli.verbose.is_present() && !output_format.is_json();
+
+    if cli.emit_events {
+        use std::io::Write;
+        rv::events::on(|value| {
+            let mut out = std::io::stdout().lock();
+            if let Ok(s) = serde_json::to_string(value) {
+                let _ = writeln!(out, "{s}");
+                let _ = out.flush();
+            }
+        });
+    }
     env_logger::Builder::new()
         .filter_level(if cli.json {
             log::LevelFilter::Off
@@ -550,7 +566,7 @@ fn try_main() -> Result<()> {
             let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
                 .map_err(|e| anyhow!("{e}"))?;
 
-            if !log_enabled {
+            if !log_enabled && !cli.emit_events {
                 context.show_progress_bar();
             }
             let resolve_mode = ResolveMode::Default;
@@ -559,7 +575,11 @@ fn try_main() -> Result<()> {
                 .map_err(|e| anyhow!("{e}"))?;
             SyncHelper {
                 dry_run: false,
-                output_format: Some(output_format),
+                output_format: if cli.emit_events {
+                    None
+                } else {
+                    Some(output_format)
+                },
                 save_install_logs_in,
                 locked,
                 ..Default::default()
