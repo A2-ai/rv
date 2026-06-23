@@ -453,6 +453,15 @@ impl LockedPackage {
                 Item::Value(Value::Array(format_array(&self.suggests))),
             );
         }
+        if !self.needs.is_empty() {
+            let mut needs_table = InlineTable::new();
+            let mut entries: Vec<_> = self.needs.iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (key, deps) in entries {
+                needs_table.insert(key, Value::Array(format_array(deps)));
+            }
+            table.insert("needs", Item::Value(Value::InlineTable(needs_table)));
+        }
 
         table
     }
@@ -721,4 +730,64 @@ pub enum LockfileErrorKind {
     Toml(#[from] toml::de::Error),
     #[error("Invalid lockfile: {0}")]
     Invalid(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn needs_round_trip_through_lockfile() {
+        // A package whose Config/Needs/* groups contain both a bare (Simple) entry and a
+        // version-constrained (Pinned) entry. The lockfile must persist these so that on the
+        // next sync the resolver's fast-path can trust the lockfile instead of re-fetching the
+        // DESCRIPTION.
+        let pkg = LockedPackage {
+            name: "rv.needs".to_string(),
+            version: "1.0.0".to_string(),
+            source: Source::Repository {
+                repository: Url::parse("http://cran/").unwrap(),
+            },
+            path: None,
+            force_source: false,
+            dependencies: vec![],
+            suggests: vec![],
+            needs: vec![
+                (
+                    "lockfile".to_string(),
+                    vec![Dependency::Simple("rmarkdown".to_string())],
+                ),
+                (
+                    "ver_req".to_string(),
+                    vec![Dependency::Pinned {
+                        name: "knitr".to_string(),
+                        requirement: "(>= 1.46)".parse().unwrap(),
+                    }],
+                ),
+            ],
+        };
+        let lockfile = Lockfile {
+            version: CURRENT_LOCKFILE_VERSION,
+            r_version: "4.4".to_string(),
+            packages: vec![pkg],
+        };
+
+        let rendered = lockfile.as_toml_string();
+        // Regression guard: needs must actually be written (it previously was not).
+        assert!(
+            rendered.contains("needs = {"),
+            "needs was not serialized:\n{rendered}"
+        );
+
+        let parsed = rendered
+            .parse::<Lockfile>()
+            .expect("rendered lockfile should re-parse");
+        assert_eq!(
+            parsed.packages[0].needs, lockfile.packages[0].needs,
+            "needs did not survive the write -> read round-trip"
+        );
+
+        // Writing the re-parsed lockfile again is byte-stable.
+        assert_eq!(parsed.as_toml_string(), rendered);
+    }
 }
