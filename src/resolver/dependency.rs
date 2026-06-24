@@ -138,7 +138,7 @@ impl<'d> ResolvedDependency<'d> {
         needs: &[String],
         force_source: bool,
         cache_status: CacheStatus,
-    ) -> Result<(Self, InstallationDependencies<'d>), Box<dyn std::error::Error>> {
+    ) -> Result<(Self, InstallationDependencies<'d>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let source = repository_source(package, repo_url);
 
@@ -165,6 +165,40 @@ impl<'d> ResolvedDependency<'d> {
         Ok((res, deps))
     }
 
+    /// Builds an owned `ResolvedDependency` (all data copied out of `package`/`deps`) with the
+    /// defaults shared by the fetched/git/local/url constructors.
+    fn owned<'p>(
+        package: &'p Package,
+        deps: &InstallationDependencies<'p>,
+        source: Source,
+        kind: PackageType,
+        install_suggests: bool,
+    ) -> Self {
+        Self {
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
+            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
+            suggests: deps
+                .suggests
+                .iter()
+                .map(|&d| Cow::Owned(d.clone()))
+                .collect(),
+            kind,
+            force_source: false,
+            install_suggests,
+            path: None,
+            from_lockfile: false,
+            cache_status: CacheStatus::new_local_source(),
+            remotes: HashMap::new(),
+            from_remote: false,
+            local_resolved_path: None,
+            env_vars: HashMap::new(),
+            ignored: false,
+            needs: deps.needs.clone(),
+        }
+    }
+
     // package had to be fetched and owned
     pub fn from_repository_fetched<'p>(
         package: &'p Package,
@@ -175,32 +209,15 @@ impl<'d> ResolvedDependency<'d> {
         needs: &[String],
         force_source: bool,
         cache_status: CacheStatus,
-    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn std::error::Error>> {
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let source = repository_source(package, repo_url);
 
         let res = Self {
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
-            kind: package_type,
             force_source,
-            install_suggests,
             path: package.path.clone().map(Cow::Owned),
-            from_lockfile: false,
             cache_status,
-            remotes: HashMap::new(),
-            from_remote: false,
-            local_resolved_path: None,
-            env_vars: HashMap::new(),
-            ignored: false,
-            needs: deps.needs.clone(),
+            ..Self::owned(package, &deps, source, package_type, install_suggests)
         };
 
         Ok((res, deps))
@@ -219,27 +236,16 @@ impl<'d> ResolvedDependency<'d> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
 
         let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
-            kind: PackageType::Source,
             force_source: true,
-            path: None,
-            from_lockfile: false,
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
             cache_status,
-            install_suggests,
             remotes: package.remotes.clone(),
-            from_remote: false,
-            local_resolved_path: None,
-            env_vars: HashMap::new(),
-            ignored: false,
-            needs: deps.needs.clone(),
+            ..Self::owned(
+                package,
+                &deps,
+                source,
+                PackageType::Source,
+                install_suggests,
+            )
         };
 
         Ok((res, deps))
@@ -255,28 +261,17 @@ impl<'d> ResolvedDependency<'d> {
     ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
-            kind: PackageType::Source,
             force_source: true,
-            path: None,
-            from_lockfile: false,
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
-            // We'll handle the installation status later by comparing mtimes
-            cache_status: CacheStatus::new_local_source(),
-            install_suggests,
             remotes: package.remotes.clone(),
-            from_remote: false,
+            // We'll handle the installation status later by comparing mtimes
             local_resolved_path: Some(local_resolved_path),
-            env_vars: HashMap::new(),
-            ignored: false,
-            needs: deps.needs.clone(),
+            ..Self::owned(
+                package,
+                &deps,
+                source,
+                PackageType::Source,
+                install_suggests,
+            )
         };
 
         Ok((res, deps))
@@ -292,27 +287,8 @@ impl<'d> ResolvedDependency<'d> {
     ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
         let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
         let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
-            kind,
-            force_source: false,
-            path: None,
-            from_lockfile: false,
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
-            cache_status: CacheStatus::new_local_source(),
-            install_suggests,
             remotes: package.remotes.clone(),
-            from_remote: false,
-            local_resolved_path: None,
-            env_vars: HashMap::new(),
-            ignored: false,
-            needs: deps.needs.clone(),
+            ..Self::owned(package, &deps, source, kind, install_suggests)
         };
 
         Ok((res, deps))
