@@ -12,8 +12,9 @@ use crate::lockfile::{LockedPackage, Source};
 use crate::package::{
     Dependency, InstallationDependencies, NeedsEntry, Package, PackageRemote, PackageType,
 };
+use crate::repository_urls::{TarballUrls, get_tarball_urls_from_parts};
 use crate::resolver::QueueItem;
-use crate::{Version, VersionRequirement};
+use crate::{SystemInfo, Version, VersionRequirement};
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -346,6 +347,25 @@ impl<'d> ResolvedDependency<'d> {
         };
 
         (res, deps)
+    }
+
+    pub fn get_tarball_urls(
+        &self,
+        r_version: &[u32; 2],
+        sysinfo: &SystemInfo,
+    ) -> Result<TarballUrls, Box<dyn Error>> {
+        if let Source::Repository { repository } = &self.source {
+            Ok(get_tarball_urls_from_parts(
+                repository,
+                &self.name,
+                &self.version.original,
+                self.path.as_deref(),
+                r_version,
+                sysinfo,
+            ))
+        } else {
+            Err("Dependency does not have source Repository".into())
+        }
     }
 }
 

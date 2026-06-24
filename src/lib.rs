@@ -56,7 +56,7 @@ pub use r_cmd::RCmd;
 pub use r_finder::RInstall;
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
-pub use repository_urls::{get_package_file_urls, get_tarball_urls};
+pub use repository_urls::{get_package_file_urls, get_tarball_urls_from_parts};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use run::{RunError, run};
 pub use sync::{BuildPlan, BuildStep, LinkMode, SyncChange, SyncHandler};

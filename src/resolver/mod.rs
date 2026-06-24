@@ -358,6 +358,8 @@ impl<'d> Resolver<'d> {
                     name: &package.name,
                     version: &package.version,
                     repository,
+                    package_type: kind,
+                    path: package.path.as_deref(),
                     downloader: http_download,
                 };
                 let pkg = fetcher.fetch(cache)?;
@@ -435,6 +437,8 @@ impl<'d> Resolver<'d> {
                         name: &package.name,
                         version: &package.version.to_string(),
                         repository: &repo_url,
+                        package_type,
+                        path: package.path.as_deref(),
                         downloader: http_download,
                     };
                     let pkg = fetcher.fetch(cache)?;
