@@ -1,3 +1,24 @@
+## v0.22.0 - June 24, 2026
+
+This release adds a `--locked` flag for reproducible syncs, a GitHub shorthand for `rv add`, templated library paths, and makes `rv run` sync by default. 
+
+### 🎉 New Features
+- **`--locked` flag**: `rv sync` and `rv add` now accept `--locked`, which fails the command if the lockfile would need to be updated instead of modifying it.
+- **`rv add owner/repo` GitHub shorthand**: You can now install a package straight from a GitHub repository with `rv add owner/repo`, without writing out the full git configuration.
+- **Templated library path**: The `library` field in `rproject.toml` now supports `{r_version}` and `{name}` placeholders (e.g. `library = "lib/{r_version}/{name}"`), which are expanded using the project's R version and name.
+
+### ⚡ Improvements
+- **`rv run` syncs by default**: `rv run` now syncs the project library before executing your script, so it always runs against an up-to-date library. Pass `--no-sync` (as the first flag) to skip this.
+- **Clearer add/remove summaries**: `rv add` and `rv remove` now print exactly which packages were added or removed (or that there was nothing to do), instead of a generic success message.
+- **Atomic `rv add`**: If any dependency fails to resolve, `rv add` now aborts without modifying `rproject.toml`, instead of leaving a partially-updated config. The error output lists the failures and confirms the file was not changed.
+
+### 🐛 Bug Fixes
+- **Symlinks when copying folders**: Folder copies (e.g. local source packages) now handle symlinks correctly.
+
+---
+
+**Migration Notes**: `rv run` now syncs by default — pass `--no-sync` to restore the previous behavior of running without syncing. `rv add` is now atomic: a failed resolution no longer writes a partial `rproject.toml`. No breaking changes to project configuration.
+
 ## v0.21.0 - May 1, 2026
 
 This release adds two new commands — `rv run` for executing Rscript against the project library and `rv export renv` for converting an rv project to `renv.lock` — along with proper `R CMD build` support for local source packages and a number of fixes around git caching, tree output, and Windows path handling.
