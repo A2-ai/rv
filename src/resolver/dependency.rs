@@ -116,11 +116,7 @@ impl<'d> ResolvedDependency<'d> {
                 .needs
                 .iter()
                 .map(|(key, entries)| {
-                    let deps = entries
-                        .into_iter()
-                        .cloned()
-                        .map(NeedsEntry::Package)
-                        .collect();
+                    let deps = entries.iter().cloned().map(NeedsEntry::Package).collect();
                     (key.clone(), deps)
                 })
                 .collect(),
@@ -129,6 +125,7 @@ impl<'d> ResolvedDependency<'d> {
 
     /// The package is already known to the resolver (cached repository database)
     /// and outlives this call, so we borrow its dependencies directly.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &Url,
@@ -200,6 +197,7 @@ impl<'d> ResolvedDependency<'d> {
     }
 
     // package had to be fetched and owned
+    #[allow(clippy::too_many_arguments)]
     pub fn from_repository_fetched<'p>(
         package: &'p Package,
         repo_url: &Url,
