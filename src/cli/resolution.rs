@@ -1,7 +1,7 @@
 use crate::{Context, Resolution, ResolveMode};
 
 /// Resolve dependencies for the project. If there are any unmet dependencies, they will be printed
-/// to stderr and the cli will exit.
+/// to stderr and the cli may exit.
 pub fn resolve_dependencies(
     context: &Context,
     resolve_mode: ResolveMode,
@@ -10,17 +10,7 @@ pub fn resolve_dependencies(
     let resolution = context.resolve(resolve_mode);
 
     if !resolution.is_success() && exit_on_failure {
-        eprintln!("Failed to resolve all dependencies");
-        let req_error_messages = resolution.req_error_messages();
-
-        for d in &resolution.failed {
-            eprintln!("    {d}");
-        }
-
-        if !req_error_messages.is_empty() {
-            eprintln!("{}", req_error_messages.join("\n"));
-        }
-
+        resolution.print_failures();
         ::std::process::exit(1)
     }
 
