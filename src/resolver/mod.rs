@@ -720,6 +720,7 @@ impl<'d> Resolver<'d> {
                             .insert(item.version_requirement.clone());
                         queue.extend(items);
                         result.add_found(resolved);
+                        continue;
                     }
                 }
                 Err(e) => {
