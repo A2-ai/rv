@@ -11,7 +11,7 @@ use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
 use crate::git::url::GitUrl;
-use crate::package::{Dependency, NeedsEntry, VersionRequirement};
+use crate::package::{Dependency, NeedsEntry};
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
 const CURRENT_LOCKFILE_VERSION: i64 = 2;
@@ -312,33 +312,33 @@ fn format_array(deps: &[Dependency]) -> Array {
     deps
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TomlDependency {
+    Simple(String),
+    Pinned { name: String, requirement: String },
+}
+
+impl TomlDependency {
+    fn into_dependency<E: serde::de::Error>(self) -> Result<Dependency, E> {
+        match self {
+            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
+            TomlDependency::Pinned { name, requirement } => Ok(Dependency::Pinned {
+                name,
+                requirement: requirement.parse().map_err(serde::de::Error::custom)?,
+            }),
+        }
+    }
+}
+
 /// Custom deserializer for dependencies from TOML lockfile format.
 /// Handles both "simple_string" and { name = "pkg", requirement = "(>= 1.0)" } formats.
 fn deserialize_dependencies<'de, D>(deserializer: D) -> Result<Vec<Dependency>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum TomlDependency {
-        Simple(String),
-        Pinned { name: String, requirement: String },
-    }
-
     let deps: Vec<TomlDependency> = Vec::deserialize(deserializer)?;
-    deps.into_iter()
-        .map(|d| match d {
-            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
-            TomlDependency::Pinned { name, requirement } => {
-                let req: VersionRequirement =
-                    requirement.parse().map_err(serde::de::Error::custom)?;
-                Ok(Dependency::Pinned {
-                    name,
-                    requirement: req,
-                })
-            }
-        })
-        .collect()
+    deps.into_iter().map(|d| d.into_dependency()).collect()
 }
 
 /// Custom deserializer for needs from TOML lockfile format.
@@ -348,31 +348,14 @@ fn deserialize_needs<'de, D>(deserializer: D) -> Result<Vec<(String, Vec<Depende
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum TomlDependency {
-        Simple(String),
-        Pinned { name: String, requirement: String },
-    }
-
     let map: HashMap<String, Vec<TomlDependency>> = HashMap::deserialize(deserializer)?;
     let mut res = map
         .into_iter()
         .map(|(key, deps)| {
             let resolved = deps
                 .into_iter()
-                .map(|d| match d {
-                    TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
-                    TomlDependency::Pinned { name, requirement } => {
-                        let req: VersionRequirement =
-                            requirement.parse().map_err(serde::de::Error::custom)?;
-                        Ok(Dependency::Pinned {
-                            name,
-                            requirement: req,
-                        })
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|d| d.into_dependency())
+                .collect::<Result<Vec<_>, D::Error>>()?;
             Ok((key, resolved))
         })
         .collect::<Result<Vec<_>, _>>()?;
