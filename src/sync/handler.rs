@@ -80,14 +80,24 @@ fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String
     out
 }
 
+fn remove_package_path(p: &Path) -> std::io::Result<()> {
+    if fs::symlink_metadata(p)?.file_type().is_symlink() {
+        fs::remove_file(p)
+    } else {
+        fs::remove_dir_all(p)
+    }
+}
+
 fn move_package_into_library(staged: &Path, dest: &Path, backup: &Path) -> std::io::Result<()> {
-    if dest.is_dir() {
-        if backup.exists() {
-            fs::remove_dir_all(backup)?;
+    // Use symlink_metadata so an existing symlink dest is detected too:
+    // `Path::is_dir` follows symlinks and would miss a broken one.
+    if fs::symlink_metadata(dest).is_ok() {
+        if fs::symlink_metadata(backup).is_ok() {
+            remove_package_path(backup)?;
         }
         fs::rename(dest, backup)?;
         fs::rename(staged, dest)?;
-        fs::remove_dir_all(backup)?;
+        remove_package_path(backup)?;
     } else {
         fs::rename(staged, dest)?;
     }
@@ -851,7 +861,8 @@ impl<'a> SyncHandler<'a> {
             let mut staged = Vec::new();
             for entry in fs::read_dir(&staging_path)? {
                 let entry = entry?;
-                if !entry.file_type()?.is_dir() {
+                let ft = entry.file_type()?;
+                if !ft.is_dir() && !ft.is_symlink() {
                     continue;
                 }
                 let path = entry.path();
@@ -901,6 +912,11 @@ mod tests {
         fs::write(dir.join("DESCRIPTION"), marker).unwrap();
     }
 
+    #[cfg(unix)]
+    fn symlink_pkg(link: &Path, target: &Path) {
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+
     #[test]
     fn moves_staged_package_into_empty_slot() {
         let tmp = tempfile::tempdir().unwrap();
@@ -930,5 +946,31 @@ mod tests {
         assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
         assert!(!staged.exists());
         assert!(!backup.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replaces_existing_symlink_and_cleans_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old_cache = tmp.path().join("old_cache");
+        let new_cache = tmp.path().join("new_cache");
+        let staged = tmp.path().join("staged");
+        let dest = tmp.path().join("dest");
+        let backup = tmp.path().join("backup");
+        write_pkg(&old_cache, "old");
+        write_pkg(&new_cache, "new");
+        symlink_pkg(&dest, &old_cache);
+        symlink_pkg(&staged, &new_cache);
+
+        move_package_into_library(&staged, &dest, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
+        assert!(!staged.exists());
+        assert!(fs::symlink_metadata(&backup).is_err());
+        // Removing the backup must not have followed the symlink into the old cache.
+        assert_eq!(
+            fs::read_to_string(old_cache.join("DESCRIPTION")).unwrap(),
+            "old"
+        );
     }
 }
