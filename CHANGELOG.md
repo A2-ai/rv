@@ -1,3 +1,12 @@
+## v0.22.1 - June 30, 2026
+
+This patch release fixes package installation when using symlink mode.
+
+### 🐛 Bug Fixes
+- Fix regression from 0.22.0: correctly install packages when using symlink copy mode
+
+---
+
 ## v0.22.0 - June 24, 2026
 
 This release adds a `--locked` flag for reproducible syncs, a GitHub shorthand for `rv add`, templated library paths, and makes `rv run` sync by default. 
