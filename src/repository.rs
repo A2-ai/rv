@@ -150,7 +150,7 @@ struct RUniversePackage {
     version: Version,
     license: String,
     #[serde(rename = "MD5sum")]
-    md5_sum: String,
+    md5_sum: Option<String>,
     #[serde(deserialize_with = "yes_no_to_bool")]
     needs_compilation: bool,
     #[serde(default)]
@@ -238,7 +238,7 @@ impl From<RUniversePackage> for Package {
             enhances: map_dependencies(&pkg.dependencies, Role::Enhances),
             linking_to: map_dependencies(&pkg.dependencies, Role::LinkingTo),
             license: pkg.license,
-            md5_sum: pkg.md5_sum,
+            md5_sum: pkg.md5_sum.unwrap_or_default(), // value not read
             path: None,
             recommended,
             needs_compilation: pkg.needs_compilation,
