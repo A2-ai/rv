@@ -50,9 +50,7 @@ impl RepositoryDatabase {
         self.binary_packages.insert(r_version, packages);
     }
 
-    /// Parses the R-Universe packages API response into the source package database.
-    /// Returns the descriptions of the skipped packages (name plus the deserialize error) so
-    /// callers can warn.
+    // returns list of skipped pkgs and their deserialization errors
     pub fn parse_runiverse_api(
         &mut self,
         content: &str,
@@ -154,16 +152,10 @@ where
 #[serde(rename_all = "PascalCase")]
 struct RUniversePackage {
     package: String,
-    // The R-Universe API can omit fields on big enough build errors. Only `package` is
-    // guaranteed. The three fields required to actually install a package (`version`,
-    // `remote_url`, `remote_sha`) are kept non-optional so that a package missing any of them
-    // fails to deserialize and is skipped by `parse_runiverse_api_file`. Everything else is
-    // tolerant of omission so a package isn't dropped over a non-essential field.
     #[serde(deserialize_with = "deserialize_version")]
     version: Version,
-    #[serde(default)]
     license: Option<String>,
-    #[serde(rename = "MD5sum", default)]
+    #[serde(rename = "MD5sum")]
     md5_sum: Option<String>,
     #[serde(default, deserialize_with = "yes_no_to_bool")]
     needs_compilation: bool,
@@ -173,7 +165,6 @@ struct RUniversePackage {
     dependencies: Vec<RUniverseDependency>,
     remote_url: GitUrl,
     remote_sha: String,
-    #[serde(default)]
     remote_subdir: Option<String>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
@@ -206,8 +197,6 @@ fn parse_runiverse_api_file(content: &str) -> Result<ParsedRuniverseApi, Reposit
     let mut map = HashMap::new();
     let mut skipped = Vec::new();
     for entry in entries {
-        // Grab the name before consuming the value so we can identify the package in the
-        // skip message even when the rest of the entry fails to deserialize.
         let name = entry
             .get("Package")
             .and_then(|v| v.as_str())
