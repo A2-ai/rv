@@ -296,7 +296,7 @@ impl GitRepository {
                     .arg(reference)
                     .current_dir(&self.path),
             )
-            .map_err(|_| std::io::Error::other(format!("Reference {} not found", &reference)))?;
+            .map_err(|_| std::io::Error::other(format!("Reference {} not found", reference)))?;
         Ok(Oid::new(output))
     }
 

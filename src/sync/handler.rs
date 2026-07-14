@@ -313,7 +313,7 @@ impl<'a> SyncHandler<'a> {
             return Ok(());
         }
 
-        log::debug!("Copying package {} from current library", &dep.name);
+        log::debug!("Copying package {} from current library", dep.name);
         LinkMode::link_files(
             Some(LinkMode::Copy),
             &dep.name,
