@@ -5,7 +5,8 @@ use std::path::Path;
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::git::url::GitUrl;
 use crate::package::{
-    Dependency, Package, PackageType, deserialize_version, parse_needs_entries, parse_package_file,
+    Dependency, Package, PackageType, deserialize_version_opt, parse_needs_entries,
+    parse_package_file,
 };
 use crate::package::{Version, VersionRequirement, parse_remote};
 
@@ -53,7 +54,18 @@ impl RepositoryDatabase {
     pub fn parse_runiverse_api(&mut self, content: &str) {
         self.source_packages = parse_runiverse_api_file(content)
             .into_iter()
-            .map(|(pkg_name, pkg)| (pkg_name, vec![pkg.into()]))
+            .filter_map(|(pkg_name, pkg)| match Package::try_from(pkg) {
+                Ok(p) => Some((pkg_name, vec![p])),
+                Err(missing_fields) => {
+                    log::warn!(
+                        "`{}` skipped in API for `{}` due to missing required fields: {}",
+                        pkg_name,
+                        self.url,
+                        missing_fields.join(", ")
+                    );
+                    None
+                }
+            })
             .collect();
     }
 
@@ -146,19 +158,19 @@ where
 #[serde(rename_all = "PascalCase")]
 struct RUniversePackage {
     package: String,
-    #[serde(deserialize_with = "deserialize_version")]
-    version: Version,
-    license: String,
+    #[serde(default, deserialize_with = "deserialize_version_opt")]
+    version: Option<Version>,
+    license: Option<String>,
     #[serde(rename = "MD5sum")]
     md5_sum: Option<String>,
-    #[serde(deserialize_with = "yes_no_to_bool")]
+    #[serde(default, deserialize_with = "yes_no_to_bool")]
     needs_compilation: bool,
     #[serde(default)]
     remotes: Vec<String>,
     #[serde(rename = "_dependencies", default)]
     dependencies: Vec<RUniverseDependency>,
-    remote_url: GitUrl,
-    remote_sha: String,
+    remote_url: Option<GitUrl>,
+    remote_sha: Option<String>,
     remote_subdir: Option<String>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
@@ -190,8 +202,9 @@ fn parse_runiverse_api_file(content: &str) -> HashMap<String, RUniversePackage> 
     map
 }
 
-impl From<RUniversePackage> for Package {
-    fn from(pkg: RUniversePackage) -> Self {
+impl TryFrom<RUniversePackage> for Package {
+    type Error = Vec<String>;
+    fn try_from(pkg: RUniversePackage) -> Result<Self, Self::Error> {
         fn map_dependencies(deps: &[RUniverseDependency], role: Role) -> Vec<Dependency> {
             deps.iter()
                 .filter(|d| d.role == role && d.package != "R")
@@ -211,6 +224,23 @@ impl From<RUniversePackage> for Package {
                 .collect()
         }
 
+        // These fields are required to be able to install the package. The R-Universe API can
+        // omit them on build errors, in which case we skip the package entirely.
+        let mut missing_fields = Vec::with_capacity(3);
+
+        if pkg.version.is_none() {
+            missing_fields.push("Version".to_string());
+        }
+        if pkg.remote_url.is_none() {
+            missing_fields.push("RemoteUrl".to_string());
+        }
+        if pkg.remote_sha.is_none() {
+            missing_fields.push("RemoteSha".to_string());
+        }
+        if !missing_fields.is_empty() {
+            return Err(missing_fields);
+        }
+
         let mut remotes = HashMap::new();
         for remote in pkg.remotes.iter() {
             let (name_opt, parsed_remote) = parse_remote(remote);
@@ -228,23 +258,23 @@ impl From<RUniversePackage> for Package {
 
         let recommended = RECOMMENDED_PACKAGES.contains(&pkg.package.as_str());
 
-        Self {
+        Ok(Self {
             name: pkg.package,
-            version: pkg.version,
+            version: pkg.version.unwrap(),
             r_requirement,
             depends: map_dependencies(&pkg.dependencies, Role::Depends),
             imports: map_dependencies(&pkg.dependencies, Role::Imports),
             suggests: map_dependencies(&pkg.dependencies, Role::Suggests),
             enhances: map_dependencies(&pkg.dependencies, Role::Enhances),
             linking_to: map_dependencies(&pkg.dependencies, Role::LinkingTo),
-            license: pkg.license,
+            license: pkg.license.unwrap_or_default(),
             md5_sum: pkg.md5_sum.unwrap_or_default(), // value not read
             path: None,
             recommended,
             needs_compilation: pkg.needs_compilation,
             remotes,
-            remote_url: Some(pkg.remote_url),
-            remote_sha: Some(pkg.remote_sha),
+            remote_url: Some(pkg.remote_url.unwrap()),
+            remote_sha: Some(pkg.remote_sha.unwrap()),
             remote_subdir: pkg.remote_subdir,
             built: None,
             needs: pkg
@@ -261,7 +291,7 @@ impl From<RUniversePackage> for Package {
                     }
                 })
                 .collect(),
-        }
+        })
     }
 }
 
@@ -295,9 +325,9 @@ pub enum RepositoryDatabaseErrorKind {
 
 #[cfg(test)]
 mod test {
-    use std::fs;
+    use std::{collections::HashMap, fs};
 
-    use crate::RepositoryDatabase;
+    use crate::{RepositoryDatabase, package::Package, repository::parse_runiverse_api_file};
 
     #[test]
     fn test_r_universe_api_parse() {
@@ -355,5 +385,72 @@ mod test {
                 );
             }
         }
+    }
+
+    #[test]
+    fn skips_runiverse_packages_missing_required_fields() {
+        // Only `Package` is guaranteed by the R-Universe API; the others can be dropped on
+        // build errors. `good` has everything, the rest each miss one required field.
+        let content = r#"[
+            {
+                "Package": "good",
+                "Version": "1.0.0",
+                "NeedsCompilation": "no",
+                "RemoteUrl": "https://github.com/a2-ai/good",
+                "RemoteSha": "abc123"
+            },
+            {
+                "Package": "no_version",
+                "NeedsCompilation": "no",
+                "RemoteUrl": "https://github.com/a2-ai/no_version",
+                "RemoteSha": "abc123"
+            },
+            {
+                "Package": "no_remote_url",
+                "Version": "1.0.0",
+                "NeedsCompilation": "no",
+                "RemoteSha": "abc123"
+            },
+            {
+                "Package": "no_remote_sha",
+                "Version": "1.0.0",
+                "NeedsCompilation": "no",
+                "RemoteUrl": "https://github.com/a2-ai/no_remote_sha"
+            }
+        ]"#;
+
+        let pkgs = parse_runiverse_api_file(content)
+            .into_iter()
+            .map(|(pkg_name, pkg)| (pkg_name, Package::try_from(pkg)))
+            .collect::<HashMap<_, _>>();
+
+        assert!(pkgs.get("good").map(|p| p.is_ok()).unwrap_or_default());
+        assert!(
+            pkgs.get("no_version")
+                .map(|p| p.is_err())
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            pkgs["no_version"].as_ref().unwrap_err(),
+            &vec!["Version".to_string()]
+        );
+        assert!(
+            pkgs.get("no_remote_sha")
+                .map(|p| p.is_err())
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            pkgs["no_remote_sha"].as_ref().unwrap_err(),
+            &vec!["RemoteSha".to_string()]
+        );
+        assert!(
+            pkgs.get("no_remote_url")
+                .map(|p| p.is_err())
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            pkgs["no_remote_url"].as_ref().unwrap_err(),
+            &vec!["RemoteUrl".to_string()]
+        );
     }
 }

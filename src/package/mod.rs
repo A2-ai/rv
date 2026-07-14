@@ -17,7 +17,10 @@ pub use description::{parse_description_file, parse_description_file_in_folder, 
 pub use fetch::FetchPackage;
 pub use parser::{parse_dependencies, parse_needs_entries, parse_package_file};
 pub use remotes::PackageRemote;
-pub use version::{Operator, Version, VersionRequirement, deserialize_version, serialize_version};
+pub use version::{
+    Operator, Version, VersionRequirement, deserialize_version, deserialize_version_opt,
+    serialize_version,
+};
 
 pub(crate) use remotes::parse_remote;
 
