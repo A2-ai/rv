@@ -5,8 +5,7 @@ use std::path::Path;
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::git::url::GitUrl;
 use crate::package::{
-    Dependency, Package, PackageType, deserialize_version_opt, parse_needs_entries,
-    parse_package_file,
+    Dependency, Package, PackageType, deserialize_version, parse_needs_entries, parse_package_file,
 };
 use crate::package::{Version, VersionRequirement, parse_remote};
 
@@ -51,22 +50,19 @@ impl RepositoryDatabase {
         self.binary_packages.insert(r_version, packages);
     }
 
-    pub fn parse_runiverse_api(&mut self, content: &str) {
-        self.source_packages = parse_runiverse_api_file(content)
+    /// Parses the R-Universe packages API response into the source package database.
+    /// Returns the descriptions of the skipped packages (name plus the deserialize error) so
+    /// callers can warn.
+    pub fn parse_runiverse_api(
+        &mut self,
+        content: &str,
+    ) -> Result<Vec<String>, RepositoryDatabaseError> {
+        let (packages, skipped) = parse_runiverse_api_file(content)?;
+        self.source_packages = packages
             .into_iter()
-            .filter_map(|(pkg_name, pkg)| match Package::try_from(pkg) {
-                Ok(p) => Some((pkg_name, vec![p])),
-                Err(missing_fields) => {
-                    log::warn!(
-                        "`{}` skipped in API for `{}` due to missing required fields: {}",
-                        pkg_name,
-                        self.url,
-                        missing_fields.join(", ")
-                    );
-                    None
-                }
-            })
+            .map(|(pkg_name, pkg)| (pkg_name, vec![pkg.into()]))
             .collect();
+        Ok(skipped)
     }
 
     // We always prefer binary unless `force_source` is set to true
@@ -158,10 +154,16 @@ where
 #[serde(rename_all = "PascalCase")]
 struct RUniversePackage {
     package: String,
-    #[serde(default, deserialize_with = "deserialize_version_opt")]
-    version: Option<Version>,
+    // The R-Universe API can omit fields on big enough build errors. Only `package` is
+    // guaranteed. The three fields required to actually install a package (`version`,
+    // `remote_url`, `remote_sha`) are kept non-optional so that a package missing any of them
+    // fails to deserialize and is skipped by `parse_runiverse_api_file`. Everything else is
+    // tolerant of omission so a package isn't dropped over a non-essential field.
+    #[serde(deserialize_with = "deserialize_version")]
+    version: Version,
+    #[serde(default)]
     license: Option<String>,
-    #[serde(rename = "MD5sum")]
+    #[serde(rename = "MD5sum", default)]
     md5_sum: Option<String>,
     #[serde(default, deserialize_with = "yes_no_to_bool")]
     needs_compilation: bool,
@@ -169,8 +171,9 @@ struct RUniversePackage {
     remotes: Vec<String>,
     #[serde(rename = "_dependencies", default)]
     dependencies: Vec<RUniverseDependency>,
-    remote_url: Option<GitUrl>,
-    remote_sha: Option<String>,
+    remote_url: GitUrl,
+    remote_sha: String,
+    #[serde(default)]
     remote_subdir: Option<String>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
@@ -193,18 +196,37 @@ enum Role {
     Enhances,
 }
 
-fn parse_runiverse_api_file(content: &str) -> HashMap<String, RUniversePackage> {
-    let apis: Vec<RUniversePackage> = serde_json::from_str(content).unwrap();
+// Deserialized API Packages and list of skipped packages + reason for the skip
+type ParsedRuniverseApi = (HashMap<String, RUniversePackage>, Vec<String>);
+
+fn parse_runiverse_api_file(content: &str) -> Result<ParsedRuniverseApi, RepositoryDatabaseError> {
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(content).map_err(RepositoryDatabaseError::from_runiverse)?;
+
     let mut map = HashMap::new();
-    for api in apis {
-        map.insert(api.package.to_string(), api);
+    let mut skipped = Vec::new();
+    for entry in entries {
+        // Grab the name before consuming the value so we can identify the package in the
+        // skip message even when the rest of the entry fails to deserialize.
+        let name = entry
+            .get("Package")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        match serde_json::from_value::<RUniversePackage>(entry) {
+            Ok(pkg) => {
+                map.insert(pkg.package.clone(), pkg);
+            }
+            Err(e) => {
+                let label = name.as_deref().unwrap_or("<unknown package>");
+                skipped.push(format!("{label} ({e})"));
+            }
+        }
     }
-    map
+    Ok((map, skipped))
 }
 
-impl TryFrom<RUniversePackage> for Package {
-    type Error = Vec<String>;
-    fn try_from(pkg: RUniversePackage) -> Result<Self, Self::Error> {
+impl From<RUniversePackage> for Package {
+    fn from(pkg: RUniversePackage) -> Self {
         fn map_dependencies(deps: &[RUniverseDependency], role: Role) -> Vec<Dependency> {
             deps.iter()
                 .filter(|d| d.role == role && d.package != "R")
@@ -224,23 +246,6 @@ impl TryFrom<RUniversePackage> for Package {
                 .collect()
         }
 
-        // These fields are required to be able to install the package. The R-Universe API can
-        // omit them on build errors, in which case we skip the package entirely.
-        let mut missing_fields = Vec::with_capacity(3);
-
-        if pkg.version.is_none() {
-            missing_fields.push("Version".to_string());
-        }
-        if pkg.remote_url.is_none() {
-            missing_fields.push("RemoteUrl".to_string());
-        }
-        if pkg.remote_sha.is_none() {
-            missing_fields.push("RemoteSha".to_string());
-        }
-        if !missing_fields.is_empty() {
-            return Err(missing_fields);
-        }
-
         let mut remotes = HashMap::new();
         for remote in pkg.remotes.iter() {
             let (name_opt, parsed_remote) = parse_remote(remote);
@@ -258,9 +263,9 @@ impl TryFrom<RUniversePackage> for Package {
 
         let recommended = RECOMMENDED_PACKAGES.contains(&pkg.package.as_str());
 
-        Ok(Self {
+        Self {
             name: pkg.package,
-            version: pkg.version.unwrap(),
+            version: pkg.version,
             r_requirement,
             depends: map_dependencies(&pkg.dependencies, Role::Depends),
             imports: map_dependencies(&pkg.dependencies, Role::Imports),
@@ -273,8 +278,8 @@ impl TryFrom<RUniversePackage> for Package {
             recommended,
             needs_compilation: pkg.needs_compilation,
             remotes,
-            remote_url: Some(pkg.remote_url.unwrap()),
-            remote_sha: Some(pkg.remote_sha.unwrap()),
+            remote_url: Some(pkg.remote_url),
+            remote_sha: Some(pkg.remote_sha),
             remote_subdir: pkg.remote_subdir,
             built: None,
             needs: pkg
@@ -291,7 +296,7 @@ impl TryFrom<RUniversePackage> for Package {
                     }
                 })
                 .collect(),
-        })
+        }
     }
 }
 
@@ -314,6 +319,12 @@ impl RepositoryDatabaseError {
             source: RepositoryDatabaseErrorKind::Deserialize(err),
         }
     }
+
+    fn from_runiverse(err: serde_json::Error) -> Self {
+        Self {
+            source: RepositoryDatabaseErrorKind::RUniverseDeserialize(err),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -321,19 +332,20 @@ impl RepositoryDatabaseError {
 pub enum RepositoryDatabaseErrorKind {
     Io(#[from] std::io::Error),
     Deserialize(#[from] rmp_serde::decode::Error),
+    RUniverseDeserialize(#[from] serde_json::Error),
 }
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, fs};
+    use std::fs;
 
-    use crate::{RepositoryDatabase, package::Package, repository::parse_runiverse_api_file};
+    use crate::{RepositoryDatabase, repository::parse_runiverse_api_file};
 
     #[test]
     fn test_r_universe_api_parse() {
         let mut runiverse_db = RepositoryDatabase::new("http://r-universe.dev");
         let content = fs::read_to_string("src/tests/r_universe/a2-ai.api").unwrap();
-        runiverse_db.parse_runiverse_api(&content);
+        runiverse_db.parse_runiverse_api(&content).unwrap();
 
         let mut repo_db = RepositoryDatabase::new("http://a2-ai");
         let content = fs::read_to_string("src/tests/package_files/a2-ai-universe.PACKAGE").unwrap();
@@ -419,38 +431,21 @@ mod test {
             }
         ]"#;
 
-        let pkgs = parse_runiverse_api_file(content)
-            .into_iter()
-            .map(|(pkg_name, pkg)| (pkg_name, Package::try_from(pkg)))
-            .collect::<HashMap<_, _>>();
+        let (packages, mut skipped) = parse_runiverse_api_file(content).unwrap();
+        skipped.sort();
 
-        assert!(pkgs.get("good").map(|p| p.is_ok()).unwrap_or_default());
-        assert!(
-            pkgs.get("no_version")
-                .map(|p| p.is_err())
-                .unwrap_or_default()
-        );
-        assert_eq!(
-            pkgs["no_version"].as_ref().unwrap_err(),
-            &vec!["Version".to_string()]
-        );
-        assert!(
-            pkgs.get("no_remote_sha")
-                .map(|p| p.is_err())
-                .unwrap_or_default()
-        );
-        assert_eq!(
-            pkgs["no_remote_sha"].as_ref().unwrap_err(),
-            &vec!["RemoteSha".to_string()]
-        );
-        assert!(
-            pkgs.get("no_remote_url")
-                .map(|p| p.is_err())
-                .unwrap_or_default()
-        );
-        assert_eq!(
-            pkgs["no_remote_url"].as_ref().unwrap_err(),
-            &vec!["RemoteUrl".to_string()]
-        );
+        // Only the fully-formed package is parsed; the rest are skipped.
+        assert_eq!(packages.keys().collect::<Vec<_>>(), vec!["good"]);
+        assert_eq!(skipped.len(), 3);
+
+        // Each skip is labelled with the offending package name and carries the serde error.
+        assert!(skipped[0].starts_with("no_remote_sha ("));
+        assert!(skipped[1].starts_with("no_remote_url ("));
+        assert!(skipped[2].starts_with("no_version ("));
+    }
+
+    #[test]
+    fn errors_when_runiverse_response_is_not_an_array() {
+        assert!(parse_runiverse_api_file("{\"not\": \"an array\"}").is_err());
     }
 }

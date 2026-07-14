@@ -146,21 +146,6 @@ where
     }
 }
 
-/// Like [`deserialize_version`] but tolerates a missing/null value by returning `None`.
-pub fn deserialize_version_opt<'de, D>(deserializer: D) -> Result<Option<Version>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let opt: Option<String> = Option::deserialize(deserializer)?;
-    match opt {
-        Some(v) => match Version::from_str(&v) {
-            Ok(v) => Ok(Some(v)),
-            Err(_) => Err(serde::de::Error::custom("Invalid version number")),
-        },
-        None => Ok(None),
-    }
-}
-
 pub fn serialize_version<S>(version: &Version, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
