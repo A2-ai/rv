@@ -304,6 +304,7 @@ impl RCmd for RInstall {
         command
             .arg(&src_backup_dir)
             // Override where R should look for deps
+            .env("R_LIBS", &library_paths)
             .env("R_LIBS_SITE", &library_paths)
             .env("R_LIBS_USER", &library_paths);
 
@@ -374,6 +375,7 @@ impl RCmd for RInstall {
             .arg("--no-manual")
             .arg(source_dir)
             .current_dir(output_dir)
+            .env("R_LIBS", &library_paths)
             .env("R_LIBS_SITE", &library_paths)
             .env("R_LIBS_USER", &library_paths)
             .envs(env_vars);
