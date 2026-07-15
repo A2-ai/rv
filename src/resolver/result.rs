@@ -1,3 +1,4 @@
+use crate::package::NeedsEntry;
 use crate::resolver::sat::DependencySolver;
 use crate::{ResolvedDependency, UnresolvedDependency};
 use std::collections::{HashMap, HashSet};
@@ -70,6 +71,18 @@ impl<'d> Resolution<'d> {
             self.failed.remove(i);
         }
 
+        // We need to mark the needs as seeds for the SAT GC to not remove them
+        let needs_seeds: HashSet<String> = self
+            .found
+            .iter()
+            .flat_map(|p| p.needs.values())
+            .flatten()
+            .map(|e| match e {
+                NeedsEntry::Package(d) => d.name().to_string(),
+                NeedsEntry::Remote(name, _) => name.clone(),
+            })
+            .collect();
+
         let mut solver = DependencySolver::default();
         for package in &self.found {
             if !package.ignored {
@@ -122,7 +135,11 @@ impl<'d> Resolution<'d> {
 
                 // Some GC. We remove anything we can't reach from the roots + their suggests
                 let mut reachable: HashSet<String> = HashSet::new();
-                let mut stack: Vec<String> = roots.iter().map(|s| s.to_string()).collect();
+                let mut stack: Vec<String> = roots
+                    .iter()
+                    .map(|s| s.to_string())
+                    .chain(needs_seeds.iter().cloned())
+                    .collect();
                 while let Some(name) = stack.pop() {
                     if !reachable.insert(name.clone()) {
                         continue;

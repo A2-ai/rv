@@ -16,10 +16,7 @@ use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
 use crate::sync::tasks::{install_task, sync_task};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
-use crate::{
-    BuildPlan, BuildStep, Cancellation, Context, GitExecutor, RCmd, ResolvedDependency,
-    get_tarball_urls,
-};
+use crate::{BuildPlan, BuildStep, Cancellation, Context, GitExecutor, RCmd, ResolvedDependency};
 use crossbeam::{channel, thread};
 #[cfg(feature = "cli")]
 use fs_err as fs;
@@ -208,12 +205,12 @@ impl<'a> SyncHandler<'a> {
                         }
 
                         // safe unwrap, we know it's a repo dep
-                        let tarball_url = get_tarball_urls(
-                            dep,
-                            self.context.cache.r_version(),
-                            self.context.cache.system_info(),
-                        )
-                        .unwrap();
+                        let tarball_url = dep
+                            .get_tarball_urls(
+                                self.context.cache.r_version(),
+                                self.context.cache.system_info(),
+                            )
+                            .unwrap();
 
                         let tarball_path = self
                             .context

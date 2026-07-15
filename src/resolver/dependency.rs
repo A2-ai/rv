@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -8,9 +9,12 @@ use url::Url;
 
 use crate::cache::CacheStatus;
 use crate::lockfile::{LockedPackage, Source};
-use crate::package::{Dependency, InstallationDependencies, Package, PackageRemote, PackageType};
+use crate::package::{
+    Dependency, InstallationDependencies, NeedsEntry, Package, PackageRemote, PackageType,
+};
+use crate::repository_urls::{TarballUrls, get_tarball_urls_from_parts};
 use crate::resolver::QueueItem;
-use crate::{Version, VersionRequirement};
+use crate::{SystemInfo, Version, VersionRequirement};
 
 /// A dependency that we found from any of the sources we can look up to
 /// We use Cow everywhere because only for git/local packages will be owned, the vast majority
@@ -39,6 +43,26 @@ pub struct ResolvedDependency<'d> {
     /// { name = "dplyr", dependencies_only = true } in your rproject.toml
     /// in which case we want to keep track of it but not write it anywhere
     pub(crate) ignored: bool,
+    // Parsed and Required Config/Needs/* from the package DESCRIPTION.
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
+}
+
+/// Builds the resolution `Source` for a package coming from a repository,
+/// distinguishing r-universe (which carries git provenance) from a plain repo.
+fn repository_source(package: &Package, repo_url: &Url) -> Source {
+    match (&package.remote_url, &package.remote_sha) {
+        (Some(git), Some(sha)) if repo_url.to_string().contains("r-universe.dev") => {
+            Source::RUniverse {
+                repository: repo_url.clone(),
+                git: git.clone(),
+                sha: sha.to_string(),
+                directory: package.remote_subdir.clone(),
+            }
+        }
+        _ => Source::Repository {
+            repository: repo_url.clone(),
+        },
+    }
 }
 
 impl<'d> ResolvedDependency<'d> {
@@ -88,31 +112,32 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: package
+                .needs
+                .iter()
+                .map(|(key, entries)| {
+                    let deps = entries.iter().cloned().map(NeedsEntry::Package).collect();
+                    (key.clone(), deps)
+                })
+                .collect(),
         }
     }
 
+    /// The package is already known to the resolver (cached repository database)
+    /// and outlives this call, so we borrow its dependencies directly.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_package_repository(
         package: &'d Package,
         repo_url: &Url,
         package_type: PackageType,
         install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
         force_source: bool,
         cache_status: CacheStatus,
-    ) -> (Self, InstallationDependencies<'d>) {
-        let deps = package.dependencies_to_install(install_suggests);
-        let source = match (&package.remote_url, &package.remote_sha) {
-            (Some(git), Some(sha)) if repo_url.to_string().contains("r-universe.dev") => {
-                Source::RUniverse {
-                    repository: repo_url.clone(),
-                    git: git.clone(),
-                    sha: sha.to_string(),
-                    directory: package.remote_subdir.clone(),
-                }
-            }
-            _ => Source::Repository {
-                repository: repo_url.clone(),
-            },
-        };
+    ) -> Result<(Self, InstallationDependencies<'d>), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
+        let source = repository_source(package, repo_url);
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
@@ -131,89 +156,25 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: deps.needs.clone(),
         };
 
-        (res, deps)
+        Ok((res, deps))
     }
 
-    /// If we find the package to be a git repo, we will read the DESCRIPTION file during resolution
-    /// This means the data will not outlive this struct and needs to be owned
-    pub fn from_git_package(
-        package: &Package,
+    /// Builds an owned `ResolvedDependency` (all data copied out of `package`/`deps`) with the
+    /// defaults shared by the fetched/git/local/url constructors.
+    fn owned<'p>(
+        package: &'p Package,
+        deps: &InstallationDependencies<'p>,
         source: Source,
-        install_suggests: bool,
-        cache_status: CacheStatus,
-    ) -> (Self, InstallationDependencies<'_>) {
-        let deps = package.dependencies_to_install(install_suggests);
-
-        let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
-            kind: PackageType::Source,
-            force_source: true,
-            path: None,
-            from_lockfile: false,
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
-            cache_status,
-            install_suggests,
-            remotes: package.remotes.clone(),
-            from_remote: false,
-            local_resolved_path: None,
-            env_vars: HashMap::new(),
-            ignored: false,
-        };
-
-        (res, deps)
-    }
-
-    pub fn from_local_package(
-        package: &Package,
-        source: Source,
-        install_suggests: bool,
-        local_resolved_path: PathBuf,
-    ) -> (Self, InstallationDependencies<'_>) {
-        let deps = package.dependencies_to_install(install_suggests);
-        let res = Self {
-            dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
-            suggests: deps
-                .suggests
-                .iter()
-                .map(|&d| Cow::Owned(d.clone()))
-                .collect(),
-            kind: PackageType::Source,
-            force_source: true,
-            path: None,
-            from_lockfile: false,
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
-            // We'll handle the installation status later by comparing mtimes
-            cache_status: CacheStatus::new_local_source(),
-            install_suggests,
-            remotes: package.remotes.clone(),
-            from_remote: false,
-            local_resolved_path: Some(local_resolved_path),
-            env_vars: HashMap::new(),
-            ignored: false,
-        };
-
-        (res, deps)
-    }
-
-    pub fn from_url_package(
-        package: &Package,
         kind: PackageType,
-        source: Source,
         install_suggests: bool,
-    ) -> (Self, InstallationDependencies<'_>) {
-        let deps = package.dependencies_to_install(install_suggests);
-        let res = Self {
+    ) -> Self {
+        Self {
+            name: Cow::Owned(package.name.clone()),
+            version: Cow::Owned(package.version.clone()),
+            source,
             dependencies: deps.direct.iter().map(|&d| Cow::Owned(d.clone())).collect(),
             suggests: deps
                 .suggests
@@ -222,28 +183,122 @@ impl<'d> ResolvedDependency<'d> {
                 .collect(),
             kind,
             force_source: false,
+            install_suggests,
             path: None,
             from_lockfile: false,
-            name: Cow::Owned(package.name.clone()),
-            version: Cow::Owned(package.version.clone()),
-            source,
             cache_status: CacheStatus::new_local_source(),
-            install_suggests,
-            remotes: package.remotes.clone(),
+            remotes: HashMap::new(),
             from_remote: false,
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: deps.needs.clone(),
+        }
+    }
+
+    // package had to be fetched and owned
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_repository_fetched<'p>(
+        package: &'p Package,
+        repo_url: &Url,
+        package_type: PackageType,
+        install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
+        force_source: bool,
+        cache_status: CacheStatus,
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
+        let source = repository_source(package, repo_url);
+
+        let res = Self {
+            force_source,
+            path: package.path.clone().map(Cow::Owned),
+            cache_status,
+            ..Self::owned(package, &deps, source, package_type, install_suggests)
         };
 
-        (res, deps)
+        Ok((res, deps))
+    }
+
+    /// If we find the package to be a git repo, we will read the DESCRIPTION file during resolution
+    /// This means the data will not outlive this struct and needs to be owned
+    pub fn from_git_package<'p>(
+        package: &'p Package,
+        source: Source,
+        install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
+        cache_status: CacheStatus,
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
+
+        let res = Self {
+            force_source: true,
+            cache_status,
+            remotes: package.remotes.clone(),
+            ..Self::owned(
+                package,
+                &deps,
+                source,
+                PackageType::Source,
+                install_suggests,
+            )
+        };
+
+        Ok((res, deps))
+    }
+
+    pub fn from_local_package<'p>(
+        package: &'p Package,
+        source: Source,
+        install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
+        local_resolved_path: PathBuf,
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
+        let res = Self {
+            force_source: true,
+            remotes: package.remotes.clone(),
+            // We'll handle the installation status later by comparing mtimes
+            local_resolved_path: Some(local_resolved_path),
+            ..Self::owned(
+                package,
+                &deps,
+                source,
+                PackageType::Source,
+                install_suggests,
+            )
+        };
+
+        Ok((res, deps))
+    }
+
+    pub fn from_url_package<'p>(
+        package: &'p Package,
+        kind: PackageType,
+        source: Source,
+        install_suggests: bool,
+        install_all_needs: bool,
+        needs: &[String],
+    ) -> Result<(Self, InstallationDependencies<'p>), Box<dyn Error>> {
+        let deps = package.dependencies_to_install(install_suggests, install_all_needs, needs)?;
+        let res = Self {
+            remotes: package.remotes.clone(),
+            ..Self::owned(package, &deps, source, kind, install_suggests)
+        };
+
+        Ok((res, deps))
     }
 
     pub fn from_builtin_package(
         package: &'d Package,
         install_suggests: bool,
     ) -> (Self, InstallationDependencies<'d>) {
-        let deps = package.dependencies_to_install(install_suggests);
+        let deps = package
+            .dependencies_to_install(install_suggests, false, &[])
+            .expect("No needs to cause error");
 
         let res = Self {
             name: Cow::Borrowed(&package.name),
@@ -262,9 +317,29 @@ impl<'d> ResolvedDependency<'d> {
             local_resolved_path: None,
             env_vars: HashMap::new(),
             ignored: false,
+            needs: HashMap::new(),
         };
 
         (res, deps)
+    }
+
+    pub fn get_tarball_urls(
+        &self,
+        r_version: &[u32; 2],
+        sysinfo: &SystemInfo,
+    ) -> Result<TarballUrls, Box<dyn Error>> {
+        if let Source::Repository { repository } = &self.source {
+            Ok(get_tarball_urls_from_parts(
+                repository,
+                &self.name,
+                &self.version.original,
+                self.path.as_deref(),
+                r_version,
+                sysinfo,
+            ))
+        } else {
+            Err("Dependency does not have source Repository".into())
+        }
     }
 }
 
