@@ -11,7 +11,7 @@ use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
 use crate::git::url::GitUrl;
-use crate::package::{Dependency, NeedsEntry, VersionRequirement};
+use crate::package::{Dependency, NeedsEntry};
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
 const CURRENT_LOCKFILE_VERSION: i64 = 2;
@@ -312,33 +312,33 @@ fn format_array(deps: &[Dependency]) -> Array {
     deps
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TomlDependency {
+    Simple(String),
+    Pinned { name: String, requirement: String },
+}
+
+impl TomlDependency {
+    fn into_dependency<E: serde::de::Error>(self) -> Result<Dependency, E> {
+        match self {
+            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
+            TomlDependency::Pinned { name, requirement } => Ok(Dependency::Pinned {
+                name,
+                requirement: requirement.parse().map_err(serde::de::Error::custom)?,
+            }),
+        }
+    }
+}
+
 /// Custom deserializer for dependencies from TOML lockfile format.
 /// Handles both "simple_string" and { name = "pkg", requirement = "(>= 1.0)" } formats.
 fn deserialize_dependencies<'de, D>(deserializer: D) -> Result<Vec<Dependency>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum TomlDependency {
-        Simple(String),
-        Pinned { name: String, requirement: String },
-    }
-
     let deps: Vec<TomlDependency> = Vec::deserialize(deserializer)?;
-    deps.into_iter()
-        .map(|d| match d {
-            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
-            TomlDependency::Pinned { name, requirement } => {
-                let req: VersionRequirement =
-                    requirement.parse().map_err(serde::de::Error::custom)?;
-                Ok(Dependency::Pinned {
-                    name,
-                    requirement: req,
-                })
-            }
-        })
-        .collect()
+    deps.into_iter().map(|d| d.into_dependency()).collect()
 }
 
 /// Custom deserializer for needs from TOML lockfile format.
@@ -348,31 +348,14 @@ fn deserialize_needs<'de, D>(deserializer: D) -> Result<Vec<(String, Vec<Depende
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum TomlDependency {
-        Simple(String),
-        Pinned { name: String, requirement: String },
-    }
-
     let map: HashMap<String, Vec<TomlDependency>> = HashMap::deserialize(deserializer)?;
     let mut res = map
         .into_iter()
         .map(|(key, deps)| {
             let resolved = deps
                 .into_iter()
-                .map(|d| match d {
-                    TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
-                    TomlDependency::Pinned { name, requirement } => {
-                        let req: VersionRequirement =
-                            requirement.parse().map_err(serde::de::Error::custom)?;
-                        Ok(Dependency::Pinned {
-                            name,
-                            requirement: req,
-                        })
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|d| d.into_dependency())
+                .collect::<Result<Vec<_>, D::Error>>()?;
             Ok((key, resolved))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -452,6 +435,15 @@ impl LockedPackage {
                 "suggests",
                 Item::Value(Value::Array(format_array(&self.suggests))),
             );
+        }
+        if !self.needs.is_empty() {
+            let mut needs_table = InlineTable::new();
+            let mut entries: Vec<_> = self.needs.iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (key, deps) in entries {
+                needs_table.insert(key, Value::Array(format_array(deps)));
+            }
+            table.insert("needs", Item::Value(Value::InlineTable(needs_table)));
         }
 
         table
@@ -721,4 +713,64 @@ pub enum LockfileErrorKind {
     Toml(#[from] toml::de::Error),
     #[error("Invalid lockfile: {0}")]
     Invalid(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn needs_round_trip_through_lockfile() {
+        // A package whose Config/Needs/* groups contain both a bare (Simple) entry and a
+        // version-constrained (Pinned) entry. The lockfile must persist these so that on the
+        // next sync the resolver's fast-path can trust the lockfile instead of re-fetching the
+        // DESCRIPTION.
+        let pkg = LockedPackage {
+            name: "rv.needs".to_string(),
+            version: "1.0.0".to_string(),
+            source: Source::Repository {
+                repository: Url::parse("http://cran/").unwrap(),
+            },
+            path: None,
+            force_source: false,
+            dependencies: vec![],
+            suggests: vec![],
+            needs: vec![
+                (
+                    "lockfile".to_string(),
+                    vec![Dependency::Simple("rmarkdown".to_string())],
+                ),
+                (
+                    "ver_req".to_string(),
+                    vec![Dependency::Pinned {
+                        name: "knitr".to_string(),
+                        requirement: "(>= 1.46)".parse().unwrap(),
+                    }],
+                ),
+            ],
+        };
+        let lockfile = Lockfile {
+            version: CURRENT_LOCKFILE_VERSION,
+            r_version: "4.4".to_string(),
+            packages: vec![pkg],
+        };
+
+        let rendered = lockfile.as_toml_string();
+        // Regression guard: needs must actually be written (it previously was not).
+        assert!(
+            rendered.contains("needs = {"),
+            "needs was not serialized:\n{rendered}"
+        );
+
+        let parsed = rendered
+            .parse::<Lockfile>()
+            .expect("rendered lockfile should re-parse");
+        assert_eq!(
+            parsed.packages[0].needs, lockfile.packages[0].needs,
+            "needs did not survive the write -> read round-trip"
+        );
+
+        // Writing the re-parsed lockfile again is byte-stable.
+        assert_eq!(parsed.as_toml_string(), rendered);
+    }
 }

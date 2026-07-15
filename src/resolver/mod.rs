@@ -166,7 +166,7 @@ impl<'d> Resolver<'d> {
     fn local_lookup(
         &self,
         item: &QueueItem<'d>,
-    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
+    ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn Error>> {
         let local_path = item.local_path.as_ref().unwrap();
         let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
             Ok(canon_path) => canon_path,
@@ -214,14 +214,14 @@ impl<'d> Resolver<'d> {
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
 
+    #[allow(clippy::type_complexity)]
     fn lockfile_lookup(
         &self,
         item: &QueueItem<'d>,
         cache: &'d Cache,
         http_download: &'d impl HttpDownload,
         git_exec: &'d (impl CommandExecutor + Clone + 'static),
-    ) -> Result<Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)>, Box<dyn std::error::Error>>
-    {
+    ) -> Result<Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)>, Box<dyn Error>> {
         // If the dependency is not matching, do not even look at the lockfile
         if let Some(matching) = item.matching_in_lockfile
             && !matching
@@ -267,11 +267,10 @@ impl<'d> Resolver<'d> {
                         PackageType::Source
                     } else {
                         let version_req =
-                            VersionRequirement::from_str(&format!("(== {})", package.version))
-                                .unwrap();
+                            VersionRequirement::from_str(&format!("(== {})", package.version))?;
 
                         let has_binary = repo
-                            .find_package(&package.name, Some(&version_req), &self.r_version, false)
+                            .find_package(&package.name, Some(&version_req), self.r_version, false)
                             .is_some_and(|(_, package_type)| package_type == PackageType::Binary);
 
                         if has_binary {
@@ -358,6 +357,8 @@ impl<'d> Resolver<'d> {
                     name: &package.name,
                     version: &package.version,
                     repository,
+                    package_type: kind,
+                    path: package.path.as_deref(),
                     downloader: http_download,
                 };
                 let pkg = fetcher.fetch(cache)?;
@@ -387,6 +388,7 @@ impl<'d> Resolver<'d> {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn repositories_lookup(
         &self,
         item: &QueueItem<'d>,
@@ -435,6 +437,8 @@ impl<'d> Resolver<'d> {
                         name: &package.name,
                         version: &package.version.to_string(),
                         repository: &repo_url,
+                        package_type,
+                        path: package.path.as_deref(),
                         downloader: http_download,
                     };
                     let pkg = fetcher.fetch(cache)?;
@@ -720,6 +724,7 @@ impl<'d> Resolver<'d> {
                             .insert(item.version_requirement.clone());
                         queue.extend(items);
                         result.add_found(resolved);
+                        continue;
                     }
                 }
                 Err(e) => {

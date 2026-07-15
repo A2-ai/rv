@@ -1,8 +1,5 @@
-use std::error::Error;
-
 use crate::consts::PACKAGE_FILENAME;
-use crate::lockfile::Source;
-use crate::{OsType, ResolvedDependency, SystemInfo};
+use crate::{OsType, SystemInfo};
 use url::Url;
 
 /// This is based on the mapping on PPM config <https://packagemanager.posit.co/client/#/repos/cran/setup>.
@@ -254,43 +251,6 @@ pub struct TarballUrls {
     pub source_archive: Url,
 }
 
-pub fn get_tarball_urls(
-    dep: &ResolvedDependency,
-    r_version: &[u32; 2],
-    sysinfo: &SystemInfo,
-) -> Result<TarballUrls, Box<dyn Error>> {
-    if let Source::Repository { repository } = &dep.source {
-        let name = &dep.name;
-        let version = &dep.version.original;
-        let path = dep.path.as_deref();
-        let ext = sysinfo.os_type.tarball_extension();
-
-        let file_path = path
-            .map(|p| p.split('/').collect::<Vec<_>>())
-            .unwrap_or_default();
-
-        let mut binary_file_path = file_path.clone();
-        let binary_name = format!("{name}_{version}.{ext}");
-        binary_file_path.push(&binary_name);
-
-        let mut source_file_path = file_path.clone();
-        let source_name = format!("{name}_{version}.tar.gz");
-        source_file_path.push(&source_name);
-
-        let (source_archive, binary_archive) =
-            get_archive_tarball_paths(repository, name, version, r_version, sysinfo);
-
-        Ok(TarballUrls {
-            binary: get_binary_path(repository, &binary_file_path, r_version, sysinfo),
-            binary_archive,
-            source: get_source_path(repository, &source_file_path),
-            source_archive,
-        })
-    } else {
-        Err("Dependency does not have source Repository".into())
-    }
-}
-
 /// Gets the source/binary url for the given filename, usually PACKAGES
 /// Use `get_tarball_urls` if you want to get the package tarballs URLs
 pub fn get_package_file_urls(
@@ -302,6 +262,41 @@ pub fn get_package_file_urls(
         get_source_path(url, &[PACKAGE_FILENAME]),
         get_binary_path(url, &[PACKAGE_FILENAME], r_version, sysinfo),
     )
+}
+
+/// Builds every candidate tarball URL (binary, binary archive, source, source archive) for a
+/// repository package from its parts.
+pub fn get_tarball_urls_from_parts(
+    repository: &Url,
+    name: &str,
+    version: &str,
+    path: Option<&str>,
+    r_version: &[u32; 2],
+    sysinfo: &SystemInfo,
+) -> TarballUrls {
+    let ext = sysinfo.os_type.tarball_extension();
+
+    let file_path = path
+        .map(|p| p.split('/').collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    let mut binary_file_path = file_path.clone();
+    let binary_name = format!("{name}_{version}.{ext}");
+    binary_file_path.push(&binary_name);
+
+    let mut source_file_path = file_path.clone();
+    let source_name = format!("{name}_{version}.tar.gz");
+    source_file_path.push(&source_name);
+
+    let (source_archive, binary_archive) =
+        get_archive_tarball_paths(repository, name, version, r_version, sysinfo);
+
+    TarballUrls {
+        binary: get_binary_path(repository, &binary_file_path, r_version, sysinfo),
+        binary_archive,
+        source: get_source_path(repository, &source_file_path),
+        source_archive,
+    }
 }
 
 #[cfg(test)]
@@ -318,6 +313,29 @@ mod tests {
         let source_url = get_source_path(&PPM_URL, &TEST_FILE_NAME);
         let ref_url = format!("{}/src/contrib/{}", &PPM_URL.as_str(), TEST_FILE_NAME[0]);
         assert_eq!(source_url.as_str(), ref_url);
+    }
+
+    #[test]
+    fn test_tarball_urls_from_parts() {
+        let sysinfo = SystemInfo::new(OsType::Windows, Some("x86_64".to_string()), None, "");
+        let urls = get_tarball_urls_from_parts(&PPM_URL, "dplyr", "1.1.4", None, &[4, 4], &sysinfo);
+        let base = PPM_URL.as_str();
+        assert_eq!(
+            urls.binary.unwrap().as_str(),
+            format!("{base}/bin/windows/contrib/4.4/dplyr_1.1.4.zip")
+        );
+        assert_eq!(
+            urls.binary_archive.unwrap().as_str(),
+            format!("{base}/bin/windows/contrib/4.4/Archive/dplyr/dplyr_1.1.4.zip")
+        );
+        assert_eq!(
+            urls.source.as_str(),
+            format!("{base}/src/contrib/dplyr_1.1.4.tar.gz")
+        );
+        assert_eq!(
+            urls.source_archive.as_str(),
+            format!("{base}/src/contrib/Archive/dplyr/dplyr_1.1.4.tar.gz")
+        );
     }
     #[test]
     fn test_binary_35_url() {
