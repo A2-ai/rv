@@ -651,7 +651,7 @@ mod tests {
 
         for r in repositories {
             let mut repo = RepositoryDatabase::new(r.url.as_str());
-            let path = format!("src/tests/package_files/{}.PACKAGE", &r.alias);
+            let path = format!("src/tests/package_files/{}.PACKAGE", r.alias);
             let text = std::fs::read_to_string(path).unwrap();
             if r.alias.contains("binary") {
                 repo.parse_binary(&text, r_version.major_minor());

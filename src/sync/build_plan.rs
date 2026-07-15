@@ -62,7 +62,7 @@ impl<'a> BuildPlan<'a> {
         self.installed.insert(pkg.name.as_ref());
         self.installing.remove(pkg.name.as_ref());
 
-        for (_, deps) in self.full_deps.iter_mut() {
+        for deps in self.full_deps.values_mut() {
             deps.remove(pkg.name.as_ref());
         }
     }

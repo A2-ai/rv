@@ -173,7 +173,7 @@ fn download_package(
     } else {
         log::warn!(
             "Failed to download source from `{}`. Trying source archive",
-            &urls.source
+            urls.source
         );
     }
 
