@@ -332,7 +332,15 @@ fn load_single_database(
             return Err(format!("File at {api_url} was not found").into());
         }
 
-        db.parse_runiverse_api(&String::from_utf8_lossy(&r_universe_api));
+        let skipped = db.parse_runiverse_api(&String::from_utf8_lossy(&r_universe_api))?;
+        if !skipped.is_empty() {
+            log::warn!(
+                "Skipped {} package(s) from the R-Universe API at {} due to missing or malformed fields: {}",
+                skipped.len(),
+                r.url(),
+                skipped.join(", ")
+            );
+        }
 
         db.persist(&path)?;
         log::debug!("Saving packages db at {path:?}");
