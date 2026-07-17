@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::consts::{BASE_PACKAGES, NO_CHECK_OPEN_FILE_ENV_VAR_NAME, RECOMMENDED_PACKAGES};
+use crate::events;
 use crate::lockfile::Source;
 use crate::package::PackageType;
 #[cfg(feature = "cli")]
@@ -12,6 +13,7 @@ use crate::r_cmd::kill_all_r_processes;
 use crate::r_cmd::{RCmdError, RCmdErrorKind};
 use crate::sync::changes::{CacheSource, SyncChange};
 use crate::sync::errors::{SyncError, SyncErrorKind, SyncErrors};
+use crate::sync::tasks::{install_task, sync_task};
 use crate::sync::{LinkMode, sources};
 use crate::utils::{get_max_workers, is_env_var_truthy};
 use crate::{
@@ -78,6 +80,30 @@ fn get_all_packages_in_use(path: &Path) -> HashMap<(String, u32), HashSet<String
     out
 }
 
+fn remove_package_path(p: &Path) -> std::io::Result<()> {
+    if fs::symlink_metadata(p)?.file_type().is_symlink() {
+        fs::remove_file(p)
+    } else {
+        fs::remove_dir_all(p)
+    }
+}
+
+fn move_package_into_library(staged: &Path, dest: &Path, backup: &Path) -> std::io::Result<()> {
+    // Use symlink_metadata so an existing symlink dest is detected too:
+    // `Path::is_dir` follows symlinks and would miss a broken one.
+    if fs::symlink_metadata(dest).is_ok() {
+        if fs::symlink_metadata(backup).is_ok() {
+            remove_package_path(backup)?;
+        }
+        fs::rename(dest, backup)?;
+        fs::rename(staged, dest)?;
+        remove_package_path(backup)?;
+    } else {
+        fs::rename(staged, dest)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct SyncHandler<'a> {
     context: &'a Context,
@@ -108,9 +134,11 @@ impl<'a> SyncHandler<'a> {
         self.show_progress_bar = true;
     }
 
+    /// Assigning a value <= 0 is a no-op
     pub fn set_max_workers(&mut self, max_workers: usize) {
-        assert!(self.max_workers > 0);
-        self.max_workers = max_workers;
+        if max_workers > 0 {
+            self.max_workers = max_workers;
+        }
     }
 
     pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
@@ -423,6 +451,14 @@ impl<'a> SyncHandler<'a> {
         deps: &[ResolvedDependency],
         r_cmd: &impl RCmd,
     ) -> Result<Vec<SyncChange>, SyncError> {
+        events::with_task(sync_task(), || self.handle_impl(deps, r_cmd))
+    }
+
+    fn handle_impl(
+        &self,
+        deps: &[ResolvedDependency],
+        r_cmd: &impl RCmd,
+    ) -> Result<Vec<SyncChange>, SyncError> {
         // Clean up at all times, even with a dry run
         let cancellation = Arc::new(Cancellation::default());
 
@@ -624,6 +660,10 @@ impl<'a> SyncHandler<'a> {
                         }
 
                         installing_clone.lock().unwrap().insert(dep.name.clone());
+                        let start = std::time::Instant::now();
+                        events::emit(&events::Event::TaskStarted {
+                            task: install_task(&dep.name),
+                        });
                         if !self.dry_run {
                             if self.show_progress_bar {
                                 pb_clone.set_message(format!(
@@ -648,7 +688,6 @@ impl<'a> SyncHandler<'a> {
                                 }
                             }
                         }
-                        let start = std::time::Instant::now();
                         let install_result = if deps_to_copy_clone.contains(dep.name.as_ref()) {
                             self.copy_package(dep)
                         } else {
@@ -661,21 +700,13 @@ impl<'a> SyncHandler<'a> {
                                 let binary_cached =
                                     !is_binary && dep.cache_status.binary_available();
                                 let cache_source = {
-                                    if is_binary {
+                                    if is_binary || binary_cached {
                                         if dep.cache_status.global_binary_available() {
                                             Some(CacheSource::Global)
                                         } else if dep.cache_status.local_binary_available() {
                                             Some(CacheSource::Local)
                                         } else {
                                             None // Downloaded
-                                        }
-                                    } else if binary_cached {
-                                        if dep.cache_status.global_binary_available() {
-                                            Some(CacheSource::Global)
-                                        } else if dep.cache_status.local_binary_available() {
-                                            Some(CacheSource::Local)
-                                        } else {
-                                            None
                                         }
                                     } else {
                                         // Source package without cached binary
@@ -722,11 +753,21 @@ impl<'a> SyncHandler<'a> {
                                         .expect("no error");
                                     }
                                 }
+                                events::emit(&events::Event::TaskFinished {
+                                    task: install_task(&dep.name),
+                                    result: events::TaskResult::Ok,
+                                    time_ms: start.elapsed().as_millis() as u64,
+                                });
                                 if done_sender.send(sync_change).is_err() {
                                     break; // Channel closed
                                 }
                             }
                             Err(e) => {
+                                events::emit(&events::Event::TaskFinished {
+                                    task: install_task(&dep.name),
+                                    result: events::TaskResult::Failed,
+                                    time_ms: start.elapsed().as_millis() as u64,
+                                });
                                 has_errors_clone.store(true, Ordering::Relaxed);
 
                                 if let SyncErrorKind::RCmdError(RCmdError {
@@ -810,24 +851,38 @@ impl<'a> SyncHandler<'a> {
 
             // Delete the packages that need to be removed from the library
             for (name, notify) in deps_to_remove {
-                if notify {
+                if notify && !staging_path.join(name).is_dir() {
                     let p = self.context.library.path().join(name);
                     log::debug!("Removing {name} from library");
                     fs::remove_dir_all(&p)?;
                 }
             }
 
+            let mut staged = Vec::new();
             for entry in fs::read_dir(&staging_path)? {
                 let entry = entry?;
-                let path = entry.path();
-                let name = path.file_name().unwrap().to_str().unwrap().to_string();
-                if !deps_seen.contains(name.as_str()) {
-                    let out = self.context.library.path().join(&name);
-                    if out.is_dir() {
-                        fs::remove_dir_all(&out)?;
-                    }
-                    fs::rename(&path, &out)?;
+                let ft = entry.file_type()?;
+                if !ft.is_dir() && !ft.is_symlink() {
+                    continue;
                 }
+                let path = entry.path();
+                // not a valid utf-8 name, can be skipped since all packages names should be ascii
+                let Some(name) = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(str::to_string)
+                else {
+                    continue;
+                };
+                if !deps_seen.contains(name.as_str()) {
+                    staged.push((path, name));
+                }
+            }
+
+            for (path, name) in staged {
+                let out = self.context.library.path().join(&name);
+                let backup = staging_path.join(format!(".rvbak-{name}"));
+                move_package_into_library(&path, &out, &backup)?;
             }
 
             // Then delete staging
@@ -843,5 +898,79 @@ impl<'a> SyncHandler<'a> {
         });
 
         Ok(sync_changes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::move_package_into_library;
+    use std::fs;
+    use std::path::Path;
+
+    fn write_pkg(dir: &Path, marker: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("DESCRIPTION"), marker).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn symlink_pkg(link: &Path, target: &Path) {
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+
+    #[test]
+    fn moves_staged_package_into_empty_slot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staged = tmp.path().join("staged");
+        let dest = tmp.path().join("dest");
+        let backup = tmp.path().join("backup");
+        write_pkg(&staged, "new");
+
+        move_package_into_library(&staged, &dest, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
+        assert!(!staged.exists());
+    }
+
+    #[test]
+    fn replaces_existing_package_and_cleans_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staged = tmp.path().join("staged");
+        let dest = tmp.path().join("dest");
+        let backup = tmp.path().join("backup");
+        write_pkg(&staged, "new");
+        write_pkg(&dest, "old");
+        write_pkg(&backup, "stale");
+
+        move_package_into_library(&staged, &dest, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
+        assert!(!staged.exists());
+        assert!(!backup.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replaces_existing_symlink_and_cleans_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old_cache = tmp.path().join("old_cache");
+        let new_cache = tmp.path().join("new_cache");
+        let staged = tmp.path().join("staged");
+        let dest = tmp.path().join("dest");
+        let backup = tmp.path().join("backup");
+        write_pkg(&old_cache, "old");
+        write_pkg(&new_cache, "new");
+        symlink_pkg(&dest, &old_cache);
+        symlink_pkg(&staged, &new_cache);
+
+        move_package_into_library(&staged, &dest, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("DESCRIPTION")).unwrap(), "new");
+        assert!(!staged.exists());
+        assert!(fs::symlink_metadata(&backup).is_err());
+        // Removing the backup must not have followed the symlink into the old cache.
+        assert_eq!(
+            fs::read_to_string(old_cache.join("DESCRIPTION")).unwrap(),
+            "old"
+        );
     }
 }

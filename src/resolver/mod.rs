@@ -240,7 +240,7 @@ impl<'d> Resolver<'d> {
                                 .find_package(
                                     &package.name,
                                     Some(&version_req),
-                                    &self.r_version,
+                                    self.r_version,
                                     false,
                                 )
                                 .is_some_and(|(_, package_type)| {
@@ -500,6 +500,15 @@ impl<'d> Resolver<'d> {
             .map(|d| d.name())
             .collect();
 
+        // The `install_suggestions` flag needs to apply to the package coming from any sources.
+        // If we don't do that, we might miss some suggested packages because a version constraint
+        // made it come from somewhere else
+        let config_suggests: HashSet<&str> = dependencies
+            .iter()
+            .filter(|d| d.install_suggestions())
+            .map(|d| d.name())
+            .collect();
+
         let mut queue: VecDeque<_> = dependencies
             .iter()
             .map(|d| QueueItem {
@@ -518,7 +527,7 @@ impl<'d> Resolver<'d> {
             })
             .collect();
 
-        while let Some(item) = queue.pop_front() {
+        while let Some(mut item) = queue.pop_front() {
             if let Some(ver_reqs) = processed.get(item.name.as_ref()) {
                 // If we have already found that dependency and it has a forced repo, skip it
                 if repo_required.contains(item.name.as_ref()) {
@@ -529,6 +538,10 @@ impl<'d> Resolver<'d> {
                 if ver_reqs.contains(&item.version_requirement) {
                     continue;
                 }
+            }
+
+            if config_suggests.contains(item.name.as_ref()) {
+                item.install_suggestions = true;
             }
 
             // If we have a local path, we don't need to check anything at all, just the actual path
@@ -735,7 +748,10 @@ impl<'d> Resolver<'d> {
             }
         }
 
-        result.finalize();
+        // We might get in a situation where something has been resolved but is not actually needed anymore
+        // because the package it was coming from has been replaced by a different version in the resolution.
+        let roots: HashSet<_> = dependencies.iter().map(|d| d.name()).collect();
+        result.finalize(&roots);
         result
     }
 }

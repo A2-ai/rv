@@ -8,6 +8,7 @@ mod configure;
 pub mod consts;
 mod context;
 mod dependency_edit;
+pub mod events;
 mod format;
 mod fs;
 mod git;
@@ -37,14 +38,19 @@ pub use configure::{
     RepositoryPositioning, RepositoryUpdates, execute_repository_action,
 };
 pub use context::{Context, RCommandLookup, ResolveMode};
-pub use dependency_edit::{AddOptions, add_packages, read_and_verify_config, remove_packages};
+pub use dependency_edit::{
+    AddOptions, ResolvedGitRef, add_packages, parse_add_package_spec, read_and_verify_config,
+    remove_packages, resolve_add_options_reference_with_executor,
+};
 pub use format::format_document;
 pub use fs::is_network_fs;
 pub use git::{CommandExecutor, GitExecutor, GitReference, GitRemote, GitRepository};
 pub use http::{Http, HttpDownload, HttpError};
 pub use library::Library;
 pub use lockfile::{LockedPackage, Lockfile, Source};
-pub use package::{Dependency, Operator, Package, Version, VersionRequirement, is_binary_package};
+pub use package::{
+    Dependency, FetchPackage, Operator, Package, Version, VersionRequirement, is_binary_package,
+};
 pub use project_summary::ProjectSummary;
 pub use r_cmd::RCmd;
 pub use r_finder::RInstall;

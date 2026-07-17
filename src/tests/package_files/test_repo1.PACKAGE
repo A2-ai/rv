@@ -4,6 +4,9 @@ Imports: R6
 License: MIT + file LICENSE
 MD5sum: b7f25d09ecab0c56f94f1238ddd604e6
 
+Package: R6
+Version: 2.5.1
+
 Package: rv.git.pkgA
 Version: 0.0.5
 License: MIT + file LICENSE
@@ -29,3 +32,16 @@ Version: 6.0.0
 
 Package: test.force_source
 Version: 1.0.0
+
+Package: suggestsA
+Version: 1.0.0
+Suggests: suggestsB
+
+Package: suggestsB
+Version: 1.0.0
+Depends: suggestsA (>= 2.0.0)
+Suggests: suggestsC, survival
+
+Package: suggestsC
+Version: 1.0.0
+Depends: suggestsB (>= 2.0.0)

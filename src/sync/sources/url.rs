@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use fs_err as fs;
 
+use crate::events;
 use crate::library::LocalMetadata;
 use crate::package::PackageType;
 use crate::sync::LinkMode;
@@ -41,16 +42,18 @@ pub(crate) fn install_package(
             "Building the package from URL in {}",
             download_path.display()
         );
-        let output = r_cmd.install(
-            &download_path,
-            Option::<&Path>::None,
-            library_dirs,
-            &pkg_paths.binary,
-            cancellation,
-            &pkg.env_vars,
-            configure_args,
-            strip,
-        )?;
+        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+            r_cmd.install(
+                &download_path,
+                Option::<&Path>::None,
+                library_dirs,
+                &pkg_paths.binary,
+                cancellation,
+                &pkg.env_vars,
+                configure_args,
+                strip,
+            )
+        })?;
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {

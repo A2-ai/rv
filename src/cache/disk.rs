@@ -15,7 +15,7 @@ use crate::cache::utils::{
 use crate::consts::{BUILD_LOG_FILENAME, BUILT_FROM_SOURCE_FILENAME};
 use crate::lockfile::Source;
 use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library};
-use crate::system_req::get_system_requirements;
+use crate::system_req::{SysReqError, get_system_requirements};
 use crate::{RInstall, SystemInfo, Version};
 
 #[derive(Debug, Clone)]
@@ -289,21 +289,23 @@ impl DiskCache {
         }
     }
 
-    pub(super) fn get_system_requirements(&self) -> HashMap<String, Vec<String>> {
+    pub(super) fn get_system_requirements(
+        &self,
+    ) -> Result<HashMap<String, Vec<String>>, SysReqError> {
         let (distrib, version) = self.system_info.sysreq_data();
         let key = format!("sysreq-{distrib}-{version}.json",);
         let path = self.root.join(&key);
         // TODO: Handle expiration, what would be a reasonable time?
         if path.exists() {
-            let content = fs::read_to_string(&path).expect("to work");
-            serde_json::from_str(&content).unwrap()
+            let content = fs::read_to_string(&path)?;
+            Ok(serde_json::from_str(&content)?)
         } else if self.readonly {
-            HashMap::new()
+            Ok(HashMap::new())
         } else {
-            let sysreq = get_system_requirements(&self.system_info);
-            let content = serde_json::to_string(&sysreq).unwrap();
-            fs::write(&path, content).expect("to work");
-            sysreq
+            let sysreq = get_system_requirements(&self.system_info)?;
+            let content = serde_json::to_string(&sysreq)?;
+            fs::write(&path, content)?;
+            Ok(sysreq)
         }
     }
 }

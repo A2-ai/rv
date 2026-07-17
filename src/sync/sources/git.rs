@@ -5,6 +5,7 @@ use std::sync::Arc;
 use fs_err as fs;
 
 use crate::cache::Cache;
+use crate::events;
 use crate::git::{GitReference, GitRemote};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
@@ -32,11 +33,13 @@ pub(crate) fn install_package(
         // TODO: this won't work if multiple projects are trying to checkout different refs
         // on the same user at the same time
         let remote = GitRemote::new(repo_url);
-        remote.checkout(
-            &local_paths.source,
-            &GitReference::Commit(sha),
-            git_exec.clone(),
-        )?;
+        events::with_task(crate::sync::tasks::clone_task(&pkg.name), || {
+            remote.checkout(
+                &local_paths.source,
+                &GitReference::Commit(sha),
+                git_exec.clone(),
+            )
+        })?;
         // If we have a directory, don't forget to set it before building it
         let (source_path, sub_dir) = match &pkg.source {
             Source::Git {
@@ -50,16 +53,18 @@ pub(crate) fn install_package(
             _ => (local_paths.source, None),
         };
 
-        let output = r_cmd.install(
-            &source_path,
-            sub_dir,
-            library_dirs,
-            &local_paths.binary,
-            cancellation,
-            &pkg.env_vars,
-            configure_args,
-            strip,
-        )?;
+        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+            r_cmd.install(
+                &source_path,
+                sub_dir,
+                library_dirs,
+                &local_paths.binary,
+                cancellation,
+                &pkg.env_vars,
+                configure_args,
+                strip,
+            )
+        })?;
 
         let log_path = cache.local().get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {

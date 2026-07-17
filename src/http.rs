@@ -15,6 +15,21 @@ use crate::utils::is_env_var_truthy;
 
 static INSECURE_WARNING: Once = Once::new();
 
+const MAX_DOWNLOAD_ATTEMPTS: u32 = 3;
+const RETRY_BASE_DELAY: Duration = Duration::from_millis(250);
+
+fn is_retryable(error: &ureq::Error) -> bool {
+    match error {
+        ureq::Error::StatusCode(code) => *code >= 500,
+        ureq::Error::Timeout(_) | ureq::Error::Io(_) | ureq::Error::ConnectionFailed => true,
+        _ => false,
+    }
+}
+
+fn retry_backoff(attempt: u32) -> Duration {
+    RETRY_BASE_DELAY * 2u32.pow(attempt - 1)
+}
+
 pub(crate) fn build_agent(insecure: bool) -> Agent {
     let mut tls_builder = TlsConfig::builder().root_certs(RootCerts::PlatformVerifier);
     if insecure {
@@ -46,45 +61,60 @@ pub fn download<W: Write>(
 ) -> Result<u64, HttpError> {
     let agent = get_agent();
 
-    let mut request_builder = agent.get(url.as_str());
-
-    {
-        let req_headers = request_builder.headers_mut().unwrap();
-        for (key, val) in headers {
-            req_headers.insert(
-                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                HeaderValue::from_str(val.as_str()).expect("Invalid header value"),
-            );
-        }
-    }
     log::trace!("Starting download of file from {url}");
     let start_time = Instant::now();
 
-    match request_builder.call() {
-        Ok(mut res) => {
-            let mut reader = BufReader::new(res.body_mut().with_config().reader());
-            let out = std::io::copy(&mut reader, writer).map_err(|e| HttpError {
-                url: url.to_string(),
-                source: HttpErrorKind::Io(e),
-            });
-            log::debug!(
-                "Downloaded from {url} in {}ms",
-                start_time.elapsed().as_millis()
-            );
-            out
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+
+        let mut request_builder = agent.get(url.as_str());
+        {
+            let req_headers = request_builder.headers_mut().unwrap();
+            for (key, val) in &headers {
+                req_headers.insert(
+                    HeaderName::from_bytes(key.as_bytes()).unwrap(),
+                    HeaderValue::from_str(val.as_str()).expect("Invalid header value"),
+                );
+            }
         }
-        Err(e) => {
-            match e {
-                // if the server returns an actual status code, we can get the response
-                // to the later matcher
-                ureq::Error::StatusCode(code) => Err(HttpError {
+
+        match request_builder.call() {
+            Ok(mut res) => {
+                let mut reader = BufReader::new(res.body_mut().with_config().reader());
+                let out = std::io::copy(&mut reader, writer).map_err(|e| HttpError {
                     url: url.to_string(),
-                    source: HttpErrorKind::Http(code),
-                }),
-                _ => Err(HttpError {
-                    url: url.to_string(),
-                    source: HttpErrorKind::Ureq(Box::new(e)),
-                }),
+                    source: HttpErrorKind::Io(e),
+                });
+                log::debug!(
+                    "Downloaded from {url} in {}ms",
+                    start_time.elapsed().as_millis()
+                );
+                return out;
+            }
+            Err(e) => {
+                if attempt < MAX_DOWNLOAD_ATTEMPTS && is_retryable(&e) {
+                    let backoff = retry_backoff(attempt);
+                    log::warn!(
+                        "Download of {url} failed (attempt {attempt}/{MAX_DOWNLOAD_ATTEMPTS}): {e}. Retrying in {}ms",
+                        backoff.as_millis()
+                    );
+                    std::thread::sleep(backoff);
+                    continue;
+                }
+
+                return Err(match e {
+                    // if the server returns an actual status code, we can get the response
+                    // to the later matcher
+                    ureq::Error::StatusCode(code) => HttpError {
+                        url: url.to_string(),
+                        source: HttpErrorKind::Http(code),
+                    },
+                    _ => HttpError {
+                        url: url.to_string(),
+                        source: HttpErrorKind::Ureq(Box::new(e)),
+                    },
+                });
             }
         }
     }
@@ -353,5 +383,72 @@ mod tests {
         assert!(result.is_ok());
         mock_endpoint.assert();
         assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
+    }
+
+    #[test]
+    fn retries_then_succeeds_after_transient_5xx() {
+        let mut server = mockito::Server::new();
+        let mock_url = server.url();
+        // First request gets a transient 503; the retry hits the 200 below.
+        // mockito serves the first non-exhausted matching mock, so order matters.
+        let failing = server
+            .mock("GET", "/file.txt")
+            .with_status(503)
+            .expect(1)
+            .create();
+        let succeeding = server
+            .mock("GET", "/file.txt")
+            .with_status(200)
+            .with_body("Mock file content")
+            .expect(1)
+            .create();
+
+        let url = format!("{mock_url}/file.txt");
+        let mut writer = std::io::Cursor::new(Vec::new());
+
+        let result = super::download(&Url::parse(&url).unwrap(), &mut writer, Vec::new());
+        assert!(result.is_ok());
+        failing.assert();
+        succeeding.assert();
+        assert_eq!(writer.into_inner(), b"Mock file content".to_vec());
+    }
+
+    #[test]
+    fn retries_on_5xx_up_to_max_attempts() {
+        let mut server = mockito::Server::new();
+        let mock_url = server.url();
+        // A persistent 503 should be retried MAX_DOWNLOAD_ATTEMPTS times before failing.
+        let mock_endpoint = server
+            .mock("GET", "/file.txt")
+            .with_status(503)
+            .expect(super::MAX_DOWNLOAD_ATTEMPTS as usize)
+            .create();
+
+        let url = format!("{mock_url}/file.txt");
+        let mut writer = std::io::Cursor::new(Vec::new());
+
+        let result = super::download(&Url::parse(&url).unwrap(), &mut writer, Vec::new());
+        assert!(result.is_err());
+        mock_endpoint.assert();
+    }
+
+    #[test]
+    fn does_not_retry_on_4xx() {
+        let mut server = mockito::Server::new();
+        let mock_url = server.url();
+        // A 404 is permanent: it must be tried exactly once.
+        let mock_endpoint = server
+            .mock("GET", "/file.txt")
+            .with_status(404)
+            .expect(1)
+            .create();
+
+        let url = format!("{mock_url}/file.txt");
+        let mut writer = std::io::Cursor::new(Vec::new());
+
+        let result = super::download(&Url::parse(&url).unwrap(), &mut writer, Vec::new());
+        let err = result.unwrap_err();
+        assert!(err.is_not_found());
+        mock_endpoint.assert();
     }
 }

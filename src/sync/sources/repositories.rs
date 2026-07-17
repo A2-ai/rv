@@ -8,6 +8,7 @@ use url::Url;
 
 use crate::cache::{Cache, InstallationStatus};
 use crate::consts::BUILT_FROM_SOURCE_FILENAME;
+use crate::events;
 use crate::http::Http;
 use crate::package::PackageType;
 use crate::repository_urls::TarballUrls;
@@ -33,16 +34,18 @@ pub(crate) fn install_package(
     let compile_package = || -> Result<(), SyncError> {
         let source_path = local_paths.source.join(pkg.name.as_ref());
         log::debug!("Compiling package from {}", source_path.display());
-        match r_cmd.install(
-            &source_path,
-            Option::<&Path>::None,
-            library_dirs,
-            &local_paths.binary,
-            cancellation.clone(),
-            &pkg.env_vars,
-            configure_args,
-            strip,
-        ) {
+        match events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+            r_cmd.install(
+                &source_path,
+                Option::<&Path>::None,
+                library_dirs,
+                &local_paths.binary,
+                cancellation.clone(),
+                &pkg.env_vars,
+                configure_args,
+                strip,
+            )
+        }) {
             Ok(output) => {
                 // not using the path for the cache
                 let log_path = cache.local().get_build_log_path(
@@ -134,7 +137,7 @@ fn download_package(
     if let Some(binary_url) = &urls.binary
         && pkg_type == &PackageType::Binary
     {
-        if let Ok(pkg_type) = try_download_package(http, binary_url, &local_paths, pkg_name, true) {
+        if let Ok(pkg_type) = try_download_package(http, binary_url, local_paths, pkg_name, true) {
             return Ok(pkg_type);
         } else {
             log::warn!(
@@ -154,7 +157,7 @@ fn download_package(
         && from_lockfile
     {
         if let Ok(pkg_type) =
-            try_download_package(http, binary_archive_url, &local_paths, pkg_name, true)
+            try_download_package(http, binary_archive_url, local_paths, pkg_name, true)
         {
             return Ok(pkg_type);
         } else {
@@ -165,7 +168,7 @@ fn download_package(
     }
 
     // 3. Download Source
-    if let Ok(pkg_type) = try_download_package(http, &urls.source, &local_paths, pkg_name, false) {
+    if let Ok(pkg_type) = try_download_package(http, &urls.source, local_paths, pkg_name, false) {
         return Ok(pkg_type);
     } else {
         log::warn!(
@@ -175,7 +178,7 @@ fn download_package(
     }
 
     // 4. Download source from archive
-    try_download_package(http, &urls.source_archive, &local_paths, pkg_name, false)
+    try_download_package(http, &urls.source_archive, local_paths, pkg_name, false)
 }
 
 fn try_download_package(

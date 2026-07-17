@@ -46,7 +46,7 @@ impl<'d> Resolution<'d> {
         }
     }
 
-    pub fn finalize(&mut self) {
+    pub fn finalize(&mut self, roots: &HashSet<&str>) {
         // First we go through the failed dependencies to see if something that would match was found
         // (for example it can happen if someone puts a dep in a git package and specify that dep
         // directly in rproject.toml instead of remotes)
@@ -118,7 +118,27 @@ impl<'d> Resolution<'d> {
                     let keep = indices.contains(&current_idx);
                     current_idx += 1;
                     keep
-                })
+                });
+
+                // Some GC. We remove anything we can't reach from the roots + their suggests
+                let mut reachable: HashSet<String> = HashSet::new();
+                let mut stack: Vec<String> = roots.iter().map(|s| s.to_string()).collect();
+                while let Some(name) = stack.pop() {
+                    if !reachable.insert(name.clone()) {
+                        continue;
+                    }
+                    if let Some(pkg) = self.found.iter().find(|p| p.name.as_ref() == name) {
+                        for d in &pkg.dependencies {
+                            stack.push(d.name().to_string());
+                        }
+                        if pkg.install_suggests {
+                            for s in &pkg.suggests {
+                                stack.push(s.name().to_string());
+                            }
+                        }
+                    }
+                }
+                self.found.retain(|p| reachable.contains(p.name.as_ref()));
             }
             Err(req_errors) => {
                 let mut out = HashMap::new();
@@ -137,6 +157,20 @@ impl<'d> Resolution<'d> {
 
     pub fn is_success(&self) -> bool {
         self.failed.is_empty() && self.req_failures.is_empty()
+    }
+
+    /// Print all resolution errors to stderr
+    pub fn print_failures(&self) {
+        eprintln!("Failed to resolve all dependencies");
+
+        for d in &self.failed {
+            eprintln!("    {d}");
+        }
+
+        let req_error_messages = self.req_error_messages();
+        if !req_error_messages.is_empty() {
+            eprintln!("{}", req_error_messages.join("\n"));
+        }
     }
 
     pub fn req_error_messages(&self) -> Vec<String> {

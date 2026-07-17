@@ -12,3 +12,12 @@ MD5sum: ad2ae403ef70f3d622e4f7a6d51a3f2b
 Package: test.suggests
 Version: 1.0.0
 Suggests: rv.git.pkgA (>= 0.0.5)
+
+Package: suggestsA
+Version: 2.0.0
+Suggests: suggestsB, survival
+
+Package: suggestsB
+Version: 2.0.0
+Depends: suggestsA (>= 2.0.0)
+Suggests: dummy, survival

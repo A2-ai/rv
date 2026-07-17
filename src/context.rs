@@ -10,6 +10,7 @@ use url::Url;
 
 use crate::cache::Cache;
 use crate::consts::{RUNIVERSE_PACKAGES_API_PATH, STAGING_DIR_NAME};
+use crate::events;
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::r_finder::find_r_install;
@@ -86,7 +87,10 @@ impl Context {
         r_command_lookup: RCommandLookup,
         cache_dir: Option<&Path>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let config = Config::from_file(config_file)?;
+        let mut config = Config::from_file(config_file)?;
+        if let Ok(p) = std::env::var(crate::consts::LIBRARY_DIR_ENV_VAR_NAME) {
+            config.set_library(&p);
+        }
 
         // This can only be set to false if the user passed a r_version to rv plan
         let mut r_version_found = true;
@@ -137,9 +141,7 @@ impl Context {
             None
         };
 
-        let mut library = if let Ok(p) = std::env::var(crate::consts::LIBRARY_DIR_ENV_VAR_NAME) {
-            Library::new_custom(&project_dir, PathBuf::from(p))
-        } else if let Some(p) = config.library() {
+        let mut library = if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
         } else {
             Library::new(&project_dir, cache.system_info(), r_version.major_minor())
@@ -191,7 +193,12 @@ impl Context {
             return;
         }
         let pb = create_spinner(self.show_progress_bar, "Loading system requirements...");
-        self.system_dependencies = self.cache.get_system_requirements();
+        match self.cache.get_system_requirements() {
+            Ok(deps) => self.system_dependencies = deps,
+            Err(e) => log::warn!(
+                "Failed to load system requirements; skipping system dependency detection: {e}"
+            ),
+        }
         pb.finish_and_clear();
     }
 
@@ -275,7 +282,8 @@ pub fn load_databases(
 
     let results: Vec<Result<_, Box<dyn Error + Send + Sync>>> = iter
         .map(|r| {
-            let db = load_single_database(r, cache)?;
+            let task = events::Task::new(format!("db:{}", r.alias), r.alias.clone());
+            let db = events::with_task(task, || load_single_database(r, cache))?;
             Ok((db, r.force_source))
         })
         .collect();
@@ -350,23 +358,30 @@ fn load_single_database(
         if bytes_read == 0 {
             return Err(format!("File at {source_url} was not found").into());
         }
-        // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-        db.parse_source(unsafe { std::str::from_utf8_unchecked(&source_package) });
+        let source_str = std::str::from_utf8(&source_package)
+            .map_err(|e| format!("PACKAGES file at {source_url} is not valid UTF-8: {e}"))?;
+        db.parse_source(source_str);
 
         let mut binary_package = Vec::new();
         // we do not know for certain that the Some return of get_binary_path will be a valid url,
         // but we do know that if it returns None there is not a binary PACKAGES file
         if let Some(url) = binary_url {
             log::debug!("checking for binary packages URL: {url}");
-            let bytes_read = http::download(&url, &mut binary_package, vec![]).unwrap_or(0);
-            // but sometimes we might not have a binary PACKAGES file and that's fine.
-            // We only load binary if we found a file
-            if bytes_read > 0 {
-                // UNSAFE: we trust the PACKAGES data to be valid UTF-8
-                db.parse_binary(
-                    unsafe { std::str::from_utf8_unchecked(&binary_package) },
-                    cache.r_version,
-                );
+            match http::download(&url, &mut binary_package, vec![]) {
+                Ok(bytes_read) => {
+                    // but sometimes we might not have a binary PACKAGES file and that's fine.
+                    // We only load binary if we found a file
+                    if bytes_read > 0 {
+                        let binary_str = std::str::from_utf8(&binary_package).map_err(|e| {
+                            format!("binary PACKAGES file at {url} is not valid UTF-8: {e}")
+                        })?;
+                        db.parse_binary(binary_str, cache.r_version);
+                    }
+                }
+                Err(e) if e.is_not_found() => {
+                    log::debug!("No binary PACKAGES file at {url} (404)");
+                }
+                Err(e) => return Err(e.into()),
             }
         } else {
             log::debug!("No binary URL.")

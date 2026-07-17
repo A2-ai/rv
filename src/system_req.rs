@@ -93,10 +93,58 @@ pub fn is_supported(system_info: &SystemInfo) -> bool {
     }
 }
 
+/// Errors that can happen while fetching or caching system requirements.
+#[derive(Debug, thiserror::Error)]
+pub enum SysReqError {
+    #[error("Invalid system requirements URL `{url}` (check {SYS_REQ_URL_ENV_VAR_NAME})")]
+    InvalidUrl {
+        url: String,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("Failed to fetch system requirements from `{url}`")]
+    Request {
+        url: String,
+        #[source]
+        source: Box<ureq::Error>,
+    },
+    #[error("Failed to parse the system requirements response from `{url}`")]
+    InvalidResponse {
+        url: String,
+        #[source]
+        source: Box<ureq::Error>,
+    },
+    #[error("Failed to read or write the system requirements cache")]
+    Cache(#[from] std::io::Error),
+    #[error("Failed to (de)serialize the cached system requirements")]
+    CacheParse(#[from] serde_json::Error),
+}
+
+/// Validates the `RV_SYS_REQ_URL` environment variable (when set) is a valid URL
+pub fn validate_sysreq_url() -> Result<(), SysReqError> {
+    if std::env::var(SYS_REQ_URL_ENV_VAR_NAME).is_ok() {
+        let url = get_sysreq_url();
+        Url::parse(&url).map_err(|source| SysReqError::InvalidUrl { url, source })?;
+    }
+    Ok(())
+}
+
 /// This should only be run on Linux
-pub fn get_system_requirements(system_info: &SystemInfo) -> HashMap<String, Vec<String>> {
+pub fn get_system_requirements(
+    system_info: &SystemInfo,
+) -> Result<HashMap<String, Vec<String>>, SysReqError> {
+    fetch_system_requirements(&get_sysreq_url(), system_info)
+}
+
+fn fetch_system_requirements(
+    base_url: &str,
+    system_info: &SystemInfo,
+) -> Result<HashMap<String, Vec<String>>, SysReqError> {
     let agent = http::get_agent();
-    let mut url = Url::parse(&get_sysreq_url()).unwrap();
+    let mut url = Url::parse(base_url).map_err(|source| SysReqError::InvalidUrl {
+        url: base_url.to_string(),
+        source,
+    })?;
 
     {
         let mut pairs = url.query_pairs_mut();
@@ -112,17 +160,23 @@ pub fn get_system_requirements(system_info: &SystemInfo) -> HashMap<String, Vec<
         .get(url.as_str())
         .header("Accept", "application/json")
         .call()
-        .unwrap()
+        .map_err(|source| SysReqError::Request {
+            url: url.to_string(),
+            source: Box::new(source),
+        })?
         .body_mut()
         .read_json::<Response>()
-        .unwrap();
+        .map_err(|source| SysReqError::InvalidResponse {
+            url: url.to_string(),
+            source: Box::new(source),
+        })?;
 
     let mut out = HashMap::new();
     for package in response.requirements {
         out.insert(package.name, package.requirements.packages);
     }
 
-    out
+    Ok(out)
 }
 
 /// Extract package name from rpm query output
@@ -264,6 +318,81 @@ mod test {
     fn test_ubuntu_20_04() {
         let content = fs::read_to_string("src/tests/sys_reqs/ubuntu_20.04.json").unwrap();
         assert!(serde_json::from_str::<Response>(&content).is_ok());
+    }
+
+    fn linux_system_info() -> SystemInfo {
+        SystemInfo::new(
+            OsType::Linux("ubuntu"),
+            Some("x86_64".to_string()),
+            None,
+            "22.04",
+        )
+    }
+
+    #[test]
+    fn fetch_returns_parsed_requirements() {
+        let mut server = mockito::Server::new();
+        let body = r#"{"requirements":[{"name":"libcurl","requirements":{"packages":["libcurl4-openssl-dev","libssl-dev"]}}]}"#;
+        let mock = server
+            .mock("GET", "/sysreqs")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("Content-Type", "application/json")
+            .with_body(body)
+            .create();
+
+        let base_url = format!("{}/sysreqs", server.url());
+        let result = fetch_system_requirements(&base_url, &linux_system_info());
+        mock.assert();
+
+        let map = result.expect("valid JSON should parse");
+        assert_eq!(
+            map.get("libcurl"),
+            Some(&vec![
+                "libcurl4-openssl-dev".to_string(),
+                "libssl-dev".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn fetch_non_json_returns_error_not_panic() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/sysreqs")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("Content-Type", "text/html")
+            .with_body("<html>not json</html>")
+            .create();
+
+        let base_url = format!("{}/sysreqs", server.url());
+        let result = fetch_system_requirements(&base_url, &linux_system_info());
+        mock.assert();
+
+        assert!(matches!(result, Err(SysReqError::InvalidResponse { .. })));
+    }
+
+    #[test]
+    fn fetch_server_error_returns_error_not_panic() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/sysreqs")
+            .match_query(mockito::Matcher::Any)
+            .with_status(500)
+            .create();
+
+        let base_url = format!("{}/sysreqs", server.url());
+        let result = fetch_system_requirements(&base_url, &linux_system_info());
+        mock.assert();
+
+        assert!(matches!(result, Err(SysReqError::Request { .. })));
+    }
+
+    #[test]
+    fn fetch_invalid_url_returns_error_not_panic() {
+        let result = fetch_system_requirements("not a valid url", &linux_system_info());
+        assert!(matches!(result, Err(SysReqError::InvalidUrl { .. })));
     }
 
     #[test]

@@ -300,18 +300,14 @@ impl RCmd for RInstall {
         // Add configure args (Unix only - Windows R CMD INSTALL doesn't support --configure-args)
         // configure-args are unix only and should be a single string per:
         // https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Configure-example-1
-        #[cfg(unix)]
-        if !configure_args.is_empty() {
-            #[cfg(unix)]
-            if !configure_args.is_empty() {
-                let combined_args = configure_args.join(" ");
-                log::debug!(
-                    "Adding configure args for {}: {}",
-                    source_folder.as_ref().display(),
-                    combined_args
-                );
-                command.arg(format!("--configure-args='{}'", combined_args));
-            }
+        if cfg!(unix) && !configure_args.is_empty() {
+            let combined_args = configure_args.join(" ");
+            log::debug!(
+                "Adding configure args for {}: {}",
+                source_folder.as_ref().display(),
+                combined_args
+            );
+            command.arg(format!("--configure-args='{}'", combined_args));
         }
         command
             .arg(&src_backup_dir)
@@ -343,17 +339,15 @@ impl RCmd for RInstall {
             cancellation,
             RCmdErrorKind::InstallationFailed,
         )
-        .map_err(|e| {
+        .inspect_err(|_| {
             // Clean up destination on failure
-            if destination.is_dir() {
-                if let Err(rm_err) = fs::remove_dir_all(destination) {
+            if destination.is_dir()
+                && let Err(rm_err) = fs::remove_dir_all(destination) {
                     log::error!(
                         "Failed to remove directory `{}` after R CMD INSTALL failed: {rm_err}. Delete this folder manually",
                         destination.display()
                     );
                 }
-            }
-            e
         })?;
 
         // Copy the build tmp dir to the actual destination
