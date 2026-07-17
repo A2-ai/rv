@@ -1,3 +1,13 @@
+## v0.22.2 - July 15, 2026
+
+This release makes reading the R-Universe API more resilient and fixes dependency lookup during package installation.
+
+### 🐛 Bug Fixes
+- **Set `R_LIBS` during install**: `R CMD INSTALL` and `R CMD build` now set `R_LIBS` in addition to `R_LIBS_SITE` and `R_LIBS_USER`, so packages reliably find their dependencies in the project library while being installed.
+- **Resilient R-Universe API parsing**: Fields such as `MD5sum`, `License`, and `NeedsCompilation` are now optional when reading the R-Universe API.
+
+---
+
 ## v0.22.1 - June 30, 2026
 
 This patch release fixes package installation when using symlink mode.

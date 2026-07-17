@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn test_source_url() {
         let source_url = get_source_path(&PPM_URL, &TEST_FILE_NAME);
-        let ref_url = format!("{}/src/contrib/{}", &PPM_URL.as_str(), TEST_FILE_NAME[0]);
+        let ref_url = format!("{}/src/contrib/{}", PPM_URL.as_str(), TEST_FILE_NAME[0]);
         assert_eq!(source_url.as_str(), ref_url);
     }
     #[test]
