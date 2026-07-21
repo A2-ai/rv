@@ -421,10 +421,35 @@ impl<'d> Resolver<'d> {
         cache: &'d Cache,
         http_downloader: &'d impl HttpDownload,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
-        let out_path = cache.local().get_url_download_path(url);
-        let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
+        // If we have a lockfile entry for this URL package, try to use its SHA to find a
+        // cached source before downloading. The SHA is the content hash, so a cached source
+        // with that SHA is reproducible.
+        let lockfile_sha = self
+            .lockfile
+            .and_then(|l| l.get_package(&item.name, item.dep))
+            .and_then(|p| match &p.source {
+                Source::Url { sha, .. } => Some(sha.clone()),
+                _ => None,
+            });
 
-        let install_path = dir.unwrap_or_else(|| out_path.clone());
+        let out_path = cache.local().get_url_download_path(url);
+        let (install_path, sha) = if let Some(sha) = lockfile_sha {
+            if let Some(cached_source) = cache.get_url_source_path(url, &sha)? {
+                log::debug!(
+                    "Using cached URL source for {} from {}",
+                    item.name,
+                    cached_source.display()
+                );
+                (cached_source, sha)
+            } else {
+                let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
+                (dir.unwrap_or_else(|| out_path.clone()), sha)
+            }
+        } else {
+            let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
+            (dir.unwrap_or_else(|| out_path.clone()), sha)
+        };
+
         let package = parse_description_file_in_folder(&install_path)?;
         if item.name != package.name {
             return Err(format!(
@@ -768,6 +793,7 @@ mod tests {
     use serde::Deserialize;
     use tempfile::TempDir;
 
+    use crate::DiskCache;
     use crate::SystemInfo;
     use crate::config::Config;
     use crate::consts::{BASE_PACKAGES, DESCRIPTION_FILENAME};
@@ -1012,5 +1038,134 @@ mod tests {
             // Output has been compared with pkgr for the same PACKAGE file
             insta::assert_snapshot!(p.file_name().unwrap().to_string_lossy().to_string(), out);
         }
+    }
+
+    struct TrackedHttp {
+        called: std::sync::atomic::AtomicBool,
+    }
+
+    impl HttpDownload for TrackedHttp {
+        fn download<W: Write>(
+            &self,
+            _: &Url,
+            _: &mut W,
+            _: Vec<(&str, String)>,
+        ) -> Result<u64, HttpError> {
+            Ok(0)
+        }
+
+        fn download_and_untar(
+            &self,
+            _: &Url,
+            _: impl AsRef<Path>,
+            _: bool,
+            _: Option<&Path>,
+        ) -> Result<(Option<PathBuf>, String), HttpError> {
+            self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok((None, "SOME_SHA".to_string()))
+        }
+    }
+
+    #[test]
+    fn url_source_from_global_cache_avoids_download() {
+        let url = "https://example.com/dplyr_1.1.3.tar.gz";
+        let sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let _url_parsed = Url::parse(url).unwrap();
+
+        let local_dir = tempfile::tempdir().unwrap();
+        let global_dir = tempfile::tempdir().unwrap();
+        let local_cache = DiskCache::new_in_dir(
+            &Version::from_str("4.5.0").unwrap(),
+            SystemInfo::from_os_info(),
+            local_dir.path(),
+        )
+        .unwrap();
+        let global_cache = DiskCache::new_in_dir(
+            &Version::from_str("4.5.0").unwrap(),
+            SystemInfo::from_os_info(),
+            global_dir.path(),
+        )
+        .unwrap();
+        let cache = Cache::with_global_cache(local_cache, global_cache);
+
+        // Seed the global cache with the URL source
+        let global_source = global_dir
+            .path()
+            .join("urls")
+            .join(crate::cache::utils::hash_string(url))
+            .join(&sha[..10])
+            .join("dplyr");
+        fs::create_dir_all(&global_source).unwrap();
+        fs::write(
+            global_source.join(DESCRIPTION_FILENAME),
+            "Package: dplyr\nVersion: 1.1.3\n",
+        )
+        .unwrap();
+
+        let local_source = local_dir
+            .path()
+            .join("urls")
+            .join(crate::cache::utils::hash_string(url))
+            .join(&sha[..10])
+            .join("dplyr");
+
+        let config = Config::from_str(&format!(
+            r#"[project]
+name = "test"
+r_version = "4.5"
+repositories = []
+dependencies = [
+    {{ name = "dplyr", url = "{url}" }}
+]
+"#
+        ))
+        .unwrap();
+
+        let lockfile = Lockfile::from_str(&format!(
+            r#"version = 2
+r_version = "4.5"
+[[packages]]
+name = "dplyr"
+version = "1.1.3"
+source = {{ url = "{url}", sha = "{sha}" }}
+force_source = false
+dependencies = []
+"#
+        ))
+        .unwrap();
+
+        let r_version = Version::from_str("4.5.0").unwrap();
+        let builtin_packages = HashMap::new();
+        let resolver = Resolver::new(
+            Path::new("."),
+            &[],
+            HashSet::new(),
+            &r_version,
+            &builtin_packages,
+            Some(&lockfile),
+            config.packages_env_vars(),
+        );
+
+        let http = TrackedHttp {
+            called: std::sync::atomic::AtomicBool::new(false),
+        };
+        let _resolution = resolver.resolve(
+            config.dependencies(),
+            config.prefer_repositories_for(),
+            &cache,
+            &FakeGit {},
+            &http,
+        );
+
+        assert!(
+            !http.called.load(std::sync::atomic::Ordering::SeqCst),
+            "download_and_untar should not be called when the URL source is in the cache"
+        );
+
+        // The source should have been copied from the global cache into the local cache
+        assert!(
+            local_source.is_dir(),
+            "URL source should have been copied from global cache to local cache"
+        );
     }
 }

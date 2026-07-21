@@ -373,7 +373,7 @@ impl<'a> SyncHandler<'a> {
             Source::Url { .. } => sources::url::install_package(
                 dep,
                 &library_dirs,
-                self.context.cache.local(),
+                &self.context.cache,
                 r_cmd,
                 &configure_args,
                 strip,
