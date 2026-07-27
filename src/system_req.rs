@@ -179,25 +179,6 @@ fn fetch_system_requirements(
     Ok(out)
 }
 
-/// Extract package name from rpm query output
-/// Input: "bash-4.4.20-6.el8_10.x86_64"
-/// Output: Some("bash")
-///
-/// RPM package naming: name-version-release.arch
-/// We need to split on the first hyphen that's followed by a version number
-fn extract_rpm_package_name(rpm_output: &str) -> Option<&str> {
-    let bytes = rpm_output.as_bytes();
-
-    for i in 0..bytes.len() {
-        if i + 1 < bytes.len() && bytes[i] == b'-' && bytes[i + 1].is_ascii_digit() {
-            return Some(&rpm_output[..i]);
-        }
-    }
-
-    // No version pattern found, return the whole string
-    Some(rpm_output)
-}
-
 pub fn check_installation_status(
     system_info: &SystemInfo,
     sys_deps: &HashSet<&str>,
@@ -236,8 +217,15 @@ pub fn check_installation_status(
         }
 
         "centos" | "redhat" | "rockylinux" | "opensuse" | "sle" => {
-            // Running rpm -q {..pkg_list} and parse stdout
-            let command = match Command::new("rpm").arg("-q").args(sys_deps).output() {
+            // Query the package NAME field directly. `%{NAME}` makes
+            // rpm emit the exact package name, no heuristic required.
+            let command = match Command::new("rpm")
+                .arg("-q")
+                .arg("--qf")
+                .arg("%{NAME}\n")
+                .args(sys_deps)
+                .output()
+            {
                 Ok(output) => output,
                 Err(e) => {
                     log::warn!(
@@ -251,17 +239,13 @@ pub fn check_installation_status(
             let stdout = String::from_utf8_lossy(&command.stdout);
             let stderr = String::from_utf8_lossy(&command.stderr);
 
-            // Parse stdout for installed packages
-            // Format: "packagename-version-release.arch"
+            // With `--qf '%{NAME}\n'` each stdout line is a bare package name.
             for line in stdout.lines() {
                 let line = line.trim();
-                if !line.is_empty() {
-                    // Extract package name (everything before first hyphen followed by a digit)
-                    if let Some(pkg_name) = extract_rpm_package_name(line)
-                        && let Some(status) = out.get_mut(pkg_name)
-                    {
-                        *status = SysInstallationStatus::Present;
-                    }
+                if !line.is_empty()
+                    && let Some(status) = out.get_mut(line)
+                {
+                    *status = SysInstallationStatus::Present;
                 }
             }
 
@@ -393,35 +377,6 @@ mod test {
     fn fetch_invalid_url_returns_error_not_panic() {
         let result = fetch_system_requirements("not a valid url", &linux_system_info());
         assert!(matches!(result, Err(SysReqError::InvalidUrl { .. })));
-    }
-
-    #[test]
-    fn test_extract_rpm_package_name() {
-        let test_cases = vec![
-            ("bash-4.4.20-6.el8_10.x86_64", Some("bash")),
-            (
-                "libcurl-devel-7.61.1-34.el8_10.8.x86_64",
-                Some("libcurl-devel"),
-            ),
-            (
-                "abseil-cpp-devel-20210324.2-1.el8.x86_64",
-                Some("abseil-cpp-devel"),
-            ),
-            ("bash", Some("bash")),
-            (
-                "openssl-devel-1.1.1k-14.el8_6.x86_64",
-                Some("openssl-devel"),
-            ),
-        ];
-
-        for (input, expected) in test_cases {
-            assert_eq!(
-                extract_rpm_package_name(input),
-                expected,
-                "Failed for input: {}",
-                input
-            );
-        }
     }
 
     #[test]
