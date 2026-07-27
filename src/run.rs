@@ -10,7 +10,7 @@ pub fn run(r_bin_path: &Path, library_path: &Path, args: &[String]) -> Result<i3
         path: r_bin_path.to_path_buf(),
         source,
     })?;
-    let rscript = resolve_rscript_path(&r_home, r_bin_path);
+    let rscript = crate::r_cmd::resolve_rscript_path(&r_home);
 
     let mut cmd = std::process::Command::new(&rscript);
     cmd.args(args)
@@ -33,20 +33,6 @@ pub fn run(r_bin_path: &Path, library_path: &Path, args: &[String]) -> Result<i3
     Ok(status.code().unwrap_or(1))
 }
 
-fn resolve_rscript_path(r_home: &Path, r_bin_path: &Path) -> PathBuf {
-    let mut rscript = r_home.join("bin").join("Rscript");
-
-    if cfg!(windows) {
-        if let Some(ext) = r_bin_path.extension() {
-            rscript.set_extension(ext);
-        } else {
-            rscript.set_extension("exe");
-        }
-    }
-
-    rscript
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum RunError {
     #[error("Failed to run Rscript at {path}: {source}")]
@@ -59,28 +45,4 @@ pub enum RunError {
         path: PathBuf,
         source: std::io::Error,
     },
-}
-
-#[cfg(test)]
-mod tests {
-    use super::resolve_rscript_path;
-    use std::path::PathBuf;
-
-    #[test]
-    fn resolve_rscript_from_r_home_when_r_has_no_parent() {
-        let r_home = PathBuf::from("/opt/R/4.5.0/lib/R");
-        let r_bin_path = PathBuf::from("R");
-
-        #[cfg(not(windows))]
-        assert_eq!(
-            resolve_rscript_path(&r_home, &r_bin_path),
-            r_home.join("bin").join("Rscript")
-        );
-
-        #[cfg(windows)]
-        assert_eq!(
-            resolve_rscript_path(&r_home, &r_bin_path),
-            r_home.join("bin").join("Rscript.exe")
-        );
-    }
 }
