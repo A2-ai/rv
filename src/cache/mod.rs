@@ -4,6 +4,7 @@ mod status;
 pub mod utils;
 
 use crate::cache::utils::get_global_cache_dir;
+use crate::fs::copy_folder;
 use crate::package::Package;
 use crate::system_req::SysReqError;
 use crate::{RInstall, Source, SystemInfo, Version};
@@ -12,7 +13,8 @@ pub use info::CacheInfo;
 pub use status::{CacheStatus, InstallationStatus};
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use url::Url;
 
 #[derive(Debug)]
 pub struct Cache {
@@ -115,5 +117,43 @@ impl Cache {
             .as_ref()
             .map(|x| x.get_package_paths(source, pkg_name, version));
         (local, global)
+    }
+
+    /// Try to locate a URL source in the local cache. If it is only present in the global cache,
+    /// copy it to the local cache first. Returns `Ok(None)` if the source is not available
+    /// anywhere, or an I/O error if copying from the global cache fails.
+    pub(crate) fn get_url_source_path(
+        &self,
+        url: &Url,
+        sha: &str,
+    ) -> std::io::Result<Option<PathBuf>> {
+        let local_path = self.local.get_url_download_path(url).join(&sha[..10]);
+        if local_path.is_dir() {
+            return Ok(Some(local_path));
+        }
+
+        if let Some(global) = self.global.as_ref() {
+            let global_path = global.get_url_download_path(url).join(&sha[..10]);
+            if global_path.is_dir() {
+                log::debug!(
+                    "Copying URL source from global cache at {} to local cache at {}",
+                    global_path.display(),
+                    local_path.display()
+                );
+                fs_err::create_dir_all(&local_path)?;
+                copy_folder(&global_path, &local_path)?;
+                return Ok(Some(local_path));
+            }
+        }
+
+        Ok(None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_global_cache(local: DiskCache, global: DiskCache) -> Self {
+        Self {
+            local,
+            global: Some(global),
+        }
     }
 }
