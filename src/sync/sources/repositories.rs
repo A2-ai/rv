@@ -15,8 +15,7 @@ use crate::repository_urls::TarballUrls;
 use crate::sync::LinkMode;
 use crate::sync::errors::{SyncError, SyncErrorKind};
 use crate::{
-    Cancellation, HttpDownload, PackagePaths, RCmd, ResolvedDependency, get_tarball_urls,
-    is_binary_package,
+    Cancellation, HttpDownload, PackagePaths, RCmd, ResolvedDependency, is_binary_package,
 };
 
 pub(crate) fn install_package(
@@ -89,7 +88,8 @@ pub(crate) fn install_package(
                     pkg.version.original
                 );
 
-                let tarball_url = get_tarball_urls(pkg, cache.r_version(), cache.system_info())
+                let tarball_url = pkg
+                    .get_tarball_urls(cache.r_version(), cache.system_info())
                     .expect("Dependency has source Repository");
                 let http = Http {};
 

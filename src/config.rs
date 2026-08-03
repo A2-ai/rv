@@ -75,8 +75,8 @@ impl Repository {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
 #[serde(deny_unknown_fields)]
+#[serde(untagged)]
 pub enum ConfigDependency {
     Simple(String),
     Git {
@@ -91,6 +91,10 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        install_all_needs: bool,
+        #[serde(default)]
+        needs: Vec<String>,
     },
     Local {
         path: PathBuf,
@@ -99,6 +103,10 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        install_all_needs: bool,
+        #[serde(default)]
+        needs: Vec<String>,
     },
     Url {
         url: HttpUrl,
@@ -107,16 +115,24 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        install_all_needs: bool,
+        #[serde(default)]
+        needs: Vec<String>,
     },
     Detailed {
         name: String,
         repository: Option<String>,
         #[serde(default)]
-        install_suggestions: bool,
-        #[serde(default)]
         force_source: Option<bool>,
         #[serde(default)]
+        install_suggestions: bool,
+        #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        install_all_needs: bool,
+        #[serde(default)]
+        needs: Vec<String>,
     },
 }
 
@@ -156,14 +172,14 @@ impl ConfigDependency {
         match self {
             ConfigDependency::Git {
                 dependencies_only, ..
-            } => *dependencies_only,
-            ConfigDependency::Local {
+            }
+            | ConfigDependency::Local {
                 dependencies_only, ..
-            } => *dependencies_only,
-            ConfigDependency::Url {
+            }
+            | ConfigDependency::Url {
                 dependencies_only, ..
-            } => *dependencies_only,
-            ConfigDependency::Detailed {
+            }
+            | ConfigDependency::Detailed {
                 dependencies_only, ..
             } => *dependencies_only,
             ConfigDependency::Simple(_) => false,
@@ -208,6 +224,34 @@ impl ConfigDependency {
                 install_suggestions,
                 ..
             } => *install_suggestions,
+        }
+    }
+
+    pub fn install_all_needs(&self) -> bool {
+        match self {
+            ConfigDependency::Simple(_) => false,
+            ConfigDependency::Detailed {
+                install_all_needs, ..
+            }
+            | ConfigDependency::Url {
+                install_all_needs, ..
+            }
+            | ConfigDependency::Local {
+                install_all_needs, ..
+            }
+            | ConfigDependency::Git {
+                install_all_needs, ..
+            } => *install_all_needs,
+        }
+    }
+
+    pub fn needs(&self) -> &[String] {
+        match self {
+            ConfigDependency::Simple(_) => &[],
+            ConfigDependency::Detailed { needs, .. }
+            | ConfigDependency::Url { needs, .. }
+            | ConfigDependency::Local { needs, .. }
+            | ConfigDependency::Git { needs, .. } => needs,
         }
     }
 }
@@ -456,6 +500,12 @@ impl Config {
                     }
                 },
                 _ => (),
+            }
+            if d.install_all_needs() && !d.needs().is_empty() {
+                errors.push(format!(
+                    "Dependency {} cannot specify both `install_all_needs` and `needs = [...]`",
+                    d.name()
+                ));
             }
         }
 
