@@ -184,29 +184,26 @@ struct Layout {
     bin_dir: &'static str,
 }
 
-// Each layout is used on some platforms only, so they are all allowed to be dead code.
-
-/// The official Windows installer, and rig everywhere it does not use a framework.
-#[allow(dead_code)]
+/// The official Windows installer, rig's user mode, and rig everywhere it does not use
+/// a framework.
 const LAYOUT_PLAIN: Layout = Layout {
     header_dir: "include",
     bin_dir: "bin",
 };
 /// macOS frameworks, where everything sits under `Resources`.
-#[allow(dead_code)]
+#[allow(dead_code)] // macOS only
 const LAYOUT_FRAMEWORK: Layout = Layout {
     header_dir: "Resources/include",
     bin_dir: "Resources/bin",
 };
 /// Homebrew kegs, which keep the whole of `R_HOME` under `lib/R`.
-#[allow(dead_code)]
 const LAYOUT_NESTED: Layout = Layout {
     header_dir: "lib/R/include",
     bin_dir: "lib/R/bin",
 };
 /// Posit's Linux builds (and rig's admin mode on Linux): `R_HOME` under `lib/R`, but
 /// with the launcher hoisted to the top level.
-#[allow(dead_code)]
+#[allow(dead_code)] // Linux only
 const LAYOUT_OPT_R: Layout = Layout {
     header_dir: "lib/R/include",
     bin_dir: "bin",
@@ -215,7 +212,6 @@ const LAYOUT_OPT_R: Layout = Layout {
 /// Every directory we know of that holds one subdirectory per R version, paired with the
 /// layouts to probe inside those subdirectories.
 fn known_r_roots() -> Vec<(PathBuf, &'static [Layout])> {
-    #[allow(unused_mut)]
     let mut roots: Vec<(PathBuf, &'static [Layout])> = Vec::new();
 
     #[cfg(target_os = "macos")]
@@ -246,6 +242,41 @@ fn known_r_roots() -> Vec<(PathBuf, &'static [Layout])> {
                 &[LAYOUT_PLAIN],
             ));
         }
+    }
+
+    // rig user-mode installs (and any RIG_R_INSTALL_DIR override) live outside the system
+    // locations, one plain-version subdirectory per version. Mirrors rig's
+    // `get_r_install_dir` (rig `src/utils.rs`): the RIG_R_INSTALL_DIR override on any
+    // platform, plus the user-mode default of `$HOME/.local/share/rig/r` on macOS/Linux
+    // (rig uses `$HOME` directly, not `$XDG_DATA_HOME`) or `%APPDATA%\rig\data\r` on
+    // Windows. macOS user mode flattens the framework, so probe the nested layout too.
+    //
+    // NOTE: Locations as of rig v0.10.0-alpha2. User mode is new in rig 0.10.0, which is
+    // still a pre-release, so these roots do nothing on an admin-mode setup.
+    const RIG_USER_LAYOUTS: &[Layout] = &[LAYOUT_PLAIN, LAYOUT_NESTED];
+
+    if let Some(dir) = std::env::var_os("RIG_R_INSTALL_DIR") {
+        roots.push((PathBuf::from(dir), RIG_USER_LAYOUTS));
+    }
+
+    #[cfg(windows)]
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        roots.push((
+            PathBuf::from(appdata).join("rig").join("data").join("r"),
+            RIG_USER_LAYOUTS,
+        ));
+    }
+
+    #[cfg(not(windows))]
+    if let Some(home) = std::env::var_os("HOME") {
+        roots.push((
+            PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("rig")
+                .join("r"),
+            RIG_USER_LAYOUTS,
+        ));
     }
 
     roots
