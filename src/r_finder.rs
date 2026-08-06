@@ -176,132 +176,126 @@ fn get_versioned_r_from_path(version: &Version, use_devel: bool) -> Option<RInst
     None
 }
 
-/// Get rig/homebrew installed R versions by looking at where they are installed and looking up
-/// the header
-fn scan_known_r_locations() -> Vec<RInstall> {
-    let mut installs = Vec::new();
+/// Where, inside a single R version's directory, that version's `Rversion.h` and its `R`
+/// binary live. Installers nest R differently, so every root says which layouts to probe.
+#[derive(Clone, Copy)]
+struct Layout {
+    header_dir: &'static str,
+    bin_dir: &'static str,
+}
+
+// Each layout is used on some platforms only, so they are all allowed to be dead code.
+
+/// The official Windows installer, and rig everywhere it does not use a framework.
+#[allow(dead_code)]
+const LAYOUT_PLAIN: Layout = Layout {
+    header_dir: "include",
+    bin_dir: "bin",
+};
+/// macOS frameworks, where everything sits under `Resources`.
+#[allow(dead_code)]
+const LAYOUT_FRAMEWORK: Layout = Layout {
+    header_dir: "Resources/include",
+    bin_dir: "Resources/bin",
+};
+/// Homebrew kegs, which keep the whole of `R_HOME` under `lib/R`.
+#[allow(dead_code)]
+const LAYOUT_NESTED: Layout = Layout {
+    header_dir: "lib/R/include",
+    bin_dir: "lib/R/bin",
+};
+/// Posit's Linux builds (and rig's admin mode on Linux): `R_HOME` under `lib/R`, but
+/// with the launcher hoisted to the top level.
+#[allow(dead_code)]
+const LAYOUT_OPT_R: Layout = Layout {
+    header_dir: "lib/R/include",
+    bin_dir: "bin",
+};
+
+/// Every directory we know of that holds one subdirectory per R version, paired with the
+/// layouts to probe inside those subdirectories.
+fn known_r_roots() -> Vec<(PathBuf, &'static [Layout])> {
+    #[allow(unused_mut)]
+    let mut roots: Vec<(PathBuf, &'static [Layout])> = Vec::new();
 
     #[cfg(target_os = "macos")]
     {
-        // rig on macOS uses /Library/Frameworks/R.framework/Versions/
-        let root = PathBuf::from("/Library/Frameworks/R.framework/Versions");
-        if root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                // Skip "Current" symlink
-                if path.is_symlink() {
-                    continue;
-                }
-                let header = path.join("Resources").join("include").join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("Resources").join("bin").join("R");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
-            }
-        }
-
+        // rig and the official installer use /Library/Frameworks/R.framework/Versions/
+        roots.push((
+            PathBuf::from("/Library/Frameworks/R.framework/Versions"),
+            &[LAYOUT_FRAMEWORK],
+        ));
         // Homebrew on Apple Silicon uses /opt/homebrew/Cellar/r/
-        let homebrew_root = PathBuf::from("/opt/homebrew/Cellar/r");
-        if homebrew_root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&homebrew_root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let header = path
-                    .join("lib")
-                    .join("R")
-                    .join("include")
-                    .join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("lib").join("R").join("bin").join("R");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
-            }
-        }
+        roots.push((PathBuf::from("/opt/homebrew/Cellar/r"), &[LAYOUT_NESTED]));
     }
 
     #[cfg(target_os = "linux")]
     {
         // rig on Linux uses /opt/R/{version}/
-        let root = PathBuf::from("/opt/R");
-        if root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let header = path
-                    .join("lib")
-                    .join("R")
-                    .join("include")
-                    .join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("bin").join("R");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
-            }
-        }
+        roots.push((PathBuf::from("/opt/R"), &[LAYOUT_OPT_R]));
     }
 
     #[cfg(target_os = "windows")]
     {
         // rig and the official installer put versions in R\R-{version}\, system-wide
         // under Program Files and per-user under %LOCALAPPDATA%\Programs.
-        let mut roots = vec![PathBuf::from(r"C:\Program Files\R")];
+        roots.push((PathBuf::from(r"C:\Program Files\R"), &[LAYOUT_PLAIN]));
         if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-            roots.push(PathBuf::from(local_app_data).join("Programs").join("R"));
+            roots.push((
+                PathBuf::from(local_app_data).join("Programs").join("R"),
+                &[LAYOUT_PLAIN],
+            ));
+        }
+    }
+
+    roots
+}
+
+/// Scan a directory whose subdirectories are individual R versions, reading each one's
+/// version from its `Rversion.h`.
+fn scan_versioned_root(root: &Path, layouts: &[Layout]) -> Vec<RInstall> {
+    let bin_name = if cfg!(windows) { "R.exe" } else { "R" };
+    let mut installs = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return installs;
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        // Skip symlinked version directories, e.g. macOS' `Current`, so that we record
+        // the concrete version rather than a path that moves when the default changes.
+        if path.is_symlink() {
+            continue;
         }
 
-        for root in roots {
-            if root.is_dir()
-                && let Ok(entries) = std::fs::read_dir(&root)
-            {
-                for entry in entries.filter_map(Result::ok) {
-                    let path = entry.path();
-                    let header = path.join("include").join("Rversion.h");
-                    if header.exists()
-                        && let Some((version, is_devel)) = read_version_from_header(&header)
-                    {
-                        let bin_path = path.join("bin").join("R.exe");
-                        if bin_path.exists() {
-                            installs.push(RInstall {
-                                bin_path,
-                                version,
-                                is_devel,
-                            });
-                        }
-                    }
-                }
+        for layout in layouts {
+            let bin_path = path.join(layout.bin_dir).join(bin_name);
+            if !bin_path.exists() {
+                continue;
+            }
+            let header = path.join(layout.header_dir).join("Rversion.h");
+            if let Some((version, is_devel)) = read_version_from_header(&header) {
+                installs.push(RInstall {
+                    bin_path,
+                    version,
+                    is_devel,
+                });
+                break;
             }
         }
     }
 
     installs
+}
+
+/// Get rig/homebrew installed R versions by looking at where they are installed and looking up
+/// the header
+fn scan_known_r_locations() -> Vec<RInstall> {
+    known_r_roots()
+        .iter()
+        .flat_map(|(root, layouts)| scan_versioned_root(root, layouts))
+        .collect()
 }
 
 /// Find the R installation that matches the given parameters. Return None if nothing matches.
