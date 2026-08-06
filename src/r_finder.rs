@@ -329,6 +329,61 @@ fn scan_known_r_locations() -> Vec<RInstall> {
         .collect()
 }
 
+/// Ask rig where it installed R. This is a last resort: rig resolves its install
+/// locations from environment variables *and* from its own config file, so a rig setup
+/// can put R somewhere `known_r_roots` has no way to guess, and can move rig's quick
+/// links off PATH the same way.
+///
+/// We read only the `binary` field and work out the version the same way as for every
+/// other install, so we lean on as little of rig's output shape as possible: it is
+/// produced by a struct local to rig's `list` command rather than by a stable public
+/// type, and rig nulls the fields of an install it considers broken. Output we cannot
+/// make sense of is treated as rig having told us nothing.
+fn rig_r_binaries() -> Vec<PathBuf> {
+    if which::which("rig").is_err() {
+        return Vec::new();
+    }
+
+    let output = match std::process::Command::new("rig")
+        .args(["list", "--json"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            log::debug!(
+                "`rig list --json` failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            return Vec::new();
+        }
+        Err(e) => {
+            log::debug!("Could not run `rig list --json`: {e}");
+            return Vec::new();
+        }
+    };
+
+    parse_rig_binaries(&output.stdout)
+}
+
+/// Pull the R binary paths out of `rig list --json` output.
+fn parse_rig_binaries(stdout: &[u8]) -> Vec<PathBuf> {
+    let installs: serde_json::Value = match serde_json::from_slice(stdout) {
+        Ok(installs) => installs,
+        Err(e) => {
+            log::debug!("Could not parse `rig list --json` output: {e}");
+            return Vec::new();
+        }
+    };
+
+    installs
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|install| Some(PathBuf::from(install.get("binary")?.as_str()?)))
+        .collect()
+}
+
 /// Find the R installation that matches the given parameters. Return None if nothing matches.
 pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
     // First look for a rig versioned quick link (e.g. `R-4.5`, `R-4.5.1`, `R-4.5.1.bat`)
@@ -356,7 +411,7 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
 
     // Otherwise use known installation location to figure it out and return the first one that
     // kinda matches
-    let r_installs = scan_known_r_locations();
+    let mut r_installs = scan_known_r_locations();
 
     for r in &r_installs {
         if version.hazy_match(&r.version) && use_devel == r.is_devel {
@@ -367,6 +422,23 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
             );
             return Some(r.clone());
         }
+    }
+
+    // Finally, ask rig itself about anything installed somewhere we don't know to look.
+    // Only worth the subprocess once everything cheaper has come up empty.
+    for bin_path in rig_r_binaries() {
+        let Some(r) = r_install_from_bin(bin_path) else {
+            continue;
+        };
+        if version.hazy_match(&r.version) && use_devel == r.is_devel {
+            log::debug!(
+                "R reported by rig in {:?} matches: {} (use_devel={use_devel})",
+                r.bin_path,
+                r.version.original
+            );
+            return Some(r);
+        }
+        r_installs.push(r);
     }
 
     log::debug!(
@@ -434,5 +506,59 @@ mod tests {
             rig_quick_link_version("R-4.5").unwrap().major_minor(),
             wanted
         );
+    }
+
+    #[test]
+    fn parse_rig_binaries_reads_binary_paths() {
+        let output = br#"[
+          {"name": "4.4.3", "default": false, "version": "4.4.3",
+           "aliases": [], "path": "/opt/R/4.4.3", "binary": "/opt/R/4.4.3/bin/R"},
+          {"name": "4.5.1", "default": true, "version": "4.5.1",
+           "aliases": ["release"], "path": "/opt/R/4.5.1", "binary": "/opt/R/4.5.1/bin/R"}
+        ]"#;
+
+        assert_eq!(
+            parse_rig_binaries(output),
+            vec![
+                PathBuf::from("/opt/R/4.4.3/bin/R"),
+                PathBuf::from("/opt/R/4.5.1/bin/R"),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_rig_binaries_reads_escaped_windows_paths() {
+        // rig has escaped backslashes properly since v0.8.0 (r-lib/rig#308).
+        let output = br#"[{"name": "4.5.1",
+          "binary": "C:\\Program Files\\R\\R-4.5.1\\bin\\R.exe"}]"#;
+
+        assert_eq!(
+            parse_rig_binaries(output),
+            vec![PathBuf::from(r"C:\Program Files\R\R-4.5.1\bin\R.exe")]
+        );
+    }
+
+    #[test]
+    fn parse_rig_binaries_tolerates_unexpected_output() {
+        // rig nulls the fields of an install it considers broken, and the shape of its
+        // output is not a stable public type. Neither may take the whole list down.
+        let output = br#"[
+          {"name": "4.4.3", "version": null, "path": null, "binary": null},
+          {"name": "devel", "surprise": {"nested": []}, "binary": "/opt/R/devel/bin/R"}
+        ]"#;
+
+        assert_eq!(
+            parse_rig_binaries(output),
+            vec![PathBuf::from("/opt/R/devel/bin/R")]
+        );
+
+        for output in [
+            b"".as_slice(),
+            b"not json".as_slice(),
+            b"{}".as_slice(),
+            br#"[3, null, "R"]"#.as_slice(),
+        ] {
+            assert!(parse_rig_binaries(output).is_empty());
+        }
     }
 }
