@@ -28,6 +28,14 @@ static R_MINOR_RE: LazyLock<Regex> =
 static R_STATUS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#define R_STATUS\s+"([^"]*)""#).unwrap());
 
+/// Matches the file names rig gives its versioned quick links, capturing the version.
+/// rig names the link after the install's version, and that shape differs by platform:
+/// `R-4.5` (optionally `-arm64`/`-x86_64`, from when CRAN's default macOS arch switched
+/// to arm64 at 4.6) on macOS, where frameworks are per-minor; the full `R-4.5.1` on
+/// Linux; and `R-4.5.1.bat` on Windows.
+static RIG_QUICK_LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^R-(\d+\.\d+(?:\.\d+)?)(?:-arm64|-x86_64)?(?:\.bat)?$").unwrap());
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RInstall {
     pub bin_path: PathBuf,
@@ -83,17 +91,10 @@ fn read_version_from_header(header_path: &Path) -> Option<(Version, bool)> {
     Some((version, is_devel))
 }
 
-/// Get R from PATH - try R --version first, fallback to header for devel
-pub fn get_r_from_path() -> Option<RInstall> {
-    #[cfg(windows)]
-    let bin_path = if which::which("R.bat").is_ok() {
-        PathBuf::from("R.bat")
-    } else {
-        PathBuf::from("R")
-    };
-
-    #[cfg(not(windows))]
-    let bin_path = PathBuf::from("R");
+/// Build an `RInstall` from a binary path by querying its version.
+/// Tries `R --version` first and falls back to reading `Rversion.h` for devel builds.
+/// Returns `None` if the binary can't be run or its version can't be determined.
+fn r_install_from_bin(bin_path: PathBuf) -> Option<RInstall> {
     let mut r_cmd = RInstall {
         bin_path,
         is_devel: false,
@@ -120,120 +121,198 @@ pub fn get_r_from_path() -> Option<RInstall> {
     }
 }
 
-/// Get rig/homebrew installed R versions by looking at where they are installed and looking up
-/// the header
-fn scan_known_r_locations() -> Vec<RInstall> {
-    let mut installs = Vec::new();
+/// Get R from PATH - try R --version first, fallback to header for devel
+pub fn get_r_from_path() -> Option<RInstall> {
+    #[cfg(windows)]
+    let bin_path = if which::which("R.bat").is_ok() {
+        PathBuf::from("R.bat")
+    } else {
+        PathBuf::from("R")
+    };
+
+    #[cfg(not(windows))]
+    let bin_path = PathBuf::from("R");
+
+    r_install_from_bin(bin_path)
+}
+
+/// The version in a rig quick link's file name, if the name looks like one at all.
+fn rig_quick_link_version(file_name: &str) -> Option<Version> {
+    let captures = RIG_QUICK_LINK_RE.captures(file_name)?;
+    Version::from_str(captures.get(1)?.as_str()).ok()
+}
+
+/// Look on PATH for a rig versioned quick link matching `version` and return it if it
+/// runs and hazy-matches. rig writes one of these links (symlinks on macOS/Linux, `.bat`
+/// files on Windows) for every version it manages, so this finds a project's pinned
+/// version even when it isn't rig's global default. We scan PATH directories directly
+/// rather than looking up a name because the patch/arch suffix isn't known in advance.
+fn get_versioned_r_from_path(version: &Version, use_devel: bool) -> Option<RInstall> {
+    for dir in std::env::split_paths(&std::env::var_os("PATH")?) {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries.filter_map(Result::ok) {
+            // The name only decides which candidates are worth spawning a process for,
+            // and only down to major.minor: on macOS the link is per-minor (`R-4.5` for
+            // an install that really is 4.5.2), links can go stale when a version is
+            // removed, and anyone can drop their own `R-4.5` on PATH. So the version we
+            // read back out of the binary is what actually decides.
+            if entry
+                .file_name()
+                .to_str()
+                .and_then(rig_quick_link_version)
+                .is_some_and(|v| v.major_minor() == version.major_minor())
+                && let Some(r) = r_install_from_bin(entry.path())
+                && version.hazy_match(&r.version)
+                && use_devel == r.is_devel
+            {
+                return Some(r);
+            }
+        }
+    }
+
+    None
+}
+
+/// Where, inside a single R version's directory, that version's `Rversion.h` and its `R`
+/// binary live. Installers nest R differently, so every root says which layouts to probe.
+#[derive(Clone, Copy)]
+struct Layout {
+    header_dir: &'static str,
+    bin_dir: &'static str,
+}
+
+/// The official Windows installer, rig's user mode, and rig everywhere it does not use
+/// a framework.
+const LAYOUT_PLAIN: Layout = Layout {
+    header_dir: "include",
+    bin_dir: "bin",
+};
+/// macOS frameworks, where everything sits under `Resources`.
+#[allow(dead_code)] // macOS only
+const LAYOUT_FRAMEWORK: Layout = Layout {
+    header_dir: "Resources/include",
+    bin_dir: "Resources/bin",
+};
+/// Homebrew kegs, which keep the whole of `R_HOME` under `lib/R`.
+const LAYOUT_NESTED: Layout = Layout {
+    header_dir: "lib/R/include",
+    bin_dir: "lib/R/bin",
+};
+/// Posit's Linux builds (and rig's admin mode on Linux): `R_HOME` under `lib/R`, but
+/// with the launcher hoisted to the top level.
+#[allow(dead_code)] // Linux only
+const LAYOUT_OPT_R: Layout = Layout {
+    header_dir: "lib/R/include",
+    bin_dir: "bin",
+};
+
+/// Every directory we know of that holds one subdirectory per R version, paired with the
+/// layouts to probe inside those subdirectories.
+fn known_r_roots() -> Vec<(PathBuf, &'static [Layout])> {
+    let mut roots: Vec<(PathBuf, &'static [Layout])> = Vec::new();
 
     #[cfg(target_os = "macos")]
     {
-        // rig on macOS uses /Library/Frameworks/R.framework/Versions/
-        let root = PathBuf::from("/Library/Frameworks/R.framework/Versions");
-        if root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                // Skip "Current" symlink
-                if path.is_symlink() {
-                    continue;
-                }
-                let header = path.join("Resources").join("include").join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("Resources").join("bin").join("R");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
-            }
-        }
-
+        // rig and the official installer use /Library/Frameworks/R.framework/Versions/
+        roots.push((
+            PathBuf::from("/Library/Frameworks/R.framework/Versions"),
+            &[LAYOUT_FRAMEWORK],
+        ));
         // Homebrew on Apple Silicon uses /opt/homebrew/Cellar/r/
-        let homebrew_root = PathBuf::from("/opt/homebrew/Cellar/r");
-        if homebrew_root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&homebrew_root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let header = path
-                    .join("lib")
-                    .join("R")
-                    .join("include")
-                    .join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("lib").join("R").join("bin").join("R");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
-            }
-        }
+        roots.push((PathBuf::from("/opt/homebrew/Cellar/r"), &[LAYOUT_NESTED]));
     }
 
     #[cfg(target_os = "linux")]
     {
         // rig on Linux uses /opt/R/{version}/
-        let root = PathBuf::from("/opt/R");
-        if root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let header = path
-                    .join("lib")
-                    .join("R")
-                    .join("include")
-                    .join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("bin").join("R");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
-            }
-        }
+        roots.push((PathBuf::from("/opt/R"), &[LAYOUT_OPT_R]));
     }
 
     #[cfg(target_os = "windows")]
     {
-        // rig on Windows uses C:\Program Files\R\R-{version}\
-        let root = PathBuf::from(r"C:\Program Files\R");
-        if root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let header = path.join("include").join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("bin").join("R.exe");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
-                    }
-                }
+        // rig and the official installer put versions in R\R-{version}\, system-wide
+        // under Program Files and per-user under %LOCALAPPDATA%\Programs.
+        roots.push((PathBuf::from(r"C:\Program Files\R"), &[LAYOUT_PLAIN]));
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            roots.push((
+                PathBuf::from(local_app_data).join("Programs").join("R"),
+                &[LAYOUT_PLAIN],
+            ));
+        }
+    }
+
+    // rig user-mode installs (and any RIG_R_INSTALL_DIR override) live outside the system
+    // locations, one plain-version subdirectory per version. Mirrors rig's
+    // `get_r_install_dir` (rig `src/utils.rs`): the RIG_R_INSTALL_DIR override on any
+    // platform, plus the user-mode default of `$HOME/.local/share/rig/r` on macOS/Linux
+    // (rig uses `$HOME` directly, not `$XDG_DATA_HOME`) or `%APPDATA%\rig\data\r` on
+    // Windows. macOS user mode flattens the framework, so probe the nested layout too.
+    //
+    // NOTE: Locations as of rig v0.10.0-alpha2. User mode is new in rig 0.10.0, which is
+    // still a pre-release, so these roots do nothing on an admin-mode setup.
+    const RIG_USER_LAYOUTS: &[Layout] = &[LAYOUT_PLAIN, LAYOUT_NESTED];
+
+    if let Some(dir) = std::env::var_os("RIG_R_INSTALL_DIR") {
+        roots.push((PathBuf::from(dir), RIG_USER_LAYOUTS));
+    }
+
+    #[cfg(windows)]
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        roots.push((
+            PathBuf::from(appdata).join("rig").join("data").join("r"),
+            RIG_USER_LAYOUTS,
+        ));
+    }
+
+    #[cfg(not(windows))]
+    if let Some(home) = std::env::var_os("HOME") {
+        roots.push((
+            PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("rig")
+                .join("r"),
+            RIG_USER_LAYOUTS,
+        ));
+    }
+
+    roots
+}
+
+/// Scan a directory whose subdirectories are individual R versions, reading each one's
+/// version from its `Rversion.h`.
+fn scan_versioned_root(root: &Path, layouts: &[Layout]) -> Vec<RInstall> {
+    let bin_name = if cfg!(windows) { "R.exe" } else { "R" };
+    let mut installs = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return installs;
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        // Skip symlinked version directories, e.g. macOS' `Current`, so that we record
+        // the concrete version rather than a path that moves when the default changes.
+        if path.is_symlink() {
+            continue;
+        }
+
+        for layout in layouts {
+            let bin_path = path.join(layout.bin_dir).join(bin_name);
+            if !bin_path.exists() {
+                continue;
+            }
+            let header = path.join(layout.header_dir).join("Rversion.h");
+            if let Some((version, is_devel)) = read_version_from_header(&header) {
+                installs.push(RInstall {
+                    bin_path,
+                    version,
+                    is_devel,
+                });
+                break;
             }
         }
     }
@@ -241,9 +320,84 @@ fn scan_known_r_locations() -> Vec<RInstall> {
     installs
 }
 
+/// Get rig/homebrew installed R versions by looking at where they are installed and looking up
+/// the header
+fn scan_known_r_locations() -> Vec<RInstall> {
+    known_r_roots()
+        .iter()
+        .flat_map(|(root, layouts)| scan_versioned_root(root, layouts))
+        .collect()
+}
+
+/// Ask rig where it installed R. This is a last resort: rig resolves its install
+/// locations from environment variables *and* from its own config file, so a rig setup
+/// can put R somewhere `known_r_roots` has no way to guess, and can move rig's quick
+/// links off PATH the same way.
+///
+/// We read only the `binary` field and work out the version the same way as for every
+/// other install, so we lean on as little of rig's output shape as possible: it is
+/// produced by a struct local to rig's `list` command rather than by a stable public
+/// type, and rig nulls the fields of an install it considers broken. Output we cannot
+/// make sense of is treated as rig having told us nothing.
+fn rig_r_binaries() -> Vec<PathBuf> {
+    if which::which("rig").is_err() {
+        return Vec::new();
+    }
+
+    let output = match std::process::Command::new("rig")
+        .args(["list", "--json"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            log::debug!(
+                "`rig list --json` failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            return Vec::new();
+        }
+        Err(e) => {
+            log::debug!("Could not run `rig list --json`: {e}");
+            return Vec::new();
+        }
+    };
+
+    parse_rig_binaries(&output.stdout)
+}
+
+/// Pull the R binary paths out of `rig list --json` output.
+fn parse_rig_binaries(stdout: &[u8]) -> Vec<PathBuf> {
+    let installs: serde_json::Value = match serde_json::from_slice(stdout) {
+        Ok(installs) => installs,
+        Err(e) => {
+            log::debug!("Could not parse `rig list --json` output: {e}");
+            return Vec::new();
+        }
+    };
+
+    installs
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|install| Some(PathBuf::from(install.get("binary")?.as_str()?)))
+        .collect()
+}
+
 /// Find the R installation that matches the given parameters. Return None if nothing matches.
 pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
-    // First check the R on PATH to see if it matches what we have in the config.
+    // First look for a rig versioned quick link (e.g. `R-4.5`, `R-4.5.1`, `R-4.5.1.bat`)
+    // on PATH. rig keeps one for every version it manages, so this finds a project's
+    // pinned version even when it isn't rig's global default (the common rig failure, #487).
+    if let Some(r) = get_versioned_r_from_path(version, use_devel) {
+        log::debug!(
+            "Versioned R shim on PATH matches: {} (use_devel={use_devel})",
+            r.version.original
+        );
+        return Some(r);
+    }
+
+    // Then check the plain `R` on PATH (rig's global default, or a system install).
     if let Some(r) = get_r_from_path()
         && version.hazy_match(&r.version)
         && use_devel == r.is_devel
@@ -257,7 +411,7 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
 
     // Otherwise use known installation location to figure it out and return the first one that
     // kinda matches
-    let r_installs = scan_known_r_locations();
+    let mut r_installs = scan_known_r_locations();
 
     for r in &r_installs {
         if version.hazy_match(&r.version) && use_devel == r.is_devel {
@@ -270,6 +424,23 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
         }
     }
 
+    // Finally, ask rig itself about anything installed somewhere we don't know to look.
+    // Only worth the subprocess once everything cheaper has come up empty.
+    for bin_path in rig_r_binaries() {
+        let Some(r) = r_install_from_bin(bin_path) else {
+            continue;
+        };
+        if version.hazy_match(&r.version) && use_devel == r.is_devel {
+            log::debug!(
+                "R reported by rig in {:?} matches: {} (use_devel={use_devel})",
+                r.bin_path,
+                r.version.original
+            );
+            return Some(r);
+        }
+        r_installs.push(r);
+    }
+
     log::debug!(
         "No R version found matching {}. Found {}",
         version.original,
@@ -280,4 +451,114 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
             .join(", ")
     );
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rig_quick_link_version_parses_link_shapes() {
+        // macOS (per-minor framework, optional arch suffix), Linux (full patch),
+        // Windows (full patch + .bat) — all of rig's naming shapes.
+        for (name, expected) in [
+            ("R-4.5", "4.5"),
+            ("R-4.5-arm64", "4.5"),
+            ("R-4.5-x86_64", "4.5"),
+            ("R-4.5.1", "4.5.1"),
+            ("R-4.5.1.bat", "4.5.1"),
+        ] {
+            let version = rig_quick_link_version(name)
+                .unwrap_or_else(|| panic!("expected {name} to be recognised"));
+            assert_eq!(version.original, expected);
+        }
+    }
+
+    #[test]
+    fn rig_quick_link_version_rejects_other_names() {
+        // rig's non-numeric aliases, other binaries and near misses must not be picked up.
+        for name in [
+            "R",
+            "R-release",
+            "R-devel",
+            "Rscript-4.5",
+            "R-4.5.exe",
+            "R-4",
+            "R-4.5.1.2",
+            "xR-4.5",
+        ] {
+            assert!(
+                rig_quick_link_version(name).is_none(),
+                "expected {name} not to be recognised"
+            );
+        }
+    }
+
+    #[test]
+    fn rig_quick_link_version_distinguishes_neighbouring_versions() {
+        // The pre-filter compares major.minor, so `R-4.55` must not pass for 4.5.
+        let wanted = Version::from_str("4.5.1").unwrap().major_minor();
+        for name in ["R-4.55", "R-4.55.1", "R-4.6.1", "R-3.4.5"] {
+            let version = rig_quick_link_version(name).unwrap();
+            assert_ne!(version.major_minor(), wanted, "{name} should not match 4.5");
+        }
+        assert_eq!(
+            rig_quick_link_version("R-4.5").unwrap().major_minor(),
+            wanted
+        );
+    }
+
+    #[test]
+    fn parse_rig_binaries_reads_binary_paths() {
+        let output = br#"[
+          {"name": "4.4.3", "default": false, "version": "4.4.3",
+           "aliases": [], "path": "/opt/R/4.4.3", "binary": "/opt/R/4.4.3/bin/R"},
+          {"name": "4.5.1", "default": true, "version": "4.5.1",
+           "aliases": ["release"], "path": "/opt/R/4.5.1", "binary": "/opt/R/4.5.1/bin/R"}
+        ]"#;
+
+        assert_eq!(
+            parse_rig_binaries(output),
+            vec![
+                PathBuf::from("/opt/R/4.4.3/bin/R"),
+                PathBuf::from("/opt/R/4.5.1/bin/R"),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_rig_binaries_reads_escaped_windows_paths() {
+        // rig has escaped backslashes properly since v0.8.0 (r-lib/rig#308).
+        let output = br#"[{"name": "4.5.1",
+          "binary": "C:\\Program Files\\R\\R-4.5.1\\bin\\R.exe"}]"#;
+
+        assert_eq!(
+            parse_rig_binaries(output),
+            vec![PathBuf::from(r"C:\Program Files\R\R-4.5.1\bin\R.exe")]
+        );
+    }
+
+    #[test]
+    fn parse_rig_binaries_tolerates_unexpected_output() {
+        // rig nulls the fields of an install it considers broken, and the shape of its
+        // output is not a stable public type. Neither may take the whole list down.
+        let output = br#"[
+          {"name": "4.4.3", "version": null, "path": null, "binary": null},
+          {"name": "devel", "surprise": {"nested": []}, "binary": "/opt/R/devel/bin/R"}
+        ]"#;
+
+        assert_eq!(
+            parse_rig_binaries(output),
+            vec![PathBuf::from("/opt/R/devel/bin/R")]
+        );
+
+        for output in [
+            b"".as_slice(),
+            b"not json".as_slice(),
+            b"{}".as_slice(),
+            br#"[3, null, "R"]"#.as_slice(),
+        ] {
+            assert!(parse_rig_binaries(output).is_empty());
+        }
+    }
 }
