@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up SSH with repository-specific key
-        uses: webfactory/ssh-agent@v0.8.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           # ssh key that can only be used to get the repo in example_projects/private-git-dep
           ssh-private-key: ${{ secrets.INTERNAL_SSH_KEY }}
