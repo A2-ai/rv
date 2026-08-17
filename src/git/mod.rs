@@ -4,6 +4,8 @@ use std::process::Command;
 mod local;
 mod reference;
 mod remote;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub(crate) mod url;
 
 pub trait CommandExecutor {
