@@ -186,8 +186,7 @@ pub enum Command {
         repositories: bool,
     },
     /// List the system dependencies needed by the dependency tree.
-    /// This is currently only supported on Ubuntu/Debian, it will return an empty result
-    /// anywhere else.
+    /// This is currently only supported on various Linux distributions.
     ///
     /// The present/absent status may be wrong if a dependency was installed in
     /// a way that we couldn't detect (eg not via the main package manager of the OS).
