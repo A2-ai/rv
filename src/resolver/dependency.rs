@@ -211,6 +211,7 @@ impl<'d> ResolvedDependency<'d> {
         kind: PackageType,
         source: Source,
         install_suggests: bool,
+        cache_status: CacheStatus,
     ) -> (Self, InstallationDependencies<'_>) {
         let deps = package.dependencies_to_install(install_suggests);
         let res = Self {
@@ -227,7 +228,7 @@ impl<'d> ResolvedDependency<'d> {
             name: Cow::Owned(package.name.clone()),
             version: Cow::Owned(package.version.clone()),
             source,
-            cache_status: CacheStatus::new_local_source(),
+            cache_status,
             install_suggests,
             remotes: package.remotes.clone(),
             from_remote: false,
