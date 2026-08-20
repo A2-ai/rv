@@ -120,6 +120,7 @@ pub struct Package {
 pub struct InstallationDependencies<'a> {
     pub(crate) direct: Vec<&'a Dependency>,
     pub(crate) suggests: Vec<&'a Dependency>,
+    pub(crate) needs: HashMap<String, Vec<NeedsEntry>>,
 }
 
 impl Package {
@@ -132,10 +133,12 @@ impl Package {
         }
     }
 
-    pub fn dependencies_to_install(
-        &self,
+    pub fn dependencies_to_install<'d>(
+        &'d self,
         install_suggestions: bool,
-    ) -> InstallationDependencies<'_> {
+        install_all_needs: bool,
+        needs: &[String],
+    ) -> Result<InstallationDependencies<'d>, Box<dyn std::error::Error>> {
         let mut out = Vec::with_capacity(30);
         // TODO: consider if this should be an option or just take it as an empty vector otherwise
         out.extend(self.depends.iter());
@@ -157,13 +160,77 @@ impl Package {
             Vec::new()
         };
 
-        InstallationDependencies {
+        let needs_converter = |iter: (&String, &Vec<NeedsEntry>)| -> (String, Vec<NeedsEntry>) {
+            (
+                iter.0.clone(),
+                iter.1
+                    .iter()
+                    .filter_map(|entry| {
+                        match entry {
+                            NeedsEntry::Package(p) => {
+                                if BASE_PACKAGES.contains(&p.name()) {
+                                    return None;
+                                }
+
+                                // Enrich needs entries: if a package appears in Config/Needs/* without a version
+                                // requirement but has one in Suggests, promote it to Pinned using that requirement.
+                                if let Dependency::Simple(n) = p
+                                    && let Some(req) = self.suggests.iter().find_map(|d| {
+                                        if let Dependency::Pinned { name, requirement } = d
+                                            && name == n
+                                        {
+                                            Some(requirement)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                {
+                                    Some(NeedsEntry::Package(Dependency::Pinned {
+                                        name: n.clone(),
+                                        requirement: req.clone(),
+                                    }))
+                                } else {
+                                    Some(entry.clone())
+                                }
+                            }
+                            NeedsEntry::Remote(_, _) => Some(entry.clone()),
+                        }
+                    })
+                    .collect(),
+            )
+        };
+
+        let needs = if install_all_needs {
+            self.needs.iter().map(needs_converter).collect()
+        } else if !needs.is_empty() {
+            let mut declared_needs = needs.to_vec();
+            declared_needs.retain(|need| !self.needs.contains_key(need));
+            if !declared_needs.is_empty() {
+                return Err(format!(
+                    "{} declares need(s) `[{}]` which are not found in the package",
+                    self.name,
+                    declared_needs.join(", ")
+                )
+                .into());
+            }
+
+            self.needs
+                .iter()
+                .filter(|(need, _)| needs.contains(need))
+                .map(needs_converter)
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
+        Ok(InstallationDependencies {
             direct: out
                 .into_iter()
                 .filter(|p| !BASE_PACKAGES.contains(&p.name()))
                 .collect(),
             suggests,
-        }
+            needs,
+        })
     }
 }
 

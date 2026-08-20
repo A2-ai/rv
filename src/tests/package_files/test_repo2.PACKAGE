@@ -21,3 +21,6 @@ Package: suggestsB
 Version: 2.0.0
 Depends: suggestsA (>= 2.0.0)
 Suggests: dummy, survival
+
+Package: needsA
+Version: 2.0.0

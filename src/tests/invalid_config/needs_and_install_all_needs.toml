@@ -1,0 +1,8 @@
+[project]
+name = "project_name"
+r_version = "4.4.1"
+repositories = []
+
+dependencies = [
+    { name = "some-package", needs = ["website"], install_all_needs = true },
+]

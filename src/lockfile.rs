@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs::File;
 use std::io::Write;
@@ -11,7 +11,7 @@ use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
 use crate::git::url::GitUrl;
-use crate::package::{Dependency, VersionRequirement};
+use crate::package::{Dependency, NeedsEntry};
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
 const CURRENT_LOCKFILE_VERSION: i64 = 2;
@@ -312,33 +312,55 @@ fn format_array(deps: &[Dependency]) -> Array {
     deps
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TomlDependency {
+    Simple(String),
+    Pinned { name: String, requirement: String },
+}
+
+impl TomlDependency {
+    fn into_dependency<E: serde::de::Error>(self) -> Result<Dependency, E> {
+        match self {
+            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
+            TomlDependency::Pinned { name, requirement } => Ok(Dependency::Pinned {
+                name,
+                requirement: requirement.parse().map_err(serde::de::Error::custom)?,
+            }),
+        }
+    }
+}
+
 /// Custom deserializer for dependencies from TOML lockfile format.
 /// Handles both "simple_string" and { name = "pkg", requirement = "(>= 1.0)" } formats.
 fn deserialize_dependencies<'de, D>(deserializer: D) -> Result<Vec<Dependency>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum TomlDependency {
-        Simple(String),
-        Pinned { name: String, requirement: String },
-    }
-
     let deps: Vec<TomlDependency> = Vec::deserialize(deserializer)?;
-    deps.into_iter()
-        .map(|d| match d {
-            TomlDependency::Simple(name) => Ok(Dependency::Simple(name)),
-            TomlDependency::Pinned { name, requirement } => {
-                let req: VersionRequirement =
-                    requirement.parse().map_err(serde::de::Error::custom)?;
-                Ok(Dependency::Pinned {
-                    name,
-                    requirement: req,
-                })
-            }
+    deps.into_iter().map(|d| d.into_dependency()).collect()
+}
+
+/// Custom deserializer for needs from TOML lockfile format.
+/// Handles `needs = {website = ["knitr", "rmarkdown"]}` where inner arrays can contain
+/// either "simple_string" or { name = "pkg", requirement = "(>= 1.0)" } entries.
+fn deserialize_needs<'de, D>(deserializer: D) -> Result<Vec<(String, Vec<Dependency>)>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let map: HashMap<String, Vec<TomlDependency>> = HashMap::deserialize(deserializer)?;
+    let mut res = map
+        .into_iter()
+        .map(|(key, deps)| {
+            let resolved = deps
+                .into_iter()
+                .map(|d| d.into_dependency())
+                .collect::<Result<Vec<_>, D::Error>>()?;
+            Ok((key, resolved))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    res.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -353,6 +375,9 @@ pub struct LockedPackage {
     /// Only filled if the package had install_suggests=True in the config file
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     pub suggests: Vec<Dependency>,
+    /// Only filled with the needs required by the package
+    #[serde(default, deserialize_with = "deserialize_needs")]
+    pub needs: Vec<(String, Vec<Dependency>)>,
 }
 
 impl LockedPackage {
@@ -369,6 +394,23 @@ impl LockedPackage {
                 .map(|x| x.into_owned())
                 .collect(),
             suggests: dep.suggests.into_iter().map(|x| x.into_owned()).collect(),
+            needs: dep
+                .needs
+                .into_iter()
+                .map(|(key, entries)| {
+                    let deps = entries
+                        .into_iter()
+                        .map(|e| match e {
+                            NeedsEntry::Package(d) => d,
+                            // Remote shorthands (e.g. tidyverse/tidytemplate) are stored by package
+                            // name only. The resolved package is separately locked as its own entry
+                            // with its full source (git/repo), so the remote URL is not needed here.
+                            NeedsEntry::Remote(name, _) => Dependency::Simple(name),
+                        })
+                        .collect();
+                    (key, deps)
+                })
+                .collect(),
         }
     }
 
@@ -394,6 +436,15 @@ impl LockedPackage {
                 Item::Value(Value::Array(format_array(&self.suggests))),
             );
         }
+        if !self.needs.is_empty() {
+            let mut needs_table = InlineTable::new();
+            let mut entries: Vec<_> = self.needs.iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (key, deps) in entries {
+                needs_table.insert(key, Value::Array(format_array(deps)));
+            }
+            table.insert("needs", Item::Value(Value::InlineTable(needs_table)));
+        }
 
         table
     }
@@ -414,6 +465,14 @@ impl LockedPackage {
         }
 
         true
+    }
+
+    pub(crate) fn needs_deps(&self, needs: &[String]) -> Vec<&Dependency> {
+        self.needs
+            .iter()
+            .filter(|(need, _)| needs.contains(need))
+            .flat_map(|(_, d)| d)
+            .collect()
     }
 }
 
@@ -654,4 +713,64 @@ pub enum LockfileErrorKind {
     Toml(#[from] toml::de::Error),
     #[error("Invalid lockfile: {0}")]
     Invalid(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn needs_round_trip_through_lockfile() {
+        // A package whose Config/Needs/* groups contain both a bare (Simple) entry and a
+        // version-constrained (Pinned) entry. The lockfile must persist these so that on the
+        // next sync the resolver's fast-path can trust the lockfile instead of re-fetching the
+        // DESCRIPTION.
+        let pkg = LockedPackage {
+            name: "rv.needs".to_string(),
+            version: "1.0.0".to_string(),
+            source: Source::Repository {
+                repository: Url::parse("http://cran/").unwrap(),
+            },
+            path: None,
+            force_source: false,
+            dependencies: vec![],
+            suggests: vec![],
+            needs: vec![
+                (
+                    "lockfile".to_string(),
+                    vec![Dependency::Simple("rmarkdown".to_string())],
+                ),
+                (
+                    "ver_req".to_string(),
+                    vec![Dependency::Pinned {
+                        name: "knitr".to_string(),
+                        requirement: "(>= 1.46)".parse().unwrap(),
+                    }],
+                ),
+            ],
+        };
+        let lockfile = Lockfile {
+            version: CURRENT_LOCKFILE_VERSION,
+            r_version: "4.4".to_string(),
+            packages: vec![pkg],
+        };
+
+        let rendered = lockfile.as_toml_string();
+        // Regression guard: needs must actually be written (it previously was not).
+        assert!(
+            rendered.contains("needs = {"),
+            "needs was not serialized:\n{rendered}"
+        );
+
+        let parsed = rendered
+            .parse::<Lockfile>()
+            .expect("rendered lockfile should re-parse");
+        assert_eq!(
+            parsed.packages[0].needs, lockfile.packages[0].needs,
+            "needs did not survive the write -> read round-trip"
+        );
+
+        // Writing the re-parsed lockfile again is byte-stable.
+        assert_eq!(parsed.as_toml_string(), rendered);
+    }
 }
