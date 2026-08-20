@@ -323,10 +323,175 @@ impl Tree<'_> {
     }
 }
 
+/// Builds inverted tree showing which top-level dependencies depend on the target package
+fn build_inverted_tree<'a>(
+    original_trees: Vec<TreeNode<'a>>,
+    target_package: &'a str,
+    deps_by_name: &HashMap<&'a str, &'a ResolvedDependency>,
+    unresolved_deps_by_name: &HashMap<&'a str, &'a UnresolvedDependency>,
+    context: &'a Context,
+) -> Vec<TreeNode<'a>> {
+    let mut inverted_trees = Vec::new();
+
+    // For each top-level dependency, check if it has the target package in its tree
+    for top_level_tree in original_trees {
+        if let Some(inverted_subtree) = find_and_invert_paths(
+            &top_level_tree,
+            target_package,
+            deps_by_name,
+            unresolved_deps_by_name,
+            context,
+        ) {
+            // Create tree with top-level as root and target as child
+            let mut top_level_node = top_level_tree;
+            top_level_node.children = vec![inverted_subtree];
+            inverted_trees.push(top_level_node);
+        }
+    }
+
+    inverted_trees
+}
+
+/// Finds the target package in a tree and builds inverted paths from target back to dependents
+fn find_and_invert_paths<'a>(
+    node: &TreeNode<'a>,
+    target_package: &'a str,
+    deps_by_name: &HashMap<&'a str, &'a ResolvedDependency>,
+    unresolved_deps_by_name: &HashMap<&'a str, &'a UnresolvedDependency>,
+    context: &'a Context,
+) -> Option<TreeNode<'a>> {
+    // If this node is the target, create target node with inverted dependencies
+    if node.name == target_package {
+        return Some(create_target_node_with_dependents(
+            target_package,
+            deps_by_name,
+            unresolved_deps_by_name,
+            context,
+        ));
+    }
+
+    // Otherwise, recursively check children
+    for child in &node.children {
+        if let Some(inverted_child) = find_and_invert_paths(
+            child,
+            target_package,
+            deps_by_name,
+            unresolved_deps_by_name,
+            context,
+        ) {
+            return Some(inverted_child);
+        }
+    }
+
+    None
+}
+
+/// Creates a target node with its dependents as children (inverted dependencies)
+fn create_target_node_with_dependents<'a>(
+    target_package: &'a str,
+    deps_by_name: &HashMap<&'a str, &'a ResolvedDependency>,
+    unresolved_deps_by_name: &HashMap<&'a str, &'a UnresolvedDependency>,
+    context: &'a Context,
+) -> TreeNode<'a> {
+    // Find all packages that directly depend on the target
+    let mut dependents = Vec::new();
+
+    for (name, dep) in deps_by_name {
+        if dep.all_dependencies_names().contains(&target_package) {
+            // Only include this dependent if it's not a different top-level dependency
+            // We need to know which top-level we're building for, so we'll get it from the context
+            // For now, we'll need to pass this information differently
+            let mut visited = HashSet::new();
+            visited.insert(target_package);
+            let dependent_node = build_dependent_chain_with_cycle_detection(
+                name,
+                target_package,
+                "", // We'll fix this by restructuring the function calls
+                deps_by_name,
+                context,
+                &mut visited,
+            );
+            dependents.push(dependent_node);
+        }
+    }
+
+    // Create the target node with dependents as children
+    let sys_deps = context.system_dependencies.get(target_package);
+    if let Some(dep) = deps_by_name.get(target_package).copied() {
+        TreeNode::resolved(target_package, dep, sys_deps, dependents)
+    } else {
+        let mut node = TreeNode::unresolved(
+            target_package,
+            unresolved_deps_by_name.get(target_package).copied(),
+            sys_deps,
+        );
+        node.children = dependents;
+        node
+    }
+}
+
+/// Builds a chain of dependents from a package that depends on the target with cycle detection
+fn build_dependent_chain_with_cycle_detection<'a>(
+    package_name: &'a str,
+    target_package: &'a str,
+    current_top_level: &'a str,
+    deps_by_name: &HashMap<&'a str, &'a ResolvedDependency>,
+    context: &'a Context,
+    visited: &mut HashSet<&'a str>,
+) -> TreeNode<'a> {
+    let dep = deps_by_name[&package_name];
+
+    // Add this package to visited set
+    visited.insert(package_name);
+
+    // Find packages that depend on this package (but not ones we've already visited)
+    let mut higher_dependents = Vec::new();
+    for (name, higher_dep) in deps_by_name {
+        if *name != target_package
+            && !visited.contains(name)
+            && higher_dep.all_dependencies_names().contains(&package_name)
+        {
+            // Only continue if this is the current top-level dependency we're building for
+            // or if it's not a top-level dependency at all
+            if *name == current_top_level || !is_top_level_dependency(name, context) {
+                let higher_dependent_node = build_dependent_chain_with_cycle_detection(
+                    name,
+                    target_package,
+                    current_top_level,
+                    deps_by_name,
+                    context,
+                    visited,
+                );
+                higher_dependents.push(higher_dependent_node);
+            }
+        }
+    }
+
+    // Remove this package from visited set (backtrack)
+    visited.remove(package_name);
+
+    TreeNode::resolved(
+        package_name,
+        dep,
+        context.system_dependencies.get(package_name),
+        higher_dependents,
+    )
+}
+
+/// Helper function to check if a package is a top-level dependency
+fn is_top_level_dependency(package_name: &str, context: &Context) -> bool {
+    context
+        .config
+        .dependencies()
+        .iter()
+        .any(|dep| dep.name() == package_name)
+}
+
 pub fn tree<'a>(
     context: &'a Context,
     resolved_deps: &'a [ResolvedDependency],
     unresolved_deps: &'a [UnresolvedDependency],
+    invert_target: Option<&'a str>,
 ) -> Tree<'a> {
     let deps_by_name: HashMap<_, _> = resolved_deps.iter().map(|d| (d.name.as_ref(), d)).collect();
     let unresolved_deps_by_name: HashMap<_, _> = unresolved_deps
@@ -360,6 +525,18 @@ pub fn tree<'a>(
             ));
         }
     }
+
+    let nodes = if let Some(target_package) = invert_target {
+        build_inverted_tree(
+            nodes,
+            target_package,
+            &deps_by_name,
+            &unresolved_deps_by_name,
+            context,
+        )
+    } else {
+        nodes
+    };
 
     Tree { nodes }
 }

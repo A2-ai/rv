@@ -166,6 +166,9 @@ pub enum Command {
         /// Specify an R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
+        #[clap(long)]
+        /// Invert the tree to show which top-level dependencies depend on the specified package
+        invert: Option<String>,
     },
     /// Returns the path for the library for the current project/system in UNIX format, even
     /// on Windows.
@@ -923,6 +926,7 @@ fn try_main() -> Result<()> {
             depth,
             hide_system_deps,
             r_version,
+            invert,
         } => {
             let mut context =
                 Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
@@ -934,7 +938,12 @@ fn try_main() -> Result<()> {
                 context.show_progress_bar();
             }
             let resolution = resolve_dependencies(&context, ResolveMode::Default, false);
-            let tree = tree(&context, &resolution.found, &resolution.failed);
+            let tree = tree(
+                &context,
+                &resolution.found,
+                &resolution.failed,
+                invert.as_deref(),
+            );
 
             if output_format.is_json() {
                 println!(
