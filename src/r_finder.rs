@@ -36,7 +36,7 @@ pub struct RInstall {
 }
 
 impl RInstall {
-    pub fn default_from_path() -> Self {
+    pub fn default_from_env_path() -> Self {
         #[cfg(windows)]
         let bin_path = if which::which("R.bat").is_ok() {
             PathBuf::from("R.bat")
@@ -52,6 +52,36 @@ impl RInstall {
             version: Version::default(),
             is_devel: false,
         }
+    }
+
+    pub fn find_version(mut self) -> Option<Self> {
+        match self.version() {
+            Ok(Some(version)) => {
+                self.version = version;
+                Some(self)
+            }
+            Ok(None) => {
+                // Devel - need header for version
+                // get_r_library() returns {RHOME}/library, so we get parent to get RHOME
+                let library_path = self.get_r_library().ok()?;
+                let rhome = library_path.parent()?;
+                let header = rhome.join("include").join("Rversion.h");
+                let (version, is_devel) = read_version_from_header(&header)?;
+                self.version = version;
+                self.is_devel = is_devel;
+                Some(self)
+            }
+            Err(_) => None,
+        }
+    }
+
+    pub fn default_from_user_path(path: &Path) -> Option<Self> {
+        let r_cmd = Self {
+            bin_path: path.to_path_buf(),
+            version: Version::default(),
+            is_devel: false,
+        };
+        r_cmd.find_version()
     }
 }
 
@@ -94,30 +124,13 @@ pub fn get_r_from_path() -> Option<RInstall> {
 
     #[cfg(not(windows))]
     let bin_path = PathBuf::from("R");
-    let mut r_cmd = RInstall {
+    let r_cmd = RInstall {
         bin_path,
         is_devel: false,
         version: Version::default(),
     };
 
-    match r_cmd.version() {
-        Ok(Some(version)) => {
-            r_cmd.version = version;
-            Some(r_cmd)
-        }
-        Ok(None) => {
-            // Devel - need header for version
-            // get_r_library() returns {RHOME}/library, so we get parent to get RHOME
-            let library_path = r_cmd.get_r_library().ok()?;
-            let rhome = library_path.parent()?;
-            let header = rhome.join("include").join("Rversion.h");
-            let (version, is_devel) = read_version_from_header(&header)?;
-            r_cmd.version = version;
-            r_cmd.is_devel = is_devel;
-            Some(r_cmd)
-        }
-        Err(_) => None,
-    }
+    r_cmd.find_version()
 }
 
 /// Get rig/homebrew installed R versions by looking at where they are installed and looking up
