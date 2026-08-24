@@ -109,16 +109,27 @@ fn render_config(
 }
 
 pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
-    let r_code = r#"
-    repos <- getOption("repos")
-    cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))
-    "#;
+    // Resolve Rscript from the R on PATH via its R_HOME rather than spawning a bare
+    // `Rscript`. On Windows a bare name never resolves a rig `Rscript.bat` shim (Rust's
+    // `Command` ignores `PATHEXT`), and spawning the `.bat` itself routes through cmd.exe.
+    // `get_r_from_path` is `.bat`-aware, and the resolved `Rscript.exe` runs directly (#489).
+    let r_install = crate::r_finder::get_r_from_path().ok_or(InitError {
+        source: InitErrorKind::RNotFound,
+    })?;
+    let r_home = crate::r_cmd::get_r_home(&r_install.bin_path).map_err(|e| InitError {
+        source: InitErrorKind::Command(e),
+    })?;
+    let rscript = crate::r_cmd::resolve_rscript_path(&r_home);
+
+    // Keep this a single line with no embedded newlines: on Windows, Rscript.exe's
+    // front-end re-parses the `-e` argument and a multi-line value crashes it (#489).
+    let r_code = r#"repos <- getOption("repos"); cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))"#;
 
     let (mut recv, send) = std::io::pipe().map_err(|e| InitError {
         source: InitErrorKind::Command(e),
     })?;
 
-    let mut command = Command::new("Rscript");
+    let mut command = Command::new(&rscript);
     command
         .arg("-e")
         .arg(r_code)
@@ -216,6 +227,8 @@ pub enum InitErrorKind {
     Io(#[from] std::io::Error),
     #[error("R command failed: {0}")]
     Command(std::io::Error),
+    #[error("Could not find R on PATH")]
+    RNotFound,
     #[error("Failed to find repositories: {0}")]
     CommandFailed(String),
 }

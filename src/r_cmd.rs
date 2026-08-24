@@ -545,10 +545,48 @@ pub(crate) fn get_r_home(r_bin_path: &Path) -> Result<PathBuf, std::io::Error> {
     Ok(PathBuf::from(r_home))
 }
 
+/// Resolve the `Rscript` inside an R installation tree from its `R_HOME`.
+///
+/// The R tree always ships `Rscript.exe` on Windows, never a `.bat`. We deliberately do
+/// not reuse the extension of the `R` binary rv was launched with, nor invoke `Rscript`
+/// off PATH: when R is found via a rig `.bat` shim (e.g. `R.bat`), the former derives a
+/// nonexistent `{R_HOME}/bin/Rscript.bat` (#488), and spawning a `.bat` shim routes
+/// through cmd.exe, which mangles multi-line `-e` scripts (#489). `R_HOME` already points
+/// at the real install tree, so the sibling `Rscript.exe`, invoked directly, always works.
+pub(crate) fn resolve_rscript_path(r_home: &Path) -> PathBuf {
+    let mut rscript = r_home.join("bin").join("Rscript");
+
+    if cfg!(windows) {
+        rscript.set_extension("exe");
+    }
+
+    rscript
+}
+
 #[cfg(test)]
 mod tests {
-    use super::find_r_version;
+    use super::{find_r_version, resolve_rscript_path};
     use crate::Version;
+    use std::path::PathBuf;
+
+    #[test]
+    fn resolve_rscript_from_r_home() {
+        let r_home = PathBuf::from("/opt/R/4.5.0/lib/R");
+
+        #[cfg(not(windows))]
+        assert_eq!(
+            resolve_rscript_path(&r_home),
+            r_home.join("bin").join("Rscript")
+        );
+
+        // On Windows the R tree only ships Rscript.exe, so we always target that,
+        // regardless of how R itself was located (e.g. a rig `R.bat` shim, #488/#489).
+        #[cfg(windows)]
+        assert_eq!(
+            resolve_rscript_path(&r_home),
+            r_home.join("bin").join("Rscript.exe")
+        );
+    }
 
     #[test]
     fn can_read_r_version() {
