@@ -945,6 +945,14 @@ fn try_main() -> Result<()> {
                 invert.as_deref(),
             );
 
+            if let Some(target) = &invert
+                && tree.is_empty()
+            {
+                return Err(anyhow!(
+                    "Package `{target}` is not in the resolved dependency tree"
+                ));
+            }
+
             if output_format.is_json() {
                 println!(
                     "{}",

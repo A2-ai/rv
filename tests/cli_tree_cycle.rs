@@ -101,6 +101,63 @@ fn tree_dedupes_diamond_dependencies() {
 }
 
 #[test]
+fn tree_invert_shows_dependents_of_target() {
+    let (project_dir, cache_dir) = diamond_project();
+    let config_path = project_dir.path().join("rproject.toml");
+
+    let mut cmd = cargo::cargo_bin_cmd!();
+    cmd.env("RV_CACHE_DIR", cache_dir.path()).args([
+        "--config-file",
+        config_path.to_str().unwrap(),
+        "tree",
+        "--hide-system-deps",
+        "--r-version",
+        "99.0",
+        "--invert",
+        "e",
+    ]);
+
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    insta::assert_snapshot!("diamond_invert_stdout", stdout);
+}
+
+#[test]
+fn tree_invert_errors_on_unknown_package() {
+    let (project_dir, cache_dir) = diamond_project();
+    let config_path = project_dir.path().join("rproject.toml");
+
+    let mut cmd = cargo::cargo_bin_cmd!();
+    cmd.env("RV_CACHE_DIR", cache_dir.path()).args([
+        "--config-file",
+        config_path.to_str().unwrap(),
+        "tree",
+        "--hide-system-deps",
+        "--r-version",
+        "99.0",
+        "--invert",
+        "nope",
+    ]);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "expected failure, stdout:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Package `nope` is not in the resolved dependency tree")
+    );
+}
+
+#[test]
 fn tree_handles_self_cycle_from_suggests() {
     let project_dir = TempDir::new().unwrap();
     let cache_dir = TempDir::new().unwrap();
