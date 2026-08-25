@@ -57,9 +57,9 @@ pub fn resolve_r_lookup(
     needs_toolchain: bool,
 ) -> Result<Option<RCommandLookup>, RSelectError> {
     let install = match r_bin {
-        Some(path) => {
-            Some(RInstall::default_from_user_path(&path).ok_or(RSelectError::RBinNotUsable(path))?)
-        }
+        Some(path) => Some(
+            RInstall::default_from_given_path(&path).ok_or(RSelectError::RBinNotUsable(path))?,
+        ),
         None => None,
     };
 

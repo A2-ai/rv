@@ -11,6 +11,7 @@
 //! which contains all the necessary info. Depending on how R is installed we might not be able
 //! to find the header easily since location will depend on distro etc.
 
+use std::env;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -27,6 +28,14 @@ static R_MINOR_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#define R_MINOR\s+"(\d+\.\d+)""#).unwrap());
 static R_STATUS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#define R_STATUS\s+"([^"]*)""#).unwrap());
+
+/// Matches the file names rig gives its versioned quick links, capturing the version.
+/// rig names the link after the install's version, and that shape differs by platform:
+/// `R-4.5` (optionally `-arm64`/`-x86_64`, from when CRAN's default macOS arch switched
+/// to arm64 at 4.6) on macOS, where frameworks are per-minor; the full `R-4.5.1` on
+/// Linux; and `R-4.5.1.bat` on Windows.
+static RIG_QUICK_LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^R-(\d+\.\d+(?:\.\d+)?)(?:-arm64|-x86_64)?(?:\.bat)?$").unwrap());
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RInstall {
@@ -75,7 +84,8 @@ impl RInstall {
         }
     }
 
-    pub fn default_from_user_path(path: &Path) -> Option<Self> {
+    pub fn default_from_given_path<P: AsRef<Path>>(path: P) -> Option<Self> {
+        let path = path.as_ref();
         let r_cmd = Self {
             bin_path: path.to_path_buf(),
             version: Version::default(),
@@ -133,14 +143,89 @@ pub fn get_r_from_path() -> Option<RInstall> {
     r_cmd.find_version()
 }
 
-/// Get rig/homebrew installed R versions by looking at where they are installed and looking up
+/// rig can put some R version in the path but the binary will be something like R-4.6
+fn get_rig_versioned_r_from_path(version: &Version, use_devel: bool) -> Option<RInstall> {
+    let get_version = |filename: String| -> Option<Version> {
+        let captures = RIG_QUICK_LINK_RE.captures(&filename)?;
+        Version::from_str(captures.get(1)?.as_str()).ok()
+    };
+
+    for dir in env::split_paths(&env::var_os("PATH")?) {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries.filter_map(Result::ok) {
+            let Some(v) = entry.file_name().into_string().ok().and_then(get_version) else {
+                continue;
+            };
+
+            if v.major_minor() == version.major_minor()
+                && let Some(r) = RInstall::default_from_given_path(&entry.path())
+                && version.hazy_match(&r.version)
+                && use_devel == r.is_devel
+            {
+                return Some(r);
+            }
+        }
+    }
+
+    None
+}
+
+/// The last tentative if we can't find anywhere else: we call `rig list --json` if `rig` is in the
+/// $PATH
+fn get_r_from_rig(version: &Version, use_devel: bool) -> Option<RInstall> {
+    which::which("rig").ok()?;
+
+    let output = match std::process::Command::new("rig")
+        .args(["list", "--json"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            log::warn!(
+                "rig list --json failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            return None;
+        }
+        Err(e) => {
+            log::warn!("Could not run rig list --json: {e}");
+            return None;
+        }
+    };
+
+    let value = match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+        Ok(value) => value,
+        Err(e) => {
+            log::error!("rig list --json didn't return JSON: {e}");
+            return None;
+        }
+    };
+
+    for elem in value.as_array().map(Vec::as_slice).unwrap_or_default() {
+        if let Some(bin) = elem
+            .get("binary")
+            .and_then(|x| x.as_str())
+            .and_then(RInstall::default_from_given_path)
+        {
+            if version.hazy_match(&bin.version) && use_devel == bin.is_devel {
+                return Some(bin);
+            }
+        }
+    }
+
+    None
+}
+
+/// Get rig/homebrew/official installed R versions by looking at where they are installed and looking up
 /// the header
 fn scan_known_r_locations() -> Vec<RInstall> {
     let mut installs = Vec::new();
 
     #[cfg(target_os = "macos")]
     {
-        // rig on macOS uses /Library/Frameworks/R.framework/Versions/
         let root = PathBuf::from("/Library/Frameworks/R.framework/Versions");
         if root.is_dir()
             && let Ok(entries) = std::fs::read_dir(&root)
@@ -197,7 +282,6 @@ fn scan_known_r_locations() -> Vec<RInstall> {
 
     #[cfg(target_os = "linux")]
     {
-        // rig on Linux uses /opt/R/{version}/
         let root = PathBuf::from("/opt/R");
         if root.is_dir()
             && let Ok(entries) = std::fs::read_dir(&root)
@@ -227,7 +311,6 @@ fn scan_known_r_locations() -> Vec<RInstall> {
 
     #[cfg(target_os = "windows")]
     {
-        // rig on Windows uses C:\Program Files\R\R-{version}\
         let root = PathBuf::from(r"C:\Program Files\R");
         if root.is_dir()
             && let Ok(entries) = std::fs::read_dir(&root)
@@ -268,6 +351,16 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
         return Some(r);
     }
 
+    // Otherwise check for rig versions in PATH
+    if let Some(r) = get_rig_versioned_r_from_path(version, use_devel) {
+        log::debug!(
+            "Versioned R in PATH ({}) matches: {} (use_devel={use_devel})",
+            r.bin_path.display(),
+            r.version.original
+        );
+        return Some(r);
+    }
+
     // Otherwise use known installation location to figure it out and return the first one that
     // kinda matches
     let r_installs = scan_known_r_locations();
@@ -281,6 +374,14 @@ pub fn find_r_install(version: &Version, use_devel: bool) -> Option<RInstall> {
             );
             return Some(r.clone());
         }
+    }
+
+    if let Some(r) = get_r_from_rig(version, use_devel) {
+        log::debug!(
+            "R found from `rig list` matches: {} (use_devel={use_devel})",
+            r.version.original
+        );
+        return Some(r);
     }
 
     log::debug!(
