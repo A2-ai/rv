@@ -238,13 +238,29 @@ impl HttpDownload for Http {
             let sha = sha.unwrap();
             let new_destination = destination.join(&sha[..10]);
             let install_dir = new_destination.join(actual_dir.file_name().unwrap());
-            if install_dir.is_dir() {
-                fs::remove_dir_all(&install_dir)
+
+            // atomic renames since we use the sha in the directory, and an error happening
+            // there is not fixable without cleaning the cache
+            fs::create_dir_all(&destination).map_err(|e| HttpError::from_io(url.as_str(), e))?;
+            let staging = tempfile::tempdir_in(&destination)
+                .map_err(|e| HttpError::from_io(url.as_str(), e))?;
+            copy_folder(
+                &actual_dir,
+                staging.path().join(actual_dir.file_name().unwrap()),
+            )
+            .map_err(|e| HttpError::from_io(url.as_str(), e))?;
+
+            if new_destination.is_dir() {
+                fs::remove_dir_all(&new_destination)
                     .map_err(|e| HttpError::from_io(url.as_str(), e))?;
             }
-            fs::create_dir_all(&install_dir).map_err(|e| HttpError::from_io(url.as_str(), e))?;
-            copy_folder(&actual_dir, &install_dir)
-                .map_err(|e| HttpError::from_io(url.as_str(), e))?;
+            let staging = staging.keep();
+            if let Err(e) = fs::rename(&staging, &new_destination) {
+                let _ = fs::remove_dir_all(&staging);
+                if !new_destination.is_dir() {
+                    return Err(HttpError::from_io(url.as_str(), e));
+                }
+            }
 
             (new_destination, Some(install_dir), sha)
         } else {

@@ -122,6 +122,10 @@ impl Source {
         )
     }
 
+    pub fn is_url(&self) -> bool {
+        matches!(self, Source::Url { .. })
+    }
+
     pub fn is_repo(&self) -> bool {
         matches!(self, Source::Repository { .. })
     }

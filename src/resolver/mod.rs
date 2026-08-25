@@ -39,6 +39,8 @@ pub(crate) struct QueueItem<'d> {
     // Only for top level dependencies. Checks whether the config dependency is matching
     // what we have in the lockfile, we have one.
     matching_in_lockfile: Option<bool>,
+    // Only for top level URL dependencies with a matching lockfile entry: the sha of the tarball
+    locked_sha: Option<&'d str>,
 }
 
 impl<'d> QueueItem<'d> {
@@ -202,10 +204,19 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
+            let status =
+                cache.get_installation_status(&item.name, &package.version, &package.source);
+
             // For some type of packages we will always refresh directly from the source
-            // eg a branch might have added commits
+            // eg a branch might have added commits.
             if package.source.could_have_changed() {
-                return None;
+                // For a URL the content might have changed but if we have the tarball sha in the cache,
+                // we will use it what's available already.
+                let pinned_and_cached = package.source.is_url()
+                    && (status.local.source_available() || status.binary_available());
+                if !pinned_and_cached {
+                    return None;
+                }
             }
 
             if let Some(req) = &item.version_requirement
@@ -213,9 +224,6 @@ impl<'d> Resolver<'d> {
             {
                 return None;
             }
-
-            let installation_status =
-                cache.get_installation_status(&item.name, &package.version, &package.source);
 
             // We search first in the repo for whether we have source or binary since
             // we don't record that info in the lockfile
@@ -263,8 +271,7 @@ impl<'d> Resolver<'d> {
                 // url/git/local are probably source packages
                 PackageType::Source
             };
-            let resolved_dep =
-                ResolvedDependency::from_locked_package(package, installation_status, kind);
+            let resolved_dep = ResolvedDependency::from_locked_package(package, status, kind);
 
             let items = package
                 .dependencies
@@ -423,6 +430,14 @@ impl<'d> Resolver<'d> {
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let out_path = cache.local().get_url_download_path(url);
         let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
+        if let Some(locked_sha) = item.locked_sha
+            && locked_sha != sha
+        {
+            return Err(format!(
+                "The URL {url} has different content than what is recorded in the lockfile (checksum mismatch). \
+                Run `rv upgrade` to accept the new content and update the lockfile."
+            ).into());
+        }
 
         let install_path = dir.unwrap_or_else(|| out_path.clone());
         let package = parse_description_file_in_folder(&install_path)?;
@@ -434,6 +449,12 @@ impl<'d> Resolver<'d> {
             .into());
         }
         let is_binary = is_binary_package(&install_path, &package.name)?;
+        let source = Source::Url {
+            url: url.clone(),
+            sha,
+        };
+        let status =
+            cache.get_installation_status(&package.name, &package.version.original, &source);
         let (resolved_dep, deps) = ResolvedDependency::from_url_package(
             &package,
             if is_binary {
@@ -441,11 +462,9 @@ impl<'d> Resolver<'d> {
             } else {
                 PackageType::Source
             },
-            Source::Url {
-                url: url.clone(),
-                sha,
-            },
+            source,
             item.install_suggestions,
+            status,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
@@ -511,19 +530,23 @@ impl<'d> Resolver<'d> {
 
         let mut queue: VecDeque<_> = dependencies
             .iter()
-            .map(|d| QueueItem {
-                name: Cow::Borrowed(d.name()),
-                dep: Some(d),
-                version_requirement: None,
-                install_suggestions: d.install_suggestions(),
-                force_source: d.force_source(),
-                parent: None,
-                remote: None,
-                local_path: d.local_path(),
-                matching_in_lockfile: self.lockfile.and_then(|l| {
-                    l.get_package(d.name(), Some(d))
-                        .map(|p| p.is_matching(d, &self.repo_urls))
-                }),
+            .map(|d| {
+                let locked = self.lockfile.and_then(|l| l.get_package(d.name(), Some(d)));
+                QueueItem {
+                    name: Cow::Borrowed(d.name()),
+                    dep: Some(d),
+                    version_requirement: None,
+                    install_suggestions: d.install_suggestions(),
+                    force_source: d.force_source(),
+                    parent: None,
+                    remote: None,
+                    local_path: d.local_path(),
+                    matching_in_lockfile: locked.map(|p| p.is_matching(d, &self.repo_urls)),
+                    locked_sha: locked.and_then(|p| match &p.source {
+                        Source::Url { sha, .. } => Some(sha.as_str()),
+                        _ => None,
+                    }),
+                }
             })
             .collect();
 
