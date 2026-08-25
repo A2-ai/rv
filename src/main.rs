@@ -114,15 +114,10 @@ pub enum Command {
         #[clap(long)]
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
-        /// Forces the usage of the R at the given path. If it doesn't match the config's R
-        /// version, pass `--r-version` as well to confirm; the lockfile is then neither used
-        /// nor updated.
+        /// Forces the usage of the R at the given path. Its version must match the config's R
+        /// version, otherwise it will error.
         #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
         r_bin: Option<PathBuf>,
-        /// Use this R version instead of the one in the config (only differs from the config
-        /// together with `--r-bin`, where it asserts the given R's version).
-        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
-        r_version: Option<Version>,
         #[clap(flatten)]
         add_options: AddOptions,
     },
@@ -137,29 +132,19 @@ pub enum Command {
         /// Remove packages from config file, but do not sync. No effect if --dry-run is used
         #[clap(long)]
         no_sync: bool,
-        /// Forces the usage of the R at the given path. If it doesn't match the config's R
-        /// version, pass `--r-version` as well to confirm; the lockfile is then neither used
-        /// nor updated.
+        /// Forces the usage of the R at the given path. Its version must match the config's R
+        /// version, otherwise it will error.
         #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
         r_bin: Option<PathBuf>,
-        /// Use this R version instead of the one in the config (only differs from the config
-        /// together with `--r-bin`, where it asserts the given R's version).
-        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
-        r_version: Option<Version>,
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
         dry_run: bool,
-        /// Forces the usage of the R at the given path. If it doesn't match the config's R
-        /// version, pass `--r-version` as well to confirm; the lockfile is then neither used
-        /// nor updated.
+        /// Forces the usage of the R at the given path. Its version must match the config's R
+        /// version, otherwise it will error.
         #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
         r_bin: Option<PathBuf>,
-        /// Use this R version instead of the one in the config (only differs from the config
-        /// together with `--r-bin`, where it asserts the given R's version).
-        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
-        r_version: Option<Version>,
     },
     /// Dry run of what sync would do
     Plan {
@@ -712,7 +697,6 @@ fn try_main() -> Result<()> {
             dry_run,
             no_sync,
             r_bin,
-            r_version,
             add_options,
         } => {
             // Validate that multiple packages only work with simple adds
@@ -746,7 +730,7 @@ fn try_main() -> Result<()> {
             let mut context = make_context(
                 &cli.config_file,
                 r_bin,
-                r_version,
+                None,
                 true,
                 false,
                 RCommandLookup::Strict,
@@ -893,7 +877,6 @@ fn try_main() -> Result<()> {
             dry_run,
             no_sync,
             r_bin,
-            r_version,
         } => {
             use rv::remove_packages;
 
@@ -919,7 +902,7 @@ fn try_main() -> Result<()> {
             let mut context = make_context(
                 &cli.config_file,
                 r_bin,
-                r_version,
+                None,
                 true,
                 false,
                 RCommandLookup::Strict,
@@ -948,15 +931,11 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Upgrade {
-            dry_run,
-            r_bin,
-            r_version,
-        } => {
+        Command::Upgrade { dry_run, r_bin } => {
             let mut context = make_context(
                 &cli.config_file,
                 r_bin,
-                r_version,
+                None,
                 true,
                 false,
                 RCommandLookup::Strict,

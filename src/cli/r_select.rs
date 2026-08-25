@@ -26,14 +26,17 @@ pub enum RSelectError {
         requested: Version,
     },
     #[error(
-        "The R at {path:?} is {actual} but the config wants {config}. Pass --r-version {}.{} to actually run, skipping the lockfile.",
+        "The R at {path:?} is {actual} but the config wants {config}. Pass --r-version {}.{} to {}",
         .actual.major_minor()[0],
-        .actual.major_minor()[1]
+        .actual.major_minor()[1],
+        if *.needs_toolchain { "actually run, skipping the lockfile." } else { "run with this R." }
     )]
     RBinConfigMismatch {
         path: PathBuf,
         actual: Version,
         config: Version,
+        /// Whether the command uses the lockfile
+        needs_toolchain: bool,
     },
     #[error(
         "--r-version {requested} does not match the config ({config}). Use --r-bin to run with an incompatible R."
@@ -98,6 +101,7 @@ fn r_lookup(
                     config: config_r_version.clone(),
                     actual: install.version,
                     path: install.bin_path,
+                    needs_toolchain,
                 })
             }
         }
@@ -159,6 +163,7 @@ mod tests {
             // --r-bin alone must match the config so the lockfile stays in play
             (Some("4.4.1"), None, "4.4", true, Want::Explicit("4.4.1")),
             (Some("4.5.1"), None, "4.4", true, Want::BinConfigMismatch),
+            (Some("4.5.1"), None, "4.4", false, Want::BinConfigMismatch),
             // combo: --r-version asserts the binary and overrides the config
             (
                 Some("4.5.1"),
@@ -205,6 +210,12 @@ mod tests {
                     assert!(matches!(err, E::RBinConfigMismatch { .. }), "{label}");
                     // the error should point the user at the escape hatch
                     assert!(err.to_string().contains("--r-version 4.5"), "{label}");
+                    // only lockfile commands mention the lockfile in the hint
+                    if *needs_toolchain {
+                        assert!(err.to_string().contains("skipping the lockfile"), "{label}");
+                    } else {
+                        assert!(!err.to_string().contains("lockfile"), "{label}");
+                    }
                 }
                 Want::BinVersionMismatch => {
                     assert!(matches!(got, Err(E::RBinVersionMismatch { .. })), "{label}")

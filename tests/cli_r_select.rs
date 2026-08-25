@@ -233,31 +233,3 @@ fn sync_r_bin_flag_overrides_env_var() {
         .assert()
         .success();
 }
-
-#[test]
-#[ignore]
-fn add_with_mismatched_combo_errors_and_leaves_config_untouched() {
-    let (r_bin, mm) = r_on_path();
-    let other = other_version(&mm);
-    let (cache, project, config) = setup_project(&other);
-    let before = fs::read_to_string(&config).unwrap();
-
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.env("RV_CACHE_DIR", cache.path());
-    cmd.args([
-        "--config-file",
-        config.to_str().unwrap(),
-        "add",
-        "dplyr",
-        "--r-bin",
-        r_bin.to_str().unwrap(),
-        "--r-version",
-        &mm,
-    ]);
-    cmd.assert().failure().stderr(predicates::str::contains(
-        "which is not supported by this command",
-    ));
-
-    assert_eq!(fs::read_to_string(&config).unwrap(), before);
-    let _ = project;
-}
