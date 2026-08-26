@@ -232,8 +232,16 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then SUDO=; fi
           $SUDO rig add 4.4
           $SUDO rig add 4.5
-          $SUDO rig default 4.5
+          # `rig default` needs the exact installed name, not the `4.5` minor alias that
+          # `add` accepts. That name differs by platform (e.g. `4.5.3` on Linux, `4.5-arm64`
+          # on macOS), so read it back from `rig list` — the first 4.5* token on its line.
+          default_name="$(rig list 2>/dev/null | grep -oE '4\.5[^ ]*' | head -1)"
+          echo "resolved default name: $default_name"
+          $SUDO rig default "$default_name"
+          echo "=== rig list ==="
           rig list
+          echo "=== rig list --json ==="
+          rig list --json
 
       - name: Build rv
         run: cargo build --all-features --release

@@ -161,7 +161,7 @@ fn get_rig_versioned_r_from_path(version: &Version, use_devel: bool) -> Option<R
             };
 
             if v.major_minor() == version.major_minor()
-                && let Some(r) = RInstall::default_from_given_path(&entry.path())
+                && let Some(r) = RInstall::default_from_given_path(entry.path())
                 && version.hazy_match(&r.version)
                 && use_devel == r.is_devel
             {
@@ -209,10 +209,10 @@ fn get_r_from_rig(version: &Version, use_devel: bool) -> Option<RInstall> {
             .get("binary")
             .and_then(|x| x.as_str())
             .and_then(RInstall::default_from_given_path)
+            && version.hazy_match(&bin.version)
+            && use_devel == bin.is_devel
         {
-            if version.hazy_match(&bin.version) && use_devel == bin.is_devel {
-                return Some(bin);
-            }
+            return Some(bin);
         }
     }
 
