@@ -321,6 +321,22 @@ impl Tree<'_> {
         self.nodes.is_empty()
     }
 
+    /// Every package declared in the project config that appears anywhere in the tree,
+    /// deduplicated and sorted
+    pub fn config_dependencies(&self) -> Vec<&str> {
+        let mut names = Vec::new();
+        let mut stack: Vec<&TreeNode> = self.nodes.iter().collect();
+        while let Some(node) = stack.pop() {
+            if node.in_config {
+                names.push(node.name);
+            }
+            stack.extend(node.children.iter());
+        }
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
     pub fn print(&self, max_depth: Option<usize>, show_sys_deps: bool) {
         for (i, tree) in self.nodes.iter().enumerate() {
             println!(

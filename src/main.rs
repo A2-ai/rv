@@ -169,6 +169,10 @@ pub enum Command {
         #[clap(long)]
         /// Invert the tree to show which top-level dependencies depend on the specified package
         invert: Option<String>,
+        #[clap(long)]
+        /// Instead of the tree, list the packages declared in the config that appear in it,
+        /// deduplicated and sorted. Most useful with --invert
+        config_deps: bool,
     },
     /// Returns the path for the library for the current project/system in UNIX format, even
     /// on Windows.
@@ -927,6 +931,7 @@ fn try_main() -> Result<()> {
             hide_system_deps,
             r_version,
             invert,
+            config_deps,
         } => {
             let mut context =
                 Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
@@ -953,7 +958,19 @@ fn try_main() -> Result<()> {
                 ));
             }
 
-            if output_format.is_json() {
+            if config_deps {
+                let names = tree.config_dependencies();
+                if output_format.is_json() {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&names).expect("valid json")
+                    );
+                } else {
+                    for name in names {
+                        println!("{name}");
+                    }
+                }
+            } else if output_format.is_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&tree).expect("valid json")
