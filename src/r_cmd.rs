@@ -49,9 +49,13 @@ pub trait RCmd: Send + Sync {
     ) -> Result<String, RCmdError>;
 
     /// Runs `R CMD build` on a source directory and returns the path to the resulting tarball.
+    ///
+    /// When `sub_folder` is set, the whole `source_dir` is copied to a temp dir, `bootstrap.R`
+    /// is run inside the subdirectory, and the now self-contained subdirectory is what gets built.
     fn build(
         &self,
         source_dir: impl AsRef<Path>,
+        sub_folder: Option<impl AsRef<Path>>,
         output_dir: impl AsRef<Path>,
         libraries: &[impl AsRef<Path>],
         cancellation: Arc<Cancellation>,
@@ -203,6 +207,79 @@ fn run_r_command(
     }
 }
 
+/// Runs the package's `bootstrap.R` if it exists and errors if the bootstrap failed.
+fn maybe_bootstrap(
+    r_cmd: &RInstall,
+    pkg_dir: &Path,
+    library_paths: &str,
+    env_vars: &HashMap<&str, &str>,
+    cancellation: Arc<Cancellation>,
+) -> Result<(), RCmdError> {
+    if !pkg_dir.join("bootstrap.R").exists() {
+        return Ok(());
+    }
+
+    log::debug!(
+        "bootstrap.R found in {}. Checking if Config/build/bootstrap is truthy...",
+        pkg_dir.display()
+    );
+    let description_path = pkg_dir.join("DESCRIPTION");
+    let to_bootstrap = match fs::read_to_string(&description_path) {
+        Ok(s) => {
+            let truthy = s.lines().any(|line| {
+                line.split_once(':')
+                    .filter(|(key, _)| key.trim() == "Config/build/bootstrap")
+                    .is_some_and(|(_, val)| {
+                        matches!(
+                            val.trim().to_lowercase().as_str(),
+                            "true" | "yes" | "on" | "1"
+                        )
+                    })
+            });
+            if !truthy {
+                log::info!(
+                    "Config/build/bootstrap is not truthy in the DESCRIPTION at {}",
+                    description_path.display()
+                );
+            }
+            truthy
+        }
+        Err(e) => {
+            log::warn!(
+                "Could not read description file at {} to check if Config/build/bootstrap is truthy: {e}. Assuming truthy and bootstrapping...",
+                description_path.display()
+            );
+            true
+        }
+    };
+
+    if !to_bootstrap {
+        return Ok(());
+    }
+
+    log::debug!("Bootstrapping {}...", pkg_dir.display());
+    let mut command = spawn_isolated_r_command(r_cmd);
+    command
+        .arg("--vanilla")
+        .arg("-f")
+        .arg("bootstrap.R")
+        .current_dir(pkg_dir)
+        .env("R_LIBS", library_paths)
+        .env("R_LIBS_SITE", library_paths)
+        .env("R_LIBS_USER", library_paths)
+        .envs(env_vars);
+
+    let pkg_dir = pkg_dir.to_owned();
+    run_r_command(command, cancellation, move |output| {
+        RCmdErrorKind::BootstrapFailed(format!(
+            "Failed to run bootstrap.R for package at {}: {output}",
+            pkg_dir.display()
+        ))
+    })?;
+
+    Ok(())
+}
+
 #[cfg(feature = "cli")]
 pub fn kill_all_r_processes() {
     let process_ids = ACTIVE_R_PROCESS_IDS.lock().unwrap();
@@ -266,78 +343,18 @@ impl RCmd for RInstall {
         let library_paths =
             r_library_paths(libraries).map_err(|e| RCmdError::from_fs_io(e, destination))?;
 
-        // Some R package structures, especially those that make use of
-        // bootstrap.R like tree-sitter-r require the parent directories
-        // to exist during build. We need to copy the whole repo
-        // and install from the subdirectory directly
+        // Some R package structures, especially those that make use of bootstrap.R like
+        // tree-sitter-r, require the parent directories to exist during build. The whole repo
+        // has been copied above, so we descend into the subdirectory and bootstrap from there.
         if let Some(sub_dir) = sub_folder {
             src_backup_dir.push(sub_dir);
-
-            if src_backup_dir.join("bootstrap.R").exists() {
-                log::debug!(
-                    "bootstrap.R is found for {}. Checking if Config/build/bootstrap is truthy...",
-                    destination.display()
-                );
-                let description_path = src_backup_dir.join("DESCRIPTION");
-                let to_bootstrap = match fs::read_to_string(&description_path) {
-                    Ok(s) => {
-                        // Match pkgbuild's semantics: the Config/build/bootstrap field is
-                        // truthy for `true`/`yes`/`on`/`1` (case-insensitive).
-                        let truthy = s.lines().any(|line| {
-                            line.split_once(':')
-                                .filter(|(key, _)| key.trim() == "Config/build/bootstrap")
-                                .is_some_and(|(_, val)| {
-                                    matches!(
-                                        val.trim().to_lowercase().as_str(),
-                                        "true" | "yes" | "on" | "1"
-                                    )
-                                })
-                        });
-                        if !truthy {
-                            log::info!(
-                                "Config/build/bootstrap is not truthy in the DESCRIPTION at {}",
-                                description_path.display()
-                            );
-                        }
-                        truthy
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Could not read description file at {} to check if Config/build/bootstrap is truthy: {e}. Assuming truthy and bootstrapping...",
-                            description_path.display()
-                        );
-                        true
-                    }
-                };
-
-                if to_bootstrap {
-                    log::debug!("Bootstrapping {}...", destination.display());
-                    // Run bootstrap.R with the same isolation as the build/install step:
-                    // a vanilla R that ignores user/site profiles, the project library
-                    // paths so any `library()` calls resolve against project deps, and the
-                    // package env vars. run_r_command handles pid tracking + cancellation.
-                    let mut command = spawn_isolated_r_command(self);
-                    command
-                        .arg("--vanilla")
-                        .arg("-f")
-                        .arg("bootstrap.R")
-                        .current_dir(&src_backup_dir)
-                        .env("R_LIBS", &library_paths)
-                        .env("R_LIBS_SITE", &library_paths)
-                        .env("R_LIBS_USER", &library_paths)
-                        .envs(env_vars);
-
-                    // Match pkgbuild: a failed bootstrap is a hard build failure rather
-                    // than something we silently proceed past.
-                    let bootstrap_dir = src_backup_dir.clone();
-                    run_r_command(command, cancellation.clone(), move |output| {
-                        RCmdErrorKind::BootstrapFailed(format!(
-                            "Failed to run bootstrap.R for package at {}: {output}",
-                            bootstrap_dir.display()
-                        ))
-                    })?;
-                }
-            }
+            maybe_bootstrap(
+                self,
+                &src_backup_dir,
+                &library_paths,
+                env_vars,
+                cancellation.clone(),
+            )?;
         }
 
         let mut command = spawn_isolated_r_command(self);
@@ -422,6 +439,7 @@ impl RCmd for RInstall {
     fn build(
         &self,
         source_dir: impl AsRef<Path>,
+        sub_folder: Option<impl AsRef<Path>>,
         output_dir: impl AsRef<Path>,
         libraries: &[impl AsRef<Path>],
         cancellation: Arc<Cancellation>,
@@ -433,20 +451,45 @@ impl RCmd for RInstall {
         let library_paths =
             r_library_paths(libraries).map_err(|e| RCmdError::from_fs_io(e, source_dir))?;
 
+        // If we have a subdir, we copy the whole dir to a temp directory to run bootstrap
+        // if needed.
+        let (build_target, _src_backup): (PathBuf, Option<tempfile::TempDir>) =
+            if let Some(sub_dir) = sub_folder {
+                let backup_temp = tempfile::tempdir().map_err(|e| RCmdError {
+                    source: RCmdErrorKind::TempDir(e),
+                })?;
+                let mut pkg_dir = backup_temp.path().to_owned();
+                LinkMode::link_files(Some(LinkMode::Copy), "tmp_build", source_dir, &pkg_dir)
+                    .map_err(|e| RCmdError {
+                        source: RCmdErrorKind::LinkError(e),
+                    })?;
+                pkg_dir.push(sub_dir);
+                maybe_bootstrap(
+                    self,
+                    &pkg_dir,
+                    &library_paths,
+                    env_vars,
+                    cancellation.clone(),
+                )?;
+                (pkg_dir, Some(backup_temp))
+            } else {
+                (source_dir.to_owned(), None)
+            };
+
         let mut command = spawn_isolated_r_command(self);
         command
             .arg("CMD")
             .arg("build")
             .arg("--no-build-vignettes")
             .arg("--no-manual")
-            .arg(source_dir)
+            .arg(&build_target)
             .current_dir(output_dir)
             .env("R_LIBS", &library_paths)
             .env("R_LIBS_SITE", &library_paths)
             .env("R_LIBS_USER", &library_paths)
             .envs(env_vars);
 
-        log::debug!("Running R CMD build on {}", source_dir.display());
+        log::debug!("Running R CMD build on {}", build_target.display());
 
         let output = run_r_command(command, cancellation, RCmdErrorKind::BuildFailed)?;
 

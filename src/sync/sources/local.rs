@@ -72,16 +72,18 @@ pub(crate) fn install_package(
             library_dirs.first().unwrap().join(pkg.name.as_ref()),
         )?;
     } else {
-        let output = if sub_dir.is_none() && canon_path.is_dir() {
+        let output = if sub_dir.is_some() || canon_path.is_dir() {
             // For plain local directories, run R CMD build first so that .Rbuildignore is respected
             // and extraneous files (like rv/library/) are excluded from the installation.
             log::debug!(
-                "Running R CMD build on local package in {}",
-                actual_path.display()
+                "Running R CMD build on local package in {} (subdir {:?})",
+                actual_path.display(),
+                sub_dir
             );
             let build_output_dir = tempfile::tempdir()?;
             let tarball_path = r_cmd.build(
                 &actual_path,
+                sub_dir.as_ref(),
                 build_output_dir.path(),
                 library_dirs,
                 cancellation.clone(),
@@ -108,17 +110,12 @@ pub(crate) fn install_package(
                 )
             })?
         } else {
-            // We have a subdir or an already extracted tarball, we just install.
-            // That matches what we do with git, no build step first
-            log::debug!(
-                "Installing the local package in {} (subdir {:?})",
-                actual_path.display(),
-                sub_dir
-            );
+            // Plain tarball source package: install directly from the extracted path.
+            log::debug!("Installing the local package in {}", actual_path.display());
             events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
                 r_cmd.install(
                     &actual_path,
-                    sub_dir.as_ref(),
+                    Option::<&Path>::None,
                     library_dirs,
                     library_dirs.first().unwrap(),
                     cancellation,

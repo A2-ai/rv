@@ -6,6 +6,7 @@ use fs_err as fs;
 
 use crate::cache::Cache;
 use crate::events;
+use crate::fs::untar_archive;
 use crate::git::{GitReference, GitRemote};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
@@ -53,18 +54,48 @@ pub(crate) fn install_package(
             _ => (local_paths.source, None),
         };
 
-        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
-            r_cmd.install(
+        let output = if sub_dir.is_some() {
+            let build_output_dir = tempfile::tempdir()?;
+            let tarball_path = r_cmd.build(
                 &source_path,
                 sub_dir,
+                build_output_dir.path(),
                 library_dirs,
-                &local_paths.binary,
-                cancellation,
+                cancellation.clone(),
                 &pkg.env_vars,
-                configure_args,
-                strip,
-            )
-        })?;
+            )?;
+
+            let untar_dir = tempfile::tempdir()?;
+            let (extracted_path, _) =
+                untar_archive(fs::read(&tarball_path)?.as_slice(), untar_dir.path(), false)?;
+            let source = extracted_path.unwrap_or_else(|| tarball_path.clone());
+
+            events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+                r_cmd.install(
+                    &source,
+                    Option::<&Path>::None,
+                    library_dirs,
+                    &local_paths.binary,
+                    cancellation,
+                    &pkg.env_vars,
+                    configure_args,
+                    strip,
+                )
+            })?
+        } else {
+            events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+                r_cmd.install(
+                    &source_path,
+                    Option::<&Path>::None,
+                    library_dirs,
+                    &local_paths.binary,
+                    cancellation,
+                    &pkg.env_vars,
+                    configure_args,
+                    strip,
+                )
+            })?
+        };
 
         let log_path = cache.local().get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {
