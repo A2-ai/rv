@@ -50,6 +50,8 @@ pub struct TreeNode<'a> {
     state: NodeState<'a>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     is_duplicate: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    in_config: bool,
 }
 
 impl<'a> TreeNode<'a> {
@@ -70,6 +72,7 @@ impl<'a> TreeNode<'a> {
                 ignored: dependency.ignored,
             },
             is_duplicate: false,
+            in_config: false,
         }
     }
 
@@ -106,11 +109,35 @@ impl<'a> TreeNode<'a> {
             children: vec![],
             state: NodeState::Unresolved { error, version_req },
             is_duplicate: false,
+            in_config: false,
         }
     }
 
     fn has_duplicate_descendant(&self) -> bool {
         self.is_duplicate || self.children.iter().any(Self::has_duplicate_descendant)
+    }
+
+    fn has_config_descendant(&self) -> bool {
+        self.in_config || self.children.iter().any(Self::has_config_descendant)
+    }
+
+    /// Flags every node whose package is declared in the project config
+    fn mark_config_deps(&mut self, config_deps: &HashSet<&str>) {
+        self.in_config = config_deps.contains(self.name);
+        for child in self.children.iter_mut() {
+            child.mark_config_deps(config_deps);
+        }
+    }
+
+    fn markers(&self) -> String {
+        let mut out = String::new();
+        if self.in_config {
+            out.push_str(" (◆)");
+        }
+        if self.is_duplicate {
+            out.push_str(" (*)");
+        }
+        out
     }
 
     fn get_sys_deps(&self, show_sys_deps: bool) -> String {
@@ -182,12 +209,12 @@ impl<'a> TreeNode<'a> {
             return;
         }
 
-        let dup_marker = if self.is_duplicate { " (*)" } else { "" };
         println!(
-            "{prefix}{} {} [{}]{dup_marker}",
+            "{prefix}{} {} [{}]{}",
             kind.prefix(),
             self.name,
-            self.get_details(show_sys_deps)
+            self.get_details(show_sys_deps),
+            self.markers()
         );
 
         if self.is_duplicate {
@@ -296,11 +323,11 @@ impl Tree<'_> {
 
     pub fn print(&self, max_depth: Option<usize>, show_sys_deps: bool) {
         for (i, tree) in self.nodes.iter().enumerate() {
-            let dup_marker = if tree.is_duplicate { " (*)" } else { "" };
             println!(
-                "▶ {} [{}]{dup_marker}",
+                "▶ {} [{}]{}",
                 tree.name,
-                tree.get_details(show_sys_deps)
+                tree.get_details(show_sys_deps),
+                tree.markers()
             );
 
             if !tree.is_duplicate {
@@ -320,8 +347,15 @@ impl Tree<'_> {
             }
         }
 
-        if self.nodes.iter().any(TreeNode::has_duplicate_descendant) {
+        let has_config = self.nodes.iter().any(TreeNode::has_config_descendant);
+        let has_duplicate = self.nodes.iter().any(TreeNode::has_duplicate_descendant);
+        if has_config || has_duplicate {
             println!();
+        }
+        if has_config {
+            println!("(◆) package declared in the project config");
+        }
+        if has_duplicate {
             println!("(*) dependency already shown above");
         }
     }
@@ -440,9 +474,17 @@ pub fn tree<'a>(
         .collect();
 
     if let Some(target) = invert_target {
-        return Tree {
-            nodes: inverted_tree(target, resolved_deps, &unresolved_deps_by_name, context),
-        };
+        let config_deps: HashSet<&str> = context
+            .config
+            .dependencies()
+            .iter()
+            .map(|d| d.name())
+            .collect();
+        let mut nodes = inverted_tree(target, resolved_deps, &unresolved_deps_by_name, context);
+        for node in nodes.iter_mut() {
+            node.mark_config_deps(&config_deps);
+        }
+        return Tree { nodes };
     }
 
     let deps_by_name: HashMap<_, _> = resolved_deps.iter().map(|d| (d.name.as_ref(), d)).collect();

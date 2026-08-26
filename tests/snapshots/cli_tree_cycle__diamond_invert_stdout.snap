@@ -5,8 +5,9 @@ expression: stdout
 ▶ e [version: 1.0.0, source: https://diamond.test/repo, type: source]
 └─ d [version: 1.0.0, source: https://diamond.test/repo, type: source]
   ├─ b [version: 1.0.0, source: https://diamond.test/repo, type: source]
-  │ └─ a [version: 1.0.0, source: https://diamond.test/repo, type: source]
+  │ └─ a [version: 1.0.0, source: https://diamond.test/repo, type: source] (◆)
   └─ c [version: 1.0.0, source: https://diamond.test/repo, type: source]
-    └─ a [version: 1.0.0, source: https://diamond.test/repo, type: source] (*)
+    └─ a [version: 1.0.0, source: https://diamond.test/repo, type: source] (◆) (*)
 
+(◆) package declared in the project config
 (*) dependency already shown above
