@@ -277,7 +277,18 @@ impl RCmd for RInstall {
                 );
                 let to_bootstrap = match fs::read_to_string(src_backup_dir.join("DESCRIPTION")) {
                     Ok(s) => {
-                        let truthy = s.to_lowercase().contains("config/build/bootstrap: t");
+                        // Match pkgbuild's semantics: the Config/build/bootstrap field is
+                        // truthy for `true`/`yes`/`on`/`1` (case-insensitive).
+                        let truthy = s.lines().any(|line| {
+                            line.split_once(':')
+                                .filter(|(key, _)| key.trim() == "Config/build/bootstrap")
+                                .is_some_and(|(_, val)| {
+                                    matches!(
+                                        val.trim().to_lowercase().as_str(),
+                                        "true" | "yes" | "on" | "1"
+                                    )
+                                })
+                        });
                         if !truthy {
                             log::info!(
                                 "Config/build/bootstrap is not truthy in the DESCRIPTION file"
@@ -306,15 +317,15 @@ impl RCmd for RInstall {
                         })?;
 
                     if !output.status.success() {
-                        let stderr =
-                            std::str::from_utf8(&output.stderr).map_err(|e| InstallError {
-                                source: InstallErrorKind::Utf8(e),
-                            })?;
-
-                        log::warn!(
-                            "Failed to bootstrap package at {}: {stderr}. Proceeding in case package has been previously bootstrapped...",
-                            src_backup_dir.display()
-                        );
+                        // Match pkgbuild: a failed bootstrap is a hard build failure rather
+                        // than something we silently proceed past.
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        return Err(InstallError {
+                            source: InstallErrorKind::BootstrapFailed(format!(
+                                "Failed to run bootstrap.R for package at {}: {stderr}",
+                                src_backup_dir.display()
+                            )),
+                        });
                     }
                 }
             }
@@ -525,6 +536,8 @@ pub enum RCmdErrorKind {
     InstallationFailed(String),
     #[error("R CMD build failed:\n{0}")]
     BuildFailed(String),
+    #[error("Bootstrap failed: {0}")]
+    BootstrapFailed(String),
     #[error("Installation cancelled by user")]
     Cancelled,
 }
