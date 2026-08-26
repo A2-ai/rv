@@ -109,7 +109,11 @@ impl SyncHelper {
             }
         ) {
             Ok(mut changes) => {
-                if !self.dry_run && context.config.use_lockfile() && !self.locked {
+                if !self.dry_run
+                    && context.config.use_lockfile()
+                    && !self.locked
+                    && context.r_matches_config()
+                {
                     if resolution.found.is_empty() {
                         // delete the lockfiles if there are no dependencies
                         let lockfile_path = context.lockfile_path();
@@ -169,10 +173,11 @@ impl SyncHelper {
 
                         if !self.dry_run {
                             println!(
-                                "sync completed in {} ({} installed, {} removed)",
+                                "sync completed in {} ({} installed, {} removed) to {}",
                                 format_duration(sync_start.elapsed()),
                                 installed_count,
-                                removed_count
+                                removed_count,
+                                context.library_path().display(),
                             );
                         }
                     }

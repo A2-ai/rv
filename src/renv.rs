@@ -1,20 +1,29 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     error::Error,
     fmt,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
-use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
-use crate::git::url::GitUrl;
-use crate::lockfile::Source as LockSource;
+use crate::consts::RECOMMENDED_PACKAGES;
 use crate::{
-    Config, Lockfile, Repository, RepositoryDatabase,
+    Repository, RepositoryDatabase,
     package::{Operator, Version, VersionRequirement, deserialize_version, serialize_version},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use url::Url;
+
+// Only used by the renv-lock export path (`to_renv_lock` and helpers), which is behind `cli`.
+#[cfg(feature = "cli")]
+use crate::consts::BASE_PACKAGES;
+#[cfg(feature = "cli")]
+use crate::git::url::GitUrl;
+#[cfg(feature = "cli")]
+use crate::lockfile::Source as LockSource;
+#[cfg(feature = "cli")]
+use crate::{Config, Lockfile};
+#[cfg(feature = "cli")]
+use std::{collections::HashMap, str::FromStr};
 
 #[derive(Debug, PartialEq, Clone)]
 // as enum since logic to resolve depends on this
@@ -452,6 +461,7 @@ pub struct FromJsonFileError {
 
 /// Attempts to parse a GitHub git URL into (username, repo).
 /// Supports both HTTP ("https://github.com/a2-ai/ghqc") and SSH ("git@github.com:a2-ai/ghqc.git").
+#[cfg(feature = "cli")]
 fn parse_github_url(git_url: &GitUrl) -> Option<(String, String)> {
     match git_url {
         GitUrl::Http(url) => {
@@ -475,6 +485,7 @@ fn parse_github_url(git_url: &GitUrl) -> Option<(String, String)> {
     }
 }
 
+#[cfg(feature = "cli")]
 fn locked_package_to_renv(
     pkg: &crate::LockedPackage,
     url_to_alias: &HashMap<&str, &str>,
@@ -585,6 +596,7 @@ fn locked_package_to_renv(
     Some((info, warning))
 }
 
+#[cfg(feature = "cli")]
 fn normalize_renv_r_version(r_version: &str) -> String {
     if r_version.matches('.').count() < 2 {
         format!("{r_version}.0")
@@ -595,6 +607,7 @@ fn normalize_renv_r_version(r_version: &str) -> String {
 
 /// Convert an rv Lockfile + Config into an RenvLock.
 /// Returns the RenvLock and a list of warnings for packages that couldn't be perfectly mapped.
+#[cfg(feature = "cli")]
 pub fn to_renv_lock(lockfile: &Lockfile, config: &Config) -> (RenvLock, Vec<String>) {
     let mut warnings = Vec::new();
 
@@ -641,7 +654,9 @@ pub fn to_renv_lock(lockfile: &Lockfile, config: &Config) -> (RenvLock, Vec<Stri
 mod tests {
     use crate::{Config, Lockfile, Repository, RepositoryDatabase, Version};
 
-    use super::{RenvLock, to_renv_lock};
+    use super::RenvLock;
+    #[cfg(feature = "cli")]
+    use super::to_renv_lock;
 
     fn repository_databases(
         r_version: &Version,
@@ -684,6 +699,7 @@ mod tests {
         insta::assert_snapshot!("renv_resolver".to_string(), out);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn test_renv_export() {
         let lockfile_toml = r#"
