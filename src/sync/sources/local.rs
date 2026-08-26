@@ -22,8 +22,12 @@ pub(crate) fn install_package(
     strip: bool,
     cancellation: Arc<Cancellation>,
 ) -> Result<(), SyncError> {
-    let (local_path, sha) = match &pkg.source {
-        Source::Local { path, sha } => (path, sha.clone()),
+    let (local_path, sha, sub_dir) = match &pkg.source {
+        Source::Local {
+            path,
+            sha,
+            directory,
+        } => (path, sha.clone(), directory.clone()),
         _ => unreachable!(),
     };
 
@@ -46,79 +50,84 @@ pub(crate) fn install_package(
         canon_path.clone()
     };
 
-    if is_binary_package(&actual_path, pkg.name.as_ref()).map_err(|err| SyncError {
+    let pkg_path = match &sub_dir {
+        Some(dir) => actual_path.join(dir),
+        None => actual_path.clone(),
+    };
+
+    if is_binary_package(&pkg_path, pkg.name.as_ref()).map_err(|err| SyncError {
         source: crate::sync::errors::SyncErrorKind::InvalidPackage {
-            path: actual_path.to_path_buf(),
+            path: pkg_path.to_path_buf(),
             error: err.to_string(),
         },
     })? {
         log::debug!(
             "Local package in {} is a binary package, copying files to library.",
-            actual_path.display()
+            pkg_path.display()
         );
         LinkMode::link_files(
             Some(LinkMode::Copy),
             pkg.name.as_ref(),
-            &actual_path,
+            &pkg_path,
             library_dirs.first().unwrap().join(pkg.name.as_ref()),
         )?;
-    } else if canon_path.is_dir() {
-        // For local directories, run R CMD build first so that .Rbuildignore is respected
-        // and extraneous files (like rv/library/) are excluded from the installation.
-        log::debug!(
-            "Running R CMD build on local package in {}",
-            actual_path.display()
-        );
-        let build_output_dir = tempfile::tempdir()?;
-        let tarball_path = r_cmd.build(
-            &actual_path,
-            build_output_dir.path(),
-            library_dirs,
-            cancellation.clone(),
-            &pkg.env_vars,
-        )?;
-
-        // Untar the built tarball and install from the clean source
-        let untar_dir = tempfile::tempdir()?;
-        let (extracted_path, _) =
-            untar_archive(fs::read(&tarball_path)?.as_slice(), untar_dir.path(), false)?;
-        let source_path = extracted_path.unwrap_or_else(|| tarball_path.clone());
-
-        log::debug!("Installing built package from {}", source_path.display());
-        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
-            r_cmd.install(
-                &source_path,
-                Option::<&Path>::None,
-                library_dirs,
-                library_dirs.first().unwrap(),
-                cancellation,
-                &pkg.env_vars,
-                configure_args,
-                strip,
-            )
-        })?;
-
-        let log_path = cache.get_build_log_path(&pkg.source, None, None);
-        if let Some(parent) = log_path.parent() {
-            fs::create_dir_all(parent)?;
-            let mut f = fs::File::create(log_path)?;
-            f.write_all(output.as_bytes())?;
-        }
     } else {
-        // Tarball source package: install directly from extracted path
-        log::debug!("Installing the local package in {}", actual_path.display());
-        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
-            r_cmd.install(
+        let output = if sub_dir.is_none() && canon_path.is_dir() {
+            // For plain local directories, run R CMD build first so that .Rbuildignore is respected
+            // and extraneous files (like rv/library/) are excluded from the installation.
+            log::debug!(
+                "Running R CMD build on local package in {}",
+                actual_path.display()
+            );
+            let build_output_dir = tempfile::tempdir()?;
+            let tarball_path = r_cmd.build(
                 &actual_path,
-                Option::<&Path>::None,
+                build_output_dir.path(),
                 library_dirs,
-                library_dirs.first().unwrap(),
-                cancellation,
+                cancellation.clone(),
                 &pkg.env_vars,
-                configure_args,
-                strip,
-            )
-        })?;
+            )?;
+
+            // Untar the built tarball and install from the clean source
+            let untar_dir = tempfile::tempdir()?;
+            let (extracted_path, _) =
+                untar_archive(fs::read(&tarball_path)?.as_slice(), untar_dir.path(), false)?;
+            let source_path = extracted_path.unwrap_or_else(|| tarball_path.clone());
+
+            log::debug!("Installing built package from {}", source_path.display());
+            events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+                r_cmd.install(
+                    &source_path,
+                    Option::<&Path>::None,
+                    library_dirs,
+                    library_dirs.first().unwrap(),
+                    cancellation,
+                    &pkg.env_vars,
+                    configure_args,
+                    strip,
+                )
+            })?
+        } else {
+            // We have a subdir or an already extracted tarball, we just install.
+            // That matches what we do with git, no build step first
+            log::debug!(
+                "Installing the local package in {} (subdir {:?})",
+                actual_path.display(),
+                sub_dir
+            );
+            events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+                r_cmd.install(
+                    &actual_path,
+                    sub_dir.as_ref(),
+                    library_dirs,
+                    library_dirs.first().unwrap(),
+                    cancellation,
+                    &pkg.env_vars,
+                    configure_args,
+                    strip,
+                )
+            })?
+        };
 
         let log_path = cache.get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {

@@ -36,6 +36,7 @@ pub(crate) struct QueueItem<'d> {
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
     local_path: Option<PathBuf>,
+    directory: Option<String>,
     // Only for top level dependencies. Checks whether the config dependency is matching
     // what we have in the lockfile, we have one.
     matching_in_lockfile: Option<bool>,
@@ -144,9 +145,15 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
+        let directory = item.directory.clone();
         let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
             Ok(canon_path) => canon_path,
             Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
+        };
+
+        let join_directory = |base: PathBuf| match &directory {
+            Some(dir) => base.join(dir),
+            None => base,
         };
 
         let (package, sha) = if canon_path.is_file() {
@@ -156,12 +163,17 @@ impl<'d> Resolver<'d> {
             let (path, hash) =
                 untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path(), true)?;
             (
-                parse_description_file_in_folder(path.unwrap_or_else(|| canon_path.clone()))?,
+                parse_description_file_in_folder(join_directory(
+                    path.unwrap_or_else(|| canon_path.clone()),
+                ))?,
                 hash,
             )
         } else if canon_path.is_dir() {
             // we have a folder
-            (parse_description_file_in_folder(&canon_path)?, None)
+            (
+                parse_description_file_in_folder(join_directory(canon_path.clone()))?,
+                None,
+            )
         } else {
             unreachable!()
         };
@@ -181,6 +193,7 @@ impl<'d> Resolver<'d> {
             Source::Local {
                 path: local_path.clone(),
                 sha,
+                directory,
             },
             item.install_suggestions,
             canon_path,
@@ -541,6 +554,7 @@ impl<'d> Resolver<'d> {
                     parent: None,
                     remote: None,
                     local_path: d.local_path(),
+                    directory: d.directory(),
                     matching_in_lockfile: locked.map(|p| p.is_matching(d, &self.repo_urls)),
                     locked_sha: locked.and_then(|p| match &p.source {
                         Source::Url { sha, .. } => Some(sha.as_str()),

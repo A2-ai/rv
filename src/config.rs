@@ -99,6 +99,8 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        directory: Option<String>,
     },
     Url {
         url: HttpUrl,
@@ -148,6 +150,15 @@ impl ConfigDependency {
     pub fn local_path(&self) -> Option<PathBuf> {
         match self {
             ConfigDependency::Local { path, .. } => Some(path.clone()),
+            _ => None,
+        }
+    }
+
+    /// The subdirectory within a git/local dependency that holds the actual R package
+    pub fn directory(&self) -> Option<String> {
+        match self {
+            ConfigDependency::Git { directory, .. } => directory.clone(),
+            ConfigDependency::Local { directory, .. } => directory.clone(),
             _ => None,
         }
     }
