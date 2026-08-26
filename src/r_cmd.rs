@@ -277,17 +277,16 @@ impl RCmd for RInstall {
                 );
                 let to_bootstrap = match fs::read_to_string(src_backup_dir.join("DESCRIPTION")) {
                     Ok(s) => {
-                        if !s.contains("Config/build/bootstrap: T") {
-                            log::trace!(
+                        let truthy = s.to_lowercase().contains("config/build/bootstrap: t");
+                        if !truthy {
+                            log::info!(
                                 "Config/build/bootstrap is not truthy in the DESCRIPTION file"
                             );
-                            false
-                        } else {
-                            true
                         }
+                        truthy
                     }
                     Err(e) => {
-                        log::trace!(
+                        log::warn!(
                             "Could not read description file at {} to check if Config/build/bootstrap is truthy: {e}. Assuming truthy and bootstrapping...",
                             src_backup_dir.join("DESCRIPTION").display()
                         );
