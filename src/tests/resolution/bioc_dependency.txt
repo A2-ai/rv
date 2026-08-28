@@ -1,0 +1,17 @@
+# A dependency with bioconductor = true is only looked up in the bioc repos,
+# even if another repository listed before them also has the package
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { bioconductor = "3.21", mirror = "http://bioc" },
+]
+dependencies = [
+    { name = "R6", bioconductor = true },
+]
+---
+repos = [
+    { name = "cran", source = "posit-src", force_source = false },
+    { name = "biocsoft", url = "http://bioc/packages/3.21/bioc", source = "posit-src", force_source = false },
+]
+---

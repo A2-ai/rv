@@ -252,6 +252,7 @@ impl Context {
             &self.project_dir,
             &self.databases,
             self.config.repositories().iter().map(|x| x.url()).collect(),
+            self.config.bioc_repo_urls(),
             &self.r_version,
             &self.builtin_packages,
             lockfile.as_ref(),

@@ -105,6 +105,7 @@ fn get_bioc_repos(
     } else {
         "https://bioconductor.org".to_string()
     };
+    let base = base.trim_end_matches('/');
 
     let actual_version = match version {
         "auto" => {
@@ -191,6 +192,8 @@ pub enum ConfigDependency {
         force_source: Option<bool>,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        bioconductor: bool,
     },
 }
 
@@ -216,6 +219,13 @@ impl ConfigDependency {
         match self {
             ConfigDependency::Detailed { repository, .. } => repository.as_deref(),
             _ => None,
+        }
+    }
+
+    pub fn bioconductor(&self) -> bool {
+        match self {
+            ConfigDependency::Detailed { bioconductor, .. } => *bioconductor,
+            _ => false,
         }
     }
 
@@ -485,12 +495,18 @@ impl Config {
         let mut errors = Vec::new();
 
         self.project.expanded_repositories = Vec::new();
+        let mut has_bioc = false;
         for r in &self.project.repositories {
             match r {
                 ConfigRepository::Simple(repo) => {
                     self.project.expanded_repositories.push(repo.clone())
                 }
                 ConfigRepository::Bioconductor(bioc) => {
+                    if has_bioc {
+                        errors.push("Only one bioconductor shorthand repository is allowed. Use the repository URLs if you want more than one.".to_string());
+                        continue;
+                    }
+                    has_bioc = true;
                     let version = bioc.bioconductor.trim();
                     if !is_valid_bioc_version(version) {
                         errors.push(format!(
@@ -531,11 +547,27 @@ impl Config {
             match d {
                 // If it has a repository set, we need to check the alias is found and replace it with the url
                 ConfigDependency::Detailed {
-                    repository, name, ..
+                    repository,
+                    name,
+                    bioconductor,
+                    ..
                 } => {
                     if name.trim().is_empty() {
                         errors.push("A dependency is missing a name.".to_string());
                         continue;
+                    }
+
+                    if *bioconductor {
+                        if !has_bioc {
+                            errors.push(format!(
+                                "Dependency {name} has `bioconductor = true` but there is no bioconductor repository, e.g. `{{ bioconductor = \"{BIOC_CURRENT_RELEASE}\" }}`."
+                            ));
+                        }
+                        if repository.is_some() {
+                            errors.push(format!(
+                                "Dependency {name} cannot set both `bioconductor = true` and `repository`."
+                            ));
+                        }
                     }
 
                     let mut replacement = None;
@@ -598,6 +630,16 @@ impl Config {
 
     pub fn repositories(&self) -> &[Repository] {
         &self.project.expanded_repositories
+    }
+
+    /// The urls of the repositories expanded from the bioconductor shorthand
+    pub fn bioc_repo_urls(&self) -> HashSet<&str> {
+        self.project
+            .expanded_repositories
+            .iter()
+            .filter(|r| BIOC_REPOS.iter().any(|(alias, _)| *alias == r.alias))
+            .map(|r| r.url())
+            .collect()
     }
 
     pub fn dependencies(&self) -> &[ConfigDependency] {
@@ -820,6 +862,77 @@ repositories = [
     }
 
     #[test]
+    fn bioconductor_errors_on_multiple() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { bioconductor = "3.22" },
+    { bioconductor = "3.21" },
+]
+"#;
+        assert!(
+            Config::from_str(toml_str)
+                .unwrap_err()
+                .to_string()
+                .contains("Only one bioconductor shorthand repository is allowed")
+        );
+    }
+
+    #[test]
+    fn bioconductor_dependency_requires_bioc_repository() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org" },
+]
+dependencies = [
+    { name = "BiocGenerics", bioconductor = true },
+]
+"#;
+        let err = Config::from_str(toml_str).unwrap_err();
+        assert!(err.to_string().contains("no bioconductor repository"));
+    }
+
+    #[test]
+    fn bioconductor_dependency_conflicts_with_repository() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org" },
+    { bioconductor = "3.21" },
+]
+dependencies = [
+    { name = "BiocGenerics", bioconductor = true, repository = "cran" },
+]
+"#;
+        let err = Config::from_str(toml_str).unwrap_err();
+        assert!(err.to_string().contains("cannot set both"));
+    }
+
+    #[test]
+    fn bioconductor_dependency_is_valid_with_bioc_repository() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org" },
+    { bioconductor = "3.21" },
+]
+dependencies = [
+    { name = "BiocGenerics", bioconductor = true },
+]
+"#;
+        assert!(Config::from_str(toml_str).is_ok());
+    }
+
+    #[test]
     fn can_parse_no_strip() {
         let toml_str = r#"
 [project]
@@ -872,7 +985,7 @@ repositories = []
         let default_config = Config::from_str(default_toml).unwrap();
         assert_eq!(
             default_config.git_shorthand_base_url(),
-            crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL
+            DEFAULT_GIT_SHORTHAND_BASE_URL
         );
 
         let custom_toml = r#"
