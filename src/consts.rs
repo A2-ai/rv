@@ -30,6 +30,7 @@ pub const INSECURE_TLS_ENV_VAR_NAME: &str = "RV_INSECURE";
 pub const LIBRARY_DIR_ENV_VAR_NAME: &str = "RV_LIBRARY_DIR";
 pub const R_BIN_ENV_VAR_NAME: &str = "RV_R_BIN";
 pub const R_VERSION_ENV_VAR_NAME: &str = "RV_R_VERSION";
+pub const BIOC_MIRROR_ENV_VAR_NAME: &str = "RV_BIOC_MIRROR";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R

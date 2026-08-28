@@ -8,7 +8,7 @@ use url::Url;
 
 use crate::SystemInfo;
 use crate::bioc::{BIOC_CURRENT_RELEASE, BIOC_DEVEL, BIOC_VERSION_MAP};
-use crate::consts::LOCKFILE_NAME;
+use crate::consts::{BIOC_MIRROR_ENV_VAR_NAME, LOCKFILE_NAME};
 use crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
@@ -73,11 +73,10 @@ pub struct Bioconductor {
 }
 
 fn is_valid_bioc_version(version: &str) -> bool {
-    let is_version_number = version.split('.').count() == 2
-        && version
-            .split('.')
-            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
-    is_version_number || version == "auto" || version == "release" || version == "devel"
+    BIOC_VERSION_MAP.iter().any(|(x, _)| *x == version)
+        || version == "auto"
+        || version == "release"
+        || version == "devel"
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -100,9 +99,11 @@ fn get_bioc_repos(
     mirror: Option<&HttpUrl>,
 ) -> Result<Vec<(&'static str, Url)>, String> {
     let base = if let Some(m) = mirror {
-        m.as_str()
+        m.as_str().to_string()
+    } else if let Some(env) = std::env::var_os(BIOC_MIRROR_ENV_VAR_NAME) {
+        env.to_string_lossy().to_string()
     } else {
-        "https://bioconductor.org"
+        "https://bioconductor.org".to_string()
     };
 
     let actual_version = match version {
