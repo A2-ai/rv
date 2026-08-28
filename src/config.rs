@@ -87,10 +87,10 @@ pub enum ConfigRepository {
 }
 
 const BIOC_REPOS: [(&str, &str); 4] = [
-    ("BioCsoft", "bioc"),
-    ("BioCann", "data/annotation"),
-    ("BioCexp", "data/experiment"),
-    ("BioCworkflows", "workflows"),
+    ("__rv__BioCsoft", "bioc"),
+    ("__rv__BioCann", "data/annotation"),
+    ("__rv__BioCexp", "data/experiment"),
+    ("__rv__BioCworkflows", "workflows"),
 ];
 
 fn get_bioc_repos(
@@ -751,17 +751,20 @@ repositories = [
             repos,
             vec![
                 ("posit", "https://packagemanager.posit.co/cran/latest"),
-                ("BioCsoft", "https://bioconductor.org/packages/3.21/bioc"),
                 (
-                    "BioCann",
+                    "__rv__BioCsoft",
+                    "https://bioconductor.org/packages/3.21/bioc"
+                ),
+                (
+                    "__rv__BioCann",
                     "https://bioconductor.org/packages/3.21/data/annotation"
                 ),
                 (
-                    "BioCexp",
+                    "__rv__BioCexp",
                     "https://bioconductor.org/packages/3.21/data/experiment"
                 ),
                 (
-                    "BioCworkflows",
+                    "__rv__BioCworkflows",
                     "https://bioconductor.org/packages/3.21/workflows"
                 ),
             ]
