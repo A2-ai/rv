@@ -203,12 +203,12 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
 }
 
 #[cfg(unix)]
-fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+pub fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
     std::os::unix::fs::symlink(original, link)
 }
 
 #[cfg(windows)]
-fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+pub fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
     if original.as_ref().is_dir() {
         std::os::windows::fs::symlink_dir(original, link)
     } else {

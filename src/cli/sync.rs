@@ -8,7 +8,9 @@ use serde::Serialize;
 
 use crate::cli::{Context, OutputFormat, ResolveMode, resolve_dependencies};
 use crate::sync::OutputSection;
-use crate::{Lockfile, Resolution, SyncChange, SyncHandler, system_req, timeit};
+use crate::{
+    Lockfile, RCmd, Resolution, SyncChange, SyncHandler, ensure_sandbox_exists, system_req, timeit,
+};
 
 #[derive(Debug, Default, Serialize)]
 struct SyncChanges {
@@ -62,6 +64,22 @@ impl SyncHelper {
             return Err(anyhow::anyhow!(
                 "`--locked` requires the lockfile to be enabled in rproject.toml"
             ));
+        }
+
+        // Build and use the sandbox if needed
+        if !self.dry_run && context.config.sandbox_enabled() {
+            let path = context
+                .r_cmd
+                .get_r_library()
+                .map_err(|e| {
+                    anyhow::anyhow!("sandbox is enabled but the R library was not found: {e}")
+                })
+                .and_then(|lib| {
+                    ensure_sandbox_exists(&lib, &context.cache).map_err(|e| {
+                        anyhow::anyhow!("sandbox is enabled but could not be created: {e}")
+                    })
+                })?;
+            log::debug!("sandbox ready at {}", path.display());
         }
 
         let sync_start = std::time::Instant::now();

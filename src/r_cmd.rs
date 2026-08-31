@@ -472,14 +472,11 @@ impl RCmd for RInstall {
             source: LibraryErrorKind::Io(e),
         })?;
 
-        let lib_path = r_home.join("library");
-
-        if lib_path.is_dir() {
-            Ok(lib_path)
-        } else {
-            Err(LibraryError {
+        match r_home.join("library").canonicalize() {
+            Ok(r_lib) if r_lib.is_dir() => Ok(r_lib),
+            _ => Err(LibraryError {
                 source: LibraryErrorKind::NotFound,
-            })
+            }),
         }
     }
 
