@@ -10,6 +10,7 @@ use serde_json::json;
 
 use anyhow::anyhow;
 use log::warn;
+use rv::RCmd;
 use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SCRIPT_CONFIG_RE, SyncHelper, export_renv,
     extract_script_config, find_r_repositories, init, init_structure, migrate_renv,
@@ -24,8 +25,8 @@ use rv::{
 use rv::{
     CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
-    execute_repository_action, parse_add_package_spec, read_and_verify_config,
-    resolve_add_options_reference_with_executor, system_req,
+    ensure_sandbox_exists, execute_repository_action, parse_add_package_spec,
+    read_and_verify_config, resolve_add_options_reference_with_executor, system_req,
 };
 
 /// rv, the R package manager
@@ -231,6 +232,10 @@ pub enum Command {
         /// The repositories specified in the config
         #[clap(long)]
         repositories: bool,
+        /// The system library sandbox path, built on demand if missing.
+        /// Prints an empty value when the project does not enable the sandbox
+        #[clap(long)]
+        sandbox: bool,
     },
     /// List the system dependencies needed by the dependency tree.
     /// This is currently only supported on various Linux distributions.
@@ -1155,6 +1160,7 @@ fn try_main() -> Result<()> {
             library,
             r_version,
             repositories,
+            sandbox,
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
@@ -1181,6 +1187,30 @@ fn try_main() -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 output.push(("repositories", repos));
+            }
+            if sandbox {
+                let mut sandbox_out = String::new();
+                if context.config.sandbox_enabled() {
+                    let res = context
+                        .r_cmd
+                        .get_r_library()
+                        .map_err(|e| anyhow!("{e}"))
+                        .and_then(|lib| {
+                            ensure_sandbox_exists(&lib, &context.cache).map_err(|e| anyhow!("{e}"))
+                        });
+                    match res {
+                        Ok(path) => {
+                            let path_str = path.to_string_lossy();
+                            sandbox_out = if cfg!(windows) {
+                                path_str.replace('\\', "/")
+                            } else {
+                                path_str.to_string()
+                            };
+                        }
+                        Err(e) => warn!("could not create sandbox: {e}"),
+                    }
+                }
+                output.push(("sandbox", sandbox_out));
             }
 
             if output_format.is_json() {

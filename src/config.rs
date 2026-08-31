@@ -8,11 +8,12 @@ use url::Url;
 
 use crate::SystemInfo;
 use crate::bioc::{BIOC_CURRENT_RELEASE, BIOC_DEVEL, BIOC_VERSION_MAP};
-use crate::consts::{BIOC_MIRROR_ENV_VAR_NAME, LOCKFILE_NAME};
+use crate::consts::{BIOC_MIRROR_ENV_VAR_NAME, LOCKFILE_NAME, USE_SANDBOX_ENV_VAR_NAME};
 use crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version, serialize_version};
+use crate::utils::is_env_var_truthy;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HttpUrl(Url);
@@ -459,6 +460,9 @@ pub(crate) struct Project {
     /// Defaults to https://github.com when not specified.
     #[serde(default)]
     git_shorthand_base_url: Option<String>,
+    /// Whether to create a sandbox for that project
+    #[serde(default)]
+    sandbox: Option<bool>,
 }
 
 // That's the way to do it with serde :/
@@ -675,6 +679,12 @@ impl Config {
 
     pub fn use_devel(&self) -> bool {
         self.project.use_devel.unwrap_or(false)
+    }
+
+    pub fn sandbox_enabled(&self) -> bool {
+        self.project
+            .sandbox
+            .unwrap_or_else(|| is_env_var_truthy(USE_SANDBOX_ENV_VAR_NAME))
     }
 
     pub fn use_lockfile(&self) -> bool {
