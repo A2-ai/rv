@@ -148,6 +148,10 @@ impl DiskCache {
         p.join(BUILD_LOG_FILENAME)
     }
 
+    pub(crate) fn get_script_path(&self, sha: &str) -> PathBuf {
+        self.root.join("scripts").join(sha)
+    }
+
     /// Gets the folder where extracted source would be located
     /// The folder may or may not exist depending on whether it's in the cache
     fn get_source_package_path(&self, repo_url: &str, name: &str, version: &str) -> PathBuf {

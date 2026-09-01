@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 mod cli_docs;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
@@ -12,12 +12,15 @@ use anyhow::anyhow;
 use log::warn;
 use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
-    find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies,
-    resolve_r_lookup, tree,
+    extract_script_config, find_r_repositories, init, init_structure, migrate_renv,
+    resolve_dependencies, resolve_r_lookup, tree,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
-use rv::{AddOptions, FetchPackage, Http, RepositoryOperation as LibRepositoryOperation};
+use rv::{
+    AddOptions, Cache, FetchPackage, Http, RepositoryOperation as LibRepositoryOperation,
+    SystemInfo, hash_string,
+};
 use rv::{
     CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
@@ -254,6 +257,8 @@ pub enum Command {
     /// Deactivate an rv project
     Deactivate,
     /// Run an Rscript command with the project library paths configured
+    /// You can also embed a configuration in the script to make it self-contained and runnable
+    /// outside of a rv project.
     #[clap(trailing_var_arg = true)]
     Run {
         /// Do not sync the project library before running the command
@@ -474,6 +479,20 @@ fn make_context(
     Ok(context)
 }
 
+fn get_default_r_version() -> Result<(String, bool)> {
+    match get_r_from_path() {
+        Some(r_install) => {
+            let [major, minor] = r_install.version.major_minor();
+            Ok((format!("{major}.{minor}"), r_install.is_devel))
+        }
+        None => {
+            bail!(
+                "Either no R available in path or R-devel detected but could not determine its version"
+            );
+        }
+    }
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -518,17 +537,7 @@ fn try_main() -> Result<()> {
             let (r_version, use_devel) = if let Some(r) = r_version {
                 (r.original, false)
             } else {
-                match get_r_from_path() {
-                    Some(r_install) => {
-                        let [major, minor] = r_install.version.major_minor();
-                        (format!("{major}.{minor}"), r_install.is_devel)
-                    }
-                    None => {
-                        anyhow::bail!(
-                            "Either no R available in path or R-devel detected but could not determine its version"
-                        );
-                    }
-                }
+                get_default_r_version()?
             };
 
             let repositories = if no_repositories {
@@ -1283,8 +1292,38 @@ fn try_main() -> Result<()> {
             r_version,
             args,
         } => {
+            let script_config_file = args
+                .iter()
+                .find(|x| Path::new(x).is_file())
+                .map(read_to_string)
+                .transpose()?
+                .filter(|x| x.contains("/// rv"))
+                .map(|x| -> Result<PathBuf> {
+                    let default_r = match &r_version {
+                        Some(v) => v.original.clone(),
+                        None => get_default_r_version()?.0,
+                    };
+                    let repos = find_r_repositories()?;
+                    let Some((config, toml_text)) = extract_script_config(&x, &default_r, &repos)?
+                    else {
+                        bail!("Could not extract configuration from script");
+                    };
+                    if config.repositories().is_empty() {
+                        bail!("No repositories configured and we could not detect default ones");
+                    }
+                    let cache = Cache::new(config.r_version(), SystemInfo::from_os_info())
+                        .map_err(|e| anyhow!("{e}"))?;
+                    let dir = cache.script_path(&hash_string(&toml_text));
+                    fs_err::create_dir_all(&dir)?;
+                    let path = dir.join("rproject.toml");
+                    write(&path, &toml_text)?;
+                    Ok(path)
+                })
+                .transpose()?;
+
+            let config_file = script_config_file.as_deref().unwrap_or(&cli.config_file);
             let mut context = make_context(
-                &cli.config_file,
+                config_file,
                 r_bin,
                 r_version,
                 true,

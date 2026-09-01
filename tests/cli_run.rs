@@ -105,3 +105,27 @@ fn run_sanitizes_r_env() {
         "R_INCLUDE_DIR should have been removed"
     );
 }
+
+#[test]
+fn run_self_contained_works() {
+    let cache = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let script =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scripts/self_contained.R");
+
+    let mut cmd = cargo::cargo_bin_cmd!();
+    cmd.current_dir(cwd.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
+    cmd.args(["run", script.to_str().unwrap()]);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("SELF_CONTAINED_OK"),);
+
+    assert!(cache.path().join("scripts").exists());
+}
