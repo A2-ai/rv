@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use crate::Cache;
 use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
 use crate::package::{Package, parse_description_file};
-use crate::sync::create_symlink;
+use crate::sync::LinkMode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxErrorKind {
@@ -54,16 +54,42 @@ impl SandboxPackages {
         result[..10].to_string()
     }
 
-    pub fn symlink_to(&self, path: &Path) -> Result<(), SandboxError> {
+    /// We start with symlinks but it can be an issue on Windows.
+    /// If that doesn't work, then we try hardlinks and copy as last fallback
+    pub fn materialize_to(&self, path: &Path) -> Result<(), SandboxError> {
         // Clear whatever is there first so we have a fresh sandbox
         if path.is_dir() {
             fs::remove_dir_all(path).map_err(SandboxError::file(path))?;
         }
         fs::create_dir_all(path).map_err(SandboxError::file(path))?;
 
+        let mut mode = LinkMode::Symlink;
         for (lib_path, pkg) in &self.packages {
-            let link = path.join(&pkg.name);
-            create_symlink(lib_path, &link).map_err(SandboxError::file(link))?;
+            let dest = path.join(&pkg.name);
+
+            while let Err(error) = mode.link_package_dir(lib_path, &dest) {
+                // A failed attempt can leave a partial result behind
+                if let Ok(meta) = fs::symlink_metadata(&dest)
+                    && meta.is_dir()
+                {
+                    fs::remove_dir_all(&dest).map_err(SandboxError::file(&dest))?;
+                }
+
+                let fallback = match mode {
+                    LinkMode::Symlink => LinkMode::Hardlink,
+                    LinkMode::Hardlink => LinkMode::Copy,
+                    _ => {
+                        return Err(SandboxError::file(dest)(std::io::Error::other(error)));
+                    }
+                };
+                log::warn!(
+                    "Could not {} {} into the sandbox: {error}. Falling back to {}.",
+                    mode.name(),
+                    pkg.name,
+                    fallback.name()
+                );
+                mode = fallback;
+            }
         }
 
         Ok(())
@@ -116,7 +142,7 @@ pub fn ensure_sandbox_exists(library: &Path, cache: &Cache) -> Result<PathBuf, S
 
     fs::create_dir_all(&local).map_err(SandboxError::file(&local))?;
     let tmp = tempfile::tempdir_in(&local).map_err(SandboxError::file(&local))?;
-    content.symlink_to(tmp.path())?;
+    content.materialize_to(tmp.path())?;
 
     for name in BASE_PACKAGES {
         if !tmp.path().join(name).join("DESCRIPTION").is_file() {
@@ -138,5 +164,36 @@ pub fn ensure_sandbox_exists(library: &Path, cache: &Cache) -> Result<PathBuf, S
                 Err(SandboxError::file(sandbox_path)(error))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn add_package(library: &Path, name: &str, version: &str) {
+        let package = library.join(name);
+        fs::create_dir_all(&package).unwrap();
+        fs::write(
+            package.join("DESCRIPTION"),
+            format!("Package: {name}\nVersion: {version}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn materialize_filters_out_non_builtin_packages() {
+        let library = tempfile::tempdir().unwrap();
+        add_package(library.path(), "base", "4.5.0");
+        add_package(library.path(), "MASS", "7.3-65");
+        add_package(library.path(), "leaked", "1.0.0");
+
+        let packages = get_packages_to_copy(library.path()).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        packages.materialize_to(out.path()).unwrap();
+
+        assert!(out.path().join("base").join("DESCRIPTION").is_file());
+        assert!(out.path().join("MASS").join("DESCRIPTION").is_file());
+        assert!(!out.path().join("leaked").exists());
     }
 }

@@ -11,4 +11,4 @@ pub use build_plan::{BuildPlan, BuildStep};
 pub use changes::OutputSection;
 pub use changes::SyncChange;
 pub use handler::SyncHandler;
-pub use link::{LinkError, LinkMode, create_symlink};
+pub use link::{LinkError, LinkMode};
