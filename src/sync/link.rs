@@ -82,6 +82,19 @@ impl LinkMode {
         }
     }
 
+    /// Link a single package directory to `dest` using this mode, without any fallback.
+    pub(crate) fn link_package_dir(&self, source: &Path, dest: &Path) -> Result<(), LinkError> {
+        match self {
+            LinkMode::Copy => copy_folder(source, dest).map_err(Into::into),
+            LinkMode::Clone => {
+                fs::create_dir_all(dest)?;
+                clone_package(source, dest)
+            }
+            LinkMode::Hardlink => hardlink_package(source, dest),
+            LinkMode::Symlink => create_symlink(source, dest).map_err(LinkError::Io),
+        }
+    }
+
     pub fn link_files(
         selected_mode: Option<Self>,
         package_name: &str,
@@ -203,12 +216,12 @@ fn hardlink_package(source: &Path, library: &Path) -> Result<(), LinkError> {
 }
 
 #[cfg(unix)]
-pub fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
     std::os::unix::fs::symlink(original, link)
 }
 
 #[cfg(windows)]
-pub fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+fn create_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
     if original.as_ref().is_dir() {
         std::os::windows::fs::symlink_dir(original, link)
     } else {
