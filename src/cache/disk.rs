@@ -149,7 +149,10 @@ impl DiskCache {
     }
 
     pub(crate) fn get_script_path(&self, sha: &str) -> PathBuf {
-        self.root.join("scripts").join(sha)
+        self.root
+            .join("scripts")
+            .join(get_current_system_path(&self.system_info, self.r_version))
+            .join(sha)
     }
 
     /// Gets the folder where extracted source would be located
