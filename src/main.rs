@@ -262,7 +262,7 @@ pub enum Command {
     #[clap(trailing_var_arg = true)]
     Run {
         /// Do not sync the project library before running the command
-        /// This needs to be the first flag if set
+        /// This must be the last rv option; following values are passed to Rscript
         #[clap(long)]
         no_sync: bool,
         /// Forces the usage of the R at the given path. If it doesn't match the config's R
@@ -1337,7 +1337,21 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
-            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            let sandbox = if context.config.sandbox_enabled() {
+                let library = context.r_cmd.get_r_library().map_err(|e| anyhow!("{e}"))?;
+                Some(
+                    ensure_sandbox_exists(&library, &context.cache)
+                        .map_err(|e| anyhow!("sandbox is enabled but could not be created: {e}"))?,
+                )
+            } else {
+                None
+            };
+            let code = rv::run_with_sandbox(
+                &context.r_cmd.bin_path,
+                context.library_path(),
+                sandbox.as_deref(),
+                &args,
+            )?;
             std::process::exit(code);
         }
 

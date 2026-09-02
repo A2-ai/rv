@@ -8,7 +8,7 @@
 //! so the sandbox can be shared across projects using the same R.
 //!
 //! The sandbox is an opt-in behaviour at either the config or environment variable level and is
-//! used in the activate script.
+//! used in the activate script and by `rv run`.
 //! It is not currently used in rv R INSTALL of packages.
 use std::path::{Path, PathBuf};
 

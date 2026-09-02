@@ -59,7 +59,7 @@ pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
-pub use run::{RunError, run};
+pub use run::{RunError, run, run_with_sandbox};
 pub use sandbox::{SandboxError, ensure_sandbox_exists};
 pub use sync::{BuildPlan, BuildStep, LinkMode, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
