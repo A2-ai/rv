@@ -1,3 +1,15 @@
+//! In some environments, users can install packages directly in R RHOME, leaking packages
+//! into every R sessions so scripts can work locally but break elsewhere because of dependencies
+//! not listed in rproject.toml or rv.lock.
+//! To avoid that, we create sandboxes in the cache where we link the base + recommended packages only
+//! from the given R RHOME. Any user packages will NOT be linked into the sandbox.
+//! The sandbox in the cache is keyed like this:
+//! `caches/rv/sandboxes/{R install hash}/{R-major.minor}/{arch}/{distro}/{hash of base+rec packages}`
+//! so the sandbox can be shared across projects using the same R.
+//!
+//! The sandbox is an opt-in behaviour at either the config or environment variable level and is
+//! used in the activate script.
+//! It is not currently used in rv R INSTALL of packages.
 use std::path::{Path, PathBuf};
 
 use fs_err as fs;
