@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fs;
 use tempfile::TempDir;
 
+const LIBRARY_PROBE: &str = r#"cat(paste("library", .Library, sep = "\t"), paste("paths", paste(.libPaths(), collapse = .Platform$path.sep), sep = "\t"), paste("profile", Sys.getenv("RV_EXPLICIT_PROFILE"), sep = "\t"), paste("environ", Sys.getenv("RV_EXPLICIT_ENVIRON"), sep = "\t"), sep = "\n")"#;
+
 fn create_project(sandbox: bool) -> (TempDir, TempDir, std::path::PathBuf) {
     let project = TempDir::new().unwrap();
     let cache = TempDir::new().unwrap();
@@ -58,18 +60,7 @@ fn rv_run_uses_sandbox_and_loads_user_profile_by_default() {
         .current_dir(project.path())
         .env("R_PROFILE_USER", &profile)
         .env("R_ENVIRON_USER", &environ)
-        .args([
-            "run",
-            "--no-sync",
-            "-e",
-            r#"cat(
-                paste("library", .Library, sep = "\t"),
-                paste("paths", paste(.libPaths(), collapse = .Platform$path.sep), sep = "\t"),
-                paste("profile", Sys.getenv("RV_EXPLICIT_PROFILE"), sep = "\t"),
-                paste("environ", Sys.getenv("RV_EXPLICIT_ENVIRON"), sep = "\t"),
-                sep = "\n"
-            )"#,
-        ]);
+        .args(["run", "--no-sync", "-e", LIBRARY_PROBE]);
 
     let output = command.output().unwrap();
     assert!(
@@ -83,6 +74,11 @@ fn rv_run_uses_sandbox_and_loads_user_profile_by_default() {
     assert!(observed["library"].contains("sandboxes"), "{stdout}");
     assert!(observed["paths"].contains("rv/library"), "{stdout}");
     assert!(observed["paths"].contains("sandboxes"), "{stdout}");
+    assert_eq!(
+        std::env::split_paths(&observed["paths"]).count(),
+        2,
+        "{stdout}"
+    );
     assert_eq!(observed["profile"], "profile-loaded", "{stdout}");
     assert_eq!(observed["environ"], "environ-loaded", "{stdout}");
 }
@@ -109,19 +105,7 @@ fn rv_run_isolated_ignores_host_startup_and_library_inputs() {
         .env("R_LIBS_USER", host_library.path())
         .env("R_LIBS_SITE", host_library.path())
         .env("RV_HOST_LIBRARY", host_library.path())
-        .args([
-            "run",
-            "--isolated",
-            "--no-sync",
-            "-e",
-            r#"cat(
-                paste("library", .Library, sep = "\t"),
-                paste("paths", paste(.libPaths(), collapse = .Platform$path.sep), sep = "\t"),
-                paste("profile", Sys.getenv("RV_EXPLICIT_PROFILE"), sep = "\t"),
-                paste("environ", Sys.getenv("RV_EXPLICIT_ENVIRON"), sep = "\t"),
-                sep = "\n"
-            )"#,
-        ]);
+        .args(["run", "--isolated", "--no-sync", "-e", LIBRARY_PROBE]);
 
     let output = command.output().unwrap();
     assert!(
@@ -136,8 +120,13 @@ fn rv_run_isolated_ignores_host_startup_and_library_inputs() {
     assert!(observed["library"].contains("sandboxes"), "{stdout}");
     assert!(observed["paths"].contains("rv/library"), "{stdout}");
     assert!(observed["paths"].contains("sandboxes"), "{stdout}");
+    assert_eq!(
+        std::env::split_paths(&observed["paths"]).count(),
+        2,
+        "{stdout}"
+    );
     assert!(
-        !observed["paths"].contains(host_library.path().to_str().unwrap()),
+        !observed["paths"].contains(&*host_library.path().file_name().unwrap().to_string_lossy()),
         "{stdout}"
     );
     assert_eq!(observed["profile"], "", "{stdout}");
