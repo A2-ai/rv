@@ -407,22 +407,7 @@ fn fetch_with_cli(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::GitExecutor;
-    use std::process::Command;
-
-    fn run_git(args: &[&str], dir: &Path) {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    use crate::git::test_support::{IsolatedGitExecutor, run_git};
 
     fn setup_test_repo() -> (tempfile::TempDir, String) {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -436,8 +421,6 @@ mod tests {
         // Clone and setup working repo
         std::fs::create_dir_all(&work_path).unwrap();
         run_git(&["clone", remote_path.to_str().unwrap(), "."], &work_path);
-        run_git(&["config", "user.email", "test@example.com"], &work_path);
-        run_git(&["config", "user.name", "Test User"], &work_path);
 
         // Create initial commit
         std::fs::write(work_path.join("file.txt"), "initial content").unwrap();
@@ -460,8 +443,12 @@ mod tests {
         let cache_path = temp_dir.path().join("cache");
         let work_path = temp_dir.path().join("work");
 
-        let repo =
-            GitRepository::init(&cache_path, remote_path.to_str().unwrap(), GitExecutor).unwrap();
+        let repo = GitRepository::init(
+            &cache_path,
+            remote_path.to_str().unwrap(),
+            IsolatedGitExecutor,
+        )
+        .unwrap();
 
         // First fetch
         repo.fetch(
@@ -504,8 +491,12 @@ mod tests {
         run_git(&["tag", "v1.0"], &work_path);
         run_git(&["push", "origin", "v1.0"], &work_path);
 
-        let repo =
-            GitRepository::init(&cache_path, remote_path.to_str().unwrap(), GitExecutor).unwrap();
+        let repo = GitRepository::init(
+            &cache_path,
+            remote_path.to_str().unwrap(),
+            IsolatedGitExecutor,
+        )
+        .unwrap();
 
         // First fetch
         repo.fetch(remote_path.to_str().unwrap(), &GitReference::Tag("v1.0"))
