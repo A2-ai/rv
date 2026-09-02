@@ -15,7 +15,8 @@ pub fn extract_script_config(
     r_version: &str,
     repositories: &[Repository],
 ) -> Result<Option<(Config, String)>> {
-    if let Some(cap) = SCRIPT_CONFIG_RE.captures(script) {
+    let normalized = script.replace("\r\n", "\n");
+    if let Some(cap) = SCRIPT_CONFIG_RE.captures(&normalized) {
         let content = match cap.get(1).map(|m| m.as_str()) {
             Some(content) => content,
             None => bail!("Failed to extract config from script"),
