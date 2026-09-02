@@ -7,7 +7,7 @@ use toml::{Table, Value};
 
 use crate::{Config, Repository};
 
-static SCRIPT_CONFIG_RE: LazyLock<Regex> =
+pub static SCRIPT_CONFIG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^# /// rv$\s(?<content>(^#(| .*)$\s)+)^# ///$").unwrap());
 
 pub fn extract_script_config(

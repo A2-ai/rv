@@ -11,7 +11,7 @@ use serde_json::json;
 use anyhow::anyhow;
 use log::warn;
 use rv::cli::{
-    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SCRIPT_CONFIG_RE, SyncHelper, export_renv,
     extract_script_config, find_r_repositories, init, init_structure, migrate_renv,
     resolve_dependencies, resolve_r_lookup, tree,
 };
@@ -1297,7 +1297,8 @@ fn try_main() -> Result<()> {
                 .find(|x| Path::new(x).is_file())
                 .map(read_to_string)
                 .transpose()?
-                .filter(|x| x.contains("/// rv"))
+                .map(|x| x.replace("\r\n", "\n"))
+                .filter(|x| SCRIPT_CONFIG_RE.is_match(x))
                 .map(|x| -> Result<PathBuf> {
                     let default_r = match &r_version {
                         Some(v) => v.original.clone(),
