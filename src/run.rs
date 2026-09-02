@@ -36,17 +36,19 @@ const SANDBOX_PROFILE: &str = r#"local({
 
 /// Run `Rscript` with the given arguments and the project library paths configured.
 pub fn run(r_bin_path: &Path, library_path: &Path, args: &[String]) -> Result<i32, RunError> {
-    run_with_sandbox(r_bin_path, library_path, None, args)
+    run_with_sandbox(r_bin_path, library_path, None, false, args)
 }
 
 /// Run `Rscript` with the project library and optional system-library sandbox.
 ///
 /// The sandbox is established by a controlled site profile before R loads the
-/// normal project or user `.Rprofile`.
+/// normal project or user `.Rprofile`. In isolated mode, user and site startup
+/// files are suppressed.
 pub fn run_with_sandbox(
     r_bin_path: &Path,
     library_path: &Path,
     sandbox_path: Option<&Path>,
+    isolated: bool,
     args: &[String],
 ) -> Result<i32, RunError> {
     let r_home = crate::r_cmd::get_r_home(r_bin_path).map_err(|source| RunError::RHome {
@@ -67,6 +69,8 @@ pub fn run_with_sandbox(
     let startup = if sandbox_path.is_some() {
         let directory = tempfile::tempdir().map_err(|source| RunError::Startup { source })?;
         std::fs::write(directory.path().join("site.Rprofile"), SANDBOX_PROFILE)
+            .map_err(|source| RunError::Startup { source })?;
+        std::fs::write(directory.path().join("empty"), "")
             .map_err(|source| RunError::Startup { source })?;
         Some(directory)
     } else {
@@ -90,6 +94,12 @@ pub fn run_with_sandbox(
         cmd.env(PROJECT_LIBRARY_ENV_VAR, library_path)
             .env(SANDBOX_LIBRARY_ENV_VAR, sandbox_path)
             .env("R_PROFILE", startup.path().join("site.Rprofile"));
+        if isolated {
+            let empty = startup.path().join("empty");
+            cmd.env("R_ENVIRON", &empty)
+                .env("R_ENVIRON_USER", &empty)
+                .env("R_PROFILE_USER", &empty);
+        }
     }
 
     let status = cmd.status().map_err(|source| RunError::Spawn {
