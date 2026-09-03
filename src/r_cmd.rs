@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use std::{fs, thread};
 
+use crate::consts::SANDBOX_INSTALL_PROFILE_TEMPLATE;
 use crate::fs::copy_folder;
 use crate::r_finder::RInstall;
 use crate::sync::{LinkError, LinkMode};
@@ -16,6 +17,17 @@ use regex::Regex;
 
 static R_VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d+)\.(\d+)\.(\d+)").unwrap());
+
+/// The variable we will override/clear for build/install
+const RESERVED_R_ENV_VARS: [&str; 7] = [
+    "R_LIBS",
+    "R_LIBS_SITE",
+    "R_LIBS_USER",
+    "R_PROFILE",
+    "R_PROFILE_USER",
+    "R_ENVIRON",
+    "R_ENVIRON_USER",
+];
 
 fn is_r_devel(output: &str) -> bool {
     output.contains("R Under development")
@@ -33,19 +45,27 @@ fn find_r_version(output: &str) -> Option<Version> {
 pub static ACTIVE_R_PROCESS_IDS: LazyLock<Arc<Mutex<HashSet<u32>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(HashSet::new())));
 
+/// Everything `R CMD INSTALL` needs for one package
+pub struct InstallRequest<'a> {
+    /// Directory holding the package source.
+    pub source: &'a Path,
+    /// Subdirectory of `source` to install from
+    pub sub_folder: Option<&'a Path>,
+    pub libraries: &'a [&'a Path],
+    /// Where the built package ends up.
+    pub destination: &'a Path,
+    pub env_vars: &'a HashMap<&'a str, &'a str>,
+    pub configure_args: &'a [String],
+    pub strip: bool,
+    pub sandbox: Option<&'a Path>,
+}
+
 pub trait RCmd: Send + Sync {
     /// Installs a package and returns the combined output of stdout and stderr
-    #[allow(clippy::too_many_arguments)]
     fn install(
         &self,
-        folder: impl AsRef<Path>,
-        sub_folder: Option<impl AsRef<Path>>,
-        libraries: &[impl AsRef<Path>],
-        destination: impl AsRef<Path>,
+        request: InstallRequest<'_>,
         cancellation: Arc<Cancellation>,
-        env_vars: &HashMap<&str, &str>,
-        configure_args: &[String],
-        strip: bool,
     ) -> Result<String, RCmdError>;
 
     /// Runs `R CMD build` on a source directory and returns the path to the resulting tarball.
@@ -56,6 +76,7 @@ pub trait RCmd: Send + Sync {
         libraries: &[impl AsRef<Path>],
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
+        sandbox: Option<&Path>,
     ) -> Result<PathBuf, RCmdError>;
 
     fn get_r_library(&self) -> Result<PathBuf, LibraryError>;
@@ -83,11 +104,145 @@ pub(crate) fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, 
         .join(sep))
 }
 
+/// For the operations we need a dummy empty file and when the sandbox is active a profile
+/// that will enable the sandbox.
+struct StartupFiles {
+    _dir: tempfile::TempDir,
+    empty: PathBuf,
+    profile: PathBuf,
+}
+
+impl StartupFiles {
+    fn with_sandbox(sandbox: &Path) -> Result<Self, std::io::Error> {
+        Self::write(Some(sandbox))
+    }
+
+    /// Startup files that only suppress the host's, with or without a sandbox.
+    fn write(sandbox: Option<&Path>) -> Result<Self, std::io::Error> {
+        let dir = tempfile::tempdir()?;
+
+        let empty = dir.path().join("rv-empty");
+        fs::write(&empty, "")?;
+
+        let profile = dir.path().join("rv-profile.R");
+        let content = sandbox
+            .map(|sandbox| {
+                SANDBOX_INSTALL_PROFILE_TEMPLATE.replace(
+                    "%sandbox path%",
+                    // R wants forward slashes in paths, on Windows too
+                    &sandbox.to_string_lossy().replace('\\', "/"),
+                )
+            })
+            .unwrap_or_default();
+        fs::write(&profile, content)?;
+
+        Ok(Self {
+            _dir: dir,
+            empty,
+            profile,
+        })
+    }
+}
+
+/// We ensure we pass all the needed arguments to isolate properly the calls.
+/// We don't let a user env override one of [RESERVED_R_ENV_VARS] to keep build reproducible.
+fn apply_r_env(
+    command: &mut Command,
+    library_paths: &str,
+    startup: Option<&StartupFiles>,
+    env_vars: &HashMap<&str, &str>,
+) {
+    let overridden = RESERVED_R_ENV_VARS
+        .iter()
+        .filter(|name| env_vars.contains_key(**name))
+        .copied()
+        .collect::<Vec<_>>();
+
+    if !overridden.is_empty() {
+        log::warn!(
+            "The user tried to set {}, which rv controls. Skipping.",
+            overridden.join(", ")
+        );
+    }
+
+    // First user env
+    command.envs(env_vars);
+
+    // then rv
+    command
+        .env("R_LIBS", library_paths)
+        .env("R_LIBS_SITE", library_paths)
+        .env("R_LIBS_USER", library_paths);
+
+    if let Some(startup) = startup {
+        command
+            .env("R_PROFILE", &startup.profile)
+            .env("R_PROFILE_USER", &startup.empty)
+            .env("R_ENVIRON", &startup.empty)
+            .env("R_ENVIRON_USER", &startup.empty);
+    }
+}
+
+/// The setup for `bootstrap.R` scripts
+fn bootstrap_command(
+    r_cmd: &RInstall,
+    script: &str,
+    library_paths: &str,
+    startup: Option<&StartupFiles>,
+    env_vars: &HashMap<&str, &str>,
+) -> Command {
+    let mut command = spawn_r_process_group(r_cmd);
+    if startup.is_none() {
+        command.arg("--vanilla");
+    }
+    command.arg("-f").arg(script);
+    apply_r_env(&mut command, library_paths, startup, env_vars);
+    command
+}
+
+fn install_command(
+    r_cmd: &RInstall,
+    library: &Path,
+    library_paths: &str,
+    startup: Option<&StartupFiles>,
+    env_vars: &HashMap<&str, &str>,
+) -> Command {
+    let mut command = spawn_r_process_group(r_cmd);
+    command
+        .arg("CMD")
+        .arg("INSTALL")
+        // This is where it will be installed
+        .arg(format!("--library={}", library.to_string_lossy()));
+    if startup.is_none() {
+        command.arg("--use-vanilla");
+    }
+    apply_r_env(&mut command, library_paths, startup, env_vars);
+    command
+}
+
+fn build_command(
+    r_cmd: &RInstall,
+    source_dir: &Path,
+    library_paths: &str,
+    startup: &StartupFiles,
+    env_vars: &HashMap<&str, &str>,
+) -> Command {
+    let mut command = spawn_r_process_group(r_cmd);
+    command
+        .arg("CMD")
+        .arg("build")
+        .arg("--no-build-vignettes")
+        .arg("--no-manual")
+        .arg(source_dir);
+    apply_r_env(&mut command, library_paths, Some(startup), env_vars);
+    command
+}
+
 /// By default, doing ctrl+c on rv will kill it as well as all its child process.
 /// To allow graceful shutdown, we create a process group in Unix and the equivalent on Windows
 /// so we can control _how_ they get killed, and allow for a soft cancellation (eg we let
 /// ongoing tasks finish but stop enqueuing/processing new ones.
-fn spawn_isolated_r_command(r_cmd: &RInstall) -> Command {
+fn spawn_r_process_group(r_cmd: &RInstall) -> Command {
     let mut command = Command::new(&r_cmd.bin_path);
 
     #[cfg(unix)]
@@ -229,16 +384,19 @@ pub fn kill_all_r_processes() {
 impl RCmd for RInstall {
     fn install(
         &self,
-        source_folder: impl AsRef<Path>,
-        sub_folder: Option<impl AsRef<Path>>,
-        libraries: &[impl AsRef<Path>],
-        destination: impl AsRef<Path>,
+        request: InstallRequest<'_>,
         cancellation: Arc<Cancellation>,
-        env_vars: &HashMap<&str, &str>,
-        configure_args: &[String],
-        strip: bool,
     ) -> Result<String, RCmdError> {
-        let destination = destination.as_ref();
+        let InstallRequest {
+            source: source_folder,
+            sub_folder,
+            libraries,
+            destination,
+            env_vars,
+            configure_args,
+            strip,
+            sandbox,
+        } = request;
         // We create a temp build dir so we only remove an existing destination if we have something we can replace it with
         let build_dir = tempfile::tempdir().map_err(|e| RCmdError {
             source: RCmdErrorKind::TempDir(e),
@@ -256,7 +414,7 @@ impl RCmd for RInstall {
         LinkMode::link_files(
             Some(LinkMode::Copy),
             "tmp_build",
-            &source_folder,
+            source_folder,
             &src_backup_dir,
         )
         .map_err(|e| RCmdError {
@@ -265,6 +423,13 @@ impl RCmd for RInstall {
 
         let library_paths =
             r_library_paths(libraries).map_err(|e| RCmdError::from_fs_io(e, destination))?;
+
+        let startup_files = sandbox
+            .map(StartupFiles::with_sandbox)
+            .transpose()
+            .map_err(|e| RCmdError {
+                source: RCmdErrorKind::StartupFiles(e),
+            })?;
 
         // Some R package structures, especially those that make use of
         // bootstrap.R like tree-sitter-r require the parent directories
@@ -312,20 +477,15 @@ impl RCmd for RInstall {
 
                 if to_bootstrap {
                     log::debug!("Bootstrapping {}...", destination.display());
-                    // Run bootstrap.R with the same isolation as the build/install step:
-                    // a vanilla R that ignores user/site profiles, the project library
-                    // paths so any `library()` calls resolve against project deps, and the
-                    // package env vars. run_r_command handles pid tracking + cancellation.
-                    let mut command = spawn_isolated_r_command(self);
-                    command
-                        .arg("--vanilla")
-                        .arg("-f")
-                        .arg("bootstrap.R")
-                        .current_dir(&src_backup_dir)
-                        .env("R_LIBS", &library_paths)
-                        .env("R_LIBS_SITE", &library_paths)
-                        .env("R_LIBS_USER", &library_paths)
-                        .envs(env_vars);
+                    // bootstrap.R runs with the same isolation as the install step itself
+                    let mut command = bootstrap_command(
+                        self,
+                        "bootstrap.R",
+                        &library_paths,
+                        startup_files.as_ref(),
+                        env_vars,
+                    );
+                    command.current_dir(&src_backup_dir);
 
                     // Match pkgbuild: a failed bootstrap is a hard build failure rather
                     // than something we silently proceed past.
@@ -340,16 +500,13 @@ impl RCmd for RInstall {
             }
         }
 
-        let mut command = spawn_isolated_r_command(self);
-        command
-            .arg("CMD")
-            .arg("INSTALL")
-            // This is where it will be installed
-            .arg(format!(
-                "--library={}",
-                build_dir.as_ref().to_string_lossy()
-            ))
-            .arg("--use-vanilla");
+        let mut command = install_command(
+            self,
+            build_dir.as_ref(),
+            &library_paths,
+            startup_files.as_ref(),
+            env_vars,
+        );
 
         if strip {
             command.arg("--strip").arg("--strip-lib");
@@ -362,26 +519,19 @@ impl RCmd for RInstall {
             let combined_args = configure_args.join(" ");
             log::debug!(
                 "Adding configure args for {}: {}",
-                source_folder.as_ref().display(),
+                source_folder.display(),
                 combined_args
             );
             command.arg(format!("--configure-args='{}'", combined_args));
         }
-        command
-            .arg(&src_backup_dir)
-            // Override where R should look for deps
-            .env("R_LIBS", &library_paths)
-            .env("R_LIBS_SITE", &library_paths)
-            .env("R_LIBS_USER", &library_paths);
+        command.arg(&src_backup_dir);
 
         if strip {
             command.env("_R_SHLIB_STRIP_", "true");
         }
-
-        command.envs(env_vars);
         log::debug!(
             "Compiling {} with env vars: {}",
-            source_folder.as_ref().display(),
+            source_folder.display(),
             command
                 .get_envs()
                 .map(|(k, v)| format!(
@@ -426,6 +576,7 @@ impl RCmd for RInstall {
         libraries: &[impl AsRef<Path>],
         cancellation: Arc<Cancellation>,
         env_vars: &HashMap<&str, &str>,
+        sandbox: Option<&Path>,
     ) -> Result<PathBuf, RCmdError> {
         let output_dir = output_dir.as_ref();
         let source_dir = source_dir.as_ref();
@@ -433,18 +584,13 @@ impl RCmd for RInstall {
         let library_paths =
             r_library_paths(libraries).map_err(|e| RCmdError::from_fs_io(e, source_dir))?;
 
-        let mut command = spawn_isolated_r_command(self);
-        command
-            .arg("CMD")
-            .arg("build")
-            .arg("--no-build-vignettes")
-            .arg("--no-manual")
-            .arg(source_dir)
-            .current_dir(output_dir)
-            .env("R_LIBS", &library_paths)
-            .env("R_LIBS_SITE", &library_paths)
-            .env("R_LIBS_USER", &library_paths)
-            .envs(env_vars);
+        // `R CMD build` has no `--vanilla`, so we override all the startup files
+        let startup = StartupFiles::write(sandbox).map_err(|e| RCmdError {
+            source: RCmdErrorKind::StartupFiles(e),
+        })?;
+
+        let mut command = build_command(self, source_dir, &library_paths, &startup, env_vars);
+        command.current_dir(output_dir);
 
         log::debug!("Running R CMD build on {}", source_dir.display());
 
@@ -531,6 +677,8 @@ pub enum RCmdErrorKind {
     LinkError(LinkError),
     #[error("Failed to create or copy files to temp directory: {0}")]
     TempDir(std::io::Error),
+    #[error("Failed to write the R startup files used to isolate the subprocess: {0}")]
+    StartupFiles(std::io::Error),
     #[error("Command failed: {0}")]
     Command(std::io::Error),
     #[error(transparent)]
@@ -568,7 +716,7 @@ pub enum VersionErrorKind {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Failed to get R version")]
+#[error("Failed to locate the R library")]
 #[non_exhaustive]
 pub struct LibraryError {
     pub source: LibraryErrorKind,

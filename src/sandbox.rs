@@ -20,6 +20,10 @@ use crate::consts::{BASE_PACKAGES, RECOMMENDED_PACKAGES};
 use crate::package::{Package, parse_description_file};
 use crate::sync::LinkMode;
 
+// R ships translations beside its base packages, but it is not returned by
+// installed.packages(priority = "base") and has no Priority field.
+const R_TRANSLATIONS_PACKAGE: &str = "translations";
+
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxErrorKind {
     #[error("IO error: {error} ({path})")]
@@ -32,6 +36,8 @@ pub enum SandboxErrorKind {
         name: &'static str,
         library: PathBuf,
     },
+    #[error(transparent)]
+    LibraryNotFound(#[from] crate::r_cmd::LibraryError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -120,7 +126,9 @@ pub fn get_packages_to_copy(library: &Path) -> Result<SandboxPackages, SandboxEr
             continue;
         }
         let name = entry.file_name().as_os_str().to_string_lossy().to_string();
-        if !BASE_PACKAGES.contains(&name.as_str()) && !RECOMMENDED_PACKAGES.contains(&name.as_str())
+        if !BASE_PACKAGES.contains(&name.as_str())
+            && !RECOMMENDED_PACKAGES.contains(&name.as_str())
+            && name != R_TRANSLATIONS_PACKAGE
         {
             continue;
         }
@@ -198,6 +206,7 @@ mod tests {
         let library = tempfile::tempdir().unwrap();
         add_package(library.path(), "base", "4.5.0");
         add_package(library.path(), "MASS", "7.3-65");
+        add_package(library.path(), R_TRANSLATIONS_PACKAGE, "4.5.0");
         add_package(library.path(), "leaked", "1.0.0");
 
         let packages = get_packages_to_copy(library.path()).unwrap();
@@ -206,6 +215,12 @@ mod tests {
 
         assert!(out.path().join("base").join("DESCRIPTION").is_file());
         assert!(out.path().join("MASS").join("DESCRIPTION").is_file());
+        assert!(
+            out.path()
+                .join(R_TRANSLATIONS_PACKAGE)
+                .join("DESCRIPTION")
+                .is_file()
+        );
         assert!(!out.path().join("leaked").exists());
     }
 }
