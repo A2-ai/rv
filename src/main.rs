@@ -260,8 +260,11 @@ pub enum Command {
     /// Run an Rscript command with the project library paths configured
     #[clap(trailing_var_arg = true)]
     Run {
+        /// Ignore site and user .Renviron and .Rprofile startup files
+        #[clap(long)]
+        isolated: bool,
         /// Do not sync the project library before running the command
-        /// This needs to be the first flag if set
+        /// This must be the last rv option; following values are passed to Rscript
         #[clap(long)]
         no_sync: bool,
         /// Forces the usage of the R at the given path. If it doesn't match the config's R
@@ -476,6 +479,23 @@ fn make_context(
         }
     }
     Ok(context)
+}
+
+fn user_r_startup_is_configured() -> bool {
+    if ["R_ENVIRON", "R_ENVIRON_USER", "R_PROFILE_USER"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+    {
+        return true;
+    }
+    if std::env::current_dir().is_ok_and(|directory| {
+        directory.join(".Renviron").is_file() || directory.join(".Rprofile").is_file()
+    }) {
+        return true;
+    }
+    etcetera::home_dir().is_ok_and(|directory| {
+        directory.join(".Renviron").is_file() || directory.join(".Rprofile").is_file()
+    })
 }
 
 fn try_main() -> Result<()> {
@@ -1299,6 +1319,7 @@ fn try_main() -> Result<()> {
         }
 
         Command::Run {
+            isolated,
             no_sync,
             r_bin,
             r_version,
@@ -1328,7 +1349,26 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
-            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            let sandbox = context
+                .sandbox()
+                .map_err(|e| anyhow!("sandbox is enabled but could not be established: {e}"))?;
+            if isolated && sandbox.is_none() {
+                return Err(anyhow!(
+                    "--isolated requires sandboxing to be enabled for the project"
+                ));
+            }
+            if isolated && !output_format.is_json() && user_r_startup_is_configured() {
+                eprintln!(
+                    "warning: --isolated ignores configured R startup files (.Renviron and .Rprofile) because they can change library paths and process state, undermining reproducibility; omit --isolated to load them"
+                );
+            }
+            let code = rv::run_with_sandbox(
+                &context.r_cmd.bin_path,
+                context.library_path(),
+                sandbox.as_deref(),
+                isolated,
+                &args,
+            )?;
             std::process::exit(code);
         }
 

@@ -40,6 +40,14 @@ def run_examples():
         # This one needs lots of system deps, skipping in CI
         if subfolder == "big":
             continue
+        # Fork pull requests do not receive repository secrets. Run every public
+        # integration project and skip only the example that needs the private key.
+        if (
+            subfolder == "private-git-dep"
+            and os.environ.get("RV_HAS_INTERNAL_SSH_KEY") != "true"
+        ):
+            print("===== Skipping private-git-dep: INTERNAL_SSH_KEY is unavailable =====")
+            continue
         subfolder_path = os.path.join(PARENT_FOLDER, subfolder, "rproject.toml")
         print(f"===== Processing example: {subfolder_path} =====")
 

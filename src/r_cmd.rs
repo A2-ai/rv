@@ -86,7 +86,7 @@ pub trait RCmd: Send + Sync {
 
 /// Canonicalize library paths and join them into R's expected format
 /// (colon-separated on Unix, semicolon-separated on Windows).
-fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Error> {
+pub(crate) fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Error> {
     let canonicalized = libraries
         .iter()
         .map(|lib| lib.as_ref().canonicalize())
