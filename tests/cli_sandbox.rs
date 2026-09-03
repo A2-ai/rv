@@ -153,11 +153,7 @@ fn rv_run_uses_sandbox_and_loads_user_profile_by_default() {
             "run",
             "--no-sync",
             "-e",
-            r#"cat(
-                paste("library", .Library, sep = "\t"),
-                paste("profile", Sys.getenv("RV_EXPLICIT_PROFILE"), sep = "\t"),
-                sep = "\n"
-            )"#,
+            r#"cat(paste("library", .Library, sep = "\t"), paste("profile", Sys.getenv("RV_EXPLICIT_PROFILE"), sep = "\t"), sep = "\n")"#,
         ]);
 
     let output = command.output().unwrap();
