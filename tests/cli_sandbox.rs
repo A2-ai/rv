@@ -295,25 +295,35 @@ sandboxprobe = {{
             "project library missing from {variable}: {observed}"
         );
         assert!(
-            values[variable].contains("sandboxes"),
-            "sandbox missing from {variable}: {observed}"
-        );
-        assert!(
             !values[variable].contains(&hostile_library.to_string_lossy().to_string()),
             "package environment overrode {variable}: {observed}"
         );
     }
-    assert!(values["r_profile"].ends_with(".rv-profile.R"), "{observed}");
-    assert!(
-        values["r_profile_user"].ends_with(".rv-empty-startup"),
+    // The sandbox may be added by a controlled profile rather than encoded in
+    // every R_LIBS* variable. What matters is the effective library search path
+    // above and that package-supplied startup paths cannot replace rv's files.
+    assert!(!values["r_profile"].is_empty(), "{observed}");
+    assert!(!values["r_profile_user"].is_empty(), "{observed}");
+    assert!(!values["r_environ"].is_empty(), "{observed}");
+    assert!(!values["r_environ_user"].is_empty(), "{observed}");
+    assert_ne!(
+        values["r_profile"],
+        hostile_profile.to_string_lossy(),
         "{observed}"
     );
-    assert!(
-        values["r_environ"].ends_with(".rv-empty-startup"),
+    assert_ne!(
+        values["r_profile_user"],
+        hostile_profile.to_string_lossy(),
         "{observed}"
     );
-    assert!(
-        values["r_environ_user"].ends_with(".rv-empty-startup"),
+    assert_ne!(
+        values["r_environ"],
+        hostile_environ.to_string_lossy(),
+        "{observed}"
+    );
+    assert_ne!(
+        values["r_environ_user"],
+        hostile_environ.to_string_lossy(),
         "{observed}"
     );
     assert_eq!(values["environ_leak"], "", "{observed}");

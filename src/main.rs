@@ -1349,15 +1349,9 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
-            let sandbox = if context.config.sandbox_enabled() {
-                let library = context.r_cmd.get_r_library().map_err(|e| anyhow!("{e}"))?;
-                Some(
-                    ensure_sandbox_exists(&library, &context.cache)
-                        .map_err(|e| anyhow!("sandbox is enabled but could not be created: {e}"))?,
-                )
-            } else {
-                None
-            };
+            let sandbox = context
+                .sandbox()
+                .map_err(|e| anyhow!("sandbox is enabled but could not be established: {e}"))?;
             if isolated && sandbox.is_none() {
                 return Err(anyhow!(
                     "--isolated requires sandboxing to be enabled for the project"
