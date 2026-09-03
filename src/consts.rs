@@ -194,6 +194,27 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 })
 "#;
 
+/// Site profile for the R subprocesses rv spawns while a project has the sandbox enabled.
+pub(crate) const SANDBOX_INSTALL_PROFILE_TEMPLATE: &str = r#"local({
+	# `.libPaths()` is computed before this profile runs, so it still holds the real
+	# system library. Rebinding `.Library` alone does not retroactively remove it —
+	# the search path has to be rebuilt afterwards, which is what drops it.
+	sys_lib <- normalizePath(file.path(R.home(), "library"), mustWork = FALSE)
+	keep <- setdiff(normalizePath(.libPaths(), mustWork = FALSE), sys_lib)
+
+	env <- baseenv()
+	if (bindingIsLocked(".Library", env)) unlockBinding(".Library", env)
+	assign(".Library", "%sandbox path%", envir = env)
+	lockBinding(".Library", env)
+	if (bindingIsLocked(".Library.site", env)) unlockBinding(".Library.site", env)
+	assign(".Library.site", character(), envir = env)
+	lockBinding(".Library.site", env)
+
+	# Appends the freshly bound `.Library`, ie the sandbox, in place of what we dropped.
+	.libPaths(keep, include.site = FALSE)
+})
+"#;
+
 pub(crate) const RVR_FILE_CONTENT: &str = r#".rv <- new.env()
 .rv$config_path <- file.path(normalizePath(getwd()), "rproject.toml")
 .rv$summary <- function(json = FALSE) {

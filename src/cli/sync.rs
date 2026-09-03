@@ -2,15 +2,13 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use fs_err::{self as fs};
 use serde::Serialize;
 
 use crate::cli::{Context, OutputFormat, ResolveMode, resolve_dependencies};
 use crate::sync::OutputSection;
-use crate::{
-    Lockfile, RCmd, Resolution, SyncChange, SyncHandler, ensure_sandbox_exists, system_req, timeit,
-};
+use crate::{Lockfile, Resolution, SyncChange, SyncHandler, system_req, timeit};
 
 #[derive(Debug, Default, Serialize)]
 struct SyncChanges {
@@ -66,19 +64,14 @@ impl SyncHelper {
             ));
         }
 
-        // Build and use the sandbox if needed
-        if !self.dry_run && context.config.sandbox_enabled() {
-            let path = context
-                .r_cmd
-                .get_r_library()
-                .map_err(|e| {
-                    anyhow::anyhow!("sandbox is enabled but the R library was not found: {e}")
-                })
-                .and_then(|lib| {
-                    ensure_sandbox_exists(&lib, &context.cache).map_err(|e| {
-                        anyhow::anyhow!("sandbox is enabled but could not be created: {e}")
-                    })
-                })?;
+        let sandbox = if self.dry_run {
+            None
+        } else {
+            context
+                .sandbox()
+                .context("sandbox is enabled but could not be established")?
+        };
+        if let Some(path) = &sandbox {
             log::debug!("sandbox ready at {}", path.display());
         }
 
@@ -123,6 +116,7 @@ impl SyncHelper {
                     handler.show_progress_bar();
                 }
                 handler.set_uses_lockfile(context.config.use_lockfile());
+                handler.set_sandbox(sandbox);
                 handler.handle(&resolution.found, &context.r_cmd)
             }
         ) {

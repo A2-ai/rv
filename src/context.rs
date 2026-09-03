@@ -14,10 +14,12 @@ use crate::events;
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::r_finder::find_r_install;
+use crate::sandbox::SandboxErrorKind;
 use crate::utils::create_spinner;
 use crate::{
-    Config, DiskCache, GitExecutor, Http, Library, RInstall, Repository, RepositoryDatabase,
-    Resolution, Resolver, SystemInfo, Version, get_package_file_urls, http, system_req,
+    Config, DiskCache, GitExecutor, Http, Library, RCmd, RInstall, Repository, RepositoryDatabase,
+    Resolution, Resolver, SandboxError, SystemInfo, Version, ensure_sandbox_exists,
+    get_package_file_urls, http, system_req,
 };
 
 /// Method on how to find the R Version on the system
@@ -190,6 +192,20 @@ impl Context {
     /// It can be false if the user is using `--r-version` and/or `--r-bin`
     pub fn r_matches_config(&self) -> bool {
         self.config.r_version().hazy_match(&self.r_version)
+    }
+
+    /// The system library sandbox for this project, built if missing.
+    /// Returns `Ok(None)` if the sandbox is not enabled.
+    pub fn sandbox(&self) -> Result<Option<PathBuf>, SandboxError> {
+        if !self.config.sandbox_enabled() {
+            return Ok(None);
+        }
+
+        let library = self.r_cmd.get_r_library().map_err(|e| SandboxError {
+            source: SandboxErrorKind::LibraryNotFound(e),
+        })?;
+
+        Ok(Some(ensure_sandbox_exists(&library, &self.cache)?))
     }
 
     /// Enable progress bar display for long-running operations

@@ -54,7 +54,7 @@ pub use package::{
     Dependency, FetchPackage, Operator, Version, VersionRequirement, is_binary_package,
 };
 pub use project_summary::ProjectSummary;
-pub use r_cmd::RCmd;
+pub use r_cmd::{InstallRequest, RCmd};
 pub use r_finder::RInstall;
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;

@@ -36,6 +36,8 @@ pub enum SandboxErrorKind {
         name: &'static str,
         library: PathBuf,
     },
+    #[error(transparent)]
+    LibraryNotFound(#[from] crate::r_cmd::LibraryError),
 }
 
 #[derive(Debug, thiserror::Error)]
