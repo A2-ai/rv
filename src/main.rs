@@ -10,7 +10,6 @@ use serde_json::json;
 
 use anyhow::anyhow;
 use log::warn;
-use rv::RCmd;
 use rv::cli::{
     Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
     find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies,
@@ -22,8 +21,8 @@ use rv::{AddOptions, FetchPackage, Http, RepositoryOperation as LibRepositoryOpe
 use rv::{
     CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
-    ensure_sandbox_exists, execute_repository_action, parse_add_package_spec,
-    read_and_verify_config, resolve_add_options_reference_with_executor, system_req,
+    execute_repository_action, parse_add_package_spec, read_and_verify_config,
+    resolve_add_options_reference_with_executor, system_req,
 };
 
 /// rv, the R package manager
@@ -1181,25 +1180,17 @@ fn try_main() -> Result<()> {
             }
             if sandbox {
                 let mut sandbox_out = String::new();
-                if context.config.sandbox_enabled() {
-                    let res = context
-                        .r_cmd
-                        .get_r_library()
-                        .map_err(|e| anyhow!("{e}"))
-                        .and_then(|lib| {
-                            ensure_sandbox_exists(&lib, &context.cache).map_err(|e| anyhow!("{e}"))
-                        });
-                    match res {
-                        Ok(path) => {
-                            let path_str = path.to_string_lossy();
-                            sandbox_out = if cfg!(windows) {
-                                path_str.replace('\\', "/")
-                            } else {
-                                path_str.to_string()
-                            };
-                        }
-                        Err(e) => warn!("could not create sandbox: {e}"),
+                match context.sandbox() {
+                    Ok(Some(path)) => {
+                        let path_str = path.to_string_lossy();
+                        sandbox_out = if cfg!(windows) {
+                            path_str.replace('\\', "/")
+                        } else {
+                            path_str.to_string()
+                        };
                     }
+                    Ok(None) => {}
+                    Err(e) => warn!("could not create sandbox: {e}"),
                 }
                 output.push(("sandbox", sandbox_out));
             }

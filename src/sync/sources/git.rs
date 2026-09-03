@@ -11,7 +11,7 @@ use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
-use crate::{Cancellation, CommandExecutor, RCmd, ResolvedDependency};
+use crate::{Cancellation, CommandExecutor, InstallRequest, RCmd, ResolvedDependency};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn install_package(
@@ -23,6 +23,7 @@ pub(crate) fn install_package(
     configure_args: &[String],
     strip: bool,
     cancellation: Arc<Cancellation>,
+    sandbox: Option<&Path>,
 ) -> Result<(), SyncError> {
     let (local_paths, global_paths) = cache.get_package_paths(&pkg.source, None, None);
 
@@ -55,14 +56,17 @@ pub(crate) fn install_package(
 
         let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
             r_cmd.install(
-                &source_path,
-                sub_dir,
-                library_dirs,
-                &local_paths.binary,
+                InstallRequest {
+                    source: &source_path,
+                    sub_folder: sub_dir.map(Path::new),
+                    libraries: library_dirs,
+                    destination: &local_paths.binary,
+                    env_vars: &pkg.env_vars,
+                    configure_args,
+                    strip,
+                    sandbox,
+                },
                 cancellation,
-                &pkg.env_vars,
-                configure_args,
-                strip,
             )
         })?;
 
