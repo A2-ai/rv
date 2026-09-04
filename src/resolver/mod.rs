@@ -101,6 +101,9 @@ pub struct Resolver<'d> {
     repositories: &'d [(RepositoryDatabase, bool)],
     /// We might not have loaded the databases but we still want their urls
     repo_urls: HashSet<&'d str>,
+    /// The urls of the repositories expanded from the bioconductor shorthand.
+    /// Dependencies with `bioconductor = true` are only looked up in those.
+    bioc_repo_urls: HashSet<&'d str>,
     r_version: &'d Version,
     /// The base + recommended package versions for the R version we are using
     builtin_packages: &'d HashMap<String, Package>,
@@ -114,10 +117,12 @@ pub struct Resolver<'d> {
 }
 
 impl<'d> Resolver<'d> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project_dir: impl AsRef<Path>,
         repositories: &'d [(RepositoryDatabase, bool)],
         repo_urls: HashSet<&'d str>,
+        bioc_repo_urls: HashSet<&'d str>,
         r_version: &'d Version,
         builtin_packages: &'d HashMap<String, Package>,
         lockfile: Option<&'d Lockfile>,
@@ -127,6 +132,7 @@ impl<'d> Resolver<'d> {
             project_dir: project_dir.as_ref().into(),
             repositories,
             repo_urls,
+            bioc_repo_urls,
             r_version,
             lockfile,
             builtin_packages,
@@ -297,11 +303,15 @@ impl<'d> Resolver<'d> {
         cache: &'d Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
+        let bioc_only = item.dep.as_ref().is_some_and(|c| c.bioconductor());
 
         for (repo, repo_source_only) in self.repositories {
             if let Some(r) = repository
                 && repo.url != r
             {
+                continue;
+            }
+            if bioc_only && !self.bioc_repo_urls.contains(repo.url.as_str()) {
                 continue;
             }
             let force_source = if let Some(source) = item.force_source {
@@ -844,6 +854,8 @@ mod tests {
     #[derive(Debug, Deserialize)]
     struct TestRepo {
         name: String,
+        // Defaults to http://{name}/ if not set
+        url: Option<String>,
         source: Option<String>,
         binary: Option<String>,
         force_source: bool,
@@ -865,7 +877,8 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&format!("http://{}/", r.name));
+                let url = r.url.unwrap_or_else(|| format!("http://{}/", r.name));
+                let mut repo = RepositoryDatabase::new(&url);
                 if let Some(p) = r.source {
                     repo.source_packages = dbs[&p].clone();
                 }
@@ -983,6 +996,7 @@ mod tests {
                 Path::new("."),
                 &repositories,
                 repositories.iter().map(|(x, _)| x.url.as_str()).collect(),
+                config.bioc_repo_urls(),
                 &r_version,
                 &builtin_packages,
                 Some(&lockfile),
