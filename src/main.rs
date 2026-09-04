@@ -231,6 +231,10 @@ pub enum Command {
         /// The repositories specified in the config
         #[clap(long)]
         repositories: bool,
+        /// The system library sandbox path, built on demand if missing.
+        /// Prints an empty value when the project does not enable the sandbox
+        #[clap(long)]
+        sandbox: bool,
     },
     /// List the system dependencies needed by the dependency tree.
     /// This is currently only supported on various Linux distributions.
@@ -1155,6 +1159,7 @@ fn try_main() -> Result<()> {
             library,
             r_version,
             repositories,
+            sandbox,
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
@@ -1181,6 +1186,22 @@ fn try_main() -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 output.push(("repositories", repos));
+            }
+            if sandbox {
+                let mut sandbox_out = String::new();
+                match context.sandbox() {
+                    Ok(Some(path)) => {
+                        let path_str = path.to_string_lossy();
+                        sandbox_out = if cfg!(windows) {
+                            path_str.replace('\\', "/")
+                        } else {
+                            path_str.to_string()
+                        };
+                    }
+                    Ok(None) => {}
+                    Err(e) => warn!("could not create sandbox: {e}"),
+                }
+                output.push(("sandbox", sandbox_out));
             }
 
             if output_format.is_json() {
