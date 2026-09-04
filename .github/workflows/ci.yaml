@@ -172,3 +172,98 @@ jobs:
 
       - name: run rv e2e tests
         run: python .github/scripts/e2e.py
+
+  rig-test:
+    name: rig-discovery-test
+    timeout-minutes: 45
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: macos-latest
+          - os: windows-2022
+    defaults:
+      run:
+        # Git Bash on Windows too, so the heredoc/grep assertion is shared across OSes.
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Install rig (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-x86_64-latest.tar.gz \
+            | sudo tar xz -C /usr/local
+          rig --version
+
+      - name: Install rig (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # No macOS asset on the rolling `latest` tag, so pull the pkg from the latest release.
+          gh release download --repo r-lib/rig --pattern 'rig-*-macOS-arm64.pkg' --dir "$RUNNER_TEMP"
+          sudo installer -pkg "$RUNNER_TEMP"/rig-*-macOS-arm64.pkg -target /
+          rig --version
+
+      - name: Install rig (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/r-lib/rig/releases/download/latest/rig-windows-latest.exe -OutFile "$env:RUNNER_TEMP\rig.exe"
+          Start-Process -Wait -FilePath "$env:RUNNER_TEMP\rig.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          $rig = Get-ChildItem 'C:\Program Files','C:\Program Files (x86)' -Recurse -Filter rig.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $rig) { throw 'rig.exe not found after install' }
+          Split-Path $rig.FullName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      # Install two R versions and make the *default* the one the project does NOT pin,
+      # so plain `R` on PATH is 4.5 and only rig's `R-4.4.*` quick link satisfies the config.
+      # This is the #487 scenario: pinned version != rig's global default.
+      - name: Install R versions via rig
+        run: |
+          SUDO=sudo
+          if [ "$RUNNER_OS" = "Windows" ]; then SUDO=; fi
+          $SUDO rig add 4.4
+          $SUDO rig add 4.5
+          # `rig default` needs the exact installed name, not the `4.5` minor alias that
+          # `add` accepts. That name differs by platform (e.g. `4.5.3` on Linux, `4.5-arm64`
+          # on macOS), so read it back from `rig list` — the first 4.5* token on its line.
+          default_name="$(rig list 2>/dev/null | grep -oE '4\.5[^ ]*' | head -1)"
+          echo "resolved default name: $default_name"
+          $SUDO rig default "$default_name"
+          echo "=== rig list ==="
+          rig list
+          echo "=== rig list --json ==="
+          rig list --json
+
+      - name: Build rv
+        run: cargo build --all-features --release
+
+      - name: rv resolves the pinned 4.4 via the rig quick link, not the 4.5 default
+        run: |
+          rv_bin="$(pwd)/target/release/rv"
+          if [ "$RUNNER_OS" = "Windows" ]; then rv_bin="$rv_bin.exe"; fi
+          work="$(mktemp -d)"
+          cat > "$work/rproject.toml" <<'EOF'
+          [project]
+          name = "rig-discovery"
+          r_version = "4.4"
+          repositories = []
+          dependencies = []
+          EOF
+          cd "$work"
+          # -vvv enables debug logs from find_r_install. `info --library` builds the
+          # Context (running discovery) without touching the network.
+          "$rv_bin" -vvv info --library 2>&1 | tee out.log
+          # Assert the *versioned quick link* branch (step 1) is what resolved it — a
+          # different branch (or picking the 4.5 default) would log a different line.
+          # Grep the matched version, not the link name, so it holds on all three OSes
+          # despite their different link shapes (R-4.4.3 / R-4.4 / R-4.4.3.exe or .bat).
+          grep -Eq "Versioned R in PATH.*matches: 4\.4" out.log
