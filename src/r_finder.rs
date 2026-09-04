@@ -33,9 +33,10 @@ static R_STATUS_RE: LazyLock<Regex> =
 /// rig names the link after the install's version, and that shape differs by platform:
 /// `R-4.5` (optionally `-arm64`/`-x86_64`, from when CRAN's default macOS arch switched
 /// to arm64 at 4.6) on macOS, where frameworks are per-minor; the full `R-4.5.1` on
-/// Linux; and `R-4.5.1.bat` on Windows.
-static RIG_QUICK_LINK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^R-(\d+\.\d+(?:\.\d+)?)(?:-arm64|-x86_64)?(?:\.bat)?$").unwrap());
+/// Linux; and on Windows `R-4.5.1.exe`, or `R-4.5.1.bat`.
+static RIG_QUICK_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^R-(\d+\.\d+(?:\.\d+)?)(?:-arm64|-x86_64)?(?:\.exe|\.bat)?$").unwrap()
+});
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RInstall {
@@ -160,7 +161,7 @@ fn get_rig_versioned_r_from_path(version: &Version, use_devel: bool) -> Option<R
                 continue;
             };
 
-            if v.major_minor() == version.major_minor()
+            if (version.hazy_match(&v) || v.hazy_match(version))
                 && let Some(r) = RInstall::default_from_given_path(entry.path())
                 && version.hazy_match(&r.version)
                 && use_devel == r.is_devel
@@ -311,23 +312,29 @@ fn scan_known_r_locations() -> Vec<RInstall> {
 
     #[cfg(target_os = "windows")]
     {
-        let root = PathBuf::from(r"C:\Program Files\R");
-        if root.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&root)
-        {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let header = path.join("include").join("Rversion.h");
-                if header.exists()
-                    && let Some((version, is_devel)) = read_version_from_header(&header)
-                {
-                    let bin_path = path.join("bin").join("R.exe");
-                    if bin_path.exists() {
-                        installs.push(RInstall {
-                            bin_path,
-                            version,
-                            is_devel,
-                        });
+        let mut roots = vec![PathBuf::from(r"C:\Program Files\R")];
+        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            roots.push(PathBuf::from(local_app_data).join("Programs").join("R"));
+        }
+
+        for root in roots {
+            if root.is_dir()
+                && let Ok(entries) = std::fs::read_dir(&root)
+            {
+                for entry in entries.filter_map(Result::ok) {
+                    let path = entry.path();
+                    let header = path.join("include").join("Rversion.h");
+                    if header.exists()
+                        && let Some((version, is_devel)) = read_version_from_header(&header)
+                    {
+                        let bin_path = path.join("bin").join("R.exe");
+                        if bin_path.exists() {
+                            installs.push(RInstall {
+                                bin_path,
+                                version,
+                                is_devel,
+                            });
+                        }
                     }
                 }
             }

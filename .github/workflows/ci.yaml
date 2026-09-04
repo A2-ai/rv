@@ -265,5 +265,5 @@ jobs:
           # Assert the *versioned quick link* branch (step 1) is what resolved it — a
           # different branch (or picking the 4.5 default) would log a different line.
           # Grep the matched version, not the link name, so it holds on all three OSes
-          # despite their different link shapes (R-4.4.3 / R-4.4 / R-4.4.3.bat).
+          # despite their different link shapes (R-4.4.3 / R-4.4 / R-4.4.3.exe or .bat).
           grep -Eq "Versioned R in PATH.*matches: 4\.4" out.log
