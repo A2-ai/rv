@@ -30,6 +30,19 @@ fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Copies the mtime of a file onto its copy.
+/// It can fail on Windows because it requires write which can have issues with some files
+/// but let it continue either way
+fn preserve_mtime(destination: &Path, metadata: &Metadata) {
+    let mtime = FileTime::from_last_modification_time(metadata);
+    if let Err(e) = filetime::set_file_mtime(destination, mtime) {
+        log::debug!(
+            "Could not preserve mtime for {}: {e}",
+            destination.display()
+        );
+    }
+}
+
 /// Copy the whole content of a folder to another folder
 pub(crate) fn copy_folder(
     from: impl AsRef<Path>,
@@ -52,7 +65,8 @@ pub(crate) fn copy_folder(
         } else if file_type.is_dir() {
             fs::create_dir_all(&out_path)?;
         } else {
-            fs::copy(path, out_path)?;
+            fs::copy(path, &out_path)?;
+            preserve_mtime(&out_path, &entry.metadata()?);
         }
     }
 
@@ -109,7 +123,8 @@ fn copy_folder_parallel(
                 if let Some(parent) = out_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                fs::copy(path, out_path)?;
+                fs::copy(path, &out_path)?;
+                preserve_mtime(&out_path, &entry.metadata()?);
             }
             Ok::<(), std::io::Error>(())
         })
