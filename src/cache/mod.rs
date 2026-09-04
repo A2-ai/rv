@@ -12,7 +12,7 @@ pub use info::CacheInfo;
 pub use status::{CacheStatus, InstallationStatus};
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct Cache {
@@ -115,5 +115,9 @@ impl Cache {
             .as_ref()
             .map(|x| x.get_package_paths(source, pkg_name, version));
         (local, global)
+    }
+
+    pub fn script_path(&self, sha: &str) -> PathBuf {
+        self.local.get_script_path(sha)
     }
 }
