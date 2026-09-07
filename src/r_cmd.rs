@@ -149,13 +149,24 @@ impl StartupFiles {
         })
     }
 
-    /// Sets the R profile/environ env variables for the given command to the current files
-    pub fn apply_to(&self, command: &mut Command) {
+    /// Points R at our profile, which is the sandbox setup when we have one and an empty file
+    /// otherwise.
+    pub fn apply_profile(&self, command: &mut Command) {
+        command.env("R_PROFILE", &self.profile);
+    }
+
+    /// Points the remaining startup files at an empty file.
+    pub fn apply_isolation(&self, command: &mut Command) {
         command
-            .env("R_PROFILE", &self.profile)
             .env("R_PROFILE_USER", &self.empty)
             .env("R_ENVIRON", &self.empty)
             .env("R_ENVIRON_USER", &self.empty);
+    }
+
+    /// Isolate + sandbox
+    pub fn apply_to(&self, command: &mut Command) {
+        self.apply_profile(command);
+        self.apply_isolation(command);
     }
 }
 

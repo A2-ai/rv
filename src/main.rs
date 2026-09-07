@@ -4,16 +4,16 @@ use std::path::{Path, PathBuf};
 
 mod cli_docs;
 
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
 use anyhow::anyhow;
 use log::warn;
 use rv::cli::{
-    CONFIG_FILENAME, Context, OutputFormat, RCommandLookup, ResolveMode, SCRIPT_CONFIG_RE,
-    SyncHelper, export_renv, extract_script_config, find_r_repositories, init, init_structure,
-    migrate_renv, resolve_dependencies, resolve_r_lookup, tree,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SCRIPT_CONFIG_RE, SyncHelper, export_renv,
+    extract_script_config, find_r_repositories, init, init_structure, migrate_renv,
+    resolve_dependencies, resolve_r_lookup, tree,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
@@ -267,7 +267,6 @@ pub enum Command {
     #[clap(trailing_var_arg = true)]
     Run {
         /// Do not sync the project library before running the command
-        /// This needs to be the first flag if set
         #[clap(long)]
         no_sync: bool,
         /// Whether to isolate this run from the rv profile if you're in a rv project.
@@ -489,21 +488,6 @@ fn make_context(
     Ok(context)
 }
 
-/// Whether the project at that config file wants a system library sandbox.
-/// Either via the config file or via env var
-fn wants_sandbox(config_file: &Path) -> bool {
-    match Config::from_file(config_file) {
-        Ok(config) => config.sandbox_enabled(),
-        Err(e) => {
-            log::debug!(
-                "could not read {} to find out whether it wants a sandbox: {e}",
-                config_file.display()
-            );
-            false
-        }
-    }
-}
-
 fn get_default_r_version() -> Result<(String, bool)> {
     match get_r_from_path() {
         Some(r_install) => {
@@ -587,8 +571,7 @@ fn try_main() -> Result<()> {
                 use_devel,
                 force,
             )?;
-            let sandbox = wants_sandbox(&project_directory.join(CONFIG_FILENAME));
-            activate(&project_directory, no_r_environment, sandbox)?;
+            activate(&project_directory, no_r_environment)?;
 
             if output_format.is_json() {
                 println!(
@@ -619,11 +602,7 @@ fn try_main() -> Result<()> {
                 .unwrap()
                 .to_path_buf();
             init_structure(project_dir)?;
-            activate(
-                project_dir,
-                no_r_environment,
-                wants_sandbox(&cli.config_file),
-            )?;
+            activate(project_dir, no_r_environment)?;
             let content = read_to_string(project_dir.join(".Rprofile"))?.replace(
                 "source(\"renv/activate.R\")",
                 "# source(\"renv/activate.R\")",
@@ -1214,19 +1193,20 @@ fn try_main() -> Result<()> {
                 output.push(("repositories", repos));
             }
             if sandbox {
-                let mut sandbox_out = String::new();
-                match context.sandbox() {
-                    Ok(Some(path)) => {
+                let sandbox_out = match context
+                    .sandbox()
+                    .context("sandbox is enabled but could not be created")?
+                {
+                    Some(path) => {
                         let path_str = path.to_string_lossy();
-                        sandbox_out = if cfg!(windows) {
+                        if cfg!(windows) {
                             path_str.replace('\\', "/")
                         } else {
                             path_str.to_string()
-                        };
+                        }
                     }
-                    Ok(None) => {}
-                    Err(e) => warn!("could not create sandbox: {e}"),
-                }
+                    None => String::new(),
+                };
                 output.push(("sandbox", sandbox_out));
             }
 
@@ -1292,7 +1272,7 @@ fn try_main() -> Result<()> {
         Command::Activate { no_r_environment } => {
             let config_file = cli.config_file.canonicalize()?;
             let project_dir = config_file.parent().expect("parent to exist");
-            activate(project_dir, no_r_environment, wants_sandbox(&config_file))?;
+            activate(project_dir, no_r_environment)?;
             if output_format.is_json() {
                 println!("{{}}");
             } else {
@@ -1399,9 +1379,14 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
+            let sandbox = context
+                .sandbox()
+                .context("sandbox is enabled but could not be created")?;
+
             let code = rv::run(
                 &context.r_cmd.bin_path,
                 context.library_path(),
+                sandbox.as_deref(),
                 isolated,
                 &args,
             )?;

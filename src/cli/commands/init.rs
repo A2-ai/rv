@@ -11,7 +11,7 @@ use crate::{Repository, consts::LIBRARY_ROOT_DIR_NAME};
 
 const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
-pub const CONFIG_FILENAME: &str = "rproject.toml";
+const CONFIG_FILENAME: &str = "rproject.toml";
 
 const INITIAL_CONFIG: &str = r#"[project]
 name = "%project_name%"

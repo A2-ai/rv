@@ -113,6 +113,89 @@ fn explicit_config_enables_sandbox_when_environment_is_false() {
     assert!(std::path::Path::new(&sandbox).is_dir());
 }
 
+#[test]
+fn sandbox_info_rechecks_sandbox_configuration() {
+    let (_project, cache, config) = create_project(Some(false));
+    let mut command = rv_cmd(&cache, &config);
+    command.args([
+        "info",
+        "--library",
+        "--r-version",
+        "--repositories",
+        "--sandbox",
+    ]);
+
+    let output = command.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.lines().any(|line| line
+            .strip_prefix("sandbox:")
+            .is_some_and(|v| v.trim().is_empty())),
+        "{stdout}"
+    );
+
+    let content = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        content.replace("sandbox = false", "sandbox = true"),
+    )
+    .unwrap();
+
+    let mut command = rv_cmd(&cache, &config);
+    command.args([
+        "info",
+        "--library",
+        "--r-version",
+        "--repositories",
+        "--sandbox",
+    ]);
+    let output = command.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let sandbox = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("sandbox: "))
+        .expect("activation info should include the sandbox path");
+    assert!(std::path::Path::new(sandbox).is_dir());
+}
+
+#[test]
+fn regular_info_fields_do_not_implicitly_request_a_sandbox() {
+    let (_project, cache, config) = create_project(Some(true));
+    let mut command = rv_cmd(&cache, &config);
+    command.args(["info", "--library", "--r-version", "--repositories"]);
+
+    let output = command.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.lines().any(|line| line.starts_with("sandbox:")));
+}
+
+#[test]
+fn sandbox_info_fails_when_the_sandbox_cannot_be_created() {
+    let (_project, cache, config) = create_project(Some(true));
+    fs::write(cache.path().join("sandboxes"), "blocks sandbox directory").unwrap();
+
+    let mut command = rv_cmd(&cache, &config);
+    command
+        .env_remove("RV_GLOBAL_CACHE_DIR")
+        .args(["info", "--sandbox"]);
+
+    let output = command.output().unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("sandbox is enabled but could not be created"),
+        "{stderr}"
+    );
+}
+
 // #[test]
 // fn rv_run_uses_sandbox_without_project_activation_profile() {
 //     let (project, cache, config) = create_project(Some(true));
