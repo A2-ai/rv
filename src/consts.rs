@@ -82,7 +82,7 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 	}
 	rv_info <- system2(
 		"%rv command%",
-		c("info", "--library", "--r-version", "--repositories", "--sandbox"),
+		c("info", "--library", "--r-version", "--repositories"%sandbox flag%),
 		stdout = TRUE
 	)
 	if (!is.null(attr(rv_info, "status"))) {

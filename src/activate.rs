@@ -11,7 +11,11 @@ use crate::consts::{ACTIVATE_FILE_TEMPLATE, RVR_FILE_CONTENT};
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
 const RVR_FILE_NAME: &str = "rv/scripts/rvr.R";
 
-pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), ActivateError> {
+pub fn activate(
+    dir: impl AsRef<Path>,
+    no_r_environment: bool,
+    sandbox: bool,
+) -> Result<(), ActivateError> {
     let dir = dir.as_ref();
 
     // ensure the directory is a directory and that it exists. If not, activation cannot occur
@@ -24,7 +28,7 @@ pub fn activate(dir: impl AsRef<Path>, no_r_environment: bool) -> Result<(), Act
     let is_home = is_home_dir(&dir.canonicalize()?);
     let (activate_source_path, rvr_source_path) = scripts_as_paths(is_home);
 
-    write_activate_file(dir, is_home)?;
+    write_activate_file(dir, is_home, sandbox)?;
     add_rprofile_source_call(dir, activate_source_path)?;
     write_rvr_file(dir)?;
     if !no_r_environment {
@@ -95,7 +99,12 @@ fn scripts_as_paths(is_home: bool) -> (PathBuf, PathBuf) {
     }
 }
 
-fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), ActivateError> {
+
+fn write_activate_file(
+    dir: impl AsRef<Path>,
+    is_home: bool,
+    sandbox: bool,
+) -> Result<(), ActivateError> {
     let template = ACTIVATE_FILE_TEMPLATE.to_string();
     let global_wd_content = if is_home {
         r#"
@@ -110,7 +119,11 @@ fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), Activ
     let rv_command = if cfg!(windows) { "rv.exe" } else { "rv" };
     let content = template
         .replace("%rv command%", rv_command)
-        .replace("%global wd content%", global_wd_content);
+        .replace("%global wd content%", global_wd_content)
+        .replace(
+            "%sandbox flag%",
+            if sandbox { r#", "--sandbox""# } else { "" },
+        );
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = dir.as_ref().join(ACTIVATE_FILE_NAME);
@@ -166,14 +179,25 @@ impl From<io::Error> for ActivateError {
 mod tests {
     use crate::activate::RVR_FILE_NAME;
 
-    use super::{ACTIVATE_FILE_NAME, activate};
+    use super::{ACTIVATE_FILE_NAME, activate, read_to_string};
 
     #[test]
     fn test_activation() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        activate(&tmp_dir, false).unwrap();
+        activate(&tmp_dir, false, false).unwrap();
         assert!(tmp_dir.path().join(ACTIVATE_FILE_NAME).exists());
         assert!(tmp_dir.path().join(RVR_FILE_NAME).exists());
         assert!(tmp_dir.path().join(".Rprofile").exists());
+    }
+
+    #[test]
+    fn only_asks_rv_info_for_the_sandbox_when_the_project_wants_one() {
+        for sandbox in [false, true] {
+            let tmp_dir = tempfile::tempdir().unwrap();
+            activate(&tmp_dir, false, sandbox).unwrap();
+            let content = read_to_string(tmp_dir.path().join(ACTIVATE_FILE_NAME)).unwrap();
+            assert!(!content.contains("%sandbox flag%"));
+            assert_eq!(content.contains(r#""--sandbox""#), sandbox);
+        }
     }
 }
