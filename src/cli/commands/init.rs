@@ -133,6 +133,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     command
         .arg("-e")
         .arg(r_code)
+        .env(crate::consts::NO_ACTIVATE_ENV_VAR_NAME, "1")
         .stdout(send.try_clone().map_err(|e| InitError {
             source: InitErrorKind::Command(e),
         })?)

@@ -5,7 +5,7 @@ use std::{
 
 use fs_err::{read_to_string, write};
 
-use crate::consts::{ACTIVATE_FILE_TEMPLATE, RUN_ACTIVE_ENV_VAR_NAME, RVR_FILE_CONTENT};
+use crate::consts::{ACTIVATE_FILE_TEMPLATE, NO_ACTIVATE_ENV_VAR_NAME, RVR_FILE_CONTENT};
 
 // constant file name and function to provide the R code string to source the file
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
@@ -111,7 +111,7 @@ fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), Activ
     let content = template
         .replace("%rv command%", rv_command)
         .replace("%global wd content%", global_wd_content)
-        .replace("%run active env var%", RUN_ACTIVE_ENV_VAR_NAME);
+        .replace("%no activate env var%", NO_ACTIVATE_ENV_VAR_NAME);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = dir.as_ref().join(ACTIVATE_FILE_NAME);

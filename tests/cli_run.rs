@@ -147,29 +147,23 @@ dependencies = ["glue"]
 "#,
     )
     .unwrap();
-    // ... and activated, so R would load an `.Rprofile` that points `.libPaths()` at the project
-    // library. That must not shadow the library rv set up for the script.
-    let shadow = temp.path().join("shadow-library");
-    fs::create_dir(&shadow).unwrap();
-    fs::write(
-        temp.path().join(".Rprofile"),
-        format!(
-            ".libPaths({:?}, include.site = FALSE)\n",
-            shadow.to_str().unwrap()
-        ),
-    )
-    .unwrap();
-    fs::write(
-        temp.path().join(".Renviron"),
-        format!("R_LIBS_USER={}\n", shadow.to_str().unwrap()),
-    )
-    .unwrap();
+    // ... and activated, so its `.Rprofile` sources the rv activate script, which would
+    // otherwise point `.libPaths()` and the repositories at the project.
+    let mut activate = cargo::cargo_bin_cmd!();
+    activate.current_dir(temp.path());
+    activate.env("RV_CACHE_DIR", cache.path());
+    activate.arg("activate");
+    assert!(activate.output().unwrap().status.success());
+
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/scripts/self_contained_in_project.R");
 
     let mut cmd = cargo::cargo_bin_cmd!();
     cmd.current_dir(temp.path());
     cmd.env("RV_CACHE_DIR", cache.path());
+    // The activate script shells out to whatever `rv` is on the PATH, so the binary under test
+    // has to be there for this to exercise anything
+    cmd.env("PATH", path_with_rv());
     cmd.args(["run", script.to_str().unwrap()]);
 
     let output = cmd.output().unwrap();
@@ -185,5 +179,17 @@ dependencies = ["glue"]
         .find(|l| l.starts_with("LIBRARY:"))
         .expect("no LIBRARY line in output");
     assert!(library_line.contains(scripts_dir.to_str().unwrap()));
-    assert!(!temp.path().join("rv").exists());
+    // Activation created `rv/scripts`, but nothing resolved into a project library
+    assert!(!temp.path().join("rv").join("library").exists());
+}
+
+/// A generated activate script calls whatever `rv` is on the PATH, so the binary under test has
+/// to be there or it warns and does nothing, and the activated tests would pass on a no-op.
+fn path_with_rv() -> std::ffi::OsString {
+    let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_rv"));
+    let mut dirs = vec![binary.parent().unwrap().to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&existing));
+    }
+    std::env::join_paths(dirs).unwrap()
 }

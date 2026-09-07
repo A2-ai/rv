@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use std::{fs, thread};
 
+use crate::config::Repository;
 use crate::consts::SANDBOX_INSTALL_PROFILE_TEMPLATE;
 use crate::fs::copy_folder;
 use crate::r_finder::RInstall;
@@ -110,6 +111,34 @@ fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Er
         .join(sep))
 }
 
+/// An R string literal. Only quotes and backslashes need escaping in one.
+fn r_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// A path as an R string literal. R wants forward slashes in paths, on Windows too.
+fn r_path(path: &Path) -> String {
+    r_string(&path.to_string_lossy().replace('\\', "/"))
+}
+
+fn sandbox_profile(sandbox: &Path) -> String {
+    SANDBOX_INSTALL_PROFILE_TEMPLATE.replace(
+        "%sandbox path%",
+        // R wants forward slashes in paths, on Windows too
+        &sandbox.to_string_lossy().replace('\\', "/"),
+    )
+}
+
+/// The site profile that setting `R_PROFILE` is about to displace: whatever the user pointed it
+/// at, or R's own `Rprofile.site`. `None` when there is nothing to chain to.
+fn displaced_site_profile(r_home: &Path) -> Option<PathBuf> {
+    let path = match std::env::var_os("R_PROFILE") {
+        Some(value) if !value.is_empty() => PathBuf::from(value),
+        _ => r_home.join("etc").join("Rprofile.site"),
+    };
+    path.is_file().then_some(path)
+}
+
 /// For the operations we need a dummy empty file and when the sandbox is active a profile
 /// that will enable the sandbox.
 pub struct StartupFiles {
@@ -125,22 +154,46 @@ impl StartupFiles {
 
     /// Startup files that only suppress the host's, with or without a sandbox.
     pub fn write(sandbox: Option<&Path>) -> Result<Self, std::io::Error> {
+        Self::with_content(sandbox.map(sandbox_profile).unwrap_or_default())
+    }
+
+    /// Startup files for `rv run`: what cannot travel in the environment, ie the repositories and
+    /// the sandbox `.Library` rebinding. The library is not in here, `R_LIBS_*` carries it.
+    /// Prefixed with the site profile this displaces so an admin's `Rprofile.site` keeps running.
+    pub fn for_run(
+        sandbox: Option<&Path>,
+        repositories: &[Repository],
+        r_home: &Path,
+    ) -> Result<Self, std::io::Error> {
+        let site_profile = match displaced_site_profile(r_home) {
+            Some(path) => format!("source({})\n", r_path(&path)),
+            None => String::new(),
+        };
+        let sandbox = sandbox.map(sandbox_profile).unwrap_or_default();
+        // Nothing to say about the repositories of a project that declares none, so we leave
+        // whatever R defaults to alone rather than emptying it
+        let repositories = if repositories.is_empty() {
+            String::new()
+        } else {
+            let repos = repositories
+                .iter()
+                .map(|r| format!("{} = {}", r_string(&r.alias), r_string(r.url())))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("options(repos = c({repos}))\n")
+        };
+
+        Self::with_content(format!("{site_profile}{sandbox}{repositories}"))
+    }
+
+    fn with_content(profile_content: String) -> Result<Self, std::io::Error> {
         let dir = tempfile::tempdir()?;
 
         let empty = dir.path().join("rv-empty");
         fs::write(&empty, "")?;
 
         let profile = dir.path().join("rv-profile.R");
-        let content = sandbox
-            .map(|sandbox| {
-                SANDBOX_INSTALL_PROFILE_TEMPLATE.replace(
-                    "%sandbox path%",
-                    // R wants forward slashes in paths, on Windows too
-                    &sandbox.to_string_lossy().replace('\\', "/"),
-                )
-            })
-            .unwrap_or_default();
-        fs::write(&profile, content)?;
+        fs::write(&profile, profile_content)?;
 
         Ok(Self {
             _dir: dir,

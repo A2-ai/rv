@@ -32,10 +32,8 @@ pub const R_BIN_ENV_VAR_NAME: &str = "RV_R_BIN";
 pub const R_VERSION_ENV_VAR_NAME: &str = "RV_R_VERSION";
 pub const BIOC_MIRROR_ENV_VAR_NAME: &str = "RV_BIOC_MIRROR";
 pub const USE_SANDBOX_ENV_VAR_NAME: &str = "RV_USE_SANDBOX";
-/// Set by `rv run` on the R process it spawns and read by the activate script, which is what
-/// substitutes it into [ACTIVATE_FILE_TEMPLATE]. Should not be set by the end user.
-/// This indicates sandbox /library are already set up and to skip it in the activation
-pub const RUN_ACTIVE_ENV_VAR_NAME: &str = "RV_RUN_ACTIVE";
+/// Makes the activate script do nothing at all.
+pub const NO_ACTIVATE_ENV_VAR_NAME: &str = "RV_NO_ACTIVATE";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R
@@ -76,7 +74,11 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
     "survival",
 ];
 
-pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
+pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({
+	# Return early if we don't want to activate it, eg a self-contained script.
+	if (nzchar(Sys.getenv("%no activate env var%"))) {
+		return()
+	}%global wd content%
 	if (!nzchar(Sys.which("%rv command%"))) {
 		warning(
 			"rv is not installed! Install rv, then restart your R session",
@@ -84,13 +86,7 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		)
 		return()
 	}
-	# `rv run` has already done this process so just trust it
-	rv_managed <- nzchar(Sys.getenv("%run active env var%"))
-	rv_info_args <- if (rv_managed) {
-		c("info", "--repositories")
-	} else {
-		c("info", "--library", "--r-version", "--repositories", "--sandbox")
-	}
+	rv_info_args <- c("info", "--library", "--r-version", "--repositories", "--sandbox")
 	run_rv_info <- function(args) {
 		suppressWarnings(system2("%rv command%", args, stdout = TRUE))
 	}
@@ -98,7 +94,7 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 	# A project using the sandbox config field already requires a sandbox-aware rv.
 	# This fallback lets older rv versions keep working when sandboxing is only
 	# requested (or left unset) through the environment.
-	if (!rv_managed && !is.null(attr(rv_info, "status"))) {
+	if (!is.null(attr(rv_info, "status"))) {
 		rv_info_help <- suppressWarnings(system2(
 			"%rv command%", c("info", "--help"), stdout = TRUE, stderr = TRUE
 		))
@@ -139,11 +135,6 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 	}
 	names(repo_urls) <- repo_names
 	options(repos = repo_urls)
-
-	# Everything below is what `rv run` has already done for us
-	if (rv_managed) {
-		return()
-	}
 
 	# Check R version and set library
 	rv_r_ver <- get_val("r-version")

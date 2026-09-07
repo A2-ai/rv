@@ -269,11 +269,6 @@ pub enum Command {
         /// Do not sync the project library before running the command
         #[clap(long)]
         no_sync: bool,
-        /// Whether to isolate this run from the rv profile if you're in a rv project.
-        /// Enabled automatically for self-contained scripts and cannot be toggled off in that case:
-        /// you cannot use your Rprofile/Renviron with self contained scripts.
-        #[clap(long)]
-        isolated: bool,
         /// Forces the usage of the R at the given path. If it doesn't match the config's R
         /// version, pass `--r-version` as well to confirm; the lockfile is then neither used
         /// nor updated.
@@ -1317,7 +1312,6 @@ fn try_main() -> Result<()> {
             no_sync,
             r_bin,
             r_version,
-            mut isolated,
             args,
         } => {
             let script_config_file = args
@@ -1349,10 +1343,6 @@ fn try_main() -> Result<()> {
                     Ok(path)
                 })
                 .transpose()?;
-
-            if script_config_file.is_some() {
-                isolated = true;
-            }
 
             let config_file = script_config_file.as_deref().unwrap_or(&cli.config_file);
             let mut context = make_context(
@@ -1387,7 +1377,7 @@ fn try_main() -> Result<()> {
                 &context.r_cmd.bin_path,
                 context.library_path(),
                 sandbox.as_deref(),
-                isolated,
+                context.config.repositories(),
                 &args,
             )?;
             std::process::exit(code);

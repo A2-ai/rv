@@ -11,34 +11,35 @@ const PROBE: &str = r#"cat(
     paste("sys_lib_on_path", if (normalizePath(file.path(R.home(), "library"), mustWork = FALSE) %in% normalizePath(.libPaths(), mustWork = FALSE)) "yes" else "no", sep = "\t"),
     paste("profile", Sys.getenv("RV_HOST_PROFILE"), sep = "\t"),
     paste("environ", Sys.getenv("RV_HOST_ENVIRON"), sep = "\t"),
+    paste("site", Sys.getenv("RV_SITE_PROFILE"), sep = "\t"),
     paste("r_libs_site", Sys.getenv("R_LIBS_SITE"), sep = "\t"),
     paste("repos", paste(getOption("repos"), collapse = "|"), sep = "\t"),
     sep = "\n"
 )"#;
 
-/// A project with startup files that try to take `.libPaths()` over and leave a trace behind:
-/// `.Rprofile` calls `.libPaths()` directly, `.Renviron` goes through `R_LIBS_USER`. Both are
-/// what an unrelated rv project the user happens to be sitting in would effectively do.
+/// The project's repository, and the one a self-contained script declares instead. Different
+/// values are the whole point: they are how a test tells whose configuration won.
+const PROJECT_REPO: &str = "https://packagemanager.posit.co/cran/2025-05-12";
+const SCRIPT_REPO: &str = "https://packagemanager.posit.co/cran/2023-06-01";
+
+/// An activated project whose startup files each leave a marker behind, so a test can tell
+/// whether they ran at all.
+///
+/// Deliberately *not* part of the fixture: a `.Renviron` setting `R_LIBS_USER`. R reads it before
+/// any profile and it would take the library over, for `rv run` and for anything the script
+/// spawns. That is knowingly the project's own doing and not defended against.
 fn create_project(sandbox: bool) -> (TempDir, TempDir, std::path::PathBuf) {
     let project = TempDir::new().unwrap();
     let cache = TempDir::new().unwrap();
-    let shadow = project.path().join("shadow-library");
-    fs::create_dir(&shadow).unwrap();
 
     fs::write(
         project.path().join(".Rprofile"),
-        format!(
-            "Sys.setenv(RV_HOST_PROFILE = 'profile-loaded')\n.libPaths({:?}, include.site = FALSE)\n",
-            shadow.to_str().unwrap()
-        ),
+        "Sys.setenv(RV_HOST_PROFILE = 'profile-loaded')\n",
     )
     .unwrap();
     fs::write(
         project.path().join(".Renviron"),
-        format!(
-            "RV_HOST_ENVIRON=environ-loaded\nR_LIBS_USER={}\n",
-            shadow.to_str().unwrap()
-        ),
+        "RV_HOST_ENVIRON=environ-loaded\n",
     )
     .unwrap();
 
@@ -46,16 +47,34 @@ fn create_project(sandbox: bool) -> (TempDir, TempDir, std::path::PathBuf) {
     fs::write(
         &config,
         format!(
-            r#"[project]
-name = "test-run-isolated"
+            r#"library = "project-library"
+
+[project]
+name = "test-run-startup-files"
 r_version = "4.5"
 sandbox = {sandbox}
-repositories = []
+repositories = [
+    {{alias = "posit", url = "{PROJECT_REPO}/"}}
+]
 dependencies = []
 "#
         ),
     )
     .unwrap();
+
+    // Prepends the `source("rv/scripts/activate.R")` call to the `.Rprofile` written above
+    let mut activate = rv_cmd(&cache, &config);
+    let output = activate
+        .current_dir(project.path())
+        .arg("activate")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
     (project, cache, config)
 }
 
@@ -79,11 +98,45 @@ fn path_with_rv() -> std::ffi::OsString {
     std::env::join_paths(dirs).unwrap()
 }
 
-fn probe(cache: &TempDir, config: &std::path::Path, extra: &[&str]) -> HashMap<String, String> {
+fn probe(cache: &TempDir, config: &std::path::Path) -> HashMap<String, String> {
     let mut command = rv_cmd(cache, config);
-    command.current_dir(config.parent().unwrap()).arg("run");
-    command.args(extra);
-    command.args(["--no-sync", "-e", PROBE]);
+    command
+        .current_dir(config.parent().unwrap())
+        .args(["run", "--no-sync", "-e", PROBE]);
+    parse_probe(command)
+}
+
+/// Same probe, but through a script carrying its own config, which is the case where the project
+/// activate script has to stay out of it entirely.
+fn probe_self_contained(
+    cache: &TempDir,
+    config: &std::path::Path,
+    sandbox: bool,
+) -> HashMap<String, String> {
+    let project = config.parent().unwrap();
+    let script = project.join("script.R");
+    fs::write(
+        &script,
+        format!(
+            r#"# /// rv
+# r_version = "4.5"
+# sandbox = {sandbox}
+# repositories = [
+#     {{ alias = "script-repo", url = "{SCRIPT_REPO}/" }}
+# ]
+# dependencies = []
+# ///
+{PROBE}
+"#
+        ),
+    )
+    .unwrap();
+
+    let mut command = rv_cmd(cache, config);
+    command
+        .current_dir(project)
+        .args(["run", "--no-sync"])
+        .arg(&script);
     parse_probe(command)
 }
 
@@ -127,109 +180,95 @@ fn sandbox_path(cache: &TempDir, config: &std::path::Path) -> String {
     path
 }
 
+/// Projects put more than rv activation in their startup files, so `rv run` leaves them alone.
 #[test]
-fn run_loads_host_startup_files_by_default() {
+fn run_loads_host_startup_files() {
     let (_project, cache, config) = create_project(false);
-    let observed = probe(&cache, &config, &[]);
+    let observed = probe(&cache, &config);
 
-    // Both files ran, and between them they took the library over
     assert_eq!(observed["profile"], "profile-loaded", "{observed:?}");
     assert_eq!(observed["environ"], "environ-loaded", "{observed:?}");
-    assert!(observed["paths"].contains("shadow-library"), "{observed:?}");
-}
-
-#[test]
-fn run_isolated_ignores_host_startup_files() {
-    let (_project, cache, config) = create_project(false);
-    let observed = probe(&cache, &config, &["--isolated"]);
-
-    assert_eq!(observed["profile"], "", "{observed:?}");
-    assert_eq!(observed["environ"], "", "{observed:?}");
     assert!(
-        !observed["paths"].contains("shadow-library"),
+        observed["paths"].contains("project-library"),
         "{observed:?}"
     );
-    // No sandbox was asked for, so `.Library` is still the system one
-    assert_eq!(observed["sys_lib_on_path"], "yes", "{observed:?}");
+    // The repositories come from the profile `rv run` writes, out of the config it resolved -
+    // the activate script, which would have answered from the working directory, stood down
+    assert!(observed["repos"].contains(PROJECT_REPO), "{observed:?}");
 }
 
-/// The sandbox is not conditional on `--isolated`: it applies on its own, and startup files
-/// keep loading so an interactive session and `rv run` do not diverge.
+/// The startup files of the project a self-contained script happens to be run from still load -
+/// only the rv activation in them is asked to stand down - and so nothing of that project's
+/// configuration reaches the script: not its library, not its repositories.
+#[test]
+fn run_of_a_self_contained_script_keeps_host_startup_files_but_takes_nothing_from_the_project() {
+    let (_project, cache, config) = create_project(false);
+    let observed = probe_self_contained(&cache, &config, false);
+
+    assert_eq!(observed["profile"], "profile-loaded", "{observed:?}");
+    assert_eq!(observed["environ"], "environ-loaded", "{observed:?}");
+    assert!(observed["repos"].contains(SCRIPT_REPO), "{observed:?}");
+    assert!(!observed["repos"].contains(PROJECT_REPO), "{observed:?}");
+    assert!(
+        !observed["paths"].contains("project-library"),
+        "{observed:?}"
+    );
+}
+
+/// A site profile is not the user's to lose: a sandboxed run needs `R_PROFILE` for the `.Library`
+/// rebinding, so it sources whatever that displaces first.
+#[test]
+fn a_sandboxed_run_still_loads_the_site_profile_it_displaces() {
+    let (project, cache, config) = create_project(true);
+    let sandbox = sandbox_path(&cache, &config);
+    let site = project.path().join("Rprofile.site");
+    fs::write(&site, "Sys.setenv(RV_SITE_PROFILE = 'site-loaded')\n").unwrap();
+
+    let mut command = rv_cmd(&cache, &config);
+    command
+        .current_dir(project.path())
+        .env("R_PROFILE", &site)
+        .args(["run", "--no-sync", "-e", PROBE]);
+    let observed = parse_probe(command);
+
+    assert_eq!(observed["site"], "site-loaded", "{observed:?}");
+    // ...and it is sourced first, so the sandbox still took effect
+    assert_eq!(observed["library"], sandbox, "{observed:?}");
+}
+
+/// The sandbox is not tied to dropping the startup files: it applies on its own, and they keep
+/// loading so an interactive session and `rv run` do not diverge.
 #[test]
 fn run_uses_the_sandbox_while_still_loading_host_startup_files() {
     let (_project, cache, config) = create_project(true);
     let sandbox = sandbox_path(&cache, &config);
-    let observed = probe(&cache, &config, &[]);
+    let observed = probe(&cache, &config);
 
     assert_eq!(observed["library"], sandbox, "{observed:?}");
     assert_eq!(observed["sys_lib_on_path"], "no", "{observed:?}");
     assert_eq!(observed["profile"], "profile-loaded", "{observed:?}");
     assert_eq!(observed["environ"], "environ-loaded", "{observed:?}");
+    // `rv run` writes only the project library there; the activate script would have appended
+    // the sandbox to it, which is how we know it contributed nothing
+    assert!(!observed["r_libs_site"].contains(&sandbox), "{observed:?}");
 }
 
 #[test]
-fn run_isolated_with_a_sandbox_drops_both_the_system_library_and_the_startup_files() {
+fn run_of_a_self_contained_script_with_a_sandbox_drops_the_system_library_too() {
     let (_project, cache, config) = create_project(true);
+    // The sandbox is keyed on the R install, not the project, so the one the script gets is the
+    // one this builds
     let sandbox = sandbox_path(&cache, &config);
-    let observed = probe(&cache, &config, &["--isolated"]);
+    let observed = probe_self_contained(&cache, &config, true);
 
     assert_eq!(observed["library"], sandbox, "{observed:?}");
     assert_eq!(observed["sys_lib_on_path"], "no", "{observed:?}");
-    assert_eq!(observed["profile"], "", "{observed:?}");
-    assert_eq!(observed["environ"], "", "{observed:?}");
     assert!(
-        !observed["paths"].contains("shadow-library"),
+        !observed["paths"].contains("project-library"),
         "{observed:?}"
     );
     // The sandbox is last, so nothing got appended past it
     assert!(observed["paths"].ends_with(&sandbox), "{observed:?}");
-}
-
-#[test]
-fn the_activate_script_sets_repos_but_leaves_the_library_to_rv_run() {
-    const REPO: &str = "https://packagemanager.posit.co/cran/2025-05-12";
-    let project = TempDir::new().unwrap();
-    let cache = TempDir::new().unwrap();
-    let config = project.path().join("rproject.toml");
-    fs::write(
-        &config,
-        format!(
-            r#"[project]
-name = "test-run-activated"
-r_version = "4.5"
-sandbox = true
-repositories = [
-    {{alias = "posit", url = "{REPO}/"}}
-]
-dependencies = []
-"#
-        ),
-    )
-    .unwrap();
-
-    let mut activate = rv_cmd(&cache, &config);
-    let output = activate
-        .current_dir(project.path())
-        .arg("activate")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(project.path().join(".Rprofile").is_file());
-
-    let sandbox = sandbox_path(&cache, &config);
-    let observed = probe(&cache, &config, &[]);
-
-    // Only the activate script sets these, so their presence is how we know it ran at all
-    assert!(observed["repos"].contains(REPO), "{observed:?}");
-    // The sandbox in effect is the one `rv run` established
-    assert_eq!(observed["library"], sandbox, "{observed:?}");
-    // ...and the script left the library paths as `rv run` set them. When it re-derived them it
-    // wrote `R_LIBS_SITE` as the project library *and* the sandbox; `rv run` writes only the former
-    assert!(!observed["r_libs_site"].contains(&sandbox), "{observed:?}");
 }
 
 /// `R_LIBS_USER`/`R_LIBS_SITE` outlive the working directory they were computed against: the
@@ -259,18 +298,17 @@ cat("\n")
     // Deliberately *not* `rv_cmd`: it passes `--config-file` as an absolute path, which makes
     // the library path absolute too and hides the bug. The default is a relative
     // `rproject.toml` in the working directory, and that is what yields a relative library.
-    // `--isolated` so the fixture's own hostile `.Rprofile` is not what we end up measuring.
     let mut command = cargo::cargo_bin_cmd!();
     command
         .env("RV_CACHE_DIR", cache.path())
         .env("PATH", path_with_rv())
         .current_dir(project.path())
-        .args(["run", "--isolated", "--no-sync"])
+        .args(["run", "--no-sync"])
         .arg(&script);
     let observed = parse_probe(command);
 
     assert!(
-        observed["child"].contains("rv/library") || observed["child"].contains("rv\\library"),
+        observed["child"].contains("project-library"),
         "the spawned R lost the project library after setwd: {observed:?}"
     );
 }

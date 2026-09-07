@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::consts::RUN_ACTIVE_ENV_VAR_NAME;
+use crate::config::Repository;
+use crate::consts::NO_ACTIVATE_ENV_VAR_NAME;
 use crate::r_cmd::StartupFiles;
 
 /// R environment variables to remove before spawning Rscript.
@@ -12,7 +13,7 @@ pub fn run(
     r_bin_path: &Path,
     library_path: &Path,
     sandbox: Option<&Path>,
-    isolated: bool,
+    repositories: &[Repository],
     args: &[String],
 ) -> Result<i32, RunError> {
     let r_home = crate::r_cmd::get_r_home(r_bin_path).map_err(|source| RunError::RHome {
@@ -30,24 +31,15 @@ pub fn run(
 
     let mut cmd = std::process::Command::new(&rscript);
 
-    // Kept around until the script is over since we need to keep the temp files in it
-    let _files = if sandbox.is_some() || isolated {
-        let startup = StartupFiles::write(sandbox).map_err(RunError::Startup)?;
-        startup.apply_profile(&mut cmd);
-        if isolated {
-            startup.apply_isolation(&mut cmd);
-        }
-        Some(startup)
-    } else {
-        None
-    };
+    let startup =
+        StartupFiles::for_run(sandbox, repositories, &r_home).map_err(RunError::Startup)?;
+    startup.apply_profile(&mut cmd);
 
     cmd.args(args)
         .env("R_HOME", &r_home)
         .env("R_LIBS_USER", &library_path)
         .env("R_LIBS_SITE", &library_path)
-        // Tells a project activate script that the library and sandbox are already set up
-        .env(RUN_ACTIVE_ENV_VAR_NAME, "1")
+        .env(NO_ACTIVATE_ENV_VAR_NAME, "1")
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit());
