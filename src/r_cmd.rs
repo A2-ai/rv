@@ -112,7 +112,7 @@ fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Er
 
 /// For the operations we need a dummy empty file and when the sandbox is active a profile
 /// that will enable the sandbox.
-struct StartupFiles {
+pub struct StartupFiles {
     _dir: tempfile::TempDir,
     empty: PathBuf,
     profile: PathBuf,
@@ -124,7 +124,7 @@ impl StartupFiles {
     }
 
     /// Startup files that only suppress the host's, with or without a sandbox.
-    fn write(sandbox: Option<&Path>) -> Result<Self, std::io::Error> {
+    pub fn write(sandbox: Option<&Path>) -> Result<Self, std::io::Error> {
         let dir = tempfile::tempdir()?;
 
         let empty = dir.path().join("rv-empty");
@@ -147,6 +147,15 @@ impl StartupFiles {
             empty,
             profile,
         })
+    }
+
+    /// Sets the R profile/environ env variables for the given command to the current files
+    pub fn apply_to(&self, command: &mut Command) {
+        command
+            .env("R_PROFILE", &self.profile)
+            .env("R_PROFILE_USER", &self.empty)
+            .env("R_ENVIRON", &self.empty)
+            .env("R_ENVIRON_USER", &self.empty);
     }
 }
 
@@ -181,11 +190,7 @@ fn apply_r_env(
         .env("R_LIBS_USER", library_paths);
 
     if let Some(startup) = startup {
-        command
-            .env("R_PROFILE", &startup.profile)
-            .env("R_PROFILE_USER", &startup.empty)
-            .env("R_ENVIRON", &startup.empty)
-            .env("R_ENVIRON_USER", &startup.empty);
+        startup.apply_to(command);
     }
 }
 

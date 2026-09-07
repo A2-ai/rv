@@ -1,3 +1,4 @@
+use crate::r_cmd::StartupFiles;
 use std::path::{Path, PathBuf};
 
 /// R environment variables to remove before spawning Rscript.
@@ -5,7 +6,12 @@ use std::path::{Path, PathBuf};
 const R_ENV_VARS_TO_REMOVE: &[&str] = &["R_LIBS", "R_INCLUDE_DIR", "R_SHARE_DIR", "R_DOC_DIR"];
 
 /// Run `Rscript` with the given arguments and the project library paths configured.
-pub fn run(r_bin_path: &Path, library_path: &Path, args: &[String]) -> Result<i32, RunError> {
+pub fn run(
+    r_bin_path: &Path,
+    library_path: &Path,
+    isolated: bool,
+    args: &[String],
+) -> Result<i32, RunError> {
     let r_home = crate::r_cmd::get_r_home(r_bin_path).map_err(|source| RunError::RHome {
         path: r_bin_path.to_path_buf(),
         source,
@@ -13,6 +19,14 @@ pub fn run(r_bin_path: &Path, library_path: &Path, args: &[String]) -> Result<i3
     let rscript = crate::r_cmd::resolve_rscript_path(&r_home);
 
     let mut cmd = std::process::Command::new(&rscript);
+    let _files = if isolated {
+        let startup = StartupFiles::write(None).map_err(RunError::Startup)?;
+        startup.apply_to(&mut cmd);
+        Some(startup)
+    } else {
+        None
+    };
+
     cmd.args(args)
         .env("R_HOME", &r_home)
         .env("R_LIBS_USER", library_path)
@@ -45,4 +59,6 @@ pub enum RunError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("Failed to create the R startup files: {0}")]
+    Startup(std::io::Error),
 }

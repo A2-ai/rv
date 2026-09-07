@@ -263,12 +263,18 @@ pub enum Command {
     /// Run an Rscript command with the project library paths configured
     /// You can also embed a configuration in the script to make it self-contained and runnable
     /// outside of a rv project.
+    /// All rv flags must precede the script.
     #[clap(trailing_var_arg = true)]
     Run {
         /// Do not sync the project library before running the command
         /// This needs to be the first flag if set
         #[clap(long)]
         no_sync: bool,
+        /// Whether to isolate this run from the rv profile if you're in a rv project.
+        /// Enabled automatically for self-contained scripts and cannot be toggled off in that case:
+        /// you cannot use your Rprofile/Renviron with self contained scripts.
+        #[clap(long)]
+        isolated: bool,
         /// Forces the usage of the R at the given path. If it doesn't match the config's R
         /// version, pass `--r-version` as well to confirm; the lockfile is then neither used
         /// nor updated.
@@ -1311,6 +1317,7 @@ fn try_main() -> Result<()> {
             no_sync,
             r_bin,
             r_version,
+            mut isolated,
             args,
         } => {
             let script_config_file = args
@@ -1343,6 +1350,10 @@ fn try_main() -> Result<()> {
                 })
                 .transpose()?;
 
+            if script_config_file.is_some() {
+                isolated = true;
+            }
+
             let config_file = script_config_file.as_deref().unwrap_or(&cli.config_file);
             let mut context = make_context(
                 config_file,
@@ -1368,7 +1379,12 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
-            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            let code = rv::run(
+                &context.r_cmd.bin_path,
+                context.library_path(),
+                isolated,
+                &args,
+            )?;
             std::process::exit(code);
         }
 
