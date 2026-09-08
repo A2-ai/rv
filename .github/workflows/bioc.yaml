@@ -1,0 +1,42 @@
+name: bioc-table
+
+on:
+  schedule:
+    # Bioconductor releases twice a year, so this is a no-op most Mondays.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: refresh-bioc-table
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Regenerate the table from bioconductor.org/config.yaml
+        run: |
+          cargo run --example=bioc
+          cargo fmt
+
+      - name: Make sure the generated table still compiles
+        run: cargo check --all-features
+
+      - name: Open a PR if the table changed
+        uses: peter-evans/create-pull-request@v8
+        with:
+          add-paths: src/bioc.rs
+          branch: bioc-table-refresh
+          delete-branch: true
+          commit-message: "Refresh the vendored Bioconductor version table"
+          title: "Refresh the vendored Bioconductor version table"
+          body: |
+            `cargo run --example=bioc` picked up changes from https://bioconductor.org/config.yaml.  
