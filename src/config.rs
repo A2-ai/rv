@@ -460,9 +460,6 @@ pub(crate) struct Project {
     /// Defaults to https://github.com when not specified.
     #[serde(default)]
     git_shorthand_base_url: Option<String>,
-    /// Whether to create a sandbox for that project
-    #[serde(default)]
-    sandbox: Option<bool>,
 }
 
 // That's the way to do it with serde :/
@@ -478,6 +475,9 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub(crate) use_lockfile: bool,
     lockfile_name: Option<String>,
+    /// Whether to create a sandbox for that project
+    #[serde(default)]
+    sandbox: Option<bool>,
     pub(crate) project: Project,
 }
 
@@ -682,8 +682,7 @@ impl Config {
     }
 
     pub fn sandbox_enabled(&self) -> bool {
-        self.project
-            .sandbox
+        self.sandbox
             .unwrap_or_else(|| is_env_var_truthy(USE_SANDBOX_ENV_VAR_NAME))
     }
 

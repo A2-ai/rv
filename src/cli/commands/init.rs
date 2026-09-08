@@ -13,11 +13,11 @@ const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 const CONFIG_FILENAME: &str = "rproject.toml";
 
-const INITIAL_CONFIG: &str = r#"[project]
+const INITIAL_CONFIG: &str = r#"%sandbox%
+[project]
 name = "%project_name%"
 r_version = "%r_version%"
 %use_devel%
-%sandbox%
 # Optional: base URL for `rv add owner/repo` shorthand (defaults to https://github.com).
 # git_shorthand_base_url = "https://github.example.com"
 # A list of repositories to fetch packages from. Order matters: we will try to get a package from each repository in order.

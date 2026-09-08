@@ -49,10 +49,10 @@ fn create_project(sandbox: bool) -> (TempDir, TempDir, std::path::PathBuf) {
         format!(
             r#"library = "project-library"
 
+sandbox = {sandbox}
 [project]
 name = "test-run-startup-files"
 r_version = "4.5"
-sandbox = {sandbox}
 repositories = [
     {{alias = "posit", url = "{PROJECT_REPO}/"}}
 ]
@@ -119,8 +119,9 @@ fn probe_self_contained(
         &script,
         format!(
             r#"# /// rv
-# r_version = "4.5"
 # sandbox = {sandbox}
+# [project]
+# r_version = "4.5"
 # repositories = [
 #     {{ alias = "script-repo", url = "{SCRIPT_REPO}/" }}
 # ]

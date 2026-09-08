@@ -13,10 +13,11 @@ fn create_project(sandbox: Option<bool>) -> (TempDir, TempDir, std::path::PathBu
     fs::write(
         &config,
         format!(
-            r#"[project]
+            r#"{sandbox}
+            [project]
 name = "test-sandbox"
 r_version = "4.5"
-{sandbox}repositories = []
+repositories = []
 dependencies = []
 "#
         ),
@@ -334,10 +335,11 @@ probe <- function() TRUE
     fs::write(
         &config,
         format!(
-            r#"[project]
+            r#"
+sandbox = true
+[project]
 name = "test-install-sandbox"
 r_version = "4.5"
-sandbox = true
 repositories = []
 dependencies = [{{ name = "sandboxprobe", path = "probe" }}]
 
@@ -446,10 +448,11 @@ probe <- function() TRUE
     fs::write(
         &config,
         format!(
-            r#"[project]
+            r#"
+sandbox = true
+[project]
 name = "test-sandbox-visibility"
 r_version = "4.5"
-sandbox = true
 repositories = []
 dependencies = [{{ name = "visibilityprobe", path = "probe" }}]
 
