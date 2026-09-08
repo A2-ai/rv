@@ -74,6 +74,9 @@ pub enum Command {
         #[clap(long)]
         /// Force new init. This will replace content in your rproject.toml
         force: bool,
+        #[clap(long)]
+        /// Whether this project will use a sandbox
+        sandbox: bool,
     },
     /// Migrate renv to rv
     Migrate {
@@ -537,6 +540,7 @@ fn try_main() -> Result<()> {
             add,
             no_r_environment,
             force,
+            sandbox,
         } => {
             let (r_version, use_devel) = if let Some(r) = r_version {
                 (r.original, false)
@@ -565,6 +569,7 @@ fn try_main() -> Result<()> {
                 &add,
                 use_devel,
                 force,
+                sandbox,
             )?;
             activate(&project_directory, no_r_environment)?;
 
