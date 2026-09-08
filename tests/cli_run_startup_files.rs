@@ -5,17 +5,28 @@ use assert_cmd::cargo;
 use tempfile::TempDir;
 
 /// Reports what R ended up with, as `key\tvalue` lines.
+///
+/// Lists are joined with `+`, not `|`: Windows `Rscript.exe` relaunches `R.exe` through
+/// `cmd.exe`, which reads a `|` in the `-e` expression as a pipe and cuts the command in half.
+/// Keep this expression free of anything else cmd claims - `&`, `<`, `>`, `^`.
 const PROBE: &str = r#"cat(
     paste("library", .Library, sep = "\t"),
-    paste("paths", paste(.libPaths(), collapse = "|"), sep = "\t"),
+    paste("paths", paste(.libPaths(), collapse = "+"), sep = "\t"),
     paste("sys_lib_on_path", if (normalizePath(file.path(R.home(), "library"), mustWork = FALSE) %in% normalizePath(.libPaths(), mustWork = FALSE)) "yes" else "no", sep = "\t"),
     paste("profile", Sys.getenv("RV_HOST_PROFILE"), sep = "\t"),
     paste("environ", Sys.getenv("RV_HOST_ENVIRON"), sep = "\t"),
     paste("site", Sys.getenv("RV_SITE_PROFILE"), sep = "\t"),
     paste("r_libs_site", Sys.getenv("R_LIBS_SITE"), sep = "\t"),
-    paste("repos", paste(getOption("repos"), collapse = "|"), sep = "\t"),
+    paste("repos", paste(getOption("repos"), collapse = "+"), sep = "\t"),
     sep = "\n"
 )"#;
+
+/// `-e` reaches Rscript as a single argument, and on Windows an embedded newline cuts the
+/// expression short ("unexpected end of input"), so it goes over as one line there. Collapsing
+/// newlines is only safe because [PROBE] is a single call with no comments in it.
+fn one_line(code: &str) -> String {
+    code.replace('\n', " ")
+}
 
 /// The project's repository, and the one a self-contained script declares instead. Different
 /// values are the whole point: they are how a test tells whose configuration won.
@@ -102,7 +113,8 @@ fn probe(cache: &TempDir, config: &std::path::Path) -> HashMap<String, String> {
     let mut command = rv_cmd(cache, config);
     command
         .current_dir(config.parent().unwrap())
-        .args(["run", "--no-sync", "-e", PROBE]);
+        .args(["run", "--no-sync", "-e"])
+        .arg(one_line(PROBE));
     parse_probe(command)
 }
 
@@ -157,6 +169,23 @@ fn parse_probe(mut command: assert_cmd::Command) -> HashMap<String, String> {
                 .map(|(key, value)| (key.to_string(), value.to_string()))
         })
         .collect()
+}
+
+fn normalize_path(path: &str) -> String {
+    let path = std::path::Path::new(path);
+    let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let resolved = resolved.to_string_lossy().replace('\\', "/");
+    let resolved = resolved.strip_prefix("//?/").unwrap_or(&resolved);
+    if cfg!(windows) {
+        resolved.to_lowercase()
+    } else {
+        resolved.to_string()
+    }
+}
+
+/// The `+`-joined `.libPaths()` the probe reports, each entry normalized.
+fn normalized_paths(observed: &HashMap<String, String>) -> Vec<String> {
+    observed["paths"].split('+').map(normalize_path).collect()
 }
 
 /// Builds the sandbox and returns where it landed, so the tests can compare `.Library` to it
@@ -229,12 +258,17 @@ fn a_sandboxed_run_still_loads_the_site_profile_it_displaces() {
     command
         .current_dir(project.path())
         .env("R_PROFILE", &site)
-        .args(["run", "--no-sync", "-e", PROBE]);
+        .args(["run", "--no-sync", "-e"])
+        .arg(one_line(PROBE));
     let observed = parse_probe(command);
 
     assert_eq!(observed["site"], "site-loaded", "{observed:?}");
     // ...and it is sourced first, so the sandbox still took effect
-    assert_eq!(observed["library"], sandbox, "{observed:?}");
+    assert_eq!(
+        normalize_path(&observed["library"]),
+        normalize_path(&sandbox),
+        "{observed:?}"
+    );
 }
 
 /// The sandbox is not tied to dropping the startup files: it applies on its own, and they keep
@@ -245,13 +279,21 @@ fn run_uses_the_sandbox_while_still_loading_host_startup_files() {
     let sandbox = sandbox_path(&cache, &config);
     let observed = probe(&cache, &config);
 
-    assert_eq!(observed["library"], sandbox, "{observed:?}");
+    assert_eq!(
+        normalize_path(&observed["library"]),
+        normalize_path(&sandbox),
+        "{observed:?}"
+    );
     assert_eq!(observed["sys_lib_on_path"], "no", "{observed:?}");
     assert_eq!(observed["profile"], "profile-loaded", "{observed:?}");
     assert_eq!(observed["environ"], "environ-loaded", "{observed:?}");
     // `rv run` writes only the project library there; the activate script would have appended
     // the sandbox to it, which is how we know it contributed nothing
-    assert!(!observed["r_libs_site"].contains(&sandbox), "{observed:?}");
+    let sandbox = normalize_path(&sandbox);
+    let r_libs_site = std::env::split_paths(&observed["r_libs_site"])
+        .map(|p| normalize_path(&p.to_string_lossy()))
+        .collect::<Vec<_>>();
+    assert!(!r_libs_site.contains(&sandbox), "{observed:?}");
 }
 
 #[test]
@@ -262,14 +304,23 @@ fn run_of_a_self_contained_script_with_a_sandbox_drops_the_system_library_too() 
     let sandbox = sandbox_path(&cache, &config);
     let observed = probe_self_contained(&cache, &config, true);
 
-    assert_eq!(observed["library"], sandbox, "{observed:?}");
+    let sandbox = normalize_path(&sandbox);
+    assert_eq!(
+        normalize_path(&observed["library"]),
+        sandbox,
+        "{observed:?}"
+    );
     assert_eq!(observed["sys_lib_on_path"], "no", "{observed:?}");
     assert!(
         !observed["paths"].contains("project-library"),
         "{observed:?}"
     );
     // The sandbox is last, so nothing got appended past it
-    assert!(observed["paths"].ends_with(&sandbox), "{observed:?}");
+    assert_eq!(
+        normalized_paths(&observed).last(),
+        Some(&sandbox),
+        "{observed:?}"
+    );
 }
 
 /// `R_LIBS_USER`/`R_LIBS_SITE` outlive the working directory they were computed against: the
@@ -281,7 +332,7 @@ fn the_library_survives_a_setwd_in_anything_the_script_spawns() {
     let child = project.path().join("child.R");
     fs::write(
         &child,
-        r#"cat("child", paste(.libPaths(), collapse = "|"), sep = "\t")
+        r#"cat("child", paste(.libPaths(), collapse = "+"), sep = "\t")
 cat("\n")
 "#,
     )

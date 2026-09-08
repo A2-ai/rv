@@ -178,9 +178,29 @@ dependencies = ["glue"]
         .lines()
         .find(|l| l.starts_with("LIBRARY:"))
         .expect("no LIBRARY line in output");
-    assert!(library_line.contains(scripts_dir.to_str().unwrap()));
+    let expected = normalize_path(&scripts_dir);
+    assert!(
+        normalize_path_str(library_line).contains(&expected),
+        "expected {expected} in {library_line}"
+    );
     // Activation created `rv/scripts`, but nothing resolved into a project library
     assert!(!temp.path().join("rv").join("library").exists());
+}
+
+/// For Windows
+fn normalize_path(p: &std::path::Path) -> String {
+    let canonical = fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    normalize_path_str(&canonical.to_string_lossy())
+}
+
+fn normalize_path_str(p: &str) -> String {
+    let p = p.replace('\\', "/");
+    let p = p.strip_prefix("//?/").unwrap_or(&p);
+    if cfg!(windows) {
+        p.to_lowercase()
+    } else {
+        p.to_string()
+    }
 }
 
 /// A generated activate script calls whatever `rv` is on the PATH, so the binary under test has
