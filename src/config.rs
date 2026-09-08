@@ -72,11 +72,46 @@ pub struct Bioconductor {
     force_source: bool,
 }
 
-fn is_valid_bioc_version(version: &str) -> bool {
-    BIOC_VERSION_MAP.iter().any(|(x, _)| *x == version)
-        || version == "auto"
-        || version == "release"
-        || version == "devel"
+/// The most recent Bioconductor version in the vendored table.
+fn latest_known_bioc_version() -> Version {
+    BIOC_VERSION_MAP
+        .iter()
+        .map(|(bioc, _)| Version::from_str(bioc).expect("valid version in vendored table"))
+        .max()
+        .expect("non-empty vendored table")
+}
+
+/// We allow one of the version vendored in rv, as well as auto/release/devel and any
+/// version higher than the highest we got vendored
+fn validate_bioc_version(version: &str) -> Result<(), String> {
+    if matches!(version, "auto" | "release" | "devel")
+        || BIOC_VERSION_MAP.iter().any(|(x, _)| *x == version)
+    {
+        return Ok(());
+    }
+
+    let mut parts = version.split('.');
+    let is_digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    let looks_like_a_version = match (parts.next(), parts.next(), parts.next()) {
+        (Some(major), Some(minor), None) => is_digits(major) && is_digits(minor),
+        _ => false,
+    };
+
+    if !looks_like_a_version {
+        return Err(format!(
+            "Invalid Bioconductor version `{version}`: expected a version like `3.21`, or `release`/`devel`."
+        ));
+    }
+
+    let latest = latest_known_bioc_version();
+    if Version::from_str(version).expect("digits only") <= latest {
+        return Err(format!(
+            "Unknown Bioconductor version `{version}`: it is not one of the Bioconductor releases known to rv, which go up to {latest}."
+        ));
+    }
+
+    log::warn!("Bioconductor {version} is newer than any release known to this rv ({latest}).");
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,6 +160,20 @@ fn get_bioc_repos(
         "release" => BIOC_CURRENT_RELEASE,
         _ => version,
     };
+
+    // Verify in the vendored table whether the R version matches what we got
+    if let Some((_, r)) = BIOC_VERSION_MAP
+        .iter()
+        .find(|(bioc, _)| *bioc == actual_version)
+        && *r != r_version.major_minor()
+    {
+        let [r_major, r_minor] = r_version.major_minor();
+        log::warn!(
+            "Bioconductor {actual_version} targets R {}.{}, but the project uses R {r_major}.{r_minor}.",
+            r[0],
+            r[1]
+        );
+    }
 
     let mut repos = Vec::new();
     for (alias, path) in BIOC_REPOS {
@@ -519,11 +568,8 @@ impl Config {
                     }
                     has_bioc = true;
                     let version = bioc.bioconductor.trim();
-                    if !is_valid_bioc_version(version) {
-                        errors.push(format!(
-                            "Invalid Bioconductor version `{}`: expected a version like `3.21`, or `release`/`devel`.",
-                            bioc.bioconductor
-                        ));
+                    if let Err(e) = validate_bioc_version(version) {
+                        errors.push(e);
                         continue;
                     }
                     match get_bioc_repos(version, self.r_version(), bioc.mirror.as_ref()) {
@@ -853,6 +899,40 @@ repositories = [{{ bioconductor = "{version}" }}]
             config.repositories()[0].url(),
             "https://bioconductor.org/packages/3.21/bioc"
         );
+    }
+
+    #[test]
+    fn bioconductor_accepts_a_version_newer_than_the_vendored_table() {
+        let [major, minor] = latest_known_bioc_version().major_minor();
+        let next = format!("{major}.{}", minor + 1);
+        let config = Config::from_str(&format!(
+            r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [{{ bioconductor = "{next}" }}]
+"#
+        ))
+        .unwrap();
+        assert_eq!(
+            config.repositories()[0].url(),
+            format!("https://bioconductor.org/packages/{next}/bioc")
+        );
+    }
+
+    #[test]
+    fn bioconductor_rejects_an_unknown_older_version() {
+        let err = Config::from_str(
+            r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [{ bioconductor = "2.99" }]
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("Unknown Bioconductor version `2.99`"), "{err}");
     }
 
     #[test]
