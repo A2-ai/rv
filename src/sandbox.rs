@@ -144,6 +144,20 @@ pub fn get_packages_to_copy(library: &Path) -> Result<SandboxPackages, SandboxEr
     Ok(SandboxPackages { packages: pkgs })
 }
 
+fn is_sandbox_healthy(path: &Path, packages: &SandboxPackages) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+
+    for (_, package) in &packages.packages {
+        if !path.join(&package.name).join("DESCRIPTION").exists() {
+            return false;
+        }
+    }
+
+    true
+}
+
 pub fn ensure_sandbox_exists(library: &Path, cache: &Cache) -> Result<PathBuf, SandboxError> {
     let content = get_packages_to_copy(library)?;
     let content_sha = content.sha();
@@ -155,8 +169,12 @@ pub fn ensure_sandbox_exists(library: &Path, cache: &Cache) -> Result<PathBuf, S
         }
     }
     let sandbox_path = local.join(&content_sha);
-    if sandbox_path.is_dir() {
+    if is_sandbox_healthy(&sandbox_path, &content) {
         return Ok(sandbox_path);
+    }
+
+    if sandbox_path.is_dir() {
+        fs::remove_dir_all(&sandbox_path).map_err(SandboxError::file(&sandbox_path))?;
     }
 
     fs::create_dir_all(&local).map_err(SandboxError::file(&local))?;
@@ -177,7 +195,7 @@ pub fn ensure_sandbox_exists(library: &Path, cache: &Cache) -> Result<PathBuf, S
     match fs::rename(tmp.path(), &sandbox_path) {
         Ok(()) => Ok(sandbox_path),
         Err(error) => {
-            if sandbox_path.is_dir() {
+            if is_sandbox_healthy(&sandbox_path, &content) {
                 Ok(sandbox_path)
             } else {
                 Err(SandboxError::file(sandbox_path)(error))
@@ -189,6 +207,7 @@ pub fn ensure_sandbox_exists(library: &Path, cache: &Cache) -> Result<PathBuf, S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{OsType, SystemInfo};
 
     fn add_package(library: &Path, name: &str, version: &str) {
         let package = library.join(name);
@@ -221,5 +240,145 @@ mod tests {
                 .is_file()
         );
         assert!(!out.path().join("leaked").exists());
+    }
+
+    /// Written into a sandbox to tell a reuse from a rebuild: a rebuild materializes into a fresh
+    /// directory, so anything we left behind only survives if the sandbox was handed back as is.
+    const SENTINEL: &str = ".rv-test-sentinel";
+
+    /// An R library that is complete enough to be sandboxed, plus a package that leaked into it
+    fn fake_r_library() -> tempfile::TempDir {
+        let library = tempfile::tempdir().unwrap();
+        for name in BASE_PACKAGES {
+            add_package(library.path(), name, "4.5.0");
+        }
+        add_package(library.path(), "MASS", "7.3-65");
+        add_package(library.path(), "leaked", "1.0.0");
+        library
+    }
+
+    /// A cache rooted in a temp dir. The sandbox key hashes the library path, and ours is a fresh
+    /// temp dir, so a `RV_GLOBAL_CACHE_DIR` in the environment cannot hold a matching sandbox.
+    fn fake_cache(root: &Path) -> Cache {
+        Cache::new_in_dir(
+            &"4.5".parse().unwrap(),
+            SystemInfo::new(
+                OsType::Linux("ubuntu"),
+                Some("x86_64".to_string()),
+                None,
+                "22.04",
+            ),
+            root,
+        )
+        .unwrap()
+    }
+
+    fn built_sandbox() -> (tempfile::TempDir, tempfile::TempDir, Cache, PathBuf) {
+        let library = fake_r_library();
+        let root = tempfile::tempdir().unwrap();
+        let cache = fake_cache(root.path());
+        let sandbox = ensure_sandbox_exists(library.path(), &cache).unwrap();
+        assert!(is_sandbox_healthy(
+            &sandbox,
+            &get_packages_to_copy(library.path()).unwrap()
+        ));
+        (library, root, cache, sandbox)
+    }
+
+    /// Packages are symlinked into a sandbox, so removing one is not always `remove_dir_all`
+    fn remove_from_sandbox(path: &Path) {
+        let meta = fs::symlink_metadata(path).unwrap();
+        if meta.is_symlink() {
+            // Windows makes a directory symlink and only `remove_dir` can unlink one
+            #[cfg(windows)]
+            if fs::remove_dir(path).is_ok() {
+                return;
+            }
+            fs::remove_file(path).unwrap();
+        } else {
+            fs::remove_dir_all(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn sandboxes_are_reused() {
+        let (library, _root, cache, sandbox) = built_sandbox();
+        assert!(sandbox.join("stats").join("DESCRIPTION").is_file());
+        assert!(sandbox.join("MASS").join("DESCRIPTION").is_file());
+        assert!(!sandbox.join("leaked").exists());
+        fs::write(sandbox.join(SENTINEL), "").unwrap();
+
+        let again = ensure_sandbox_exists(library.path(), &cache).unwrap();
+
+        assert_eq!(again, sandbox);
+        assert!(sandbox.join(SENTINEL).is_file(),);
+    }
+
+    #[test]
+    fn sandbox_can_self_repair() {
+        #[allow(unused_mut)]
+        #[allow(clippy::type_complexity)]
+        let mut cases: Vec<(&'static str, fn(&Path))> = vec![
+            // R does not start at all without a base package
+            ("a base package is gone", |sandbox| {
+                remove_from_sandbox(&sandbox.join("stats"))
+            }),
+            // R still starts without a recommended one, so nothing surfaces this on its own
+            ("a recommended package is gone", |sandbox| {
+                remove_from_sandbox(&sandbox.join("MASS"))
+            }),
+            ("it is empty", |sandbox| {
+                fs::remove_dir_all(sandbox).unwrap();
+                fs::create_dir_all(sandbox).unwrap();
+            }),
+            ("it is gone entirely", |sandbox| {
+                fs::remove_dir_all(sandbox).unwrap()
+            }),
+        ];
+
+        // Symlink on Windows is annoying so keep that case for unix
+        #[cfg(unix)]
+        cases.push(("a link points at nothing", |sandbox| {
+            let package = sandbox.join("stats");
+            remove_from_sandbox(&package);
+            std::os::unix::fs::symlink(sandbox.join("__gone__"), &package).unwrap();
+        }));
+
+        for (damage, break_it) in cases {
+            let (library, _root, cache, sandbox) = built_sandbox();
+            fs::write(sandbox.join(SENTINEL), "").unwrap();
+            break_it(&sandbox);
+
+            let again = ensure_sandbox_exists(library.path(), &cache).unwrap();
+
+            assert_eq!(again, sandbox, "{damage}");
+            assert!(
+                sandbox.join("stats").join("DESCRIPTION").is_file(),
+                "{damage}"
+            );
+            assert!(
+                sandbox.join("MASS").join("DESCRIPTION").is_file(),
+                "{damage}"
+            );
+            assert!(
+                !sandbox.join(SENTINEL).exists(),
+                "handed back as is instead of rebuilt: {damage}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_library_without_all_the_base_packages_is_refused() {
+        let library = tempfile::tempdir().unwrap();
+        add_package(library.path(), "base", "4.5.0");
+        let root = tempfile::tempdir().unwrap();
+        let cache = fake_cache(root.path());
+
+        let error = ensure_sandbox_exists(library.path(), &cache).unwrap_err();
+
+        assert!(matches!(
+            error.source,
+            SandboxErrorKind::MissingBasePackage { .. }
+        ));
     }
 }
