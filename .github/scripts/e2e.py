@@ -73,11 +73,13 @@ def run_test():
         summary = run_rv_cmd("summary", [])
         if "Installed: 0/0" not in summary:
             print("rv add --dry-run effected the config")
+            exit(1)
             
         run_rv_cmd("add", ["rv.git.pkgA", "--no-sync"])
         summary = run_rv_cmd("summary", [])
         if "Installed: 0/1" not in summary:
-            print(f"rv add --no-sync did not behave as expected")
+            print("rv add --no-sync did not behave as expected")
+            exit(1)
             
         run_rv_cmd("add", ["rv.git.pkgA"])
         run_rv_cmd("configure", ["repository", "add", "repo1", "--url", "https://a2-ai.github.io/rv-test-repo/repo1", "--first"])
