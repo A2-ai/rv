@@ -114,3 +114,85 @@ fn render_config(
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
 }
+#[cfg(test)]
+mod tests {
+    use super::render_config;
+    use crate::{Config, RenvLock, Repository, RepositoryDatabase};
+    use url::Url;
+
+    const REPO: &str = "https://cran-binary/";
+
+    const R6: &str = r#""R6": {"Package": "R6", "Version": "2.5.0", "Source": "Repository", "Repository": "cran-binary"}"#;
+
+    fn load(rendered: String) -> Config {
+        rendered
+            .parse()
+            .unwrap_or_else(|e| panic!("{e}\n--- rendered ---\n{rendered}"))
+    }
+
+    fn migrate(r_version: &str, packages: &str) -> Config {
+        let lock: RenvLock = serde_json::from_str(&format!(
+            r#"{{"R": {{"Version": "4.4.1",
+                 "Repositories": [{{"Name": "cran-binary", "URL": "{REPO}"}}]}},
+                "Packages": {{{packages}}}}}"#
+        ))
+        .expect("valid renv.lock fixture");
+
+        // Serves R6 so a Repository-sourced entry resolves.
+        let mut db = RepositoryDatabase::new(REPO);
+        db.parse_source("Package: R6\nVersion: 2.5.0\n\n");
+        let (resolved, _) = lock.resolve(&[(db, false)]);
+
+        let repos = [Repository::new(
+            "cran-binary".into(),
+            Url::parse(REPO).unwrap(),
+            false,
+        )];
+        load(render_config(
+            "renv.lock",
+            "migrated",
+            r_version,
+            &repos,
+            &resolved,
+        ))
+    }
+
+    #[test]
+    fn renders_a_loadable_config() {
+        let config = migrate("4.4", R6);
+        assert_eq!(config.r_version().original, "4.4");
+        assert_eq!(config.dependencies().len(), 1);
+    }
+
+    #[test]
+    fn keeps_a_strict_r_version() {
+        assert_eq!(migrate("4.4.1", R6).r_version().original, "4.4.1");
+    }
+
+    #[test]
+    fn renders_a_loadable_config_when_nothing_resolves() {
+        let config = migrate(
+            "4.4",
+            r#""nope": {"Package": "nope", "Version": "0.1.1", "Source": "unknown"}"#,
+        );
+        assert!(config.dependencies().is_empty());
+    }
+
+    #[test]
+    fn renders_a_loadable_config_with_no_repositories_or_dependencies() {
+        load(render_config("renv.lock", "migrated", "4.4", &[], &[]));
+    }
+
+    #[test]
+    fn renders_a_loadable_config_for_a_git_package_in_a_subdirectory() {
+        let config = migrate(
+            "4.4",
+            r#""pkg": {"Package": "pkg", "Version": "0.1.0",
+                "Source": "GitHub", "RemoteType": "github", "RemoteHost": "api.github.com",
+                "RemoteRepo": "git.monorepo.pkg", "RemoteUsername": "a2-ai",
+                "RemoteSha": "0123456789abcdef0123456789abcdef01234567",
+                "RemoteSubdir": "R/pkg"}"#,
+        );
+        assert_eq!(config.dependencies().len(), 1);
+    }
+}

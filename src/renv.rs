@@ -403,7 +403,7 @@ impl fmt::Display for ResolvedRenv<'_> {
                     r#"{{ name = "{name}", git = "{git}", commit = "{sha}"{} }}"#,
                     directory
                         .as_ref()
-                        .map(|d| format!(", directory = {d}"))
+                        .map(|d| format!(r#", directory = "{d}""#))
                         .unwrap_or_default()
                 )
             }
