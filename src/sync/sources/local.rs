@@ -1,10 +1,10 @@
 use fs_err as fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::events;
-use crate::fs::{mtime_recursive, untar_archive};
+use crate::fs::{mtime_recursive, simplify_path, untar_archive};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
@@ -33,15 +33,8 @@ pub(crate) fn install_package(
     };
 
     let tempdir = tempfile::tempdir()?;
-    let canon_path = fs::canonicalize(project_dir.join(local_path))?;
-    // Strip Windows \\?\ extended-length prefix that R can't handle
-    let canon_path = PathBuf::from(
-        canon_path
-            .to_string_lossy()
-            .strip_prefix(r"\\?\")
-            .unwrap_or(&canon_path.to_string_lossy())
-            .to_string(),
-    );
+    // Strip the Windows verbatim prefix canonicalize adds that R can't handle
+    let canon_path = simplify_path(&fs::canonicalize(project_dir.join(local_path))?);
 
     let actual_path = if canon_path.is_file() {
         // TODO: we're already untarring in resolve, that's wasteful

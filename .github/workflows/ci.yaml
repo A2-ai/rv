@@ -33,7 +33,7 @@ jobs:
             os: windows-2022
             rust: stable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
@@ -93,7 +93,7 @@ jobs:
             os: windows-2022
             rust: stable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up SSH with repository-specific key
         uses: webfactory/ssh-agent@v0.10.0
@@ -143,7 +143,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # - name: Set up SSH with repository-specific key
       #   uses: webfactory/ssh-agent@v0.8.0
@@ -191,7 +191,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master

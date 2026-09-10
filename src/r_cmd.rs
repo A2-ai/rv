@@ -10,7 +10,7 @@ use std::{fs, thread};
 
 use crate::config::Repository;
 use crate::consts::SANDBOX_INSTALL_PROFILE_TEMPLATE;
-use crate::fs::copy_folder;
+use crate::fs::{copy_folder, simplify_path};
 use crate::r_finder::RInstall;
 use crate::sync::{LinkError, LinkMode};
 use crate::{Cancellation, Version};
@@ -102,11 +102,8 @@ fn r_library_paths(libraries: &[impl AsRef<Path>]) -> Result<String, std::io::Er
     let sep = if cfg!(windows) { ";" } else { ":" };
     Ok(canonicalized
         .iter()
-        .map(|p| {
-            let s = p.to_string_lossy();
-            // Strip Windows \\?\ extended-length prefix that R can't handle
-            s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
-        })
+        // Strip the Windows verbatim prefix canonicalize adds that R can't handle
+        .map(|p| simplify_path(p).to_string_lossy().to_string())
         .collect::<Vec<_>>()
         .join(sep))
 }
