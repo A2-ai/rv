@@ -346,3 +346,43 @@ pub fn is_network_fs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
 pub fn is_network_fs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
     Ok(false)
 }
+
+/// Turns a canonicalized path into the most compatible form, since R and the Rtools shell
+/// can't handle the verbatim paths (`\\?\C:\...`) `canonicalize` returns on Windows.
+/// A no-op on Unix, and on any path that has no prefix to remove.
+pub(crate) fn simplify_path(path: &Path) -> PathBuf {
+    let path = dunce::simplified(path);
+
+    match path.to_str().and_then(|p| p.strip_prefix(r"\\?\UNC\")) {
+        Some(share) => PathBuf::from(format!(r"\\{share}")),
+        None => path.to_path_buf(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // https://github.com/A2-ai/rv/issues/498
+    #[test]
+    fn can_simplify_unc_path() {
+        let cases = [
+            // `UNC\` replaces the leading `\\`
+            (
+                r"\\?\UNC\data\users\myproject\pkg.tar.gz",
+                r"\\data\users\myproject\pkg.tar.gz",
+            ),
+            // Already usable, left alone
+            (r"\\data\users\myproject", r"\\data\users\myproject"),
+            ("/home/me/pkg.tar.gz", "/home/me/pkg.tar.gz"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                simplify_path(Path::new(input)),
+                PathBuf::from(expected),
+                "input: {input}"
+            );
+        }
+    }
+}
