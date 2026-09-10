@@ -18,8 +18,13 @@ pub fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(|token| {
-            if token.contains('/') || token.contains("::") {
-                let (name, remote) = parse_remote(token);
+            let remote = if token.contains('/') || token.contains("::") {
+                parse_remote(token)
+            } else {
+                None
+            };
+
+            if let Some((name, remote)) = remote {
                 let pkg_name = name.unwrap_or(token.to_string());
                 NeedsEntry::Remote(pkg_name, remote)
             } else {
@@ -121,7 +126,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Remotes" => {
                     let remotes = value
                         .split(",")
-                        .map(|x| (x.to_string(), parse_remote(x.trim())))
+                        .filter_map(|x| parse_remote(x.trim()).map(|out| (x.to_string(), out)))
                         .collect::<Vec<_>>();
                     for (original, out) in remotes {
                         package.remotes.insert(original, out);

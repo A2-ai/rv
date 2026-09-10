@@ -243,8 +243,9 @@ impl From<RUniversePackage> for Package {
 
         let mut remotes = HashMap::new();
         for remote in pkg.remotes.iter() {
-            let (name_opt, parsed_remote) = parse_remote(remote);
-            remotes.insert(remote.clone(), (name_opt, parsed_remote));
+            if let Some((name_opt, parsed_remote)) = parse_remote(remote) {
+                remotes.insert(remote.clone(), (name_opt, parsed_remote));
+            }
         }
 
         let r_requirement = pkg.dependencies.iter().find_map(|d| match &d.version {
