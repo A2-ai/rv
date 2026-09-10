@@ -5,7 +5,6 @@ use fs_err as fs;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use url::Url;
 
 mod dependency;
@@ -223,8 +222,11 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
-            let status =
-                cache.get_installation_status(&item.name, &package.version, &package.source);
+            let status = cache.get_installation_status(
+                &item.name,
+                &package.version.original,
+                &package.source,
+            );
 
             // For some type of packages we will always refresh directly from the source
             // eg a branch might have added commits.
@@ -239,7 +241,7 @@ impl<'d> Resolver<'d> {
             }
 
             if let Some(req) = &item.version_requirement
-                && !req.is_satisfied(&Version::from_str(&package.version).unwrap())
+                && !req.is_satisfied(&package.version)
             {
                 return None;
             }
@@ -259,9 +261,10 @@ impl<'d> Resolver<'d> {
                         if *repo_force_source {
                             PackageType::Source
                         } else {
-                            let version_req =
-                                VersionRequirement::from_str(&format!("(== {})", package.version))
-                                    .unwrap();
+                            let version_req = VersionRequirement::new(
+                                package.version.clone(),
+                                crate::package::Operator::Equal,
+                            );
 
                             let has_binary = repo
                                 .find_package(
@@ -910,7 +913,7 @@ mod tests {
             vec![(repo, false)]
         };
         let lockfile = if parts[2].is_empty() {
-            Lockfile::new(&r_version.original)
+            Lockfile::new(&r_version)
         } else {
             Lockfile::from_str(parts[2]).expect("valid lockfile")
         };

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use url::Url;
 
@@ -72,7 +71,7 @@ impl<'d> ResolvedDependency<'d> {
     ) -> Self {
         Self {
             name: Cow::Borrowed(&package.name),
-            version: Cow::Owned(Version::from_str(package.version.as_str()).unwrap()),
+            version: Cow::Borrowed(&package.version),
             source: package.source.clone(),
             dependencies: package.dependencies.iter().map(Cow::Borrowed).collect(),
             suggests: package.suggests.iter().map(Cow::Borrowed).collect(),

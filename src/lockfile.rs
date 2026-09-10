@@ -11,7 +11,7 @@ use toml_edit::{Array, ArrayOfTables, InlineTable, Item, Table, Value};
 use url::Url;
 
 use crate::git::url::GitUrl;
-use crate::package::{Dependency, VersionRequirement};
+use crate::package::{Dependency, VersionRequirement, deserialize_version};
 use crate::{ConfigDependency, Repository, ResolvedDependency, Version};
 
 const CURRENT_LOCKFILE_VERSION: i64 = 2;
@@ -380,7 +380,8 @@ where
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct LockedPackage {
     pub name: String,
-    pub version: String,
+    #[serde(deserialize_with = "deserialize_version")]
+    pub version: Version,
     pub source: Source,
     pub path: Option<String>,
     pub force_source: bool,
@@ -395,7 +396,7 @@ impl LockedPackage {
     pub fn from_resolved_dep(dep: ResolvedDependency) -> Self {
         Self {
             name: dep.name.into_owned(),
-            version: dep.version.original.clone(),
+            version: dep.version.into_owned(),
             source: dep.source,
             path: dep.path.map(|p| p.into_owned()),
             force_source: dep.force_source,
@@ -411,7 +412,10 @@ impl LockedPackage {
     fn as_toml_table(&self) -> Table {
         let mut table = Table::new();
         table.insert("name", Item::Value(Value::from(&self.name)));
-        table.insert("version", Item::Value(Value::from(&self.version)));
+        table.insert(
+            "version",
+            Item::Value(Value::from(self.version.original.as_str())),
+        );
         table.insert(
             "source",
             Item::Value(Value::InlineTable(self.source.as_toml_table())),
@@ -461,16 +465,17 @@ struct VersionOnly {
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Lockfile {
     version: i64,
-    r_version: String,
+    #[serde(deserialize_with = "deserialize_version")]
+    r_version: Version,
     packages: Vec<LockedPackage>,
     // TODO: benchmark if we need a quick pkg_name -> idx in array lookup table with a big project
 }
 
 impl Lockfile {
-    pub fn new(r_version: &str) -> Self {
+    pub fn new(r_version: &Version) -> Self {
         Self {
             version: CURRENT_LOCKFILE_VERSION,
-            r_version: r_version.to_string(),
+            r_version: r_version.clone(),
             packages: vec![],
         }
     }
@@ -510,7 +515,7 @@ impl Lockfile {
 
         Self {
             version: CURRENT_LOCKFILE_VERSION,
-            r_version: format!("{}.{}", r_version[0], r_version[1]),
+            r_version: Version::from_major_minor(*r_version),
             packages,
         }
     }
@@ -518,7 +523,10 @@ impl Lockfile {
     pub(crate) fn as_toml_string(&self) -> String {
         let mut doc = toml_edit::DocumentMut::new();
         doc.insert("version", Item::Value(Value::from(self.version)));
-        doc.insert("r_version", Item::Value(Value::from(&self.r_version)));
+        doc.insert(
+            "r_version",
+            Item::Value(Value::from(self.r_version.original.as_str())),
+        );
 
         let mut packages = ArrayOfTables::new();
         for p in self.packages.iter() {
@@ -631,7 +639,7 @@ impl Lockfile {
 
     pub fn contains_resolved_dep(&self, dep: &ResolvedDependency) -> bool {
         self.packages.iter().any(|lock_pkg| {
-            lock_pkg.name == dep.name.as_ref() && lock_pkg.version == dep.version.as_ref().original
+            lock_pkg.name == dep.name.as_ref() && lock_pkg.version == *dep.version.as_ref()
         })
     }
 
@@ -644,9 +652,9 @@ impl Lockfile {
         out
     }
 
-    /// Returns the parsed Version of the R version listed in the lockfile
-    pub fn r_version(&self) -> Version {
-        Version::from_str(&self.r_version.to_string()).unwrap()
+    /// The R version the lockfile was resolved against, pinned to its major/minor
+    pub fn r_version(&self) -> &Version {
+        &self.r_version
     }
 
     pub fn version(&self) -> i64 {
@@ -658,7 +666,7 @@ impl Lockfile {
     }
 
     pub fn r_version_string(&self) -> &str {
-        &self.r_version
+        &self.r_version.original
     }
 }
 

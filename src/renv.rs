@@ -492,7 +492,7 @@ fn locked_package_to_renv(
 ) -> Option<(PackageInfo, Option<String>)> {
     let mut warning = None;
 
-    let version = Version::from_str(&pkg.version).ok()?;
+    let version = pkg.version.clone();
 
     let requirements: Vec<String> = pkg
         .dependencies
