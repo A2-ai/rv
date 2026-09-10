@@ -5,13 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::config::HttpUrl;
 use crate::consts::RECOMMENDED_PACKAGES;
 use crate::{
     Repository, RepositoryDatabase,
     package::{Operator, Version, VersionRequirement, deserialize_version, serialize_version},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use url::Url;
 
 // Only used by the renv-lock export path (`to_renv_lock` and helpers), which is behind `cli`.
 #[cfg(feature = "cli")]
@@ -104,7 +104,7 @@ struct PackageInfo {
 struct RenvRepository {
     name: String,
     #[serde(rename = "URL")]
-    url: String,
+    url: HttpUrl,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
@@ -199,13 +199,7 @@ impl RenvLock {
         self.r
             .repositories
             .iter()
-            .map(|r| {
-                Repository::new(
-                    r.name.to_string(),
-                    Url::parse(&r.url).expect("valid URL"),
-                    false,
-                )
-            })
+            .map(|r| Repository::new(r.name.to_string(), (*r.url).clone(), false))
             .collect::<Vec<_>>()
     }
 }
@@ -293,7 +287,9 @@ fn resolve_repository<'a>(
         } else {
             Err(format!(
                 "Package version ({}) not found in repositories. Found version {} in {}",
-                pkg_info.version, found_pkg.version, repo.url
+                pkg_info.version,
+                found_pkg.version,
+                repo.url.as_str()
             )
             .into())
         }
@@ -492,7 +488,7 @@ fn locked_package_to_renv(
 ) -> Option<(PackageInfo, Option<String>)> {
     let mut warning = None;
 
-    let version = Version::from_str(&pkg.version).ok()?;
+    let version = pkg.version.clone();
 
     let requirements: Vec<String> = pkg
         .dependencies
@@ -619,7 +615,7 @@ pub fn to_renv_lock(lockfile: &Lockfile, config: &Config) -> (RenvLock, Vec<Stri
         .iter()
         .map(|r| RenvRepository {
             name: r.alias.clone(),
-            url: r.url().to_string(),
+            url: r.url.clone(),
         })
         .collect();
 

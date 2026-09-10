@@ -8,6 +8,7 @@ enum RemoteType {
     GitLab,
     Bitbucket,
     Svn,
+    Cran,
     Url,
     Local,
     Bioc,
@@ -42,57 +43,60 @@ pub enum PackageRemote {
     Other(String),
 }
 
-// Not for raw git urls.
-// These ones might have a tag/commit/PR associated with it
-fn parse_github_like_url(base_url: &str, content: &str) -> (String, PackageRemote) {
-    fn extract_pkg_name_and_directory(text: &str) -> (String, Option<String>) {
-        // We should have 2 elements
+// Not for raw git urls, these ones might have a tag/commit/PR associated with it
+// Returns `None` if we can't figure out what it is
+fn parse_github_like_url(base_url: &str, content: &str) -> Option<(String, PackageRemote)> {
+    fn extract_pkg_name_and_directory(text: &str) -> Option<(String, Option<String>)> {
+        // We should have 2 elements, eg `owner/repo`
         let split = text.split("/").collect::<Vec<&str>>();
         let mut directory = None;
         if split.len() == 3 {
             directory = Some(split[2].to_string());
         }
-        let pkg_name = split[1].to_string();
+        let pkg_name = split.get(1)?.to_string();
 
-        (pkg_name, directory)
+        Some((pkg_name, directory))
     }
 
-    if content.contains("@") {
-        let parts = content.splitn(2, "@").collect::<Vec<&str>>();
-        let (pkg_name, directory) = extract_pkg_name_and_directory(parts[0]);
+    let git_url = |path: &str| GitUrl::try_from(format!("{base_url}{path}").as_str()).ok();
+
+    if let Some((path, reference)) = content.split_once("@") {
+        let (pkg_name, directory) = extract_pkg_name_and_directory(path)?;
 
         let remote = PackageRemote::Git {
-            url: GitUrl::try_from(format!("{}{}", base_url, parts[0]).as_str()).expect("valid url"),
-            reference: Some(parts[1].to_string()),
+            url: git_url(path)?,
+            reference: Some(reference.to_string()),
             pull_request: None,
             directory,
         };
-        (pkg_name, remote)
-    } else if content.contains("#") {
-        let parts = content.splitn(2, "#").collect::<Vec<&str>>();
-        let (pkg_name, directory) = extract_pkg_name_and_directory(parts[0]);
+        Some((pkg_name, remote))
+    } else if let Some((path, pull_request)) = content.split_once("#") {
+        let (pkg_name, directory) = extract_pkg_name_and_directory(path)?;
 
         let remote = PackageRemote::Git {
-            url: GitUrl::try_from(format!("{}{}", base_url, parts[0]).as_str()).expect("valid url"),
+            url: git_url(path)?,
             reference: None,
-            pull_request: Some(parts[1].to_string()),
+            pull_request: Some(pull_request.to_string()),
             directory,
         };
-        (pkg_name, remote)
+        Some((pkg_name, remote))
     } else {
-        let (pkg_name, directory) = extract_pkg_name_and_directory(content);
+        let (pkg_name, directory) = extract_pkg_name_and_directory(content)?;
 
         let remote = PackageRemote::Git {
-            url: GitUrl::try_from(format!("{}{}", base_url, content).as_str()).expect("valid url"),
+            url: git_url(content)?,
             reference: None,
             pull_request: None,
             directory,
         };
-        (pkg_name, remote)
+        Some((pkg_name, remote))
     }
 }
 
-pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
+/// Parses a single entry of a `Remotes:` field.
+/// Returns `None` for anything we can't parse
+pub(crate) fn parse_remote(content: &str) -> Option<(Option<String>, PackageRemote)> {
+    let original = content;
     let mut package_name = String::new();
     let mut content = content;
 
@@ -116,7 +120,12 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
             "url" => RemoteType::Url,
             "local" => RemoteType::Local,
             "bioc" => RemoteType::Bioc,
-            _ => unreachable!("Unknown remote type: {}", parts[0]),
+            // `cran::pkg` means "get it from CRAN", which is what we do by default.
+            "cran" => RemoteType::Cran,
+            _ => {
+                log::warn!("Ignoring remote `{original}`: unknown type `{}`", parts[0]);
+                return None;
+            }
         }
     } else {
         RemoteType::GitHub
@@ -125,19 +134,21 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
     // Then the rest will depend on the remote type
     let (pkg_name, remote) = match remote_type {
         RemoteType::GitHub | RemoteType::GitLab | RemoteType::Bitbucket => {
-            parse_github_like_url(remote_type.git_url().unwrap(), content)
+            parse_github_like_url(remote_type.git_url()?, content)?
         }
         RemoteType::Git => {
             if content.contains("git@") {
                 // If we're there, we should have a `:` in the middle
-                let parts = content.splitn(2, ":").collect::<Vec<&str>>();
-                let (pkg_name, remote) = parse_github_like_url(&format!("{}:", parts[0]), parts[1]);
+                let (host, path) = content.split_once(":")?;
+                let (pkg_name, remote) = parse_github_like_url(&format!("{host}:"), path)?;
                 (pkg_name.trim_end_matches(".git").to_string(), remote)
             } else {
-                parse_github_like_url("", content)
+                parse_github_like_url("", content)?
             }
         }
-        RemoteType::Svn => (String::new(), PackageRemote::Other(content.to_string())),
+        RemoteType::Svn | RemoteType::Cran => {
+            (String::new(), PackageRemote::Other(content.to_string()))
+        }
         // Who knows what it could be the package name if you have a URL
         RemoteType::Url => (String::new(), PackageRemote::Url(content.to_string())),
         RemoteType::Bioc => (String::new(), PackageRemote::Bioc(content.to_string())),
@@ -145,16 +156,16 @@ pub(crate) fn parse_remote(content: &str) -> (Option<String>, PackageRemote) {
     };
 
     if package_name.is_empty() {
-        (
+        Some((
             if !pkg_name.is_empty() {
                 Some(pkg_name)
             } else {
                 None
             },
             remote,
-        )
+        ))
     } else {
-        (Some(package_name), remote)
+        Some((Some(package_name), remote))
     }
 }
 
@@ -183,16 +194,36 @@ mod tests {
             "yaml=vubiostat/r-yaml",
             "insightsengineering/teal.data",
             "dmlc/xgboost/R-package",
+            "cran::dplyr",
         ];
 
         for t in testcases {
             println!("{t}");
-            let (name, remote) = parse_remote(t);
+            let (name, remote) = parse_remote(t).expect("a remote we know how to parse");
             insta::with_settings!({
                 description => t,
             }, {
                 insta::assert_snapshot!(format!("{name:?} => {remote:?}"));
             });
+        }
+    }
+
+    #[test]
+    fn skips_remotes_we_cannot_parse() {
+        // Each of those used to panic
+        let testcases = vec![
+            // No owner, so no repo to clone
+            "somepkg",
+            // Not a remote type we know
+            "gitea::owner/repo",
+            // No scheme, so not something GitUrl accepts
+            "git::github.com/u/r",
+            // No `:` to separate the host from the path
+            "git::git@github.com",
+        ];
+
+        for t in testcases {
+            assert!(parse_remote(t).is_none());
         }
     }
 }

@@ -18,8 +18,13 @@ pub fn parse_needs_entries(value: &str) -> Vec<NeedsEntry> {
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(|token| {
-            if token.contains('/') || token.contains("::") {
-                let (name, remote) = parse_remote(token);
+            let remote = if token.contains('/') || token.contains("::") {
+                parse_remote(token)
+            } else {
+                None
+            };
+
+            if let Some((name, remote)) = remote {
                 let pkg_name = name.unwrap_or(token.to_string());
                 NeedsEntry::Remote(pkg_name, remote)
             } else {
@@ -48,11 +53,18 @@ pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
         if let Some(start_req) = dep.find('(') {
             let name = dep[..start_req].trim();
             let req = dep[start_req..].trim();
-            let requirement = VersionRequirement::from_str(req).expect("TODO");
-            res.push(Dependency::Pinned {
-                name: name.to_string(),
-                requirement,
-            });
+            match VersionRequirement::from_str(req) {
+                Ok(requirement) => {
+                    res.push(Dependency::Pinned {
+                        name: name.to_string(),
+                        requirement,
+                    });
+                }
+                Err(e) => {
+                    log::error!("Package {dep} has a bad version requirement: {e}",);
+                    res.push(Dependency::Simple(name.to_string()));
+                }
+            }
         } else {
             res.push(Dependency::Simple(dep.to_string()));
         }
@@ -71,7 +83,7 @@ pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
 pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
     let mut packages: HashMap<String, Vec<Package>> = HashMap::new();
 
-    let parse_pkg = |content: &str| -> Package {
+    let parse_pkg = |content: &str| -> Option<Package> {
         let mut package = Package::default();
 
         for captures in PACKAGE_KEY_VAL_RE.captures_iter(content) {
@@ -82,9 +94,13 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
 
             match key {
                 "Package" => package.name = value.to_string(),
-                "Version" => {
-                    package.version = Version::from_str(value).unwrap();
-                }
+                "Version" => match Version::from_str(value) {
+                    Ok(v) => package.version = v,
+                    Err(e) => {
+                        log::error!("Skipping package with an invalid version: {e}\n{content}");
+                        return None;
+                    }
+                },
                 "Depends" => {
                     for p in parse_dependencies(value) {
                         if p.name() == "R" {
@@ -110,7 +126,7 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
                 "Remotes" => {
                     let remotes = value
                         .split(",")
-                        .map(|x| (x.to_string(), parse_remote(x.trim())))
+                        .filter_map(|x| parse_remote(x.trim()).map(|out| (x.to_string(), out)))
                         .collect::<Vec<_>>();
                     for (original, out) in remotes {
                         package.remotes.insert(original, out);
@@ -130,12 +146,14 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             }
         }
 
-        package
+        Some(package)
     };
 
     // packages are split by an empty line
     for pkg_data in content.replace("\r\n", "\n").split("\n\n") {
-        let pkg = parse_pkg(pkg_data);
+        let Some(pkg) = parse_pkg(pkg_data) else {
+            continue;
+        };
         if !pkg.name.is_empty() {
             if let Some(p) = packages.get_mut(&pkg.name) {
                 p.push(pkg);
@@ -326,5 +344,22 @@ Config/Needs/multi_line: readr,
             })
             .collect::<Vec<_>>();
         assert_eq!(&names, &["readr", "purrr", "S7", "rv.git.pkgA"]);
+    }
+
+    #[test]
+    fn skips_packages_we_cannot_version() {
+        let content = "Package: before\nVersion: 1.0.0\n\nPackage: bad-version\nVersion: 1.0-beta\n\nPackage: after\nVersion: 2.0.0\n\n";
+        let packages = parse_package_file(content);
+
+        let mut names = packages.keys().map(|k| k.as_str()).collect::<Vec<_>>();
+        names.sort_unstable();
+        assert_eq!(&names, &["after", "before"]);
+    }
+
+    #[test]
+    fn invalid_version_in_a_description_is_an_error() {
+        use crate::package::parse_description_file;
+        assert!(parse_description_file("Package: foo\nVersion: 1.0-beta\n").is_none());
+        assert!(parse_description_file("Package: foo\nVersion: 1.0.0\n").is_some());
     }
 }

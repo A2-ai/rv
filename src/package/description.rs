@@ -47,7 +47,7 @@ pub fn parse_version(file_path: impl AsRef<Path>) -> Result<Version, Box<dyn std
     let file = File::open(file_path)?;
     for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
         if let Some(stripped) = line.strip_prefix("Version:") {
-            return Ok(Version::from_str(stripped.trim()).expect("Version should be parsable"));
+            return Ok(Version::from_str(stripped.trim())?);
         }
     }
 
@@ -82,5 +82,14 @@ mod tests {
     fn can_read_version() {
         let version = parse_version("src/tests/descriptions/gsm.app.DESCRIPTION").unwrap();
         assert_eq!(version.original, "2.3.0.9000");
+    }
+
+    #[test]
+    fn errors_on_an_invalid_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("DESCRIPTION");
+        fs::write(&path, "Package: foo\nVersion: 1.0-beta\n").unwrap();
+
+        assert!(parse_version(&path).is_err());
     }
 }
