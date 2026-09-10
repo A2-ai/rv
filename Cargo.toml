@@ -29,6 +29,8 @@ walkdir = "2"
 tempfile = "3"
 reflink-copy = "0.1"
 filetime = "0.2.25"
+# For Windows paths
+dunce = "1"
 # Handling tarballs from repositories or direct url sources
 flate2 = "1"
 tar = "0.4"

@@ -2149,6 +2149,7 @@ dependencies = [
  "clap-verbosity-flag",
  "crossbeam",
  "ctrlc",
+ "dunce",
  "env_logger",
  "etcetera",
  "filetime",
