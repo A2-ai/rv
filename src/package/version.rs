@@ -28,7 +28,7 @@ impl fmt::Display for Operator {
 }
 
 impl FromStr for Operator {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
@@ -37,7 +37,7 @@ impl FromStr for Operator {
             "<" => Ok(Self::Lower),
             ">=" => Ok(Self::GreaterOrEqual),
             "<=" => Ok(Self::LowerOrEqual),
-            _ => todo!("Handle error: {s}"),
+            _ => Err(format!("Unknown operator {s}")),
         }
     }
 }
@@ -77,7 +77,12 @@ impl Version {
     /// Determines if the called version matches in the input version based on the number of specified elements in the called version
     /// i.e. 4.4 = 4.4.1, but 4.4.2 != 4.4.1
     pub(crate) fn hazy_match(&self, version: &Version) -> bool {
-        let num_specified = self.original.replace("-", ".").split('.').count();
+        let num_specified = self
+            .original
+            .replace("-", ".")
+            .split('.')
+            .count()
+            .min(self.parts.len());
         self.parts[..num_specified] == version.parts[..num_specified]
     }
 }

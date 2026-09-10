@@ -48,11 +48,18 @@ pub fn parse_dependencies(content: &str) -> Vec<Dependency> {
         if let Some(start_req) = dep.find('(') {
             let name = dep[..start_req].trim();
             let req = dep[start_req..].trim();
-            let requirement = VersionRequirement::from_str(req).expect("TODO");
-            res.push(Dependency::Pinned {
-                name: name.to_string(),
-                requirement,
-            });
+            match VersionRequirement::from_str(req) {
+                Ok(requirement) => {
+                    res.push(Dependency::Pinned {
+                        name: name.to_string(),
+                        requirement,
+                    });
+                }
+                Err(e) => {
+                    log::error!("Package {dep} has a bad version requirement: {e}",);
+                    res.push(Dependency::Simple(name.to_string()));
+                }
+            }
         } else {
             res.push(Dependency::Simple(dep.to_string()));
         }
@@ -83,6 +90,14 @@ pub fn parse_package_file(content: &str) -> HashMap<String, Vec<Package>> {
             match key {
                 "Package" => package.name = value.to_string(),
                 "Version" => {
+                    match Version::from_str(value) {
+                        Ok(version) => {
+                            package.version = version;
+                        }
+                        Err(e) => {
+                            log::error!("Package {content} has a bad version requirement: {e}",);
+                        }
+                    }
                     package.version = Version::from_str(value).unwrap();
                 }
                 "Depends" => {

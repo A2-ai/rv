@@ -221,12 +221,18 @@ impl From<RUniversePackage> for Package {
                 .filter(|d| d.role == role && d.package != "R")
                 .map(|d| {
                     if let Some(v) = &d.version {
-                        let requirement = format!("({v})")
-                            .parse::<VersionRequirement>()
-                            .expect("Properly formatted version requirement");
-                        Dependency::Pinned {
-                            name: d.package.to_string(),
-                            requirement,
+                        match format!("({v})").parse::<VersionRequirement>() {
+                            Ok(requirement) => Dependency::Pinned {
+                                name: d.package.to_string(),
+                                requirement,
+                            },
+                            Err(e) => {
+                                log::error!(
+                                    "Package {} has a bad version requirement: {e}",
+                                    d.package
+                                );
+                                Dependency::Simple(d.package.to_string())
+                            }
                         }
                     } else {
                         Dependency::Simple(d.package.to_string())
@@ -242,11 +248,15 @@ impl From<RUniversePackage> for Package {
         }
 
         let r_requirement = pkg.dependencies.iter().find_map(|d| match &d.version {
-            Some(ver) if d.package == "R" => Some(
-                format!("({ver})")
-                    .parse::<VersionRequirement>()
-                    .expect("Properly formatted version requirement"),
-            ),
+            Some(ver) if d.package == "R" => {
+                match format!("({ver})").parse::<VersionRequirement>() {
+                    Ok(ver) => Some(ver),
+                    Err(e) => {
+                        log::error!("Package {} has a bad R requirement: {e}", pkg.package);
+                        None
+                    }
+                }
+            }
             _ => None,
         });
 
