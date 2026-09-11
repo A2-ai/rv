@@ -3,6 +3,7 @@ pub const DESCRIPTION_FILENAME: &str = "DESCRIPTION";
 pub const SOURCE_PACKAGES_PATH: &str = "/src/contrib/PACKAGES";
 pub const RUNIVERSE_PACKAGES_API_PATH: &str = "api/packages";
 pub const LOCKFILE_NAME: &str = "rv.lock";
+pub const CONFIG_FILENAME: &str = "rproject.toml";
 
 pub const RV_DIR_NAME: &str = "rv";
 pub const LIBRARY_ROOT_DIR_NAME: &str = "library";

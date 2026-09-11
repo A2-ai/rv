@@ -9,6 +9,15 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 use walkdir::WalkDir;
 
+use crate::consts::{CONFIG_FILENAME, LOCKFILE_NAME, RV_DIR_NAME};
+
+/// The files/folders rv itself writes in a project.
+const RV_PROJECT_FILES: [&str; 3] = [RV_DIR_NAME, LOCKFILE_NAME, CONFIG_FILENAME];
+
+fn is_rv_project_dir(path: &Path) -> bool {
+    path.join(CONFIG_FILENAME).exists() || path.join(LOCKFILE_NAME).exists()
+}
+
 #[cfg(feature = "cli")]
 use rayon::prelude::*;
 
@@ -142,6 +151,9 @@ fn metadata(path: impl AsRef<Path>) -> Result<Metadata, std::io::Error> {
 /// following symlinks
 /// Taken from cargo crates/cargo-util/src/paths.rs
 /// We keep it simple for now and just mtime even if it causes more rebuilds than mtime + hashes
+///
+/// Everything rv writes in a project (lockfile, config, library) is skipped.
+/// See https://github.com/A2-ai/rv/issues/525
 pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std::io::Error> {
     let meta = metadata(folder.as_ref())?;
     if !meta.is_dir() {
@@ -152,8 +164,19 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
     let max_mtime = WalkDir::new(folder)
         .follow_links(true)
         .into_iter()
+        .filter_entry(|e| {
+            // Always allow root folder
+            e.depth() == 0
+                || !e
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|n| RV_PROJECT_FILES.contains(&n))
+        })
         .filter_map(|e| e.ok())
         .filter_map(|e| {
+            if e.file_type().is_dir() && is_rv_project_dir(e.path()) {
+                return None;
+            }
             if e.path_is_symlink() {
                 // Use the mtime of both the symlink and its target, to
                 // handle the case where the symlink is modified to a
@@ -362,6 +385,7 @@ pub(crate) fn simplify_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consts::LIBRARY_METADATA_FILENAME;
 
     // https://github.com/A2-ai/rv/issues/498
     #[test]
@@ -384,5 +408,47 @@ mod tests {
                 "input: {input}"
             );
         }
+    }
+
+    // https://github.com/A2-ai/rv/issues/525
+    // A local package can point at the project itself (eg `path = "."` with a `directory`) and
+    // everything rv writes there happens after we record the mtime of that package, so it would
+    // look changed on every sync and be rebuilt forever.
+    #[test]
+    fn mtime_recursive_ignores_what_rv_writes_in_a_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("R").join("pkg")).unwrap();
+        fs::write(root.join(CONFIG_FILENAME), "[project]").unwrap();
+        fs::write(
+            root.join("R").join("pkg").join("DESCRIPTION"),
+            "Package: pkg",
+        )
+        .unwrap();
+
+        let before = mtime_recursive(root).unwrap();
+        let after_sync = FileTime::from_unix_time(before.unix_seconds() + 500, 0);
+
+        // What a sync writes: the library, the lockfile and, since both are new entries in it,
+        // the mtime of the project folder itself
+        let library = root.join(RV_DIR_NAME).join("library").join("pkg");
+        fs::create_dir_all(&library).unwrap();
+        fs::write(library.join(LIBRARY_METADATA_FILENAME), "{}").unwrap();
+        fs::write(root.join(LOCKFILE_NAME), "").unwrap();
+        for p in [
+            root.to_path_buf(),
+            root.join(RV_DIR_NAME),
+            root.join(LOCKFILE_NAME),
+            root.join(CONFIG_FILENAME),
+            library.join(LIBRARY_METADATA_FILENAME),
+        ] {
+            filetime::set_file_mtime(&p, after_sync).unwrap();
+        }
+        assert_eq!(mtime_recursive(root).unwrap(), before);
+
+        // But the package sources still count
+        filetime::set_file_mtime(root.join("R").join("pkg").join("DESCRIPTION"), after_sync)
+            .unwrap();
+        assert_eq!(mtime_recursive(root).unwrap(), after_sync);
     }
 }
