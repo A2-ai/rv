@@ -5,7 +5,7 @@ use std::{
 
 use fs_err::{read_to_string, write};
 
-use crate::consts::{ACTIVATE_FILE_TEMPLATE, RVR_FILE_CONTENT};
+use crate::consts::{ACTIVATE_FILE_TEMPLATE, NO_ACTIVATE_ENV_VAR_NAME, RVR_FILE_CONTENT};
 
 // constant file name and function to provide the R code string to source the file
 const ACTIVATE_FILE_NAME: &str = "rv/scripts/activate.R";
@@ -110,7 +110,8 @@ fn write_activate_file(dir: impl AsRef<Path>, is_home: bool) -> Result<(), Activ
     let rv_command = if cfg!(windows) { "rv.exe" } else { "rv" };
     let content = template
         .replace("%rv command%", rv_command)
-        .replace("%global wd content%", global_wd_content);
+        .replace("%global wd content%", global_wd_content)
+        .replace("%no activate env var%", NO_ACTIVATE_ENV_VAR_NAME);
     // read the file and determine if the content within the activate file matches
     // File may exist but needs upgrade if file changes with rv upgrade
     let activate_file_name = dir.as_ref().join(ACTIVATE_FILE_NAME);
@@ -166,7 +167,7 @@ impl From<io::Error> for ActivateError {
 mod tests {
     use crate::activate::RVR_FILE_NAME;
 
-    use super::{ACTIVATE_FILE_NAME, activate};
+    use super::{ACTIVATE_FILE_NAME, activate, read_to_string};
 
     #[test]
     fn test_activation() {
@@ -175,5 +176,22 @@ mod tests {
         assert!(tmp_dir.path().join(ACTIVATE_FILE_NAME).exists());
         assert!(tmp_dir.path().join(RVR_FILE_NAME).exists());
         assert!(tmp_dir.path().join(".Rprofile").exists());
+    }
+
+    #[test]
+    fn activation_checks_for_sandbox_support_before_falling_back() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        activate(&tmp_dir, false).unwrap();
+        let content = read_to_string(tmp_dir.path().join(ACTIVATE_FILE_NAME)).unwrap();
+
+        assert!(
+            content.contains(
+                r#"c("info", "--library", "--r-version", "--repositories", "--sandbox")"#
+            )
+        );
+        assert!(content.contains(r#"c("info", "--help")"#));
+        assert!(content.contains(r#"rv_info_args[rv_info_args != "--sandbox"]"#));
+        assert!(content.contains("args, stdout = TRUE)"));
+        assert_eq!(content.matches("stderr = TRUE").count(), 1);
     }
 }

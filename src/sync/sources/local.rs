@@ -9,7 +9,7 @@ use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
-use crate::{Cancellation, DiskCache, RCmd, ResolvedDependency, is_binary_package};
+use crate::{Cancellation, DiskCache, InstallRequest, RCmd, ResolvedDependency, is_binary_package};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn install_package(
@@ -21,6 +21,7 @@ pub(crate) fn install_package(
     configure_args: &[String],
     strip: bool,
     cancellation: Arc<Cancellation>,
+    sandbox: Option<&Path>,
 ) -> Result<(), SyncError> {
     let (local_path, sha, sub_dir) = match &pkg.source {
         Source::Local {
@@ -81,6 +82,7 @@ pub(crate) fn install_package(
                 library_dirs,
                 cancellation.clone(),
                 &pkg.env_vars,
+                sandbox,
             )?;
 
             // Untar the built tarball and install from the clean source
@@ -92,14 +94,17 @@ pub(crate) fn install_package(
             log::debug!("Installing built package from {}", source_path.display());
             events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
                 r_cmd.install(
-                    &source_path,
-                    Option::<&Path>::None,
-                    library_dirs,
-                    library_dirs.first().unwrap(),
+                    InstallRequest {
+                        source: &source_path,
+                        sub_folder: None,
+                        libraries: library_dirs,
+                        destination: library_dirs.first().unwrap(),
+                        env_vars: &pkg.env_vars,
+                        configure_args,
+                        strip,
+                        sandbox,
+                    },
                     cancellation,
-                    &pkg.env_vars,
-                    configure_args,
-                    strip,
                 )
             })?
         } else {
@@ -107,14 +112,17 @@ pub(crate) fn install_package(
             log::debug!("Installing the local package in {}", actual_path.display());
             events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
                 r_cmd.install(
-                    &actual_path,
-                    Option::<&Path>::None,
-                    library_dirs,
-                    library_dirs.first().unwrap(),
+                    InstallRequest {
+                        source: &actual_path,
+                        sub_folder: None,
+                        libraries: library_dirs,
+                        destination: library_dirs.first().unwrap(),
+                        env_vars: &pkg.env_vars,
+                        configure_args,
+                        strip,
+                        sandbox,
+                    },
                     cancellation,
-                    &pkg.env_vars,
-                    configure_args,
-                    strip,
                 )
             })?
         };

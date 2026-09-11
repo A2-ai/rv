@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 mod cli_docs;
 
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
@@ -74,6 +74,9 @@ pub enum Command {
         #[clap(long)]
         /// Force new init. This will replace content in your rproject.toml
         force: bool,
+        #[clap(long)]
+        /// Whether this project will use a sandbox
+        sandbox: bool,
     },
     /// Migrate renv to rv
     Migrate {
@@ -234,6 +237,10 @@ pub enum Command {
         /// The repositories specified in the config
         #[clap(long)]
         repositories: bool,
+        /// The system library sandbox path, built on demand if missing.
+        /// Prints an empty value when the project does not enable the sandbox
+        #[clap(long)]
+        sandbox: bool,
     },
     /// List the system dependencies needed by the dependency tree.
     /// This is currently only supported on various Linux distributions.
@@ -262,10 +269,10 @@ pub enum Command {
     /// Run an Rscript command with the project library paths configured
     /// You can also embed a configuration in the script to make it self-contained and runnable
     /// outside of a rv project.
+    /// All rv flags must precede the script.
     #[clap(trailing_var_arg = true)]
     Run {
         /// Do not sync the project library before running the command
-        /// This needs to be the first flag if set
         #[clap(long)]
         no_sync: bool,
         /// Forces the usage of the R at the given path. If it doesn't match the config's R
@@ -536,6 +543,7 @@ fn try_main() -> Result<()> {
             add,
             no_r_environment,
             force,
+            sandbox,
         } => {
             let (r_version, use_devel) = if let Some(r) = r_version {
                 (r.original, false)
@@ -564,6 +572,7 @@ fn try_main() -> Result<()> {
                 &add,
                 use_devel,
                 force,
+                sandbox,
             )?;
             activate(&project_directory, no_r_environment)?;
 
@@ -1172,6 +1181,7 @@ fn try_main() -> Result<()> {
             library,
             r_version,
             repositories,
+            sandbox,
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
@@ -1198,6 +1208,23 @@ fn try_main() -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 output.push(("repositories", repos));
+            }
+            if sandbox {
+                let sandbox_out = match context
+                    .sandbox()
+                    .context("sandbox is enabled but could not be created")?
+                {
+                    Some(path) => {
+                        let path_str = path.to_string_lossy();
+                        if cfg!(windows) {
+                            path_str.replace('\\', "/")
+                        } else {
+                            path_str.to_string()
+                        }
+                    }
+                    None => String::new(),
+                };
+                output.push(("sandbox", sandbox_out));
             }
 
             if output_format.is_json() {
@@ -1364,7 +1391,17 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
-            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            let sandbox = context
+                .sandbox()
+                .context("sandbox is enabled but could not be created")?;
+
+            let code = rv::run(
+                &context.r_cmd.bin_path,
+                context.library_path(),
+                sandbox.as_deref(),
+                context.config.repositories(),
+                &args,
+            )?;
             std::process::exit(code);
         }
 

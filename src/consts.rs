@@ -32,6 +32,9 @@ pub const LIBRARY_DIR_ENV_VAR_NAME: &str = "RV_LIBRARY_DIR";
 pub const R_BIN_ENV_VAR_NAME: &str = "RV_R_BIN";
 pub const R_VERSION_ENV_VAR_NAME: &str = "RV_R_VERSION";
 pub const BIOC_MIRROR_ENV_VAR_NAME: &str = "RV_BIOC_MIRROR";
+pub const USE_SANDBOX_ENV_VAR_NAME: &str = "RV_USE_SANDBOX";
+/// Makes the activate script do nothing at all.
+pub const NO_ACTIVATE_ENV_VAR_NAME: &str = "RV_NO_ACTIVATE";
 
 // List obtained from the REPL: `rownames(installed.packages(priority="base"))`
 // Those will have the same version as R
@@ -72,7 +75,11 @@ pub(crate) const RECOMMENDED_PACKAGES: [&str; 15] = [
     "survival",
 ];
 
-pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
+pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({
+	# Return early if we don't want to activate it, eg a self-contained script.
+	if (nzchar(Sys.getenv("%no activate env var%"))) {
+		return()
+	}%global wd content%
 	if (!nzchar(Sys.which("%rv command%"))) {
 		warning(
 			"rv is not installed! Install rv, then restart your R session",
@@ -80,14 +87,32 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({%global wd content%
 		)
 		return()
 	}
-	rv_info <- system2(
-		"%rv command%",
-		c("info", "--library", "--r-version", "--repositories"),
-		stdout = TRUE
-	)
+	rv_info_args <- c("info", "--library", "--r-version", "--repositories", "--sandbox")
+	run_rv_info <- function(args) {
+		suppressWarnings(system2("%rv command%", args, stdout = TRUE))
+	}
+	rv_info <- run_rv_info(rv_info_args)
+	# A project using the sandbox config field already requires a sandbox-aware rv.
+	# This fallback lets older rv versions keep working when sandboxing is only
+	# requested (or left unset) through the environment.
+	if (!is.null(attr(rv_info, "status"))) {
+		rv_info_help <- suppressWarnings(system2(
+			"%rv command%", c("info", "--help"), stdout = TRUE, stderr = TRUE
+		))
+		if (
+			is.null(attr(rv_info_help, "status")) &&
+			!any(grepl("--sandbox", rv_info_help, fixed = TRUE))
+		) {
+			rv_info_args <- rv_info_args[rv_info_args != "--sandbox"]
+			rv_info <- run_rv_info(rv_info_args)
+		}
+	}
 	if (!is.null(attr(rv_info, "status"))) {
 		# if system2 fails it'll add a status attribute with the error code
-		warning("failed to run rv info, check your console for messages")
+		warning(
+			paste(c("failed to run rv info:", rv_info), collapse = "\n"),
+			call. = FALSE
+		)
 		return()
 	}
 	get_val <- function(prefix) {
@@ -139,9 +164,32 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 		dir.create(rv_lib, recursive = TRUE)
 	}
 
+	# System library sandbox: when the project enables it, rv info returns a path
+	# to a library containing only base + recommended packages. Repoint `.Library`
+	# (and empty `.Library.site`) so packages installed in the system library
+	# cannot leak into the project.
+	sandbox <- if (r_match) get_val("sandbox") else character()
+	sandbox_active <- length(sandbox) == 1 && nzchar(sandbox)
+	if (sandbox_active) {
+		sandbox_active <- isTRUE(tryCatch({
+			env <- baseenv()
+			if (bindingIsLocked(".Library", env)) unlockBinding(".Library", env)
+			assign(".Library", sandbox, envir = env)
+			lockBinding(".Library", env)
+			if (bindingIsLocked(".Library.site", env)) unlockBinding(".Library.site", env)
+			assign(".Library.site", character(), envir = env)
+			lockBinding(".Library.site", env)
+			TRUE
+		}, error = function(e) FALSE))
+	}
+
 	.libPaths(rv_lib, include.site = FALSE)
 	Sys.setenv("R_LIBS_USER" = rv_lib)
-	Sys.setenv("R_LIBS_SITE" = rv_lib)
+	Sys.setenv("R_LIBS_SITE" = if (sandbox_active) {
+		paste(rv_lib, sandbox, sep = .Platform$path.sep)
+	} else {
+		rv_lib
+	})
 
 	# Results
 	if (interactive()) {
@@ -156,6 +204,9 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 			),
 			"\n"
 		)
+		if (sandbox_active) {
+			message("rv system library sandbox active:\n  ", sandbox, "\n")
+		}
 		message(
 			if (r_match) {
 				"rv libpaths active!\nlibrary paths: \n"
@@ -165,6 +216,27 @@ rv library will not be activated until the issue is resolved. Entering safe mode
 			paste0("  ", .libPaths(), collapse = "\n")
 		)
 	}
+})
+"#;
+
+/// Site profile for the R subprocesses rv spawns while a project has the sandbox enabled.
+pub(crate) const SANDBOX_INSTALL_PROFILE_TEMPLATE: &str = r#"local({
+	# `.libPaths()` is computed before this profile runs, so it still holds the real
+	# system library. Rebinding `.Library` alone does not retroactively remove it —
+	# the search path has to be rebuilt afterwards, which is what drops it.
+	sys_lib <- normalizePath(file.path(R.home(), "library"), mustWork = FALSE)
+	keep <- setdiff(normalizePath(.libPaths(), mustWork = FALSE), sys_lib)
+
+	env <- baseenv()
+	if (bindingIsLocked(".Library", env)) unlockBinding(".Library", env)
+	assign(".Library", "%sandbox path%", envir = env)
+	lockBinding(".Library", env)
+	if (bindingIsLocked(".Library.site", env)) unlockBinding(".Library.site", env)
+	assign(".Library.site", character(), envir = env)
+	lockBinding(".Library.site", env)
+
+	# Appends the freshly bound `.Library`, ie the sandbox, in place of what we dropped.
+	.libPaths(keep, include.site = FALSE)
 })
 "#;
 

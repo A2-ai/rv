@@ -25,6 +25,7 @@ mod repository;
 mod repository_urls;
 mod resolver;
 mod run;
+mod sandbox;
 mod sync;
 mod system_info;
 pub mod system_req;
@@ -53,13 +54,14 @@ pub use package::{
     Dependency, FetchPackage, Operator, Version, VersionRequirement, is_binary_package,
 };
 pub use project_summary::ProjectSummary;
-pub use r_cmd::RCmd;
+pub use r_cmd::{InstallRequest, RCmd};
 pub use r_finder::RInstall;
 pub use renv::RenvLock;
 pub use repository::RepositoryDatabase;
 pub use repository_urls::{get_package_file_urls, get_tarball_urls};
 pub use resolver::{Resolution, ResolvedDependency, Resolver, UnresolvedDependency};
 pub use run::{RunError, run};
+pub use sandbox::{SandboxError, ensure_sandbox_exists};
 pub use sync::{BuildPlan, BuildStep, LinkMode, SyncChange, SyncHandler};
 pub use system_info::{OsType, SystemInfo};
 

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use fs_err::{self as fs};
 use serde::Serialize;
 
@@ -64,6 +64,17 @@ impl SyncHelper {
             ));
         }
 
+        let sandbox = if self.dry_run {
+            None
+        } else {
+            context
+                .sandbox()
+                .context("sandbox is enabled but could not be established")?
+        };
+        if let Some(path) = &sandbox {
+            log::debug!("sandbox ready at {}", path.display());
+        }
+
         let sync_start = std::time::Instant::now();
         // TODO: exit on failure without println? and move that to main.rs
         // otherwise callers will think everything is fine
@@ -105,6 +116,7 @@ impl SyncHelper {
                     handler.show_progress_bar();
                 }
                 handler.set_uses_lockfile(context.config.use_lockfile());
+                handler.set_sandbox(sandbox);
                 handler.handle(&resolution.found, &context.r_cmd)
             }
         ) {
