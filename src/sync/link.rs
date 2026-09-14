@@ -82,6 +82,19 @@ impl LinkMode {
         }
     }
 
+    /// Link a single package directory to `dest` using this mode, without any fallback.
+    pub(crate) fn link_package_dir(&self, source: &Path, dest: &Path) -> Result<(), LinkError> {
+        match self {
+            LinkMode::Copy => copy_folder(source, dest).map_err(Into::into),
+            LinkMode::Clone => {
+                fs::create_dir_all(dest)?;
+                clone_package(source, dest)
+            }
+            LinkMode::Hardlink => hardlink_package(source, dest),
+            LinkMode::Symlink => create_symlink(source, dest).map_err(LinkError::Io),
+        }
+    }
+
     pub fn link_files(
         selected_mode: Option<Self>,
         package_name: &str,

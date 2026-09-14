@@ -112,6 +112,7 @@ pub struct SyncHandler<'a> {
     show_progress_bar: bool,
     max_workers: usize,
     uses_lockfile: bool,
+    sandbox: Option<PathBuf>,
 }
 
 impl<'a> SyncHandler<'a> {
@@ -123,6 +124,7 @@ impl<'a> SyncHandler<'a> {
             show_progress_bar: false,
             uses_lockfile: false,
             max_workers: get_max_workers(),
+            sandbox: None,
         }
     }
 
@@ -143,6 +145,11 @@ impl<'a> SyncHandler<'a> {
 
     pub fn set_uses_lockfile(&mut self, uses_lockfile: bool) {
         self.uses_lockfile = uses_lockfile;
+    }
+
+    /// The sandbox every install in this run should resolve against if present.
+    pub fn set_sandbox(&mut self, sandbox: Option<PathBuf>) {
+        self.sandbox = sandbox;
     }
 
     /// Download source tarballs for all Repository dependencies without installing.
@@ -340,6 +347,8 @@ impl<'a> SyncHandler<'a> {
         let configure_args = self.get_configure_args(&dep.name);
         let strip = self.should_strip(&dep.name);
 
+        let sandbox = self.sandbox.as_deref();
+
         match dep.source {
             Source::Repository { .. } => sources::repositories::install_package(
                 dep,
@@ -349,6 +358,7 @@ impl<'a> SyncHandler<'a> {
                 &configure_args,
                 strip,
                 cancellation,
+                sandbox,
             ),
             Source::Git { .. } | Source::RUniverse { .. } => sources::git::install_package(
                 dep,
@@ -359,6 +369,7 @@ impl<'a> SyncHandler<'a> {
                 &configure_args,
                 strip,
                 cancellation,
+                sandbox,
             ),
             Source::Local { .. } => sources::local::install_package(
                 dep,
@@ -369,6 +380,7 @@ impl<'a> SyncHandler<'a> {
                 &configure_args,
                 strip,
                 cancellation,
+                sandbox,
             ),
             Source::Url { .. } => sources::url::install_package(
                 dep,
@@ -378,6 +390,7 @@ impl<'a> SyncHandler<'a> {
                 &configure_args,
                 strip,
                 cancellation,
+                sandbox,
             ),
             Source::Builtin { .. } => Ok(()),
         }
@@ -459,6 +472,10 @@ impl<'a> SyncHandler<'a> {
         deps: &[ResolvedDependency],
         r_cmd: &impl RCmd,
     ) -> Result<Vec<SyncChange>, SyncError> {
+        if let Some(sandbox) = &self.sandbox {
+            log::debug!("installing against sandbox {}", sandbox.display());
+        }
+
         // Clean up at all times, even with a dry run
         let cancellation = Arc::new(Cancellation::default());
 

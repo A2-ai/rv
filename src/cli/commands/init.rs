@@ -13,7 +13,8 @@ const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 const CONFIG_FILENAME: &str = "rproject.toml";
 
-const INITIAL_CONFIG: &str = r#"[project]
+const INITIAL_CONFIG: &str = r#"%sandbox%
+[project]
 name = "%project_name%"
 r_version = "%r_version%"
 %use_devel%
@@ -50,6 +51,7 @@ pub fn init(
     dependencies: &[String],
     use_devel: bool,
     force: bool,
+    sandbox_enabled: bool,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     init_structure(proj_dir)?;
@@ -73,6 +75,7 @@ pub fn init(
         repositories,
         dependencies,
         use_devel,
+        sandbox_enabled,
     );
 
     write(proj_dir.join(CONFIG_FILENAME), config)?;
@@ -85,6 +88,7 @@ fn render_config(
     repositories: &[Repository],
     dependencies: &[String],
     use_devel: bool,
+    sandbox_enabled: bool,
 ) -> String {
     let repos = repositories
         .iter()
@@ -99,6 +103,11 @@ fn render_config(
         .join("\n");
 
     let use_devel_str = if use_devel { "use_devel = true\n" } else { "" };
+    let sandbox = if sandbox_enabled {
+        "sandbox = true"
+    } else {
+        ""
+    };
 
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
@@ -106,6 +115,7 @@ fn render_config(
         .replace("%use_devel%", use_devel_str)
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
+        .replace("%sandbox%", sandbox)
 }
 
 pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
@@ -133,6 +143,7 @@ pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
     command
         .arg("-e")
         .arg(r_code)
+        .env(crate::consts::NO_ACTIVATE_ENV_VAR_NAME, "1")
         .stdout(send.try_clone().map_err(|e| InitError {
             source: InitErrorKind::Command(e),
         })?)
@@ -278,6 +289,7 @@ mod tests {
             &dependencies,
             false, // use_devel
             false, // force
+            false, // sandbox
         )
         .unwrap();
         let dir = &project_directory.path();

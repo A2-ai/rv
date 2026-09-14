@@ -103,6 +103,15 @@ impl Cache {
         self.global.as_ref()
     }
 
+    pub fn get_sandbox_paths(&self, library_path: &Path) -> (PathBuf, Option<PathBuf>) {
+        let local = self.local.get_sandbox_dir(library_path);
+        let global = self
+            .global
+            .as_ref()
+            .map(|g| g.get_sandbox_dir(library_path));
+        (local, global)
+    }
+
     pub fn get_package_paths(
         &self,
         source: &Source,

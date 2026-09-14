@@ -15,10 +15,11 @@ use crate::repository_urls::TarballUrls;
 use crate::sync::LinkMode;
 use crate::sync::errors::{SyncError, SyncErrorKind};
 use crate::{
-    Cancellation, HttpDownload, PackagePaths, RCmd, ResolvedDependency, get_tarball_urls,
-    is_binary_package,
+    Cancellation, HttpDownload, InstallRequest, PackagePaths, RCmd, ResolvedDependency,
+    get_tarball_urls, is_binary_package,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn install_package(
     pkg: &ResolvedDependency,
     library_dirs: &[&Path],
@@ -27,6 +28,7 @@ pub(crate) fn install_package(
     configure_args: &[String],
     strip: bool,
     cancellation: Arc<Cancellation>,
+    sandbox: Option<&Path>,
 ) -> Result<(), SyncError> {
     let (local_paths, global_paths) =
         cache.get_package_paths(&pkg.source, Some(&pkg.name), Some(&pkg.version.original));
@@ -36,14 +38,17 @@ pub(crate) fn install_package(
         log::debug!("Compiling package from {}", source_path.display());
         match events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
             r_cmd.install(
-                &source_path,
-                Option::<&Path>::None,
-                library_dirs,
-                &local_paths.binary,
+                InstallRequest {
+                    source: &source_path,
+                    sub_folder: None,
+                    libraries: library_dirs,
+                    destination: &local_paths.binary,
+                    env_vars: &pkg.env_vars,
+                    configure_args,
+                    strip,
+                    sandbox,
+                },
                 cancellation.clone(),
-                &pkg.env_vars,
-                configure_args,
-                strip,
             )
         }) {
             Ok(output) => {
