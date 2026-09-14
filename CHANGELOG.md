@@ -1,3 +1,32 @@
+## v0.23.0 - September 14, 2026
+
+### 🎉 New Features
+
+See the [documentation for more details on each feature](https://a2-ai.github.io/rv-docs/).
+
+- **Bioconductor repositories**: Add a `{ bioconductor = "..." }` to `repositories` in `rproject.toml` to resolve packages from Bioconductor.
+- **System library sandbox**: you can now isolate your projects so packages installed in your system library do not leak in your projects
+- **Self-contained scripts**: `rv run` can now use a configuration defined in the script directly. The block uses the same TOML as `rproject.toml`:
+  ```r
+  # /// rv
+  # dependencies = ["dplyr"]
+  # ///
+  library(dplyr)
+  ```
+  `r_version` and `repositories` default to the R found in `PATH` and its configured repositories when omitted.
+- **`--r-bin` and `--r-version` flags**: Every command that talks to R now accepts `--r-bin <path>` (or `RV_R_BIN`) to use a specific R installation, and `--r-version` (or `RV_R_VERSION`) to select a version. 
+- **Monorepo local dependencies**: Local dependencies now accept a `directory` field pointing at the R package, like git dependencies.
+- **`rv tree --invert <package>`**: Show only the paths leading to a given package, i.e. which top-level dependencies pull it in.
+
+### 🐛 Bug Fixes
+- **UNC paths on Windows**: Local packages in projects located on a network drive (`\\server\share\...`) now install correctly.
+- **rig shims on Windows**: `rv run` and `rv init` now invoke `Rscript.exe` directly instead of going through rig's `.bat` shim, which failed on some setups.
+- **File timestamps preserved when copying**: Copying source packages now preserves file modification times, fixing builds of packages such as `mvtnorm` whose Makefiles depend on them.
+- **Local packages rebuilt on every sync**: A `path` dependency pointing at the project itself is no longer rebuilt on every `rv sync`
+
+---
+
+
 ## v0.22.2 - July 15, 2026
 
 This release makes reading the R-Universe API more resilient and fixes dependency lookup during package installation.
