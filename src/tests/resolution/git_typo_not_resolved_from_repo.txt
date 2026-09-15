@@ -1,0 +1,16 @@
+[project]
+name = "git-typo"
+r_version = "4.4"
+repositories = [
+    {alias = "repo1", url = "http://repo1/"}
+]
+dependencies = [
+    # typo in the git url: this must fail and must NOT be silently resolved
+    # from repo1, which also serves rv.git.pkgA
+    { name = "rv.git.pkgA", git = "https://github.com/dummy/rv.git.typo", branch = "main" },
+    # depends on rv.git.pkgA (>= 0.0.5), which is available in repo1
+    "rv.git.pkgD",
+]
+---
+repos = [{name = "repo1", source = "test_repo1", force_source = false}]
+---

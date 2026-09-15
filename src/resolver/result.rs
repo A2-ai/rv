@@ -52,6 +52,9 @@ impl<'d> Resolution<'d> {
         // directly in rproject.toml instead of remotes)
         let mut actually_found = HashSet::new();
         for (i, failed) in self.failed.iter().enumerate() {
+            if failed.parent.is_none() {
+                continue;
+            }
             for pkg in &self.found {
                 if pkg.name == failed.name {
                     if let Some(req) = &failed.version_requirement {

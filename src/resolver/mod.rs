@@ -44,13 +44,6 @@ pub(crate) struct QueueItem<'d> {
 }
 
 impl<'d> QueueItem<'d> {
-    fn has_required_repo(&self) -> bool {
-        self.dep.is_some_and(|d| match d {
-            ConfigDependency::Detailed { repository, .. } => repository.is_some(),
-            _ => false,
-        })
-    }
-
     fn name_and_parent_only(name: Cow<'d, str>, parent: Cow<'d, str>) -> Self {
         Self {
             name,
@@ -531,14 +524,16 @@ impl<'d> Resolver<'d> {
         let mut result = Resolution::default();
         let mut processed: HashMap<String, HashSet<Option<Cow<'d, VersionRequirement>>>> =
             HashMap::with_capacity(dependencies.len() * 10);
-        // Top level dependencies can require specific repos.
+
+        // Top level dependencies can require specific sources.
         // We should not try to resolve those from anywhere else even if they dependencies of other
         // packages
-        let repo_required: HashSet<_> = dependencies
+        let has_source_specified: HashSet<_> = dependencies
             .iter()
-            .filter(|d| d.r_repository().is_some())
+            .filter(|d| d.has_source_specified())
             .map(|d| d.name())
             .collect();
+
         let dependencies_only: HashSet<_> = dependencies
             .iter()
             .filter(|d| d.dependencies_only())
@@ -579,8 +574,8 @@ impl<'d> Resolver<'d> {
 
         while let Some(mut item) = queue.pop_front() {
             if let Some(ver_reqs) = processed.get(item.name.as_ref()) {
-                // If we have already found that dependency and it has a forced repo, skip it
-                if repo_required.contains(item.name.as_ref()) {
+                // If we have already found that dependency and it has a forced source, skip it
+                if has_source_specified.contains(item.name.as_ref()) {
                     continue;
                 }
 
@@ -606,9 +601,16 @@ impl<'d> Resolver<'d> {
                         queue.extend(items);
                         continue;
                     }
-                    Err(e) => result
-                        .failed
-                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}"))),
+                    Err(e) => {
+                        processed
+                            .entry(item.name.to_string())
+                            .or_default()
+                            .insert(item.version_requirement.clone());
+
+                        result
+                            .failed
+                            .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}")))
+                    }
                 }
                 continue;
             }
@@ -625,8 +627,8 @@ impl<'d> Resolver<'d> {
             }
 
             // Then let's check if it's a builtin package if the R version is matching if the package
-            // is not listed from a specific repo
-            if !item.has_required_repo()
+            // is not listed from a specific source
+            if !has_source_specified.contains(item.name.as_ref())
                 && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
             {
                 processed
@@ -932,6 +934,8 @@ mod tests {
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
+            ("rv.git.pkgA", "https://github.com/dummy/rv.git.pkgA"),
+            ("MASS", "https://github.com/dummy/MASS"),
         ];
 
         for (dep, url) in &remotes {

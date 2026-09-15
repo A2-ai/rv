@@ -1,0 +1,16 @@
+[project]
+name = "git-pinned-too-old"
+r_version = "4.4"
+repositories = [
+    {alias = "repo1", url = "http://repo1/"}
+]
+dependencies = [
+    # the git DESCRIPTION is version 0.0.1
+    { name = "rv.git.pkgA", git = "https://github.com/dummy/rv.git.pkgA", branch = "main" },
+    # depends on rv.git.pkgA (>= 0.0.5); repo1 has 0.0.5 but we must not
+    # silently swap the pinned git source for the repository one
+    "rv.git.pkgD",
+]
+---
+repos = [{name = "repo1", source = "test_repo1", force_source = false}]
+---
