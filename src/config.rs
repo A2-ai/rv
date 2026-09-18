@@ -260,6 +260,20 @@ impl ConfigDependency {
         }
     }
 
+    pub fn has_source_specified(&self) -> bool {
+        match self {
+            ConfigDependency::Simple(_) => false,
+            ConfigDependency::Detailed {
+                repository,
+                bioconductor,
+                ..
+            } => repository.is_some() || *bioconductor,
+            ConfigDependency::Git { .. } => true,
+            ConfigDependency::Local { .. } => true,
+            ConfigDependency::Url { .. } => true,
+        }
+    }
+
     pub fn force_source(&self) -> Option<bool> {
         match self {
             ConfigDependency::Detailed { force_source, .. } => *force_source,
