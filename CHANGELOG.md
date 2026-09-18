@@ -1,3 +1,8 @@
+## v0.23.1 - September 18, 2026
+
+### 🐛 Bug Fixes
+- Fix git/local/url packages in rproject.toml being installed from another source if the initial source was not found but the package was found elsewhere. It will now error.
+
 ## v0.23.0 - September 14, 2026
 
 ### 🎉 New Features
