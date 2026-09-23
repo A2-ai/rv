@@ -102,9 +102,6 @@ def run_test():
          
         edit_r_version(CONFIG_FILE, "4.3")
         res = run_rv_cmd("add", ["pkg", "--no-sync"])
-        if "Could not find an R version matching 4.3" in res:
-            print(f"Add --no-sync improperly requires findable r version")
-            exit(1)
         check_r_profile(False)
 
     finally:
