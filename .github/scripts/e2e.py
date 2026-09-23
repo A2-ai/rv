@@ -101,6 +101,7 @@ def run_test():
                 exit(1)        
          
         edit_r_version(CONFIG_FILE, "4.3")
+        run_rv_cmd("add", ["pkg", "--no-sync"])
         check_r_profile(False)
 
     finally:

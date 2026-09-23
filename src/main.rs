@@ -748,14 +748,14 @@ fn try_main() -> Result<()> {
             // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
 
-            let mut context = make_context(
-                &cli.config_file,
-                r_bin,
-                None,
-                true,
-                false,
-                RCommandLookup::Strict,
-            )?;
+            // no-sync does not require R
+            let r_lookup = if no_sync {
+                RCommandLookup::Skip
+            } else {
+                RCommandLookup::Strict
+            };
+
+            let mut context = make_context(&cli.config_file, r_bin, None, true, false, r_lookup)?;
             if !log_enabled {
                 context.show_progress_bar();
             }
@@ -920,14 +920,13 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
 
-            let mut context = make_context(
-                &cli.config_file,
-                r_bin,
-                None,
-                true,
-                false,
-                RCommandLookup::Strict,
-            )?;
+            let r_lookup = if no_sync {
+                RCommandLookup::Skip
+            } else {
+                RCommandLookup::Strict
+            };
+
+            let mut context = make_context(&cli.config_file, r_bin, None, true, false, r_lookup)?;
 
             if !log_enabled {
                 context.show_progress_bar();
