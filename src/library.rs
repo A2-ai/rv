@@ -206,10 +206,27 @@ impl Library {
                                     Ok(m) => m,
                                     Err(_) => return false,
                                 };
+                            if current_mtime.unix_seconds() != *local_mtime {
+                                log::trace!(
+                                    "{} has a recorded mtime of {} which does not equal the derived value of {}",
+                                    pkg.name,
+                                    local_mtime,
+                                    current_mtime.unix_seconds()
+                                );
+                            }
+
                             current_mtime.unix_seconds() == *local_mtime
                         }
                         LocalMetadata::Sha(local_sha) => {
                             if let Some(s) = sha {
+                                if s != local_sha {
+                                    log::trace!(
+                                        "{} has a recorded sha of {} which does not match the recorded value of {}",
+                                        pkg.name,
+                                        local_sha,
+                                        s
+                                    );
+                                }
                                 s == local_sha
                             } else {
                                 false

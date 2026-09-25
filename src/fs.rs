@@ -161,7 +161,7 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
     }
 
     // TODO: filter out hidden files/folders?
-    let max_mtime = WalkDir::new(folder)
+    let (max_file, max_mtime) = WalkDir::new(folder.as_ref())
         .follow_links(true)
         .into_iter()
         .filter_entry(|e| {
@@ -197,7 +197,7 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
                 match e.metadata() {
                     Ok(target_meta) => {
                         let target_mtime = FileTime::from_last_modification_time(&target_meta);
-                        Some(sym_mtime.max(target_mtime))
+                        Some((e.into_path(), sym_mtime.max(target_mtime)))
                     }
                     Err(err) => {
                         log::debug!(
@@ -205,7 +205,7 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
                             e.path().display(),
                             err
                         );
-                        Some(sym_mtime)
+                        Some((e.into_path(), sym_mtime))
                     }
                 }
             } else {
@@ -220,11 +220,21 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
                         return None;
                     }
                 };
-                Some(FileTime::from_last_modification_time(&meta))
+                Some((e.into_path(), FileTime::from_last_modification_time(&meta)))
             }
         })
-        .max() // or_else handles the case where there are no files in the directory.
-        .unwrap_or_else(|| FileTime::from_last_modification_time(&meta));
+        .max_by_key(|(_, t)| *t) // or_else handles the case where there are no files in the directory.
+        .unwrap_or_else(|| {
+            (
+                folder.as_ref().to_path_buf(),
+                FileTime::from_last_modification_time(&meta),
+            )
+        });
+    log::trace!(
+        "{} has highest mtime of {}",
+        max_file.display(),
+        max_mtime.unix_seconds()
+    );
     Ok(max_mtime)
 }
 
