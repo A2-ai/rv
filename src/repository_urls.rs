@@ -466,6 +466,19 @@ mod tests {
     }
 
     #[test]
+    fn test_amazon2023_binaries_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("amazon"),
+            Some("x86_64".to_string()),
+            None,
+            "2023",
+        );
+        let binary_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 5], &sysinfo).unwrap();
+        let ref_url = "https://packagemanager.posit.co/cran/__linux__/manylinux_2_28/latest/src/contrib/test-file?r_version=4.5&arch=x86_64".to_string();
+        assert_eq!(binary_url.as_str(), ref_url)
+    }
+
+    #[test]
     fn test_centos8_binaries_url() {
         let sysinfo = SystemInfo::new(
             OsType::Linux("centos"),
