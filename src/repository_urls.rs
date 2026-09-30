@@ -58,6 +58,16 @@ pub(crate) fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<Stri
         }
         // ubuntu and debian are distributed under their codenames
         "ubuntu" | "debian" => sysinfo.codename().map(|x| x.to_string()),
+        // Try manylinux for amazon
+        "amazon" => {
+            let major = sysinfo.major_version()?;
+            // p3m doesn't build for amazon but we can use manylinux binaries instead.
+            // Wouldn't work for every repository though but worth a try
+            if major >= 2023 {
+                return Some("manylinux_2_28".to_string());
+            }
+            None
+        }
         _ => None,
     }
 }
