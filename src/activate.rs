@@ -191,7 +191,7 @@ mod tests {
         );
         assert!(content.contains(r#"c("info", "--help")"#));
         assert!(content.contains(r#"rv_info_args[rv_info_args != "--sandbox"]"#));
-        assert!(content.contains("args, stdout = TRUE)"));
-        assert_eq!(content.matches("stderr = TRUE").count(), 1);
+        assert!(content.contains("args, stdout = TRUE, stderr = TRUE)"));
+        assert_eq!(content.matches("stderr = TRUE").count(), 2);
     }
 }
