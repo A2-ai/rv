@@ -88,8 +88,9 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({
 		return()
 	}
 	rv_info_args <- c("info", "--library", "--r-version", "--repositories", "--sandbox")
+	# stderr is captured so an older rv version does not print clap's error to the console
 	run_rv_info <- function(args) {
-		suppressWarnings(system2("%rv command%", args, stdout = TRUE))
+		suppressWarnings(system2("%rv command%", args, stdout = TRUE, stderr = TRUE))
 	}
 	rv_info <- run_rv_info(rv_info_args)
 	# A project using the sandbox config field already requires a sandbox-aware rv.
@@ -103,6 +104,13 @@ pub(crate) const ACTIVATE_FILE_TEMPLATE: &str = r#"local({
 			is.null(attr(rv_info_help, "status")) &&
 			!any(grepl("--sandbox", rv_info_help, fixed = TRUE))
 		) {
+			warning(
+				sprintf(
+					"This project has been initialised with a version of rv >= 0.23 with sandbox detection but you are using an older rv (%s). Check whether you have the right rv version in your PATH",
+					Sys.which("%rv command%")
+				),
+				call. = FALSE
+			)
 			rv_info_args <- rv_info_args[rv_info_args != "--sandbox"]
 			rv_info <- run_rv_info(rv_info_args)
 		}
