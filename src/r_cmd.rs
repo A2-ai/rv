@@ -597,9 +597,8 @@ impl RCmd for RInstall {
             log::debug!(
                 "Adding --strip --strip-lib to {}",
                 source_folder
-                    .as_ref()
                     .file_name()
-                    .unwrap_or(source_folder.as_ref().as_os_str())
+                    .unwrap_or(source_folder.as_os_str())
                     .display()
             );
             command.arg("--strip").arg("--strip-lib");
