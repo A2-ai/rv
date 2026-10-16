@@ -331,6 +331,16 @@ pub fn load_databases(
     Ok(dbs)
 }
 
+// r-universe 404s on `//api/packages`, so trim before joining.
+fn runiverse_api_url(base: &str) -> Result<Url, String> {
+    format!(
+        "{}/{RUNIVERSE_PACKAGES_API_PATH}",
+        base.trim_end_matches('/')
+    )
+    .parse::<Url>()
+    .map_err(|e| format!("Invalid URL: {e}"))
+}
+
 fn load_single_database(
     r: &Repository,
     cache: &DiskCache,
@@ -357,9 +367,7 @@ fn load_single_database(
         log::debug!("Need to download R-Universe packages API for {}", r.url());
         let mut db = RepositoryDatabase::new(r.url());
         let mut r_universe_api = Vec::new();
-        let api_url = format!("{}/{RUNIVERSE_PACKAGES_API_PATH}", r.url())
-            .parse::<Url>()
-            .map_err(|e| format!("Invalid URL: {e}"))?;
+        let api_url = runiverse_api_url(r.url())?;
 
         let bytes_read = http::download(&api_url, &mut r_universe_api, Vec::new())?;
 
@@ -433,5 +441,28 @@ fn load_single_database(
         db.persist(&path)?;
         log::debug!("Saving packages db at {path:?}");
         Ok(db)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runiverse_api_url_has_single_slash() {
+        for base in [
+            "https://stan-dev.r-universe.dev",
+            "https://stan-dev.r-universe.dev/",
+        ] {
+            assert_eq!(
+                runiverse_api_url(base).unwrap().as_str(),
+                "https://stan-dev.r-universe.dev/api/packages"
+            );
+        }
+        let parsed = Url::parse("https://stan-dev.r-universe.dev").unwrap();
+        assert_eq!(
+            runiverse_api_url(parsed.as_str()).unwrap().as_str(),
+            "https://stan-dev.r-universe.dev/api/packages"
+        );
     }
 }
