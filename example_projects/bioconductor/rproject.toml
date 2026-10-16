@@ -1,0 +1,12 @@
+[project]
+name = "bioconductor"
+r_version = "4.5"
+
+repositories = [
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/latest" },
+    { bioconductor = "auto" },
+]
+
+dependencies = [
+    "Biobase",
+]

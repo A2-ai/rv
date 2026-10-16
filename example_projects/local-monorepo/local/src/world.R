@@ -1,0 +1,4 @@
+#' @export
+world <- function() {
+  "world"
+}

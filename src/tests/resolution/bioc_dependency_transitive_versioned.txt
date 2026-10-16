@@ -1,0 +1,20 @@
+# A dependency with bioconductor = true must only be looked up in the bioc repos,
+# even when another package requires it again with a version requirement
+# (lgr imports R6 (>= 2.4.0)) and CRAN is listed first
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { alias = "cran", url = "http://cran" },
+    { bioconductor = "3.21", mirror = "http://bioc" },
+]
+dependencies = [
+    { name = "R6", bioconductor = true },
+    "lgr",
+]
+---
+repos = [
+    { name = "cran", source = "posit-src", force_source = false },
+    { name = "biocsoft", url = "http://bioc/packages/3.21/bioc", source = "posit-src", force_source = false },
+]
+---

@@ -1,0 +1,5 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+MASS=7.3-99 (git(url: https://github.com/dummy/MASS, sha: somethinglikeasha, directory: None, tag: None, branch: Some("main")), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])

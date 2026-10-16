@@ -1,0 +1,7 @@
+[project]
+name = "bad-bioc-version"
+r_version = "4.5"
+
+repositories = [
+    { bioconductor = "latest" },
+]

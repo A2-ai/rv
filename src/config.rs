@@ -3,14 +3,17 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use serde::{Deserialize, Deserializer, Serialize};
+use url::Url;
+
 use crate::SystemInfo;
-use crate::consts::LOCKFILE_NAME;
+use crate::bioc::{BIOC_CURRENT_RELEASE, BIOC_DEVEL, BIOC_VERSION_MAP};
+use crate::consts::{BIOC_MIRROR_ENV_VAR_NAME, LOCKFILE_NAME, USE_SANDBOX_ENV_VAR_NAME};
 use crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL;
 use crate::git::url::GitUrl;
 use crate::lockfile::Source;
 use crate::package::{Version, deserialize_version, serialize_version};
-use serde::{Deserialize, Deserializer, Serialize};
-use url::Url;
+use crate::utils::is_env_var_truthy;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HttpUrl(Url);
@@ -60,6 +63,128 @@ pub struct Repository {
     pub force_source: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bioconductor {
+    bioconductor: String,
+    #[serde(default)]
+    mirror: Option<HttpUrl>,
+    #[serde(default)]
+    force_source: bool,
+}
+
+/// The most recent Bioconductor version in the vendored table.
+fn latest_known_bioc_version() -> Version {
+    BIOC_VERSION_MAP
+        .iter()
+        .map(|(bioc, _)| Version::from_str(bioc).expect("valid version in vendored table"))
+        .max()
+        .expect("non-empty vendored table")
+}
+
+/// We allow one of the version vendored in rv, as well as auto/release/devel and any
+/// version higher than the highest we got vendored
+fn validate_bioc_version(version: &str) -> Result<(), String> {
+    if matches!(version, "auto" | "release" | "devel")
+        || BIOC_VERSION_MAP.iter().any(|(x, _)| *x == version)
+    {
+        return Ok(());
+    }
+
+    let mut parts = version.split('.');
+    let is_digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    let looks_like_a_version = match (parts.next(), parts.next(), parts.next()) {
+        (Some(major), Some(minor), None) => is_digits(major) && is_digits(minor),
+        _ => false,
+    };
+
+    if !looks_like_a_version {
+        return Err(format!(
+            "Invalid Bioconductor version `{version}`: expected a version like `3.21`, or `release`/`devel`."
+        ));
+    }
+
+    let latest = latest_known_bioc_version();
+    if Version::from_str(version).expect("digits only") <= latest {
+        return Err(format!(
+            "Unknown Bioconductor version `{version}`: it is not one of the Bioconductor releases known to rv, which go up to {latest}."
+        ));
+    }
+
+    log::warn!("Bioconductor {version} is newer than any release known to this rv ({latest}).");
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ConfigRepository {
+    Bioconductor(Bioconductor),
+    Simple(Repository),
+}
+
+const BIOC_REPOS: [(&str, &str); 4] = [
+    ("__rv__BioCsoft", "bioc"),
+    ("__rv__BioCann", "data/annotation"),
+    ("__rv__BioCexp", "data/experiment"),
+    ("__rv__BioCworkflows", "workflows"),
+];
+
+fn get_bioc_repos(
+    version: &str,
+    r_version: &Version,
+    mirror: Option<&HttpUrl>,
+) -> Result<Vec<(&'static str, Url)>, String> {
+    let base = if let Some(m) = mirror {
+        m.as_str().to_string()
+    } else if let Some(env) = std::env::var_os(BIOC_MIRROR_ENV_VAR_NAME) {
+        env.to_string_lossy().to_string()
+    } else {
+        "https://bioconductor.org".to_string()
+    };
+    let base = base.trim_end_matches('/');
+
+    let actual_version = match version {
+        "auto" => {
+            let major_minor = r_version.major_minor();
+            BIOC_VERSION_MAP
+                .iter()
+                .filter(|(bioc, r)| *r == major_minor && *bioc != BIOC_DEVEL)
+                .max_by_key(|(bioc, _)| Version::from_str(bioc).expect("valid version in vendored table"))
+                .map(|(bioc, _)| *bioc)
+                .ok_or_else(|| {
+                    format!(
+                        "No Bioconductor version found for R {r_version}. Set an explicit version, e.g. `bioconductor = \"{BIOC_CURRENT_RELEASE}\"`."
+                    )
+                })?
+        }
+        "devel" => BIOC_DEVEL,
+        "release" => BIOC_CURRENT_RELEASE,
+        _ => version,
+    };
+
+    // Verify in the vendored table whether the R version matches what we got
+    if let Some((_, r)) = BIOC_VERSION_MAP
+        .iter()
+        .find(|(bioc, _)| *bioc == actual_version)
+        && *r != r_version.major_minor()
+    {
+        let [r_major, r_minor] = r_version.major_minor();
+        log::warn!(
+            "Bioconductor {actual_version} targets R {}.{}, but the project uses R {r_major}.{r_minor}.",
+            r[0],
+            r[1]
+        );
+    }
+
+    let mut repos = Vec::new();
+    for (alias, path) in BIOC_REPOS {
+        let url = Url::parse(&format!("{base}/packages/{actual_version}/{path}")).unwrap();
+        repos.push((alias, url))
+    }
+
+    Ok(repos)
+}
+
 impl Repository {
     pub fn url(&self) -> &str {
         self.url.as_str()
@@ -99,6 +224,8 @@ pub enum ConfigDependency {
         install_suggestions: bool,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        directory: Option<String>,
     },
     Url {
         url: HttpUrl,
@@ -117,6 +244,8 @@ pub enum ConfigDependency {
         force_source: Option<bool>,
         #[serde(default)]
         dependencies_only: bool,
+        #[serde(default)]
+        bioconductor: bool,
     },
 }
 
@@ -128,6 +257,20 @@ impl ConfigDependency {
             ConfigDependency::Git { name, .. } => name,
             ConfigDependency::Local { name, .. } => name,
             ConfigDependency::Url { name, .. } => name,
+        }
+    }
+
+    pub fn has_source_specified(&self) -> bool {
+        match self {
+            ConfigDependency::Simple(_) => false,
+            ConfigDependency::Detailed {
+                repository,
+                bioconductor,
+                ..
+            } => repository.is_some() || *bioconductor,
+            ConfigDependency::Git { .. } => true,
+            ConfigDependency::Local { .. } => true,
+            ConfigDependency::Url { .. } => true,
         }
     }
 
@@ -145,9 +288,25 @@ impl ConfigDependency {
         }
     }
 
+    pub fn bioconductor(&self) -> bool {
+        match self {
+            ConfigDependency::Detailed { bioconductor, .. } => *bioconductor,
+            _ => false,
+        }
+    }
+
     pub fn local_path(&self) -> Option<PathBuf> {
         match self {
             ConfigDependency::Local { path, .. } => Some(path.clone()),
+            _ => None,
+        }
+    }
+
+    /// The subdirectory within a git/local dependency that holds the actual R package
+    pub fn directory(&self) -> Option<String> {
+        match self {
+            ConfigDependency::Git { directory, .. } => directory.clone(),
+            ConfigDependency::Local { directory, .. } => directory.clone(),
             _ => None,
         }
     }
@@ -324,7 +483,10 @@ pub(crate) struct Project {
     authors: Vec<Author>,
     #[serde(default)]
     keywords: Vec<String>,
-    repositories: Vec<Repository>,
+    repositories: Vec<ConfigRepository>,
+    /// The field content + bioc repos if there is a bioc repo
+    #[serde(skip)]
+    expanded_repositories: Vec<Repository>,
     #[serde(default)]
     suggests: Vec<ConfigDependency>,
     #[serde(default)]
@@ -376,6 +538,9 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub(crate) use_lockfile: bool,
     lockfile_name: Option<String>,
+    /// Whether to create a sandbox for that project
+    #[serde(default)]
+    sandbox: Option<bool>,
     pub(crate) project: Project,
 }
 
@@ -399,20 +564,55 @@ impl Config {
     }
 
     /// This will do 2 things:
-    /// 1. verify alias used in deps are found
-    /// 2. verify git sources are valid (eg no tag and branch at the same time)
-    /// 3. replace the alias in the dependency by the URL
+    ///
+    /// 1. add the bioc repos if bioconductor is requested
+    /// 2. verify alias used in deps are found
+    /// 3. verify git sources are valid (eg no tag and branch at the same time)
+    /// 4. replace the alias in the dependency by the URL
     pub(crate) fn finalize(&mut self, path: &Path) -> Result<(), ConfigLoadError> {
+        let mut errors = Vec::new();
+
+        self.project.expanded_repositories = Vec::new();
+        let mut has_bioc = false;
+        for r in &self.project.repositories {
+            match r {
+                ConfigRepository::Simple(repo) => {
+                    self.project.expanded_repositories.push(repo.clone())
+                }
+                ConfigRepository::Bioconductor(bioc) => {
+                    if has_bioc {
+                        errors.push("Only one bioconductor shorthand repository is allowed. Use the repository URLs if you want more than one.".to_string());
+                        continue;
+                    }
+                    has_bioc = true;
+                    let version = bioc.bioconductor.trim();
+                    if let Err(e) = validate_bioc_version(version) {
+                        errors.push(e);
+                        continue;
+                    }
+                    match get_bioc_repos(version, self.r_version(), bioc.mirror.as_ref()) {
+                        Ok(r) => self.project.expanded_repositories.extend(r.into_iter().map(
+                            |(alias, url)| {
+                                Repository::new(alias.to_string(), url, bioc.force_source)
+                            },
+                        )),
+                        Err(e) => {
+                            errors.push(e);
+                        }
+                    }
+                }
+            }
+        }
+
         let repo_mapping: HashMap<_, _> = self
             .project
-            .repositories
+            .expanded_repositories
             .iter()
             .map(|r| (r.alias.as_str(), r))
             .collect();
-        let mut errors = Vec::new();
 
         let mut seen_aliases = HashSet::new();
-        for repo in &self.project.repositories {
+        for repo in &self.project.expanded_repositories {
             if !seen_aliases.insert(repo.alias.as_str()) {
                 errors.push(format!("Duplicate repository alias: {}", repo.alias));
             }
@@ -422,11 +622,27 @@ impl Config {
             match d {
                 // If it has a repository set, we need to check the alias is found and replace it with the url
                 ConfigDependency::Detailed {
-                    repository, name, ..
+                    repository,
+                    name,
+                    bioconductor,
+                    ..
                 } => {
                     if name.trim().is_empty() {
                         errors.push("A dependency is missing a name.".to_string());
                         continue;
+                    }
+
+                    if *bioconductor {
+                        if !has_bioc {
+                            errors.push(format!(
+                                "Dependency {name} has `bioconductor = true` but there is no bioconductor repository, e.g. `{{ bioconductor = \"{BIOC_CURRENT_RELEASE}\" }}`."
+                            ));
+                        }
+                        if repository.is_some() {
+                            errors.push(format!(
+                                "Dependency {name} cannot set both `bioconductor = true` and `repository`."
+                            ));
+                        }
                     }
 
                     let mut replacement = None;
@@ -488,11 +704,17 @@ impl Config {
     }
 
     pub fn repositories(&self) -> &[Repository] {
-        &self.project.repositories
+        &self.project.expanded_repositories
     }
 
-    pub fn repositories_mut(&mut self) -> &mut [Repository] {
-        &mut self.project.repositories
+    /// The urls of the repositories expanded from the bioconductor shorthand
+    pub fn bioc_repo_urls(&self) -> HashSet<&str> {
+        self.project
+            .expanded_repositories
+            .iter()
+            .filter(|r| BIOC_REPOS.iter().any(|(alias, _)| *alias == r.alias))
+            .map(|r| r.url())
+            .collect()
     }
 
     pub fn dependencies(&self) -> &[ConfigDependency] {
@@ -517,6 +739,11 @@ impl Config {
 
     pub fn use_devel(&self) -> bool {
         self.project.use_devel.unwrap_or(false)
+    }
+
+    pub fn sandbox_enabled(&self) -> bool {
+        self.sandbox
+            .unwrap_or_else(|| is_env_var_truthy(USE_SANDBOX_ENV_VAR_NAME))
     }
 
     pub fn use_lockfile(&self) -> bool {
@@ -626,6 +853,200 @@ mod tests {
     }
 
     #[test]
+    fn bioconductor_shorthand_expands_repositories() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/latest" },
+    { bioconductor = "3.21" },
+]
+"#;
+        let config = Config::from_str(toml_str).unwrap();
+        let repos: Vec<_> = config
+            .repositories()
+            .iter()
+            .map(|r| (r.alias.as_str(), r.url()))
+            .collect();
+        assert_eq!(
+            repos,
+            vec![
+                ("posit", "https://packagemanager.posit.co/cran/latest"),
+                (
+                    "__rv__BioCsoft",
+                    "https://bioconductor.org/packages/3.21/bioc"
+                ),
+                (
+                    "__rv__BioCann",
+                    "https://bioconductor.org/packages/3.21/data/annotation"
+                ),
+                (
+                    "__rv__BioCexp",
+                    "https://bioconductor.org/packages/3.21/data/experiment"
+                ),
+                (
+                    "__rv__BioCworkflows",
+                    "https://bioconductor.org/packages/3.21/workflows"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn bioconductor_version_is_validated_and_trimmed() {
+        let config_with_version = |version: &str| {
+            Config::from_str(&format!(
+                r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [{{ bioconductor = "{version}" }}]
+"#
+            ))
+        };
+
+        for version in ["latest", "3", "3.21.1", "3.x", ""] {
+            assert!(
+                config_with_version(version).is_err(),
+                "version `{version}` should be rejected"
+            );
+        }
+
+        for version in ["release", "devel"] {
+            assert!(config_with_version(version).is_ok());
+        }
+
+        let config = config_with_version(" 3.21 ").unwrap();
+        assert_eq!(
+            config.repositories()[0].url(),
+            "https://bioconductor.org/packages/3.21/bioc"
+        );
+    }
+
+    #[test]
+    fn bioconductor_accepts_a_version_newer_than_the_vendored_table() {
+        let [major, minor] = latest_known_bioc_version().major_minor();
+        let next = format!("{major}.{}", minor + 1);
+        let config = Config::from_str(&format!(
+            r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [{{ bioconductor = "{next}" }}]
+"#
+        ))
+        .unwrap();
+        assert_eq!(
+            config.repositories()[0].url(),
+            format!("https://bioconductor.org/packages/{next}/bioc")
+        );
+    }
+
+    #[test]
+    fn bioconductor_rejects_an_unknown_older_version() {
+        let err = Config::from_str(
+            r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [{ bioconductor = "2.99" }]
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("Unknown Bioconductor version `2.99`"), "{err}");
+    }
+
+    #[test]
+    fn bioconductor_mirror_replaces_base_url() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { bioconductor = "3.21", mirror = "https://packagemanager.posit.co/bioconductor/latest/" },
+]
+"#;
+        let config = Config::from_str(toml_str).unwrap();
+        assert_eq!(
+            config.repositories()[0].url(),
+            "https://packagemanager.posit.co/bioconductor/latest/packages/3.21/bioc"
+        );
+    }
+
+    #[test]
+    fn bioconductor_errors_on_multiple() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { bioconductor = "3.22" },
+    { bioconductor = "3.21" },
+]
+"#;
+        assert!(
+            Config::from_str(toml_str)
+                .unwrap_err()
+                .to_string()
+                .contains("Only one bioconductor shorthand repository is allowed")
+        );
+    }
+
+    #[test]
+    fn bioconductor_dependency_requires_bioc_repository() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org" },
+]
+dependencies = [
+    { name = "BiocGenerics", bioconductor = true },
+]
+"#;
+        let err = Config::from_str(toml_str).unwrap_err();
+        assert!(err.to_string().contains("no bioconductor repository"));
+    }
+
+    #[test]
+    fn bioconductor_dependency_conflicts_with_repository() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org" },
+    { bioconductor = "3.21" },
+]
+dependencies = [
+    { name = "BiocGenerics", bioconductor = true, repository = "cran" },
+]
+"#;
+        let err = Config::from_str(toml_str).unwrap_err();
+        assert!(err.to_string().contains("cannot set both"));
+    }
+
+    #[test]
+    fn bioconductor_dependency_is_valid_with_bioc_repository() {
+        let toml_str = r#"
+[project]
+name = "test"
+r_version = "4.5"
+repositories = [
+    { alias = "cran", url = "https://cran.r-project.org" },
+    { bioconductor = "3.21" },
+]
+dependencies = [
+    { name = "BiocGenerics", bioconductor = true },
+]
+"#;
+        assert!(Config::from_str(toml_str).is_ok());
+    }
+
+    #[test]
     fn can_parse_no_strip() {
         let toml_str = r#"
 [project]
@@ -678,7 +1099,7 @@ repositories = []
         let default_config = Config::from_str(default_toml).unwrap();
         assert_eq!(
             default_config.git_shorthand_base_url(),
-            crate::dependency_edit::DEFAULT_GIT_SHORTHAND_BASE_URL
+            DEFAULT_GIT_SHORTHAND_BASE_URL
         );
 
         let custom_toml = r#"

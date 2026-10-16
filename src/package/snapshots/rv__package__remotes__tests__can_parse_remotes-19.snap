@@ -1,0 +1,6 @@
+---
+source: src/package/remotes.rs
+description: "cran::dplyr"
+expression: "format!(\"{name:?} => {remote:?}\")"
+---
+None => Other("dplyr")

@@ -1,21 +1,26 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod cli_docs;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result, bail};
 use fs_err::{read_to_string, write};
 use serde_json::json;
 
 use anyhow::anyhow;
+use log::warn;
 use rv::cli::{
-    Context, OutputFormat, RCommandLookup, ResolveMode, SyncHelper, export_renv,
-    find_r_repositories, init, init_structure, migrate_renv, resolve_dependencies, tree,
+    Context, OutputFormat, RCommandLookup, ResolveMode, SCRIPT_CONFIG_RE, SyncHelper, export_renv,
+    extract_script_config, find_r_repositories, init, init_structure, migrate_renv,
+    resolve_dependencies, resolve_r_lookup, tree,
 };
 use rv::r_finder::get_r_from_path;
 use rv::system_req::{SysDep, SysInstallationStatus};
-use rv::{AddOptions, FetchPackage, Http, RepositoryOperation as LibRepositoryOperation};
+use rv::{
+    AddOptions, Cache, FetchPackage, Http, RepositoryOperation as LibRepositoryOperation,
+    SystemInfo, hash_string,
+};
 use rv::{
     CacheInfo, Config, GitExecutor, ProjectSummary, RepositoryAction, RepositoryMatcher,
     RepositoryPositioning, RepositoryUpdates, Version, activate, add_packages, deactivate,
@@ -48,6 +53,7 @@ pub struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Creates a new rv project
     Init {
@@ -68,6 +74,9 @@ pub enum Command {
         #[clap(long)]
         /// Force new init. This will replace content in your rproject.toml
         force: bool,
+        #[clap(long)]
+        /// Whether this project will use a sandbox
+        sandbox: bool,
     },
     /// Migrate renv to rv
     Migrate {
@@ -79,8 +88,20 @@ pub enum Command {
         #[clap(subcommand)]
         subcommand: ExportSubcommand,
     },
-    /// Replaces the library with exactly what is in the lock file
+    /// Replaces the library using the lockfile when possible or solving the dependencies
+    /// otherwise.
     Sync {
+        /// Forces the usage of the R at the given path.
+        /// If it doesn't match the R version in the `rproject.toml`, pass `--r-version` as well
+        /// to force its use (in which case the lockfile will not be read nor updated) otherwise
+        /// it will error.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
+        /// Use this R version instead of the one in the config.
+        /// If the R version doesn't match the config and `--r-bin` is not passed it will error.
+        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
+        r_version: Option<Version>,
+        /// If you want to save the install logs for the package somewhere, use this flag.
         #[clap(long)]
         save_install_logs_in: Option<PathBuf>,
         /// Fail if the lockfile is missing or out of sync with the config.
@@ -99,6 +120,10 @@ pub enum Command {
         #[clap(long)]
         /// Add packages to config file, but do not sync. No effect if --dry-run is used
         no_sync: bool,
+        /// Forces the usage of the R at the given path. Its version must match the config's R
+        /// version, otherwise it will error.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
         #[clap(flatten)]
         add_options: AddOptions,
     },
@@ -113,19 +138,30 @@ pub enum Command {
         /// Remove packages from config file, but do not sync. No effect if --dry-run is used
         #[clap(long)]
         no_sync: bool,
+        /// Forces the usage of the R at the given path. Its version must match the config's R
+        /// version, otherwise it will error.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
     },
     /// Upgrade packages to the latest versions available
     Upgrade {
         #[clap(long)]
         dry_run: bool,
+        /// Forces the usage of the R at the given path. Its version must match the config's R
+        /// version, otherwise it will error.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
     },
     /// Dry run of what sync would do
     Plan {
         #[clap(short, long)]
         upgrade: bool,
+        /// Use the R at the given path instead of discovering one.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
         /// Specify a R version different from the one in the config.
         /// The command will not error even if this R version is not found
-        #[clap(long)]
+        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
         r_version: Option<Version>,
         /// Fail if the lockfile is missing or out of sync with the config.
         /// Intended for CI and reproducible installs.
@@ -134,9 +170,12 @@ pub enum Command {
     },
     /// Provide a summary about the project status
     Summary {
+        /// Use the R at the given path instead of discovering one.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
         /// Specify a R version different from the one in the config.
         /// The command will not error even if this R version is not found
-        #[clap(long)]
+        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
         r_version: Option<Version>,
     },
     /// Configure project settings
@@ -162,14 +201,28 @@ pub enum Command {
         /// This only does anything on supported platforms (eg some Linux), it's already
         /// hidden otherwise
         hide_system_deps: bool,
-        #[clap(long)]
+        /// Use the R at the given path instead of discovering one.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
+        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
         /// Specify an R version different from the one in the config.
         /// The command will not error even if this R version is not found
         r_version: Option<Version>,
+        #[clap(long)]
+        /// Invert the tree to show which top-level dependencies depend on the specified package
+        invert: Option<String>,
     },
     /// Returns the path for the library for the current project/system in UNIX format, even
     /// on Windows.
-    Library,
+    Library {
+        /// Use the R at the given path instead of discovering one.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
+        /// Specify a R version different from the one in the config.
+        /// The command will not error even if this R version is not found
+        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
+        r_version: Option<Version>,
+    },
     /// Gives information about where the cache is for that project
     Cache,
     /// Simple information about the project
@@ -184,10 +237,13 @@ pub enum Command {
         /// The repositories specified in the config
         #[clap(long)]
         repositories: bool,
+        /// The system library sandbox path, built on demand if missing.
+        /// Prints an empty value when the project does not enable the sandbox
+        #[clap(long)]
+        sandbox: bool,
     },
     /// List the system dependencies needed by the dependency tree.
-    /// This is currently only supported on Ubuntu/Debian, it will return an empty result
-    /// anywhere else.
+    /// This is currently only supported on various Linux distributions.
     ///
     /// The present/absent status may be wrong if a dependency was installed in
     /// a way that we couldn't detect (eg not via the main package manager of the OS).
@@ -211,12 +267,23 @@ pub enum Command {
     /// Deactivate an rv project
     Deactivate,
     /// Run an Rscript command with the project library paths configured
+    /// You can also embed a configuration in the script to make it self-contained and runnable
+    /// outside of a rv project.
+    /// All rv flags must precede the script.
     #[clap(trailing_var_arg = true)]
     Run {
         /// Do not sync the project library before running the command
-        /// This needs to be the first flag if set
         #[clap(long)]
         no_sync: bool,
+        /// Forces the usage of the R at the given path. If it doesn't match the config's R
+        /// version, pass `--r-version` as well to confirm; the lockfile is then neither used
+        /// nor updated.
+        #[clap(long, env = rv::consts::R_BIN_ENV_VAR_NAME)]
+        r_bin: Option<PathBuf>,
+        /// Use this R version instead of the one in the config (only differs from the config
+        /// together with `--r-bin`, where it asserts the given R's version).
+        #[clap(long, env = rv::consts::R_VERSION_ENV_VAR_NAME)]
+        r_version: Option<Version>,
         #[clap(allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -384,6 +451,58 @@ fn print_remove_summary(output_format: &OutputFormat, removed: &[String], dry_ru
     }
 }
 
+/// Build a [`Context`], honoring the `--r-bin`/`--r-version` flags (and their env vars).
+/// `default_lookup` is used when no selector was given.
+/// `needs_toolchain` is true for commands that install packages (sync, add, remove, upgrade, run):
+/// only those warn when the selected R doesn't match the config, since only they use the lockfile.
+/// `allow_mismatch` is false for commands made to edit config/lockfile changes (add, remove,
+/// upgrade) since running those with a mismatched version would leave them in a weird place.
+fn make_context(
+    config_file: &Path,
+    r_bin: Option<PathBuf>,
+    r_version: Option<Version>,
+    needs_toolchain: bool,
+    allow_mismatch: bool,
+    default_lookup: RCommandLookup,
+) -> Result<Context> {
+    let config = Config::from_file(config_file).map_err(|e| anyhow!("{e}"))?;
+    let lookup = resolve_r_lookup(r_bin, r_version, config.r_version(), needs_toolchain)
+        .map_err(|e| anyhow!("{e}"))?
+        .unwrap_or(default_lookup);
+    let context = Context::new(config_file, lookup).map_err(|e| anyhow!("{e}"))?;
+    if !context.r_matches_config() {
+        if !allow_mismatch {
+            return Err(anyhow!(
+                "The selected R ({}) does not match the config ({}), which is not supported by this command.",
+                context.r_cmd.version,
+                context.config.r_version()
+            ));
+        }
+        if needs_toolchain {
+            warn!(
+                "Running R {} which does not match the config ({}); the lockfile won't be used or updated.",
+                context.r_cmd.version,
+                context.config.r_version()
+            );
+        }
+    }
+    Ok(context)
+}
+
+fn get_default_r_version() -> Result<(String, bool)> {
+    match get_r_from_path() {
+        Some(r_install) => {
+            let [major, minor] = r_install.version.major_minor();
+            Ok((format!("{major}.{minor}"), r_install.is_devel))
+        }
+        None => {
+            bail!(
+                "Either no R available in path or R-devel detected but could not determine its version"
+            );
+        }
+    }
+}
+
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let output_format = if cli.json {
@@ -424,21 +543,12 @@ fn try_main() -> Result<()> {
             add,
             no_r_environment,
             force,
+            sandbox,
         } => {
             let (r_version, use_devel) = if let Some(r) = r_version {
                 (r.original, false)
             } else {
-                match get_r_from_path() {
-                    Some(r_install) => {
-                        let [major, minor] = r_install.version.major_minor();
-                        (format!("{major}.{minor}"), r_install.is_devel)
-                    }
-                    None => {
-                        anyhow::bail!(
-                            "Either no R available in path or R-devel detected but could not determine its version"
-                        );
-                    }
-                }
+                get_default_r_version()?
             };
 
             let repositories = if no_repositories {
@@ -462,6 +572,7 @@ fn try_main() -> Result<()> {
                 &add,
                 use_devel,
                 force,
+                sandbox,
             )?;
             activate(&project_directory, no_r_environment)?;
 
@@ -560,11 +671,27 @@ fn try_main() -> Result<()> {
             }
         }
         Command::Sync {
+            r_bin,
+            r_version,
             save_install_logs_in,
             locked,
         } => {
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let mut context = make_context(
+                &cli.config_file,
+                r_bin,
+                r_version,
+                true,
+                true,
+                RCommandLookup::Strict,
+            )?;
+
+            if locked && !context.r_matches_config() {
+                return Err(anyhow!(
+                    "`--locked` requires the config's R version ({}) but --r-bin runs R {}",
+                    context.config.r_version(),
+                    context.r_cmd.version
+                ));
+            }
 
             if !log_enabled && !cli.emit_events {
                 context.show_progress_bar();
@@ -590,6 +717,7 @@ fn try_main() -> Result<()> {
             packages,
             dry_run,
             no_sync,
+            r_bin,
             add_options,
         } => {
             // Validate that multiple packages only work with simple adds
@@ -620,8 +748,14 @@ fn try_main() -> Result<()> {
             // Load config to verify structure is valid
             let mut doc = read_and_verify_config(&cli.config_file)?;
 
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            // no-sync does not require R
+            let r_lookup = if no_sync {
+                RCommandLookup::Skip
+            } else {
+                RCommandLookup::Strict
+            };
+
+            let mut context = make_context(&cli.config_file, r_bin, None, true, false, r_lookup)?;
             if !log_enabled {
                 context.show_progress_bar();
             }
@@ -763,6 +897,7 @@ fn try_main() -> Result<()> {
             packages,
             dry_run,
             no_sync,
+            r_bin,
         } => {
             use rv::remove_packages;
 
@@ -785,8 +920,13 @@ fn try_main() -> Result<()> {
                 return Ok(());
             }
 
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+            let r_lookup = if no_sync {
+                RCommandLookup::Skip
+            } else {
+                RCommandLookup::Strict
+            };
+
+            let mut context = make_context(&cli.config_file, r_bin, None, true, false, r_lookup)?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -811,9 +951,15 @@ fn try_main() -> Result<()> {
             }
             .run(&context, resolve_mode)?;
         }
-        Command::Upgrade { dry_run } => {
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+        Command::Upgrade { dry_run, r_bin } => {
+            let mut context = make_context(
+                &cli.config_file,
+                r_bin,
+                None,
+                true,
+                false,
+                RCommandLookup::Strict,
+            )?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -831,6 +977,7 @@ fn try_main() -> Result<()> {
         }
         Command::Plan {
             upgrade,
+            r_bin,
             r_version,
             locked,
         } => {
@@ -842,8 +989,14 @@ fn try_main() -> Result<()> {
             } else {
                 ResolveMode::Default
             };
-            let mut context =
-                Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
+            let mut context = make_context(
+                &cli.config_file,
+                r_bin,
+                r_version,
+                false,
+                true,
+                RCommandLookup::Strict,
+            )?;
 
             if !log_enabled {
                 context.show_progress_bar();
@@ -860,9 +1013,15 @@ fn try_main() -> Result<()> {
             }
             .run(&context, upgrade)?;
         }
-        Command::Summary { r_version } => {
-            let mut context =
-                Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
+        Command::Summary { r_bin, r_version } => {
+            let mut context = make_context(
+                &cli.config_file,
+                r_bin,
+                r_version,
+                false,
+                true,
+                RCommandLookup::Strict,
+            )?;
             context.load_databases().map_err(|e| anyhow!("{e}"))?;
             context.load_system_requirements();
             if !log_enabled {
@@ -923,10 +1082,18 @@ fn try_main() -> Result<()> {
         Command::Tree {
             depth,
             hide_system_deps,
+            r_bin,
             r_version,
+            invert,
         } => {
-            let mut context =
-                Context::new(&cli.config_file, r_version.into()).map_err(|e| anyhow!("{e}"))?;
+            let mut context = make_context(
+                &cli.config_file,
+                r_bin,
+                r_version,
+                false,
+                true,
+                RCommandLookup::Strict,
+            )?;
             context.load_databases().map_err(|e| anyhow!("{e}"))?;
             if !hide_system_deps {
                 context.load_system_requirements();
@@ -935,7 +1102,20 @@ fn try_main() -> Result<()> {
                 context.show_progress_bar();
             }
             let resolution = resolve_dependencies(&context, ResolveMode::Default, false);
-            let tree = tree(&context, &resolution.found, &resolution.failed);
+            let tree = tree(
+                &context,
+                &resolution.found,
+                &resolution.failed,
+                invert.as_deref(),
+            );
+
+            if let Some(target) = &invert
+                && tree.is_empty()
+            {
+                return Err(anyhow!(
+                    "Package `{target}` is not in the resolved dependency tree"
+                ));
+            }
 
             if output_format.is_json() {
                 println!(
@@ -946,9 +1126,15 @@ fn try_main() -> Result<()> {
                 tree.print(depth, !hide_system_deps);
             }
         }
-        Command::Library => {
-            let context =
-                Context::new(&cli.config_file, RCommandLookup::Skip).map_err(|e| anyhow!("{e}"))?;
+        Command::Library { r_bin, r_version } => {
+            let context = make_context(
+                &cli.config_file,
+                r_bin,
+                r_version,
+                false,
+                true,
+                RCommandLookup::Skip,
+            )?;
             let path_str = context.library_path().to_string_lossy();
             let path_out = if cfg!(windows) {
                 path_str.replace('\\', "/")
@@ -994,6 +1180,7 @@ fn try_main() -> Result<()> {
             library,
             r_version,
             repositories,
+            sandbox,
         } => {
             // TODO: handle info, eg need to accumulate fields
             let mut output = Vec::new();
@@ -1020,6 +1207,23 @@ fn try_main() -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 output.push(("repositories", repos));
+            }
+            if sandbox {
+                let sandbox_out = match context
+                    .sandbox()
+                    .context("sandbox is enabled but could not be created")?
+                {
+                    Some(path) => {
+                        let path_str = path.to_string_lossy();
+                        if cfg!(windows) {
+                            path_str.replace('\\', "/")
+                        } else {
+                            path_str.to_string()
+                        }
+                    }
+                    None => String::new(),
+                };
+                output.push(("sandbox", sandbox_out));
             }
 
             if output_format.is_json() {
@@ -1125,9 +1329,51 @@ fn try_main() -> Result<()> {
             println!("{}", output);
         }
 
-        Command::Run { no_sync, args } => {
-            let mut context = Context::new(&cli.config_file, RCommandLookup::Strict)
-                .map_err(|e| anyhow!("{e}"))?;
+        Command::Run {
+            no_sync,
+            r_bin,
+            r_version,
+            args,
+        } => {
+            let script_config_file = args
+                .iter()
+                .find(|x| Path::new(x).is_file())
+                .map(read_to_string)
+                .transpose()?
+                .map(|x| x.replace("\r\n", "\n"))
+                .filter(|x| SCRIPT_CONFIG_RE.is_match(x))
+                .map(|x| -> Result<PathBuf> {
+                    let default_r = match &r_version {
+                        Some(v) => v.original.clone(),
+                        None => get_default_r_version()?.0,
+                    };
+                    let repos = find_r_repositories()?;
+                    let Some((config, toml_text)) = extract_script_config(&x, &default_r, &repos)?
+                    else {
+                        bail!("Could not extract configuration from script");
+                    };
+                    if config.repositories().is_empty() {
+                        bail!("No repositories configured and we could not detect default ones");
+                    }
+                    let cache = Cache::new(config.r_version(), SystemInfo::from_os_info())
+                        .map_err(|e| anyhow!("{e}"))?;
+                    let dir = cache.script_path(&hash_string(&toml_text));
+                    fs_err::create_dir_all(&dir)?;
+                    let path = dir.join("rproject.toml");
+                    write(&path, &toml_text)?;
+                    Ok(path)
+                })
+                .transpose()?;
+
+            let config_file = script_config_file.as_deref().unwrap_or(&cli.config_file);
+            let mut context = make_context(
+                config_file,
+                r_bin,
+                r_version,
+                true,
+                true,
+                RCommandLookup::Strict,
+            )?;
 
             if !no_sync {
                 if !log_enabled {
@@ -1144,7 +1390,17 @@ fn try_main() -> Result<()> {
                 .run(&context, resolve_mode)?;
             }
 
-            let code = rv::run(&context.r_cmd.bin_path, context.library_path(), &args)?;
+            let sandbox = context
+                .sandbox()
+                .context("sandbox is enabled but could not be created")?;
+
+            let code = rv::run(
+                &context.r_cmd.bin_path,
+                context.library_path(),
+                sandbox.as_deref(),
+                context.config.repositories(),
+                &args,
+            )?;
             std::process::exit(code);
         }
 

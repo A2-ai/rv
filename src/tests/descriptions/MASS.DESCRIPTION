@@ -1,0 +1,4 @@
+Package: MASS
+Version: 7.3-99
+Depends: R (>= 4.4.0)
+License: GPL-2 | GPL-3

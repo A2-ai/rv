@@ -18,6 +18,12 @@ use crate::package::{BuiltinPackages, Package, get_builtin_versions_from_library
 use crate::system_req::{SysReqError, get_system_requirements};
 use crate::{RInstall, SystemInfo, Version};
 
+/// We potentially use the SHA from the lockfile which can edited by hand so
+/// we don't do `[..10]` to avoid panics in that case
+fn sha_prefix(sha: &str) -> &str {
+    sha.get(..10).unwrap_or(sha)
+}
+
 #[derive(Debug, Clone)]
 pub struct PackagePaths {
     pub binary: PathBuf,
@@ -81,6 +87,18 @@ impl DiskCache {
         })
     }
 
+    /// Where we store sandboxes for projects that opt-in in that behaviour
+    /// The path given should be canonicalized.
+    /// In the end it will look something like:
+    /// `sandboxes/{R install hash}/{R-major.minor}/{arch}/{distro}/{hash of base packages}`
+    pub(super) fn get_sandbox_dir(&self, library_path: &Path) -> PathBuf {
+        let encoded = hash_string(library_path.to_string_lossy().as_ref());
+        self.root
+            .join("sandboxes")
+            .join(&encoded)
+            .join(get_current_system_path(&self.system_info, self.r_version))
+    }
+
     /// PACKAGES databases as well as binary packages are dependent on the OS and R version
     pub(super) fn get_repo_root_binary_dir(&self, name: &str) -> PathBuf {
         let encoded = hash_string(name);
@@ -140,6 +158,13 @@ impl DiskCache {
         }
 
         p.join(BUILD_LOG_FILENAME)
+    }
+
+    pub(crate) fn get_script_path(&self, sha: &str) -> PathBuf {
+        self.root
+            .join("scripts")
+            .join(get_current_system_path(&self.system_info, self.r_version))
+            .join(sha)
     }
 
     /// Gets the folder where extracted source would be located
@@ -203,15 +228,21 @@ impl DiskCache {
         match source {
             Source::Git { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git.url()),
-                binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
+                binary: self
+                    .get_repo_root_binary_dir(git.url())
+                    .join(sha_prefix(sha)),
             },
             Source::RUniverse { git, sha, .. } => PackagePaths {
                 source: self.get_git_clone_path(git.url()),
-                binary: self.get_repo_root_binary_dir(git.url()).join(&sha[..10]),
+                binary: self
+                    .get_repo_root_binary_dir(git.url())
+                    .join(sha_prefix(sha)),
             },
             Source::Url { url, sha } => PackagePaths {
-                source: self.get_url_download_path(url).join(&sha[..10]),
-                binary: self.get_repo_root_binary_dir(url.as_str()).join(&sha[..10]),
+                source: self.get_url_download_path(url).join(sha_prefix(sha)),
+                binary: self
+                    .get_repo_root_binary_dir(url.as_str())
+                    .join(sha_prefix(sha)),
             },
             Source::Repository { repository } => {
                 let name = pkg_name.unwrap();

@@ -9,3 +9,7 @@ test:
 
 install:
     cargo install --path . --features=cli
+
+bioc:
+    cargo run --example=bioc
+    cargo fmt

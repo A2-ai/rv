@@ -13,7 +13,8 @@ const GITIGNORE_PATH: &str = "rv/.gitignore";
 const LIBRARY_PATH: &str = "rv/library";
 const CONFIG_FILENAME: &str = "rproject.toml";
 
-const INITIAL_CONFIG: &str = r#"[project]
+const INITIAL_CONFIG: &str = r#"%sandbox%
+[project]
 name = "%project_name%"
 r_version = "%r_version%"
 %use_devel%
@@ -50,6 +51,7 @@ pub fn init(
     dependencies: &[String],
     use_devel: bool,
     force: bool,
+    sandbox_enabled: bool,
 ) -> Result<(), InitError> {
     let proj_dir = project_directory.as_ref();
     init_structure(proj_dir)?;
@@ -73,6 +75,7 @@ pub fn init(
         repositories,
         dependencies,
         use_devel,
+        sandbox_enabled,
     );
 
     write(proj_dir.join(CONFIG_FILENAME), config)?;
@@ -85,6 +88,7 @@ fn render_config(
     repositories: &[Repository],
     dependencies: &[String],
     use_devel: bool,
+    sandbox_enabled: bool,
 ) -> String {
     let repos = repositories
         .iter()
@@ -99,6 +103,11 @@ fn render_config(
         .join("\n");
 
     let use_devel_str = if use_devel { "use_devel = true\n" } else { "" };
+    let sandbox = if sandbox_enabled {
+        "sandbox = true"
+    } else {
+        ""
+    };
 
     INITIAL_CONFIG
         .replace("%project_name%", project_name)
@@ -106,22 +115,35 @@ fn render_config(
         .replace("%use_devel%", use_devel_str)
         .replace("%repositories%", &repos)
         .replace("%dependencies%", &deps)
+        .replace("%sandbox%", sandbox)
 }
 
 pub fn find_r_repositories() -> Result<Vec<Repository>, InitError> {
-    let r_code = r#"
-    repos <- getOption("repos")
-    cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))
-    "#;
+    // Resolve Rscript from the R on PATH via its R_HOME rather than spawning a bare
+    // `Rscript`. On Windows a bare name never resolves a rig `Rscript.bat` shim (Rust's
+    // `Command` ignores `PATHEXT`), and spawning the `.bat` itself routes through cmd.exe.
+    // `get_r_from_path` is `.bat`-aware, and the resolved `Rscript.exe` runs directly (#489).
+    let r_install = crate::r_finder::get_r_from_path().ok_or(InitError {
+        source: InitErrorKind::RNotFound,
+    })?;
+    let r_home = crate::r_cmd::get_r_home(&r_install.bin_path).map_err(|e| InitError {
+        source: InitErrorKind::Command(e),
+    })?;
+    let rscript = crate::r_cmd::resolve_rscript_path(&r_home);
+
+    // Keep this a single line with no embedded newlines: on Windows, Rscript.exe's
+    // front-end re-parses the `-e` argument and a multi-line value crashes it (#489).
+    let r_code = r#"repos <- getOption("repos"); cat(paste(names(repos), repos, sep = "\t", collapse = "\n"))"#;
 
     let (mut recv, send) = std::io::pipe().map_err(|e| InitError {
         source: InitErrorKind::Command(e),
     })?;
 
-    let mut command = Command::new("Rscript");
+    let mut command = Command::new(&rscript);
     command
         .arg("-e")
         .arg(r_code)
+        .env(crate::consts::NO_ACTIVATE_ENV_VAR_NAME, "1")
         .stdout(send.try_clone().map_err(|e| InitError {
             source: InitErrorKind::Command(e),
         })?)
@@ -216,6 +238,8 @@ pub enum InitErrorKind {
     Io(#[from] std::io::Error),
     #[error("R command failed: {0}")]
     Command(std::io::Error),
+    #[error("Could not find R on PATH")]
+    RNotFound,
     #[error("Failed to find repositories: {0}")]
     CommandFailed(String),
 }
@@ -265,6 +289,7 @@ mod tests {
             &dependencies,
             false, // use_devel
             false, // force
+            false, // sandbox
         )
         .unwrap();
         let dir = &project_directory.path();

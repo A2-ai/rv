@@ -9,6 +9,15 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 use walkdir::WalkDir;
 
+use crate::consts::{CONFIG_FILENAME, LOCKFILE_NAME, RV_DIR_NAME};
+
+/// The files/folders rv itself writes in a project.
+const RV_PROJECT_FILES: [&str; 3] = [RV_DIR_NAME, LOCKFILE_NAME, CONFIG_FILENAME];
+
+fn is_rv_project_dir(path: &Path) -> bool {
+    path.join(CONFIG_FILENAME).exists() || path.join(LOCKFILE_NAME).exists()
+}
+
 #[cfg(feature = "cli")]
 use rayon::prelude::*;
 
@@ -27,6 +36,19 @@ fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
         std::os::windows::fs::symlink_dir(target, link)
     } else {
         std::os::windows::fs::symlink_file(target, link)
+    }
+}
+
+/// Copies the mtime of a file onto its copy.
+/// It can fail on Windows because it requires write which can have issues with some files
+/// but let it continue either way
+fn preserve_mtime(destination: &Path, metadata: &Metadata) {
+    let mtime = FileTime::from_last_modification_time(metadata);
+    if let Err(e) = filetime::set_file_mtime(destination, mtime) {
+        log::debug!(
+            "Could not preserve mtime for {}: {e}",
+            destination.display()
+        );
     }
 }
 
@@ -52,7 +74,8 @@ pub(crate) fn copy_folder(
         } else if file_type.is_dir() {
             fs::create_dir_all(&out_path)?;
         } else {
-            fs::copy(path, out_path)?;
+            fs::copy(path, &out_path)?;
+            preserve_mtime(&out_path, &entry.metadata()?);
         }
     }
 
@@ -109,7 +132,8 @@ fn copy_folder_parallel(
                 if let Some(parent) = out_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                fs::copy(path, out_path)?;
+                fs::copy(path, &out_path)?;
+                preserve_mtime(&out_path, &entry.metadata()?);
             }
             Ok::<(), std::io::Error>(())
         })
@@ -127,6 +151,9 @@ fn metadata(path: impl AsRef<Path>) -> Result<Metadata, std::io::Error> {
 /// following symlinks
 /// Taken from cargo crates/cargo-util/src/paths.rs
 /// We keep it simple for now and just mtime even if it causes more rebuilds than mtime + hashes
+///
+/// Everything rv writes in a project (lockfile, config, library) is skipped.
+/// See https://github.com/A2-ai/rv/issues/525
 pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std::io::Error> {
     let meta = metadata(folder.as_ref())?;
     if !meta.is_dir() {
@@ -137,8 +164,19 @@ pub(crate) fn mtime_recursive(folder: impl AsRef<Path>) -> Result<FileTime, std:
     let max_mtime = WalkDir::new(folder)
         .follow_links(true)
         .into_iter()
+        .filter_entry(|e| {
+            // Always allow root folder
+            e.depth() == 0
+                || !e
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|n| RV_PROJECT_FILES.contains(&n))
+        })
         .filter_map(|e| e.ok())
         .filter_map(|e| {
+            if e.file_type().is_dir() && is_rv_project_dir(e.path()) {
+                return None;
+            }
             if e.path_is_symlink() {
                 // Use the mtime of both the symlink and its target, to
                 // handle the case where the symlink is modified to a
@@ -330,4 +368,87 @@ pub fn is_network_fs(path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
 #[cfg(not(target_os = "linux"))]
 pub fn is_network_fs(_path: impl AsRef<Path>) -> std::io::Result<bool> {
     Ok(false)
+}
+
+/// Turns a canonicalized path into the most compatible form, since R and the Rtools shell
+/// can't handle the verbatim paths (`\\?\C:\...`) `canonicalize` returns on Windows.
+/// A no-op on Unix, and on any path that has no prefix to remove.
+pub(crate) fn simplify_path(path: &Path) -> PathBuf {
+    let path = dunce::simplified(path);
+
+    match path.to_str().and_then(|p| p.strip_prefix(r"\\?\UNC\")) {
+        Some(share) => PathBuf::from(format!(r"\\{share}")),
+        None => path.to_path_buf(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consts::LIBRARY_METADATA_FILENAME;
+
+    // https://github.com/A2-ai/rv/issues/498
+    #[test]
+    fn can_simplify_unc_path() {
+        let cases = [
+            // `UNC\` replaces the leading `\\`
+            (
+                r"\\?\UNC\data\users\myproject\pkg.tar.gz",
+                r"\\data\users\myproject\pkg.tar.gz",
+            ),
+            // Already usable, left alone
+            (r"\\data\users\myproject", r"\\data\users\myproject"),
+            ("/home/me/pkg.tar.gz", "/home/me/pkg.tar.gz"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                simplify_path(Path::new(input)),
+                PathBuf::from(expected),
+                "input: {input}"
+            );
+        }
+    }
+
+    // https://github.com/A2-ai/rv/issues/525
+    // A local package can point at the project itself (eg `path = "."` with a `directory`) and
+    // everything rv writes there happens after we record the mtime of that package, so it would
+    // look changed on every sync and be rebuilt forever.
+    #[test]
+    fn mtime_recursive_ignores_what_rv_writes_in_a_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("R").join("pkg")).unwrap();
+        fs::write(root.join(CONFIG_FILENAME), "[project]").unwrap();
+        fs::write(
+            root.join("R").join("pkg").join("DESCRIPTION"),
+            "Package: pkg",
+        )
+        .unwrap();
+
+        let before = mtime_recursive(root).unwrap();
+        let after_sync = FileTime::from_unix_time(before.unix_seconds() + 500, 0);
+
+        // What a sync writes: the library, the lockfile and, since both are new entries in it,
+        // the mtime of the project folder itself
+        let library = root.join(RV_DIR_NAME).join("library").join("pkg");
+        fs::create_dir_all(&library).unwrap();
+        fs::write(library.join(LIBRARY_METADATA_FILENAME), "{}").unwrap();
+        fs::write(root.join(LOCKFILE_NAME), "").unwrap();
+        for p in [
+            root.to_path_buf(),
+            root.join(RV_DIR_NAME),
+            root.join(LOCKFILE_NAME),
+            root.join(CONFIG_FILENAME),
+            library.join(LIBRARY_METADATA_FILENAME),
+        ] {
+            filetime::set_file_mtime(&p, after_sync).unwrap();
+        }
+        assert_eq!(mtime_recursive(root).unwrap(), before);
+
+        // But the package sources still count
+        filetime::set_file_mtime(root.join("R").join("pkg").join("DESCRIPTION"), after_sync)
+            .unwrap();
+        assert_eq!(mtime_recursive(root).unwrap(), after_sync);
+    }
 }

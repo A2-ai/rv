@@ -1,0 +1,17 @@
+# A dependency with bioconductor = true is NOT looked up in other repositories:
+# R6 is available in cran but not in the bioc repos so it should not resolve
+[project]
+name = "test"
+r_version = "4.4"
+repositories = [
+    { bioconductor = "3.21", mirror = "http://bioc" },
+]
+dependencies = [
+    { name = "R6", bioconductor = true },
+]
+---
+repos = [
+    { name = "cran", source = "posit-src", force_source = false },
+    { name = "biocsoft", url = "http://bioc/packages/3.21/bioc", source = "a2-ai-universe", force_source = false },
+]
+---

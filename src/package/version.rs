@@ -28,7 +28,7 @@ impl fmt::Display for Operator {
 }
 
 impl FromStr for Operator {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
@@ -37,7 +37,7 @@ impl FromStr for Operator {
             "<" => Ok(Self::Lower),
             ">=" => Ok(Self::GreaterOrEqual),
             "<=" => Ok(Self::LowerOrEqual),
-            _ => todo!("Handle error: {s}"),
+            _ => Err(format!("Unknown operator {s}")),
         }
     }
 }
@@ -65,6 +65,17 @@ impl TryFrom<String> for Version {
 }
 
 impl Version {
+    pub fn from_major_minor([major, minor]: [u32; 2]) -> Self {
+        let mut parts = [0; 10];
+        parts[0] = major;
+        parts[1] = minor;
+
+        Self {
+            parts,
+            original: format!("{major}.{minor}"),
+        }
+    }
+
     /// Returns the major/minor part of a version.
     /// Only meant to be used for R itself.
     // unlikely to be a problem but if hashing on the list is too slow but we can return a u64 instead
@@ -77,7 +88,12 @@ impl Version {
     /// Determines if the called version matches in the input version based on the number of specified elements in the called version
     /// i.e. 4.4 = 4.4.1, but 4.4.2 != 4.4.1
     pub(crate) fn hazy_match(&self, version: &Version) -> bool {
-        let num_specified = self.original.replace("-", ".").split('.').count();
+        let num_specified = self
+            .original
+            .replace("-", ".")
+            .split('.')
+            .count()
+            .min(self.parts.len());
         self.parts[..num_specified] == version.parts[..num_specified]
     }
 }
@@ -140,10 +156,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let v: String = Deserialize::deserialize(deserializer)?;
-    match Version::from_str(&v) {
-        Ok(v) => Ok(v),
-        Err(_) => Err(serde::de::Error::custom("Invalid version number")),
-    }
+    Version::from_str(&v).map_err(serde::de::Error::custom)
 }
 
 pub fn serialize_version<S>(version: &Version, serializer: S) -> Result<S::Ok, S::Error>
@@ -308,5 +321,24 @@ mod tests {
         assert_eq!(Version::from_str("1.0").unwrap().major_minor(), [1, 0]);
         assert_eq!(Version::from_str("1.0.0").unwrap().major_minor(), [1, 0]);
         assert_eq!(Version::from_str("4.5").unwrap().major_minor(), [4, 5]);
+    }
+
+    #[test]
+    fn errors_on_unknown_operator() {
+        let err = VersionRequirement::from_str("(!= 1.0)").unwrap_err();
+        assert!(err.contains("!="));
+    }
+
+    #[test]
+    fn hazy_match_handles_more_parts_than_we_store() {
+        let long: Version = "1.2.3.4.5.6.7.8.9.10.11".parse().unwrap();
+        assert!(long.hazy_match(&long));
+        assert!(!long.hazy_match(&"1.2".parse().unwrap()));
+        assert!(
+            "4.5"
+                .parse::<Version>()
+                .unwrap()
+                .hazy_match(&"4.5.3".parse().unwrap())
+        );
     }
 }

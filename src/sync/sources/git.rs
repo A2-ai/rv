@@ -6,12 +6,13 @@ use fs_err as fs;
 
 use crate::cache::Cache;
 use crate::events;
+use crate::fs::untar_archive;
 use crate::git::{GitReference, GitRemote};
 use crate::library::LocalMetadata;
 use crate::lockfile::Source;
 use crate::sync::LinkMode;
 use crate::sync::errors::SyncError;
-use crate::{Cancellation, CommandExecutor, RCmd, ResolvedDependency};
+use crate::{Cancellation, CommandExecutor, InstallRequest, RCmd, ResolvedDependency};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn install_package(
@@ -23,6 +24,7 @@ pub(crate) fn install_package(
     configure_args: &[String],
     strip: bool,
     cancellation: Arc<Cancellation>,
+    sandbox: Option<&Path>,
 ) -> Result<(), SyncError> {
     let (local_paths, global_paths) = cache.get_package_paths(&pkg.source, None, None);
 
@@ -53,18 +55,55 @@ pub(crate) fn install_package(
             _ => (local_paths.source, None),
         };
 
-        let output = events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
-            r_cmd.install(
+        let output = if sub_dir.is_some() {
+            let build_output_dir = tempfile::tempdir()?;
+            let tarball_path = r_cmd.build(
                 &source_path,
                 sub_dir,
+                build_output_dir.path(),
                 library_dirs,
-                &local_paths.binary,
-                cancellation,
+                cancellation.clone(),
                 &pkg.env_vars,
-                configure_args,
-                strip,
-            )
-        })?;
+                sandbox,
+            )?;
+
+            let untar_dir = tempfile::tempdir()?;
+            let (extracted_path, _) =
+                untar_archive(fs::read(&tarball_path)?.as_slice(), untar_dir.path(), false)?;
+            let source = extracted_path.unwrap_or_else(|| tarball_path.clone());
+
+            events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+                r_cmd.install(
+                    InstallRequest {
+                        source: &source,
+                        sub_folder: None,
+                        libraries: library_dirs,
+                        destination: &local_paths.binary,
+                        env_vars: &pkg.env_vars,
+                        configure_args,
+                        strip,
+                        sandbox,
+                    },
+                    cancellation,
+                )
+            })?
+        } else {
+            events::with_task(crate::sync::tasks::compile_task(&pkg.name), || {
+                r_cmd.install(
+                    InstallRequest {
+                        source: &source_path,
+                        sub_folder: None,
+                        libraries: library_dirs,
+                        destination: &local_paths.binary,
+                        env_vars: &pkg.env_vars,
+                        configure_args,
+                        strip,
+                        sandbox,
+                    },
+                    cancellation,
+                )
+            })?
+        };
 
         let log_path = cache.local().get_build_log_path(&pkg.source, None, None);
         if let Some(parent) = log_path.parent() {

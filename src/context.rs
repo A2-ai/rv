@@ -14,10 +14,12 @@ use crate::events;
 use crate::lockfile::Lockfile;
 use crate::package::Package;
 use crate::r_finder::find_r_install;
+use crate::sandbox::SandboxErrorKind;
 use crate::utils::create_spinner;
 use crate::{
-    Config, DiskCache, GitExecutor, Http, Library, RInstall, Repository, RepositoryDatabase,
-    Resolution, Resolver, SystemInfo, Version, get_package_file_urls, http, system_req,
+    Config, DiskCache, GitExecutor, Http, Library, RCmd, RInstall, Repository, RepositoryDatabase,
+    Resolution, Resolver, SandboxError, SystemInfo, Version, ensure_sandbox_exists,
+    get_package_file_urls, http, system_req,
 };
 
 /// Method on how to find the R Version on the system
@@ -31,6 +33,10 @@ pub enum RCommandLookup {
     /// Used when finding the RCommand is not required, primarily for information commands like
     /// cache, library, etc.
     Skip,
+    /// The user gave a specific path to use for R.
+    /// The R version set in config file will be ignored and we trust the user that they are passing
+    /// the path to an actual R executable.
+    Explicit(RInstall),
 }
 
 impl From<Option<Version>> for RCommandLookup {
@@ -97,22 +103,28 @@ impl Context {
         let r_version = match r_command_lookup {
             RCommandLookup::Strict | RCommandLookup::Skip => config.r_version().clone(),
             RCommandLookup::Soft(ref v) => v.clone(),
+            RCommandLookup::Explicit(ref r) => r.version.clone(),
         };
-        let r_cmd = match find_r_install(&r_version, config.use_devel()) {
-            Some(r_install) => r_install,
-            None => match r_command_lookup {
-                RCommandLookup::Strict => {
-                    return Err(format!(
-                        "Could not find an R version matching {}",
-                        r_version.original
-                    )
-                    .into());
-                }
-                RCommandLookup::Soft(_) => {
-                    r_version_found = false;
-                    RInstall::default_from_path()
-                }
-                RCommandLookup::Skip => RInstall::default_from_path(),
+
+        let r_cmd = match r_command_lookup {
+            RCommandLookup::Explicit(r) => r,
+            _ => match find_r_install(&r_version, config.use_devel()) {
+                Some(r_install) => r_install,
+                None => match r_command_lookup {
+                    RCommandLookup::Strict => {
+                        return Err(format!(
+                            "Could not find an R version matching {}",
+                            r_version.original
+                        )
+                        .into());
+                    }
+                    RCommandLookup::Soft(_) => {
+                        r_version_found = false;
+                        RInstall::default_from_env_path()
+                    }
+                    RCommandLookup::Skip => RInstall::default_from_env_path(),
+                    RCommandLookup::Explicit(_) => unreachable!(),
+                },
             },
         };
 
@@ -123,23 +135,6 @@ impl Context {
         };
 
         let project_dir = config_file.parent().unwrap().to_path_buf();
-        let lockfile_path = project_dir.join(config.lockfile_name());
-        let lockfile = if lockfile_path.exists() && config.use_lockfile() {
-            if let Some(lockfile) = Lockfile::load(&lockfile_path)? {
-                if !lockfile.r_version().hazy_match(&r_version) {
-                    log::debug!(
-                        "R version in config file and lockfile are not compatible. Ignoring lockfile."
-                    );
-                    None
-                } else {
-                    Some(lockfile)
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
 
         let mut library = if let Some(p) = config.library() {
             Library::new_custom(&project_dir, p)
@@ -159,19 +154,58 @@ impl Context {
             HashMap::new()
         };
 
-        Ok(Self {
+        let mut context = Self {
             config,
             cache,
             r_version,
             project_dir,
             library,
-            lockfile,
+            lockfile: None,
             databases: Vec::new(),
             r_cmd,
             builtin_packages,
             system_dependencies: HashMap::new(),
             show_progress_bar: false,
-        })
+        };
+
+        // The lockfile is only in play if the effective R version matches the config
+        // (it can differ via --r-bin/--r-version) and the lockfile itself agrees with it.
+        let lockfile_path = context.lockfile_path();
+        if lockfile_path.exists()
+            && context.config.use_lockfile()
+            && context.r_matches_config()
+            && let Some(lockfile) = Lockfile::load(&lockfile_path)?
+        {
+            if lockfile.r_version().hazy_match(&context.r_version) {
+                context.lockfile = Some(lockfile);
+            } else {
+                log::debug!(
+                    "R version in config file and lockfile are not compatible. Ignoring lockfile."
+                );
+            }
+        }
+
+        Ok(context)
+    }
+
+    /// Whether the effective R version hazy-matches the one in the config.
+    /// It can be false if the user is using `--r-version` and/or `--r-bin`
+    pub fn r_matches_config(&self) -> bool {
+        self.config.r_version().hazy_match(&self.r_version)
+    }
+
+    /// The system library sandbox for this project, built if missing.
+    /// Returns `Ok(None)` if the sandbox is not enabled.
+    pub fn sandbox(&self) -> Result<Option<PathBuf>, SandboxError> {
+        if !self.config.sandbox_enabled() {
+            return Ok(None);
+        }
+
+        let library = self.r_cmd.get_r_library().map_err(|e| SandboxError {
+            source: SandboxErrorKind::LibraryNotFound(e),
+        })?;
+
+        Ok(Some(ensure_sandbox_exists(&library, &self.cache)?))
     }
 
     /// Enable progress bar display for long-running operations
@@ -234,6 +268,7 @@ impl Context {
             &self.project_dir,
             &self.databases,
             self.config.repositories().iter().map(|x| x.url()).collect(),
+            self.config.bioc_repo_urls(),
             &self.r_version,
             &self.builtin_packages,
             lockfile.as_ref(),
@@ -296,6 +331,16 @@ pub fn load_databases(
     Ok(dbs)
 }
 
+// r-universe 404s on `//api/packages`, so trim before joining.
+fn runiverse_api_url(base: &str) -> Result<Url, String> {
+    format!(
+        "{}/{RUNIVERSE_PACKAGES_API_PATH}",
+        base.trim_end_matches('/')
+    )
+    .parse::<Url>()
+    .map_err(|e| format!("Invalid URL: {e}"))
+}
+
 fn load_single_database(
     r: &Repository,
     cache: &DiskCache,
@@ -322,9 +367,7 @@ fn load_single_database(
         log::debug!("Need to download R-Universe packages API for {}", r.url());
         let mut db = RepositoryDatabase::new(r.url());
         let mut r_universe_api = Vec::new();
-        let api_url = format!("{}/{RUNIVERSE_PACKAGES_API_PATH}", r.url())
-            .parse::<Url>()
-            .map_err(|e| format!("Invalid URL: {e}"))?;
+        let api_url = runiverse_api_url(r.url())?;
 
         let bytes_read = http::download(&api_url, &mut r_universe_api, Vec::new())?;
 
@@ -398,5 +441,28 @@ fn load_single_database(
         db.persist(&path)?;
         log::debug!("Saving packages db at {path:?}");
         Ok(db)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runiverse_api_url_has_single_slash() {
+        for base in [
+            "https://stan-dev.r-universe.dev",
+            "https://stan-dev.r-universe.dev/",
+        ] {
+            assert_eq!(
+                runiverse_api_url(base).unwrap().as_str(),
+                "https://stan-dev.r-universe.dev/api/packages"
+            );
+        }
+        let parsed = Url::parse("https://stan-dev.r-universe.dev").unwrap();
+        assert_eq!(
+            runiverse_api_url(parsed.as_str()).unwrap().as_str(),
+            "https://stan-dev.r-universe.dev/api/packages"
+        );
     }
 }

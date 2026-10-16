@@ -1,0 +1,12 @@
+# MASS is a builtin (recommended) package, but if the user lists it from git
+# we must use the git source and not the builtin one
+[project]
+name = "builtin-from-git"
+r_version = "4.4"
+repositories = []
+dependencies = [
+    { name = "MASS", git = "https://github.com/dummy/MASS", branch = "main" },
+]
+---
+repos = []
+---

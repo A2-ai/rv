@@ -290,6 +290,10 @@ pub struct Tree<'a> {
 }
 
 impl Tree<'_> {
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     pub fn print(&self, max_depth: Option<usize>, show_sys_deps: bool) {
         for (i, tree) in self.nodes.iter().enumerate() {
             let dup_marker = if tree.is_duplicate { " (*)" } else { "" };
@@ -323,17 +327,125 @@ impl Tree<'_> {
     }
 }
 
+fn dependents_by_name<'d>(
+    resolved_deps: &'d [ResolvedDependency],
+) -> HashMap<&'d str, Vec<&'d ResolvedDependency<'d>>> {
+    let mut out: HashMap<_, Vec<&'d ResolvedDependency>> = HashMap::new();
+    for dep in resolved_deps {
+        for name in dep.all_dependencies_names() {
+            out.entry(name).or_default().push(dep);
+        }
+    }
+    for dependents in out.values_mut() {
+        dependents.sort_unstable_by_key(|d| d.name.as_ref());
+    }
+    out
+}
+
+fn recursive_dependent_finder<'d>(
+    dep: &'d ResolvedDependency,
+    dependents: &HashMap<&'d str, Vec<&'d ResolvedDependency<'d>>>,
+    context: &'d Context,
+    ancestors: &mut Vec<&'d str>,
+    visited: &mut HashSet<&'d str>,
+) -> TreeNode<'d> {
+    let name = dep.name.as_ref();
+    let sys_deps = context.system_dependencies.get(name);
+
+    if ancestors.contains(&name) {
+        return TreeNode::resolved(name, dep, sys_deps, vec![]);
+    }
+
+    if visited.contains(name) {
+        return TreeNode::duplicate(name, dep, sys_deps);
+    }
+    visited.insert(name);
+
+    ancestors.push(name);
+    let children = dependents
+        .get(name)
+        .map(|found| {
+            found
+                .iter()
+                .map(|d| recursive_dependent_finder(d, dependents, context, ancestors, visited))
+                .collect()
+        })
+        .unwrap_or_default();
+    ancestors.pop();
+
+    TreeNode::resolved(name, dep, sys_deps, children)
+}
+
+fn inverted_tree<'d>(
+    target: &str,
+    resolved_deps: &'d [ResolvedDependency],
+    unresolved_deps_by_name: &HashMap<&'d str, &'d UnresolvedDependency>,
+    context: &'d Context,
+) -> Vec<TreeNode<'d>> {
+    let dependents = dependents_by_name(resolved_deps);
+    let mut ancestors = Vec::new();
+    let mut visited = HashSet::new();
+
+    if let Some(dep) = resolved_deps.iter().find(|d| d.name.as_ref() == target) {
+        return vec![recursive_dependent_finder(
+            dep,
+            &dependents,
+            context,
+            &mut ancestors,
+            &mut visited,
+        )];
+    }
+
+    // A package can be depended on without being resolved itself, so it still gets a tree
+    let Some((name, unresolved)) = unresolved_deps_by_name.get_key_value(target) else {
+        return Vec::new();
+    };
+    let mut node = TreeNode::unresolved(
+        name,
+        Some(unresolved),
+        context.system_dependencies.get(*name),
+    );
+    visited.insert(*name);
+    ancestors.push(*name);
+    node.children = dependents
+        .get(*name)
+        .map(|found| {
+            found
+                .iter()
+                .map(|d| {
+                    recursive_dependent_finder(
+                        d,
+                        &dependents,
+                        context,
+                        &mut ancestors,
+                        &mut visited,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    vec![node]
+}
+
 pub fn tree<'a>(
     context: &'a Context,
     resolved_deps: &'a [ResolvedDependency],
     unresolved_deps: &'a [UnresolvedDependency],
+    invert_target: Option<&str>,
 ) -> Tree<'a> {
-    let deps_by_name: HashMap<_, _> = resolved_deps.iter().map(|d| (d.name.as_ref(), d)).collect();
     let unresolved_deps_by_name: HashMap<_, _> = unresolved_deps
         .iter()
         .map(|d| (d.name.as_ref(), d))
         .collect();
 
+    if let Some(target) = invert_target {
+        return Tree {
+            nodes: inverted_tree(target, resolved_deps, &unresolved_deps_by_name, context),
+        };
+    }
+
+    let deps_by_name: HashMap<_, _> = resolved_deps.iter().map(|d| (d.name.as_ref(), d)).collect();
     let mut nodes = Vec::new();
     let mut visited: HashSet<&str> = HashSet::new();
 

@@ -1,0 +1,9 @@
+---
+source: src/resolver/mod.rs
+expression: out
+---
+rv.git.pkgD=0.0.1 (repository(url: http://repo1/), type=source, path='', from_lockfile=false, from_remote=false, env_vars=[])
+--- unresolved --- 
+rv.git.pkgA [listed in rproject.toml]: typo-dir doesn't exist.
+--- requirement failures --- 
+rv.git.pkgA : rv.git.pkgD requires (>= 0.0.5)

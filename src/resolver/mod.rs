@@ -5,7 +5,6 @@ use fs_err as fs;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use url::Url;
 
 mod dependency;
@@ -36,19 +35,15 @@ pub(crate) struct QueueItem<'d> {
     parent: Option<Cow<'d, str>>,
     remote: Option<PackageRemote>,
     local_path: Option<PathBuf>,
+    directory: Option<String>,
     // Only for top level dependencies. Checks whether the config dependency is matching
     // what we have in the lockfile, we have one.
     matching_in_lockfile: Option<bool>,
+    // Only for top level URL dependencies with a matching lockfile entry: the sha of the tarball
+    locked_sha: Option<&'d str>,
 }
 
 impl<'d> QueueItem<'d> {
-    fn has_required_repo(&self) -> bool {
-        self.dep.is_some_and(|d| match d {
-            ConfigDependency::Detailed { repository, .. } => repository.is_some(),
-            _ => false,
-        })
-    }
-
     fn name_and_parent_only(name: Cow<'d, str>, parent: Cow<'d, str>) -> Self {
         Self {
             name,
@@ -99,6 +94,9 @@ pub struct Resolver<'d> {
     repositories: &'d [(RepositoryDatabase, bool)],
     /// We might not have loaded the databases but we still want their urls
     repo_urls: HashSet<&'d str>,
+    /// The urls of the repositories expanded from the bioconductor shorthand.
+    /// Dependencies with `bioconductor = true` are only looked up in those.
+    bioc_repo_urls: HashSet<&'d str>,
     r_version: &'d Version,
     /// The base + recommended package versions for the R version we are using
     builtin_packages: &'d HashMap<String, Package>,
@@ -112,10 +110,12 @@ pub struct Resolver<'d> {
 }
 
 impl<'d> Resolver<'d> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project_dir: impl AsRef<Path>,
         repositories: &'d [(RepositoryDatabase, bool)],
         repo_urls: HashSet<&'d str>,
+        bioc_repo_urls: HashSet<&'d str>,
         r_version: &'d Version,
         builtin_packages: &'d HashMap<String, Package>,
         lockfile: Option<&'d Lockfile>,
@@ -125,6 +125,7 @@ impl<'d> Resolver<'d> {
             project_dir: project_dir.as_ref().into(),
             repositories,
             repo_urls,
+            bioc_repo_urls,
             r_version,
             lockfile,
             builtin_packages,
@@ -142,9 +143,15 @@ impl<'d> Resolver<'d> {
         item: &QueueItem<'d>,
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let local_path = item.local_path.as_ref().unwrap();
+        let directory = item.directory.clone();
         let canon_path = match fs::canonicalize(self.project_dir.join(local_path)) {
             Ok(canon_path) => canon_path,
             Err(_) => return Err(format!("{} doesn't exist.", local_path.display()).into()),
+        };
+
+        let join_directory = |base: PathBuf| match &directory {
+            Some(dir) => base.join(dir),
+            None => base,
         };
 
         let (package, sha) = if canon_path.is_file() {
@@ -154,12 +161,17 @@ impl<'d> Resolver<'d> {
             let (path, hash) =
                 untar_archive(fs::read(&canon_path)?.as_slice(), tempdir.path(), true)?;
             (
-                parse_description_file_in_folder(path.unwrap_or_else(|| canon_path.clone()))?,
+                parse_description_file_in_folder(join_directory(
+                    path.unwrap_or_else(|| canon_path.clone()),
+                ))?,
                 hash,
             )
         } else if canon_path.is_dir() {
             // we have a folder
-            (parse_description_file_in_folder(&canon_path)?, None)
+            (
+                parse_description_file_in_folder(join_directory(canon_path.clone()))?,
+                None,
+            )
         } else {
             unreachable!()
         };
@@ -179,6 +191,7 @@ impl<'d> Resolver<'d> {
             Source::Local {
                 path: local_path.clone(),
                 sha,
+                directory,
             },
             item.install_suggestions,
             canon_path,
@@ -202,20 +215,29 @@ impl<'d> Resolver<'d> {
             .lockfile
             .and_then(|l| l.get_package(&item.name, item.dep))
         {
+            let status = cache.get_installation_status(
+                &item.name,
+                &package.version.original,
+                &package.source,
+            );
+
             // For some type of packages we will always refresh directly from the source
-            // eg a branch might have added commits
+            // eg a branch might have added commits.
             if package.source.could_have_changed() {
-                return None;
+                // For a URL the content might have changed but if we have the tarball sha in the cache,
+                // we will use it what's available already.
+                let pinned_and_cached = package.source.is_url()
+                    && (status.local.source_available() || status.binary_available());
+                if !pinned_and_cached {
+                    return None;
+                }
             }
 
             if let Some(req) = &item.version_requirement
-                && !req.is_satisfied(&Version::from_str(&package.version).unwrap())
+                && !req.is_satisfied(&package.version)
             {
                 return None;
             }
-
-            let installation_status =
-                cache.get_installation_status(&item.name, &package.version, &package.source);
 
             // We search first in the repo for whether we have source or binary since
             // we don't record that info in the lockfile
@@ -232,9 +254,10 @@ impl<'d> Resolver<'d> {
                         if *repo_force_source {
                             PackageType::Source
                         } else {
-                            let version_req =
-                                VersionRequirement::from_str(&format!("(== {})", package.version))
-                                    .unwrap();
+                            let version_req = VersionRequirement::new(
+                                package.version.clone(),
+                                crate::package::Operator::Equal,
+                            );
 
                             let has_binary = repo
                                 .find_package(
@@ -263,8 +286,7 @@ impl<'d> Resolver<'d> {
                 // url/git/local are probably source packages
                 PackageType::Source
             };
-            let resolved_dep =
-                ResolvedDependency::from_locked_package(package, installation_status, kind);
+            let resolved_dep = ResolvedDependency::from_locked_package(package, status, kind);
 
             let items = package
                 .dependencies
@@ -290,11 +312,15 @@ impl<'d> Resolver<'d> {
         cache: &'d Cache,
     ) -> Option<(ResolvedDependency<'d>, Vec<QueueItem<'d>>)> {
         let repository = item.dep.as_ref().and_then(|c| c.r_repository());
+        let bioc_only = item.dep.as_ref().is_some_and(|c| c.bioconductor());
 
         for (repo, repo_source_only) in self.repositories {
             if let Some(r) = repository
                 && repo.url != r
             {
+                continue;
+            }
+            if bioc_only && !self.bioc_repo_urls.contains(repo.url.as_str()) {
                 continue;
             }
             let force_source = if let Some(source) = item.force_source {
@@ -423,6 +449,14 @@ impl<'d> Resolver<'d> {
     ) -> Result<(ResolvedDependency<'d>, Vec<QueueItem<'d>>), Box<dyn std::error::Error>> {
         let out_path = cache.local().get_url_download_path(url);
         let (dir, sha) = http_downloader.download_and_untar(url, &out_path, true, None)?;
+        if let Some(locked_sha) = item.locked_sha
+            && locked_sha != sha
+        {
+            return Err(format!(
+                "The URL {url} has different content than what is recorded in the lockfile (checksum mismatch). \
+                Run `rv upgrade` to accept the new content and update the lockfile."
+            ).into());
+        }
 
         let install_path = dir.unwrap_or_else(|| out_path.clone());
         let package = parse_description_file_in_folder(&install_path)?;
@@ -434,6 +468,12 @@ impl<'d> Resolver<'d> {
             .into());
         }
         let is_binary = is_binary_package(&install_path, &package.name)?;
+        let source = Source::Url {
+            url: url.clone(),
+            sha,
+        };
+        let status =
+            cache.get_installation_status(&package.name, &package.version.original, &source);
         let (resolved_dep, deps) = ResolvedDependency::from_url_package(
             &package,
             if is_binary {
@@ -441,11 +481,9 @@ impl<'d> Resolver<'d> {
             } else {
                 PackageType::Source
             },
-            Source::Url {
-                url: url.clone(),
-                sha,
-            },
+            source,
             item.install_suggestions,
+            status,
         );
         Ok(prepare_deps!(resolved_dep, deps, item.matching_in_lockfile))
     }
@@ -486,14 +524,16 @@ impl<'d> Resolver<'d> {
         let mut result = Resolution::default();
         let mut processed: HashMap<String, HashSet<Option<Cow<'d, VersionRequirement>>>> =
             HashMap::with_capacity(dependencies.len() * 10);
-        // Top level dependencies can require specific repos.
+
+        // Top level dependencies can require specific sources.
         // We should not try to resolve those from anywhere else even if they dependencies of other
         // packages
-        let repo_required: HashSet<_> = dependencies
+        let has_source_specified: HashSet<_> = dependencies
             .iter()
-            .filter(|d| d.r_repository().is_some())
+            .filter(|d| d.has_source_specified())
             .map(|d| d.name())
             .collect();
+
         let dependencies_only: HashSet<_> = dependencies
             .iter()
             .filter(|d| d.dependencies_only())
@@ -511,26 +551,31 @@ impl<'d> Resolver<'d> {
 
         let mut queue: VecDeque<_> = dependencies
             .iter()
-            .map(|d| QueueItem {
-                name: Cow::Borrowed(d.name()),
-                dep: Some(d),
-                version_requirement: None,
-                install_suggestions: d.install_suggestions(),
-                force_source: d.force_source(),
-                parent: None,
-                remote: None,
-                local_path: d.local_path(),
-                matching_in_lockfile: self.lockfile.and_then(|l| {
-                    l.get_package(d.name(), Some(d))
-                        .map(|p| p.is_matching(d, &self.repo_urls))
-                }),
+            .map(|d| {
+                let locked = self.lockfile.and_then(|l| l.get_package(d.name(), Some(d)));
+                QueueItem {
+                    name: Cow::Borrowed(d.name()),
+                    dep: Some(d),
+                    version_requirement: None,
+                    install_suggestions: d.install_suggestions(),
+                    force_source: d.force_source(),
+                    parent: None,
+                    remote: None,
+                    local_path: d.local_path(),
+                    directory: d.directory(),
+                    matching_in_lockfile: locked.map(|p| p.is_matching(d, &self.repo_urls)),
+                    locked_sha: locked.and_then(|p| match &p.source {
+                        Source::Url { sha, .. } => Some(sha.as_str()),
+                        _ => None,
+                    }),
+                }
             })
             .collect();
 
         while let Some(mut item) = queue.pop_front() {
             if let Some(ver_reqs) = processed.get(item.name.as_ref()) {
-                // If we have already found that dependency and it has a forced repo, skip it
-                if repo_required.contains(item.name.as_ref()) {
+                // If we have already found that dependency and it has a forced source, skip it
+                if has_source_specified.contains(item.name.as_ref()) {
                     continue;
                 }
 
@@ -556,9 +601,16 @@ impl<'d> Resolver<'d> {
                         queue.extend(items);
                         continue;
                     }
-                    Err(e) => result
-                        .failed
-                        .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}"))),
+                    Err(e) => {
+                        processed
+                            .entry(item.name.to_string())
+                            .or_default()
+                            .insert(item.version_requirement.clone());
+
+                        result
+                            .failed
+                            .push(UnresolvedDependency::from_item(&item).with_error(format!("{e}")))
+                    }
                 }
                 continue;
             }
@@ -575,8 +627,8 @@ impl<'d> Resolver<'d> {
             }
 
             // Then let's check if it's a builtin package if the R version is matching if the package
-            // is not listed from a specific repo
-            if !item.has_required_repo()
+            // is not listed from a specific source
+            if !has_source_specified.contains(item.name.as_ref())
                 && let Some((resolved_dep, items)) = self.builtin_lookup(&item)
             {
                 processed
@@ -821,6 +873,8 @@ mod tests {
     #[derive(Debug, Deserialize)]
     struct TestRepo {
         name: String,
+        // Defaults to http://{name}/ if not set
+        url: Option<String>,
         source: Option<String>,
         binary: Option<String>,
         force_source: bool,
@@ -842,7 +896,8 @@ mod tests {
         let repositories = if let Ok(data) = toml::from_str::<TestRepositories>(parts[1]) {
             let mut res = Vec::new();
             for r in data.repos {
-                let mut repo = RepositoryDatabase::new(&format!("http://{}/", r.name));
+                let url = r.url.unwrap_or_else(|| format!("http://{}/", r.name));
+                let mut repo = RepositoryDatabase::new(&url);
                 if let Some(p) = r.source {
                     repo.source_packages = dbs[&p].clone();
                 }
@@ -860,7 +915,7 @@ mod tests {
             vec![(repo, false)]
         };
         let lockfile = if parts[2].is_empty() {
-            Lockfile::new(&r_version.original)
+            Lockfile::new(&r_version)
         } else {
             Lockfile::from_str(parts[2]).expect("valid lockfile")
         };
@@ -879,6 +934,8 @@ mod tests {
             ("clindata", "https://github.com/Gilead-BioStats/clindata"),
             ("gsm.app", "https://github.com/Gilead-BioStats/gsm.app"),
             ("missing.remote", "https://github.com/dummy/missing.remote"),
+            ("rv.git.pkgA", "https://github.com/dummy/rv.git.pkgA"),
+            ("MASS", "https://github.com/dummy/MASS"),
         ];
 
         for (dep, url) in &remotes {
@@ -960,6 +1017,7 @@ mod tests {
                 Path::new("."),
                 &repositories,
                 repositories.iter().map(|(x, _)| x.url.as_str()).collect(),
+                config.bioc_repo_urls(),
                 &r_version,
                 &builtin_packages,
                 Some(&lockfile),

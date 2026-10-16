@@ -12,7 +12,7 @@ pub use info::CacheInfo;
 pub use status::{CacheStatus, InstallationStatus};
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct Cache {
@@ -103,6 +103,15 @@ impl Cache {
         self.global.as_ref()
     }
 
+    pub fn get_sandbox_paths(&self, library_path: &Path) -> (PathBuf, Option<PathBuf>) {
+        let local = self.local.get_sandbox_dir(library_path);
+        let global = self
+            .global
+            .as_ref()
+            .map(|g| g.get_sandbox_dir(library_path));
+        (local, global)
+    }
+
     pub fn get_package_paths(
         &self,
         source: &Source,
@@ -115,5 +124,9 @@ impl Cache {
             .as_ref()
             .map(|x| x.get_package_paths(source, pkg_name, version));
         (local, global)
+    }
+
+    pub fn script_path(&self, sha: &str) -> PathBuf {
+        self.local.get_script_path(sha)
     }
 }

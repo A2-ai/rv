@@ -105,3 +105,111 @@ fn run_sanitizes_r_env() {
         "R_INCLUDE_DIR should have been removed"
     );
 }
+
+#[test]
+fn run_self_contained_works() {
+    let cache = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let script =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scripts/self_contained.R");
+
+    let mut cmd = cargo::cargo_bin_cmd!();
+    cmd.current_dir(cwd.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
+    cmd.args(["run", script.to_str().unwrap()]);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("SELF_CONTAINED_OK"),);
+
+    assert!(cache.path().join("scripts").exists());
+}
+
+#[test]
+fn run_self_contained_ignores_ambient_project() {
+    let cache = TempDir::new().unwrap();
+    let temp = TempDir::new().unwrap();
+    // An ambient rv project pointing at a much more recent repository than the script does.
+    fs::write(
+        temp.path().join("rproject.toml"),
+        r#"[project]
+name = "ambient"
+r_version = "4.5"
+repositories = [
+    { alias = "posit", url = "https://packagemanager.posit.co/cran/2025-05-12/" },
+]
+dependencies = ["glue"]
+"#,
+    )
+    .unwrap();
+    // ... and activated, so its `.Rprofile` sources the rv activate script, which would
+    // otherwise point `.libPaths()` and the repositories at the project.
+    let mut activate = cargo::cargo_bin_cmd!();
+    activate.current_dir(temp.path());
+    activate.env("RV_CACHE_DIR", cache.path());
+    activate.arg("activate");
+    assert!(activate.output().unwrap().status.success());
+
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/scripts/self_contained_in_project.R");
+
+    let mut cmd = cargo::cargo_bin_cmd!();
+    cmd.current_dir(temp.path());
+    cmd.env("RV_CACHE_DIR", cache.path());
+    // The activate script shells out to whatever `rv` is on the PATH, so the binary under test
+    // has to be there for this to exercise anything
+    cmd.env("PATH", path_with_rv());
+    cmd.args(["run", script.to_str().unwrap()]);
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // glue 1.6.2 is what the 2023-06-01 snapshot has; the ambient project would give 1.8.x
+    assert!(stdout.contains("VERSION: 1.6.2"));
+    // and it must load from the script library in the cache, not the project library
+    let scripts_dir = cache.path().join("scripts");
+    assert!(scripts_dir.exists());
+    let library_line = stdout
+        .lines()
+        .find(|l| l.starts_with("LIBRARY:"))
+        .expect("no LIBRARY line in output");
+    let expected = normalize_path(&scripts_dir);
+    assert!(
+        normalize_path_str(library_line).contains(&expected),
+        "expected {expected} in {library_line}"
+    );
+    // Activation created `rv/scripts`, but nothing resolved into a project library
+    assert!(!temp.path().join("rv").join("library").exists());
+}
+
+/// For Windows
+fn normalize_path(p: &std::path::Path) -> String {
+    let canonical = fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    normalize_path_str(&canonical.to_string_lossy())
+}
+
+fn normalize_path_str(p: &str) -> String {
+    let p = p.replace('\\', "/");
+    let p = p.strip_prefix("//?/").unwrap_or(&p);
+    if cfg!(windows) {
+        p.to_lowercase()
+    } else {
+        p.to_string()
+    }
+}
+
+/// A generated activate script calls whatever `rv` is on the PATH, so the binary under test has
+/// to be there or it warns and does nothing, and the activated tests would pass on a no-op.
+fn path_with_rv() -> std::ffi::OsString {
+    let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_rv"));
+    let mut dirs = vec![binary.parent().unwrap().to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&existing));
+    }
+    std::env::join_paths(dirs).unwrap()
+}

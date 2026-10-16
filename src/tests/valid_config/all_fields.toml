@@ -14,6 +14,7 @@ suggests = []
 repositories = [
     { alias = "cran", url = "https://cran.r-project.org"},
     { alias = "mpn", url = "https://mpn.metworx.com/snapshots/stable/2020-09-20"},
+    { bioconductor = "3.21"}
 ]
 
 dependencies = [
