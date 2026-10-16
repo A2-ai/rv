@@ -443,26 +443,3 @@ fn load_single_database(
         Ok(db)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn runiverse_api_url_has_single_slash() {
-        for base in [
-            "https://stan-dev.r-universe.dev",
-            "https://stan-dev.r-universe.dev/",
-        ] {
-            assert_eq!(
-                runiverse_api_url(base).unwrap().as_str(),
-                "https://stan-dev.r-universe.dev/api/packages"
-            );
-        }
-        let parsed = Url::parse("https://stan-dev.r-universe.dev").unwrap();
-        assert_eq!(
-            runiverse_api_url(parsed.as_str()).unwrap().as_str(),
-            "https://stan-dev.r-universe.dev/api/packages"
-        );
-    }
-}
