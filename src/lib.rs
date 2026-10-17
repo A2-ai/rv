@@ -1,5 +1,6 @@
 mod activate;
 mod bioc;
+mod build_source;
 mod cache;
 mod cancellation;
 #[cfg(feature = "cli")]

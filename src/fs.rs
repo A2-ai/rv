@@ -42,7 +42,7 @@ fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
 /// Copies the mtime of a file onto its copy.
 /// It can fail on Windows because it requires write which can have issues with some files
 /// but let it continue either way
-fn preserve_mtime(destination: &Path, metadata: &Metadata) {
+pub(crate) fn preserve_mtime(destination: &Path, metadata: &Metadata) {
     let mtime = FileTime::from_last_modification_time(metadata);
     if let Err(e) = filetime::set_file_mtime(destination, mtime) {
         log::debug!(
