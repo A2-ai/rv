@@ -675,8 +675,9 @@ impl RCmd for RInstall {
             source: RCmdErrorKind::StartupFiles(e),
         })?;
 
-        // Only ordinary source packages use selective staging. A monorepo bootstrap
-        // may need parent files, so preserve its existing whole-repo handling.
+        // Only ordinary source packages are staged without never-bundled entries.
+        // A monorepo bootstrap may need parent files, so preserve its existing
+        // whole-repo handling.
         let staged_source = if sub_folder.is_none() {
             crate::build_source::prepare(source_dir)
                 .map_err(|e| RCmdError::from_fs_io(e, source_dir))?

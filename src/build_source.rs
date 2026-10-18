@@ -1,9 +1,10 @@
-//! Prepare ordinary local packages without walking their ignored rv state.
+//! Prepare ordinary local packages without walking state that never belongs in them.
 //!
 //! R CMD build copies the entire source (dereferencing symlinks) before applying
-//! .Rbuildignore. Recognize only literal, anchored exclusions of rv or its
-//! library here. Keep rv/scripts and leave every other exclusion to R, since
-//! ignored files can be build-script inputs.
+//! .Rbuildignore. The rv project directory (notably rv/library, which links every
+//! installed dependency), VCS metadata and Python virtual environments are never
+//! package content, so they are pruned unconditionally before R sees the source.
+//! Every other exclusion is left to R, since ignored files can be build-script inputs.
 
 use std::path::{Path, PathBuf};
 
@@ -11,15 +12,11 @@ use fs_err as fs;
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use crate::consts::{LIBRARY_ROOT_DIR_NAME, RV_DIR_NAME};
+use crate::consts::RV_DIR_NAME;
 use crate::fs::preserve_mtime;
 
-fn excludes_library(contents: &[u8]) -> bool {
-    contents.split(|byte| *byte == b'\n').any(|line| {
-        let line = line.strip_suffix(b"\r").unwrap_or(line);
-        line.eq_ignore_ascii_case(b"^rv$") || line.eq_ignore_ascii_case(b"^rv/library$")
-    })
-}
+/// Top-level entries of a package source that are never bundled.
+const PRUNED_ENTRIES: [&str; 3] = [RV_DIR_NAME, ".git", ".venv"];
 
 /// The guard owns the scratch tree until R has finished reading it.
 pub(crate) struct BuildSource {
@@ -28,29 +25,23 @@ pub(crate) struct BuildSource {
 }
 
 pub(crate) fn prepare(source: &Path) -> Result<Option<BuildSource>, std::io::Error> {
-    if !source
-        .join(RV_DIR_NAME)
-        .join(LIBRARY_ROOT_DIR_NAME)
-        .is_dir()
-    {
-        return Ok(None);
-    }
-    let ignore = match fs::read(source.join(".Rbuildignore")) {
-        Ok(contents) => contents,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    if !excludes_library(&ignore) {
+    let pruned: Vec<PathBuf> = PRUNED_ENTRIES
+        .iter()
+        .map(|name| source.join(name))
+        .filter(|path| path.symlink_metadata().is_ok())
+        .collect();
+    if pruned.is_empty() {
         return Ok(None);
     }
 
     let scratch = tempfile::tempdir()?;
     let path = scratch.path().join(source.file_name().unwrap_or_default());
-    copy_source(source, &path)?;
+    copy_source(source, &path, &pruned)?;
     log::debug!(
-        "Staged {} in {}, pruning rv/library as excluded by .Rbuildignore",
+        "Staged {} in {}, pruning {:?}",
         source.display(),
-        path.display()
+        path.display(),
+        pruned
     );
     Ok(Some(BuildSource {
         _scratch: scratch,
@@ -58,15 +49,18 @@ pub(crate) fn prepare(source: &Path) -> Result<Option<BuildSource>, std::io::Err
     }))
 }
 
-fn copy_source(source: &Path, destination: &Path) -> Result<(), std::io::Error> {
+fn copy_source(
+    source: &Path,
+    destination: &Path,
+    pruned: &[PathBuf],
+) -> Result<(), std::io::Error> {
     let mut directories = Vec::new();
-    let library = source.join(RV_DIR_NAME).join(LIBRARY_ROOT_DIR_NAME);
     // Like R's cp -LR, materialize retained symlinks. Preserving relative links
     // while relocating the source would silently change their targets.
     for entry in WalkDir::new(source)
         .follow_links(true)
         .into_iter()
-        .filter_entry(|entry| entry.path() != library.as_path())
+        .filter_entry(|entry| !pruned.iter().any(|path| path == entry.path()))
     {
         let entry = entry?;
         let target = destination.join(entry.path().strip_prefix(source).unwrap());
@@ -95,34 +89,24 @@ mod tests {
     use std::fs::Permissions;
 
     #[test]
-    fn recognizes_only_the_literal_rule() {
-        for contents in [
-            b"^rv$".as_slice(),
-            b"^RV$\r\n",
-            b"^other$\n^rv$\n",
-            b"^rv/library$\n",
-        ] {
-            assert!(excludes_library(contents));
-        }
-        for contents in [
-            b"^rv/".as_slice(),
-            b"rv",
-            b" ^rv$",
-            b"^rv$ ",
-            b"^(rv)$",
-            b"# ^rv$",
-        ] {
-            assert!(!excludes_library(contents));
-        }
+    fn leaves_sources_without_pruned_entries_to_r() {
+        let source = tempfile::tempdir().unwrap();
+        fs::create_dir_all(source.path().join("R")).unwrap();
+        fs::create_dir_all(source.path().join("inst/rv")).unwrap();
+        assert!(prepare(source.path()).unwrap().is_none());
     }
 
     #[test]
-    fn leaves_unrecognized_or_missing_exclusions_to_r() {
+    fn prunes_regardless_of_rbuildignore() {
         let source = tempfile::tempdir().unwrap();
-        fs::create_dir_all(source.path().join("rv/library")).unwrap();
-        assert!(prepare(source.path()).unwrap().is_none());
-        fs::write(source.path().join(".Rbuildignore"), "^rv/\n").unwrap();
-        assert!(prepare(source.path()).unwrap().is_none());
+        fs::create_dir_all(source.path().join("R")).unwrap();
+        fs::create_dir_all(source.path().join(".venv/bin")).unwrap();
+        // A worktree or submodule has a .git file rather than a directory.
+        fs::write(source.path().join(".git"), "gitdir: elsewhere").unwrap();
+        let staged = prepare(source.path()).unwrap().unwrap();
+        assert!(staged.path.join("R").is_dir());
+        assert!(!staged.path.join(".venv").exists());
+        assert!(!staged.path.join(".git").exists());
     }
 
     #[cfg(unix)]
@@ -133,21 +117,22 @@ mod tests {
         let source = root.path().join("pkg");
         fs::create_dir_all(source.join("rv/library")).unwrap();
         fs::create_dir_all(source.join("rv/scripts")).unwrap();
+        fs::create_dir_all(source.join(".git/objects")).unwrap();
         fs::create_dir_all(source.join("inst/rv")).unwrap();
         fs::create_dir_all(source.join("tools")).unwrap();
-        fs::write(source.join(".Rbuildignore"), "^rv$\n^tools$\n").unwrap();
+        fs::write(source.join(".Rbuildignore"), "^tools$\n").unwrap();
         fs::write(source.join("tools/input"), "build input").unwrap();
         fs::write(source.join("inst/rv/keep"), "nested rv").unwrap();
-        fs::write(source.join("rv/scripts/activate.R"), "build helper").unwrap();
+        fs::write(source.join("rv/scripts/activate.R"), "rv helper").unwrap();
         fs::write(root.path().join("shared"), "outside source").unwrap();
         fs::set_permissions(root.path().join("shared"), Permissions::from_mode(0o755)).unwrap();
         symlink("../shared", source.join("configure")).unwrap();
-        // A walk entering the ignored library would fail on this cycle.
+        // A walk entering the pruned library would fail on this cycle.
         symlink(".", source.join("rv/library/loop")).unwrap();
 
         let staged = prepare(&source).unwrap().unwrap();
-        assert!(!staged.path.join("rv/library").exists());
-        assert!(staged.path.join("rv/scripts/activate.R").is_file());
+        assert!(!staged.path.join("rv").exists());
+        assert!(!staged.path.join(".git").exists());
         assert!(staged.path.join("inst/rv/keep").is_file());
         assert!(staged.path.join("tools/input").is_file());
         assert!(staged.path.join(".Rbuildignore").is_file());
