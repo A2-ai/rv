@@ -675,10 +675,18 @@ impl RCmd for RInstall {
             source: RCmdErrorKind::StartupFiles(e),
         })?;
 
-        // If we have a subdir, we copy the whole dir to a temp directory to run bootstrap
-        // if needed.
+        // Only ordinary source packages are staged without never-bundled entries.
+        // A monorepo bootstrap may need parent files, so preserve its existing
+        // whole-repo handling.
+        let staged_source = if sub_folder.is_none() {
+            crate::build_source::prepare(source_dir)
+                .map_err(|e| RCmdError::from_fs_io(e, source_dir))?
+        } else {
+            None
+        };
         let (build_target, _src_backup): (PathBuf, Option<tempfile::TempDir>) =
             if let Some(sub_dir) = sub_folder {
+                // Copy the whole repository before running bootstrap, if needed.
                 let backup_temp = tempfile::tempdir().map_err(|e| RCmdError {
                     source: RCmdErrorKind::TempDir(e),
                 })?;
@@ -698,7 +706,13 @@ impl RCmd for RInstall {
                 )?;
                 (pkg_dir, Some(backup_temp))
             } else {
-                (source_dir.to_owned(), None)
+                (
+                    staged_source
+                        .as_ref()
+                        .map(|staged| staged.path.clone())
+                        .unwrap_or_else(|| source_dir.to_owned()),
+                    None,
+                )
             };
 
         let mut command = build_command(self, &build_target, &library_paths, &startup, env_vars);
