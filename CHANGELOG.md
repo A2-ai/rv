@@ -1,3 +1,17 @@
+## v0.23.3 - October 21, 2026
+
+This patch release makes rebuilding local source packages much faster, especially on network filesystems, and fixes R-Universe repositories whose URL ends in a `/`.
+
+### ⚡ Improvements
+- **Faster local package builds**: Before running `R CMD build` on a local source package, rv now leaves out the top-level `rv/`, `.git` and `.venv` entries. R copies the whole source directory and follows symlinks before it applies `.Rbuildignore`, so it used to copy every dependency installed in `rv/library`. On an NFS project with 128 installed packages, the median rebuild time fell from about 128s to about 5s. Other files are still passed to R and filtered by `.Rbuildignore` as before. Packages in a subdirectory of a git repository or monorepo still build from the whole repository, as before.
+
+### 🐛 Bug Fixes
+- **R-Universe URLs with a trailing slash**: rv no longer requests `//api/packages` when an R-Universe repository URL ends in `/`. R-Universe returns a 404 for that path.
+
+---
+
+**Migration Notes**: No configuration changes. Build scripts (`configure`, `bootstrap.R`, `cleanup`, etc.) run through rv can no longer read `rv/`, `.git` or `.venv` from the package source directory. A build script that needs installed packages should use the R library paths rv supplies. Running `R CMD build` or `devtools` yourself works as before.
+
 ## v0.23.2 - October 14, 2026
 
 ### 🐛 Bug Fixes
@@ -29,11 +43,18 @@ See the [documentation for more details on each feature](https://a2-ai.github.io
 - **Monorepo local dependencies**: Local dependencies now accept a `directory` field pointing at the R package, like git dependencies.
 - **`rv tree --invert <package>`**: Show only the paths leading to a given package, i.e. which top-level dependencies pull it in.
 
+### ⚡ Improvements
+- **Cached URL dependencies**: Packages from `url` dependencies are now stored in the local cache and reused, so they are no longer downloaded again. They can also be read from the global cache (`RV_GLOBAL_CACHE_DIR`).
+- **Finding R versions installed by rig**: When looking for the requested R version, rv now recognizes rig's versioned links on `PATH` (`R-4.5`, `R-4.5.1`, `R-4.5.1.exe`, ...). If it still can't find the version, it asks `rig list` as a last resort.
+- **`bootstrap.R` for git monorepo packages**: A git package in a subdirectory now runs `bootstrap.R` before building when its DESCRIPTION sets `Config/build/bootstrap` to true, matching pkgbuild. The script runs in an isolated copy of the repository with the project library on its library paths.
+- **System dependency checks on RHEL-family distros**: On CentOS, RHEL, Rocky Linux and openSUSE, rv now reads installed system package names directly from `rpm`, so packages whose names contain a hyphen followed by a digit are no longer reported as missing.
+
 ### 🐛 Bug Fixes
 - **UNC paths on Windows**: Local packages in projects located on a network drive (`\\server\share\...`) now install correctly.
 - **rig shims on Windows**: `rv run` and `rv init` now invoke `Rscript.exe` directly instead of going through rig's `.bat` shim, which failed on some setups.
 - **File timestamps preserved when copying**: Copying source packages now preserves file modification times, fixing builds of packages such as `mvtnorm` whose Makefiles depend on them.
 - **Local packages rebuilt on every sync**: A `path` dependency pointing at the project itself is no longer rebuilt on every `rv sync`
+- **Panics on malformed metadata**: Malformed versions or `Remotes` fields in DESCRIPTION files, repository indexes, lockfiles and `renv.lock` now produce an error instead of crashing rv.
 
 ---
 
@@ -70,9 +91,16 @@ This release adds a `--locked` flag for reproducible syncs, a GitHub shorthand f
 - **`rv run` syncs by default**: `rv run` now syncs the project library before executing your script, so it always runs against an up-to-date library. Pass `--no-sync` (as the first flag) to skip this.
 - **Clearer add/remove summaries**: `rv add` and `rv remove` now print exactly which packages were added or removed (or that there was nothing to do), instead of a generic success message.
 - **Atomic `rv add`**: If any dependency fails to resolve, `rv add` now aborts without modifying `rproject.toml`, instead of leaving a partially-updated config. The error output lists the failures and confirms the file was not changed.
+- **HTTP retries**: Downloads are now retried when they fail with a temporary network error.
+- **Crash-safe package installs**: A new package version is renamed into the library in one step, so an interrupted sync no longer leaves a package removed without its replacement.
+- **Embedding API**: For programs that embed rv as a library, rv now emits progress events during sync and can parse `Config/Needs` fields and fetch package DESCRIPTION files.
 
 ### 🐛 Bug Fixes
 - **Symlinks when copying folders**: Folder copies (e.g. local source packages) now handle symlinks correctly.
+- **Panic in containers with unusual OS versions**: `rv plan` and `rv sync` no longer crash in containers (e.g. Singularity) where Debian or Ubuntu reports a version that isn't in `major.minor` form.
+- **System requirements API failures**: rv now reports an error instead of crashing when the system requirements API can't be reached or returns invalid data.
+- **PACKAGES download errors**: HTTP errors and invalid data when downloading a repository's `PACKAGES` index are now reported instead of being silently ignored.
+- **Suggests of upgraded packages**: When a package with `install_suggestions` resolves to a different version than the first one considered, rv now uses the Suggests of the version it actually installs. Before, it could miss suggested packages that only the installed version declares, and keep ones that version no longer declares.
 
 ---
 
