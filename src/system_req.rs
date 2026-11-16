@@ -81,7 +81,7 @@ pub fn is_supported(system_info: &SystemInfo) -> bool {
     let (distrib, version) = system_info.sysreq_data();
 
     match distrib {
-        "ubuntu" => ["20.04", "22.04", "24.04"].contains(&version.as_str()),
+        "ubuntu" => ["20.04", "22.04", "24.04", "26.04"].contains(&version.as_str()),
         "debian" => version.starts_with("12"),
         "centos" => version.starts_with("7") || version.starts_with("8"),
         "redhat" => {
