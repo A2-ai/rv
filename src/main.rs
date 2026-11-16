@@ -233,7 +233,6 @@ pub enum Command {
         #[clap(long)]
         /// The R version specified in the config
         r_version: bool,
-        #[clap(long)]
         /// The repositories specified in the config
         #[clap(long)]
         repositories: bool,
