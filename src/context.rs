@@ -346,7 +346,8 @@ fn runiverse_api_url(base: &str) -> Result<Url, String> {
 /// Downloads a PACKAGES file, falling back to PACKAGES.gz like R does.
 /// Returns `None` if neither exists.
 fn download_packages_file(url: &Url) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-    let gz_url = Url::parse(&format!("{url}.gz"))?;
+    let mut gz_url = url.clone();
+    gz_url.set_path(&format!("{}.gz", url.path()));
     for u in [url, &gz_url] {
         let mut buf = Vec::new();
         match http::download(u, &mut buf, vec![]) {
@@ -355,7 +356,8 @@ fn download_packages_file(url: &Url) -> Result<Option<String>, Box<dyn Error + S
             Err(e) if e.is_not_found() => continue,
             Err(e) => return Err(e.into()),
         }
-        // Servers may send .gz with Content-Encoding: gzip, which ureq already decoded
+
+        // detect if compressed
         if buf.starts_with(&[0x1f, 0x8b]) {
             let mut out = Vec::new();
             GzDecoder::new(buf.as_slice()).read_to_end(&mut out)?;
