@@ -1,10 +1,12 @@
 //! Project context for rv library usage
 
+use flate2::read::GzDecoder;
 use fs_err as fs;
 #[cfg(feature = "cli")]
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::error::Error;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use url::Url;
 
@@ -341,6 +343,33 @@ fn runiverse_api_url(base: &str) -> Result<Url, String> {
     .map_err(|e| format!("Invalid URL: {e}"))
 }
 
+/// Downloads a PACKAGES file, falling back to PACKAGES.gz like R does.
+/// Returns `None` if neither exists.
+fn download_packages_file(url: &Url) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    let mut gz_url = url.clone();
+    gz_url.set_path(&format!("{}.gz", url.path()));
+    for u in [url, &gz_url] {
+        let mut buf = Vec::new();
+        match http::download(u, &mut buf, vec![]) {
+            Ok(0) => continue,
+            Ok(_) => {}
+            Err(e) if e.is_not_found() => continue,
+            Err(e) => return Err(e.into()),
+        }
+
+        // detect if compressed
+        if buf.starts_with(&[0x1f, 0x8b]) {
+            let mut out = Vec::new();
+            GzDecoder::new(buf.as_slice()).read_to_end(&mut out)?;
+            buf = out;
+        }
+        let s = String::from_utf8(buf)
+            .map_err(|e| format!("PACKAGES file at {u} is not valid UTF-8: {e}"))?;
+        return Ok(Some(s));
+    }
+    Ok(None)
+}
+
 fn load_single_database(
     r: &Repository,
     cache: &DiskCache,
@@ -395,44 +424,23 @@ fn load_single_database(
         }
         log::debug!("Need to download PACKAGES file for {}", r.url());
         let mut db = RepositoryDatabase::new(r.url());
-        // download files, parse them and persist to disk
-        let mut source_package = Vec::new();
         let (source_url, binary_url) = get_package_file_urls(
             &Url::parse(r.url()).map_err(|e| format!("Invalid URL: {e}"))?,
             &cache.r_version,
             &cache.system_info,
         );
 
-        let bytes_read = http::download(&source_url, &mut source_package, Vec::new())?;
-
         // We should ALWAYS have a PACKAGES file for source
-        if bytes_read == 0 {
-            return Err(format!("File at {source_url} was not found").into());
-        }
-        let source_str = std::str::from_utf8(&source_package)
-            .map_err(|e| format!("PACKAGES file at {source_url} is not valid UTF-8: {e}"))?;
-        db.parse_source(source_str);
+        let source = download_packages_file(&source_url)?
+            .ok_or_else(|| format!("No PACKAGES or PACKAGES.gz found at {source_url}"))?;
+        db.parse_source(&source);
 
-        let mut binary_package = Vec::new();
-        // we do not know for certain that the Some return of get_binary_path will be a valid url,
-        // but we do know that if it returns None there is not a binary PACKAGES file
+        // A binary PACKAGES file is optional
         if let Some(url) = binary_url {
             log::debug!("checking for binary packages URL: {url}");
-            match http::download(&url, &mut binary_package, vec![]) {
-                Ok(bytes_read) => {
-                    // but sometimes we might not have a binary PACKAGES file and that's fine.
-                    // We only load binary if we found a file
-                    if bytes_read > 0 {
-                        let binary_str = std::str::from_utf8(&binary_package).map_err(|e| {
-                            format!("binary PACKAGES file at {url} is not valid UTF-8: {e}")
-                        })?;
-                        db.parse_binary(binary_str, cache.r_version);
-                    }
-                }
-                Err(e) if e.is_not_found() => {
-                    log::debug!("No binary PACKAGES file at {url} (404)");
-                }
-                Err(e) => return Err(e.into()),
+            match download_packages_file(&url)? {
+                Some(binary) => db.parse_binary(&binary, cache.r_version),
+                None => log::debug!("No binary PACKAGES file at {url}"),
             }
         } else {
             log::debug!("No binary URL.")
