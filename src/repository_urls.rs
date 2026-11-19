@@ -58,6 +58,16 @@ pub(crate) fn get_distro_name(sysinfo: &SystemInfo, distro: &str) -> Option<Stri
         }
         // ubuntu and debian are distributed under their codenames
         "ubuntu" | "debian" => sysinfo.codename().map(|x| x.to_string()),
+        // Try manylinux for amazon
+        "amazon" => {
+            let major = sysinfo.major_version()?;
+            // p3m doesn't build for amazon but we can use manylinux binaries instead.
+            // Wouldn't work for every repository though but worth a try
+            if major >= 2023 {
+                return Some("manylinux_2_28".to_string());
+            }
+            None
+        }
         _ => None,
     }
 }
@@ -453,6 +463,19 @@ mod tests {
         let source_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 4], &sysinfo).unwrap();
         let ref_url = "https://packagemanager.posit.co/cran/__linux__/rhel9/latest/src/contrib/test-file?r_version=4.4&arch=x86_64".to_string();
         assert_eq!(source_url.as_str(), ref_url)
+    }
+
+    #[test]
+    fn test_amazon2023_binaries_url() {
+        let sysinfo = SystemInfo::new(
+            OsType::Linux("amazon"),
+            Some("x86_64".to_string()),
+            None,
+            "2023",
+        );
+        let binary_url = get_binary_path(&PPM_URL, &TEST_FILE_NAME, &[4, 5], &sysinfo).unwrap();
+        let ref_url = "https://packagemanager.posit.co/cran/__linux__/manylinux_2_28/latest/src/contrib/test-file?r_version=4.5&arch=x86_64".to_string();
+        assert_eq!(binary_url.as_str(), ref_url)
     }
 
     #[test]
